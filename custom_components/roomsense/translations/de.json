@@ -13,13 +13,11 @@
   "issues": {
     "restart_required": {
       "title": "Neustart erforderlich",
-
-      "description": "RoomSense {version} wurde installiert, aber Home Assistant läuft noch mit einer älteren Version. Ein Neustart ist erforderlich, um das Update abzuschließen.",
       "fix_flow": {
         "step": {
           "confirm_restart": {
             "title": "Home Assistant neu starten?",
-            "description": "Home Assistant wird neu gestartet, um RoomSense {version} zu laden."
+            "description": "RoomSense {version} wurde installiert, aber Home Assistant läuft noch mit einer älteren Version. Neustart zum Abschließen des Updates."
           }
         }
       }

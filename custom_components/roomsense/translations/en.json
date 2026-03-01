@@ -13,13 +13,11 @@
   "issues": {
     "restart_required": {
       "title": "Restart required",
-
-      "description": "RoomSense {version} has been installed but Home Assistant is still running an older version. A restart is required to complete the update.",
       "fix_flow": {
         "step": {
           "confirm_restart": {
             "title": "Restart Home Assistant?",
-            "description": "Home Assistant will restart to load RoomSense {version}."
+            "description": "RoomSense {version} has been installed but Home Assistant is still running an older version. Restart to complete the update."
           }
         }
       }
