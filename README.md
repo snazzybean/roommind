@@ -4,7 +4,7 @@
 
 | Name                                                 |    Stmts |     Miss |   Cover |   Missing |
 |----------------------------------------------------- | -------: | -------: | ------: | --------: |
-| custom\_components/roomsense/\_\_init\_\_.py         |       68 |       48 |     29% |29-31, 37-54, 59-68, 73-96, 101-139 |
+| custom\_components/roomsense/\_\_init\_\_.py         |       69 |       48 |     30% |31-33, 39-56, 61-70, 75-98, 103-141 |
 | custom\_components/roomsense/analytics\_simulator.py |      143 |       18 |     87% |105-111, 122-129, 173-174, 196, 269-270 |
 | custom\_components/roomsense/config\_flow.py         |       11 |       11 |      0% |      3-23 |
 | custom\_components/roomsense/const.py                |       49 |        0 |    100% |           |
@@ -24,7 +24,7 @@
 | custom\_components/roomsense/store.py                |       68 |        1 |     99% |       115 |
 | custom\_components/roomsense/thermal\_model.py       |      372 |       27 |     93% |84, 112, 146, 180, 328, 333, 346, 350, 352, 374, 380, 416, 426-427, 437-438, 488, 598, 682, 723, 769-770, 851, 859, 890, 913-916 |
 | custom\_components/roomsense/websocket\_api.py       |      271 |       98 |     64% |61-66, 71-86, 304, 331-332, 342, 514-650, 736-745 |
-| **TOTAL**                                            | **2267** |  **452** | **80%** |           |
+| **TOTAL**                                            | **2268** |  **452** | **80%** |           |
 
 
 ## Setup coverage badge
