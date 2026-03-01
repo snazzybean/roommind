@@ -6,6 +6,7 @@ import { customElement, property, state } from "lit/decorators.js";
 import type { HomeAssistant, RoomConfig } from "../types";
 import { localize, type TranslationKey } from "../utils/localize";
 import { infoIconStyles } from "../styles/info-icon-styles";
+import { tempUnit } from "../utils/temperature";
 
 interface AnalyticsDataPoint {
   ts: number;
@@ -57,6 +58,7 @@ export class RsAnalytics extends LitElement {
   @property({ type: Object }) public rooms: Record<string, RoomConfig> = {};
   @property() public initialRoom = "";
   @property() public controlMode: "mpc" | "bangbang" = "bangbang";
+  @property({ type: Boolean }) public useImperial = false;
 
   @state() private _selectedRoom = "";
   @state() private _rangeStart: number = new Date(new Date().setHours(0, 0, 0, 0)).getTime();
@@ -371,7 +373,6 @@ export class RsAnalytics extends LitElement {
     const targetData: Array<[number, number]> = [];
     const predictedData: Array<[number, number]> = [];
     const outdoorData: Array<[number, number]> = [];
-
     for (const p of points) {
       const ts = p.ts * 1000; // seconds → ms
       if (p.room_temp !== null) roomData.push([ts, p.room_temp]);
@@ -543,9 +544,10 @@ export class RsAnalytics extends LitElement {
     l: string,
     points: AnalyticsDataPoint[] = [],
   ): Record<string, unknown> {
+    const unit = tempUnit(this.useImperial);
     const yAxis: Record<string, unknown> = {
       type: "value",
-      name: "\u00B0C",
+      name: unit,
     };
 
     // Compute y-axis bounds from visible series only
@@ -583,7 +585,7 @@ export class RsAnalytics extends LitElement {
       tooltip: {
         trigger: "axis",
         axisPointer: { snap: false },
-        valueFormatter: (v: number) => v.toFixed(1) + "\u00A0\u00B0C",
+        valueFormatter: (v: number) => v.toFixed(1) + "\u00A0" + unit,
         formatter: (params: Array<{ seriesName: string; color: string; value: [number, number]; seriesId: string }>) => {
           if (!Array.isArray(params) || params.length === 0) return "";
           const date = new Date(params[0].value[0]);
@@ -596,14 +598,14 @@ export class RsAnalytics extends LitElement {
             if ((p.seriesId as string)?.endsWith("_events")) continue;
             const v = p.value?.[1];
             if (v == null) continue;
-            markup += `<div>${p.color ? `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${p.color};margin-right:6px"></span>` : ""}${p.seriesName}: ${v.toFixed(1)}\u00A0\u00B0C</div>`;
+            markup += `<div>${p.color ? `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${p.color};margin-right:6px"></span>` : ""}${p.seriesName}: ${v.toFixed(1)}\u00A0${unit}</div>`;
             if (p.seriesId === "room_temp") roomVal = v;
             if (p.seriesId === "predicted_temp") predVal = v;
           }
           if (roomVal !== null && predVal !== null) {
             const delta = roomVal - predVal;
             const sign = delta >= 0 ? "+" : "";
-            markup += `<div style="border-top:1px solid rgba(128,128,128,0.3);margin-top:4px;padding-top:4px">Delta: ${sign}${delta.toFixed(2)}\u00A0\u00B0C</div>`;
+            markup += `<div style="border-top:1px solid rgba(128,128,128,0.3);margin-top:4px;padding-top:4px">Delta: ${sign}${delta.toFixed(2)}\u00A0${unit}</div>`;
           }
           // Show mode and window status from closest data point
           if (points.length > 0) {
@@ -628,8 +630,8 @@ export class RsAnalytics extends LitElement {
                 }
                 // Show TRV setpoint when proportional
                 if (hp != null && hp > 0 && closest.room_temp != null) {
-                  const trv = Math.round((closest.room_temp + (hp / 100) * (30 - closest.room_temp)) * 10) / 10;
-                  parts.push(`TRV ${trv.toFixed(1)}\u00A0\u00B0C`);
+                  const trvDisplay = Math.round((closest.room_temp + (hp / 100) * (30 - closest.room_temp)) * 10) / 10;
+                  parts.push(`TRV ${trvDisplay.toFixed(1)}\u00A0${unit}`);
                 }
               } else if (closest.mode === "cooling") {
                 parts.push(localize("analytics.cooling_period", l));
@@ -761,8 +763,8 @@ export class RsAnalytics extends LitElement {
             ${canHeat ? stat("heating_rate", hasHeated && model ? model.Q_heat.toFixed(1) : ph, "analytics.heating_rate", "", "analytics.info.heating_rate") : nothing}
             ${canCool ? stat("cooling_rate", hasCooled && model ? model.Q_cool.toFixed(1) : ph, "analytics.cooling_rate", "", "analytics.info.cooling_rate") : nothing}
             ${model && model.Q_solar > 0.1 ? stat("solar_gain", model.Q_solar.toFixed(1), "analytics.solar_gain", "", "analytics.info.solar_gain") : nothing}
-            ${stat("accuracy_idle", hasIdleData && predStdIdle != null ? "\u00B1" + predStdIdle.toFixed(2) + "\u00B0C" : ph, "analytics.accuracy_idle", "", "analytics.info.accuracy_idle")}
-            ${canHeat ? stat("accuracy_heating", hasHeated && predStdHeat != null ? "\u00B1" + predStdHeat.toFixed(2) + "\u00B0C" : ph, "analytics.accuracy_heating", "", "analytics.info.accuracy_heating") : nothing}
+            ${stat("accuracy_idle", hasIdleData && predStdIdle != null ? "\u00B1" + predStdIdle.toFixed(2) + tempUnit(this.useImperial) : ph, "analytics.accuracy_idle", "", "analytics.info.accuracy_idle")}
+            ${canHeat ? stat("accuracy_heating", hasHeated && predStdHeat != null ? "\u00B1" + predStdHeat.toFixed(2) + tempUnit(this.useImperial) : ph, "analytics.accuracy_heating", "", "analytics.info.accuracy_heating") : nothing}
           </div>
           ${this._expandedStat && statItems.find((s) => s.id === this._expandedStat)
             ? html`<div class="info-panel stat-info-panel">

@@ -15,6 +15,7 @@ import "./rs-device-section";
 import "./rs-section-card";
 import { localize } from "../utils/localize";
 import { fireSaveStatus } from "../utils/events";
+import { tempUnit } from "../utils/temperature";
 
 @customElement("rs-room-detail")
 export class RsRoomDetail extends LitElement {
@@ -23,6 +24,7 @@ export class RsRoomDetail extends LitElement {
   @property({ attribute: false }) public hass!: HomeAssistant;
   @property({ type: Boolean }) public presenceEnabled = false;
   @property({ attribute: false }) public presencePersons: string[] = [];
+  @property({ type: Boolean }) public useImperial = false;
 
   @state() private _selectedThermostats: Set<string> = new Set();
   @state() private _selectedAcs: Set<string> = new Set();
@@ -460,6 +462,7 @@ export class RsRoomDetail extends LitElement {
             .area=${this.area}
             .config=${this.config}
             .overrideInfo=${this._getEffectiveOverride()}
+            .useImperial=${this.useImperial}
             @display-name-changed=${this._onDisplayNameChanged}
           ></rs-hero-status>
 
@@ -497,6 +500,7 @@ export class RsRoomDetail extends LitElement {
               .comfortTemp=${this._comfortTemp}
               .ecoTemp=${this._ecoTemp}
               .editing=${this._editingSchedule}
+              .useImperial=${this.useImperial}
               @schedules-changed=${this._onSchedulesChanged}
               @schedule-selector-changed=${this._onScheduleSelectorChanged}
               @comfort-temp-changed=${this._onComfortTempChanged}
@@ -522,6 +526,7 @@ export class RsRoomDetail extends LitElement {
               .hass=${this.hass}
               .area=${this.area}
               .editing=${this._editingDevices}
+              .useImperial=${this.useImperial}
               .selectedThermostats=${this._selectedThermostats}
               .selectedAcs=${this._selectedAcs}
               .selectedTempSensor=${this._selectedTempSensor}
@@ -867,8 +872,8 @@ export class RsRoomDetail extends LitElement {
               @click=${() => isActive ? this._onClearOverride() : this._onOverridePreset(t)}
             >
               <ha-icon icon=${t === "boost" ? "mdi:fire" : t === "eco" ? "mdi:leaf" : "mdi:thermometer"}></ha-icon>
-              ${t === "boost" ? `${localize("override.comfort", this.hass.language)} ${this._comfortTemp}\u00B0C`
-                : t === "eco" ? `${localize("override.eco", this.hass.language)} ${this._ecoTemp}\u00B0C`
+              ${t === "boost" ? `${localize("override.comfort", this.hass.language)} ${this._comfortTemp.toFixed(1)}${tempUnit(this.useImperial)}`
+                : t === "eco" ? `${localize("override.eco", this.hass.language)} ${this._ecoTemp.toFixed(1)}${tempUnit(this.useImperial)}`
                 : localize("override.custom", this.hass.language)}
             </button>
           `;
@@ -882,13 +887,13 @@ export class RsRoomDetail extends LitElement {
                     <span>${localize("override.target", this.hass.language)}</span>
                     <input
                       type="number"
-                      min="5"
-                      max="35"
-                      step="0.5"
-                      .value=${String(this._overrideCustomTemp)}
+                      min=${this.useImperial ? "41" : "5"}
+                      max=${this.useImperial ? "95" : "35"}
+                      step=${this.useImperial ? "1" : "0.5"}
+                      .value=${String(this._overrideCustomTemp.toFixed(1))}
                       @input=${this._onOverrideCustomTempInput}
                     />
-                    <span>\u00B0C</span>
+                    <span>${tempUnit(this.useImperial)}</span>
                   </div>
                 `
               : nothing}
@@ -927,7 +932,7 @@ export class RsRoomDetail extends LitElement {
   }
 
   private _onOverrideCustomTempInput(e: Event): void {
-    this._overrideCustomTemp = Number((e.target as HTMLInputElement).value) || 21;
+    this._overrideCustomTemp = Number((e.target as HTMLInputElement).value) || (this.useImperial ? 70 : 21);
   }
 
   private async _onOverrideActivate(hours: number): Promise<void> {

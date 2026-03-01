@@ -5,6 +5,7 @@ import { getModeClass, formatMode } from "../utils/room-state";
 import { modeStyles } from "../styles/shared-mode-styles";
 import { localize } from "../utils/localize";
 import { mdiEyeOff } from "../utils/icons";
+import { tempUnit } from "../utils/temperature";
 
 // mdi:brain
 const BRAIN_PATH =
@@ -18,6 +19,7 @@ export class RsAreaCard extends LitElement {
   @property({ type: Number }) public tempSensorCount = 0;
   @property({ attribute: false }) public hass!: HomeAssistant;
   @property({ type: String }) public controlMode: "mpc" | "bangbang" = "bangbang";
+  @property({ type: Boolean }) public useImperial = false;
 
   static styles = [
     modeStyles,
@@ -347,7 +349,7 @@ export class RsAreaCard extends LitElement {
         ${live.current_temp !== null
           ? html`
               <span class="current-temp">${live.current_temp.toFixed(1)}</span>
-              <span class="temp-unit">\u00B0C</span>
+              <span class="temp-unit">${tempUnit(this.useImperial)}</span>
             `
           : html`<span class="no-temp">--</span>`}
         ${this._renderTargetInfo(live)}
@@ -370,7 +372,7 @@ export class RsAreaCard extends LitElement {
           ${live.mold_prevention_active
             ? html`<span class="mold-badge prevention">
                 <ha-icon icon="mdi:shield-check"></ha-icon>
-                ${localize("card.mold_prevention", this.hass.language, { delta: String(live.mold_prevention_delta) })}
+                ${localize("card.mold_prevention", this.hass.language, { delta: String(live.mold_prevention_delta), unit: tempUnit(this.useImperial) })}
               </span>`
             : nothing}
           ${showMpcIcon
@@ -391,7 +393,7 @@ export class RsAreaCard extends LitElement {
 
     return html`
       <span class="target-info">
-        ${localize("card.target", this.hass.language)} <span class="target-value">${live.target_temp.toFixed(1)}\u00B0C</span>
+        ${localize("card.target", this.hass.language)} <span class="target-value">${live.target_temp.toFixed(1)}${tempUnit(this.useImperial)}</span>
         ${live.override_active
           ? html`<ha-icon class="override-icon" icon="mdi:timer-outline"></ha-icon>`
           : nothing}

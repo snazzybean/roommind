@@ -21,7 +21,6 @@ export class RsDeviceSection extends LitElement {
   @property({ type: Number }) public windowCloseDelay = 0;
 
   @property({ type: Boolean }) public editing = false;
-
   static styles = css`
     :host {
       display: block;
@@ -268,7 +267,10 @@ export class RsDeviceSection extends LitElement {
       const ct = attrs.current_temperature as number | undefined;
       if (ct != null) displayValue = `${ct.toFixed(1)}\u00B0`;
     } else if (type === "temp") {
-      if (state && state !== "unknown" && state !== "unavailable") displayValue = `${Number(state).toFixed(1)}\u00B0C`;
+      if (state && state !== "unknown" && state !== "unavailable") {
+        const unit = (attrs.unit_of_measurement as string) ?? "";
+        displayValue = `${Number(state).toFixed(1)}${unit}`;
+      }
     } else {
       if (state && state !== "unknown" && state !== "unavailable") displayValue = `${Math.round(Number(state))}%`;
     }
@@ -537,7 +539,9 @@ export class RsDeviceSection extends LitElement {
     const selected =
       type === "temp" ? this.selectedTempSensor : this.selectedHumiditySensor;
     const isSelected = selected === entityId;
-    const unit = type === "temp" ? "\u00B0C" : "%";
+    const unit = type === "temp"
+      ? ((entityState?.attributes?.unit_of_measurement as string) ?? "")
+      : "%";
     const hasValue =
       currentValue &&
       currentValue !== "unknown" &&
@@ -560,7 +564,7 @@ export class RsDeviceSection extends LitElement {
           <div class="device-entity">${entityId}</div>
         </div>
         ${hasValue
-          ? html`<span class="device-value">${type === "humidity" ? Math.round(Number(currentValue)) : currentValue}${unit}</span>`
+          ? html`<span class="device-value">${type === "humidity" ? Math.round(Number(currentValue)) : Number(currentValue).toFixed(1)}${unit}</span>`
           : nothing}
       </div>
     `;

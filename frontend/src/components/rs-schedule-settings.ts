@@ -4,6 +4,7 @@ import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import type { HomeAssistant, ScheduleEntry } from "../types";
 import { localize } from "../utils/localize";
 import { openEntityInfo } from "../utils/events";
+import { tempUnit } from "../utils/temperature";
 
 @customElement("rs-schedule-settings")
 export class RsScheduleSettings extends LitElement {
@@ -15,6 +16,7 @@ export class RsScheduleSettings extends LitElement {
   @property({ type: Number }) public ecoTemp = 17.0;
 
   @property({ type: Boolean }) public editing = false;
+  @property({ type: Boolean }) public useImperial = false;
 
   static styles = css`
     :host {
@@ -349,9 +351,9 @@ export class RsScheduleSettings extends LitElement {
         : html`<div class="no-schedules">${localize("schedule.no_schedules", l)}</div>`}
 
       <div class="view-temps">
-        ${localize("schedule.view_comfort", l, { temp: String(this.comfortTemp) })}
+        ${localize("schedule.view_comfort", l, { temp: this.comfortTemp.toFixed(1), unit: tempUnit(this.useImperial) })}
         \u00A0\u00B7\u00A0
-        ${localize("schedule.view_eco", l, { temp: String(this.ecoTemp) })}
+        ${localize("schedule.view_eco", l, { temp: this.ecoTemp.toFixed(1), unit: tempUnit(this.useImperial) })}
       </div>
 
       ${this.scheduleSelectorEntity
@@ -377,11 +379,11 @@ export class RsScheduleSettings extends LitElement {
           <ha-textfield
             type="number"
             label=${localize("schedule.comfort_label", l)}
-            suffix="\u00B0C"
-            .value=${String(this.comfortTemp)}
-            step="0.5"
-            min="5"
-            max="35"
+            .suffix=${tempUnit(this.useImperial)}
+            .value=${String(this.comfortTemp.toFixed(1))}
+            step=${this.useImperial ? "1" : "0.5"}
+            min=${this.useImperial ? "41" : "5"}
+            max=${this.useImperial ? "95" : "35"}
             @change=${this._onComfortTempChange}
           ></ha-textfield>
         </div>
@@ -389,11 +391,11 @@ export class RsScheduleSettings extends LitElement {
           <ha-textfield
             type="number"
             label=${localize("schedule.eco_label", l)}
-            suffix="\u00B0C"
-            .value=${String(this.ecoTemp)}
-            step="0.5"
-            min="5"
-            max="35"
+            .suffix=${tempUnit(this.useImperial)}
+            .value=${String(this.ecoTemp.toFixed(1))}
+            step=${this.useImperial ? "1" : "0.5"}
+            min=${this.useImperial ? "41" : "5"}
+            max=${this.useImperial ? "95" : "35"}
             @change=${this._onEcoTempChange}
           ></ha-textfield>
         </div>
@@ -616,12 +618,12 @@ export class RsScheduleSettings extends LitElement {
     if (isOn) {
       const blockTemp = entityState.attributes?.temperature as number | undefined;
       if (blockTemp != null) {
-        return localize("schedule.from_schedule", l, { temp: String(blockTemp) });
+        return localize("schedule.from_schedule", l, { temp: blockTemp.toFixed(1), unit: tempUnit(this.useImperial) });
       }
-      return localize("schedule.fallback", l, { temp: String(this.comfortTemp) });
+      return localize("schedule.fallback", l, { temp: this.comfortTemp.toFixed(1), unit: tempUnit(this.useImperial) });
     }
 
-    return localize("schedule.eco_detail", l, { temp: String(this.ecoTemp) });
+    return localize("schedule.eco_detail", l, { temp: this.ecoTemp.toFixed(1), unit: tempUnit(this.useImperial) });
   }
 
   private _getScheduleEntities(): string[] {
@@ -699,10 +701,11 @@ export class RsScheduleSettings extends LitElement {
 
   private _onComfortTempChange(e: Event) {
     const target = e.target as HTMLElement & { value: string };
+    const displayVal = parseFloat(target.value) || (this.useImperial ? 70.0 : 21.0);
     this.dispatchEvent(
       new CustomEvent("comfort-temp-changed", {
         detail: {
-          value: parseFloat(target.value) || 21.0,
+          value: displayVal,
         },
         bubbles: true,
         composed: true,
@@ -712,10 +715,11 @@ export class RsScheduleSettings extends LitElement {
 
   private _onEcoTempChange(e: Event) {
     const target = e.target as HTMLElement & { value: string };
+    const displayVal = parseFloat(target.value) || (this.useImperial ? 63.0 : 17.0);
     this.dispatchEvent(
       new CustomEvent("eco-temp-changed", {
         detail: {
-          value: parseFloat(target.value) || 17.0,
+          value: displayVal,
         },
         bubbles: true,
         composed: true,

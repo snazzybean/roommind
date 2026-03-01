@@ -6,11 +6,13 @@ import { customElement, property, state } from "lit/decorators.js";
 import type { HomeAssistant, GlobalSettings, HassEntity, RoomConfig, NotificationTarget } from "../types";
 import { localize } from "../utils/localize";
 import { fireSaveStatus } from "../utils/events";
+import { tempUnit } from "../utils/temperature";
 
 @customElement("rs-settings")
 export class RsSettings extends LitElement {
   @property({ attribute: false }) public hass!: HomeAssistant;
   @property({ attribute: false }) public rooms: Record<string, RoomConfig> = {};
+  @property({ type: Boolean }) public useImperial = false;
 
   @state() private _climateControlActive = true;
   @state() private _learningDisabledRooms: string[] = [];
@@ -542,13 +544,13 @@ export class RsSettings extends LitElement {
                     </div>
                     <div class="threshold-field">
                       <ha-textfield
-                        .value=${String(this._vacationTemp)}
+                        .value=${String(this._vacationTemp.toFixed(1))}
                         .label=${localize("vacation.setback_temp", l)}
-                        .suffix=${"°C"}
+                        .suffix=${tempUnit(this.useImperial)}
                         type="number"
-                        step="0.5"
-                        min="5"
-                        max="25"
+                        step=${this.useImperial ? "1" : "0.5"}
+                        min=${this.useImperial ? "41" : "5"}
+                        max=${this.useImperial ? "77" : "25"}
                         @change=${this._onVacationTempChanged}
                       ></ha-textfield>
                     </div>
@@ -702,26 +704,26 @@ export class RsSettings extends LitElement {
             <div class="threshold-grid">
               <div class="threshold-field">
                 <ha-textfield
-                  .value=${String(this._outdoorCoolingMin)}
+                  .value=${String(this._outdoorCoolingMin.toFixed(1))}
                   .label=${localize("settings.outdoor_cooling_min", l)}
-                  .suffix=${"°C"}
+                  .suffix=${tempUnit(this.useImperial)}
                   type="number"
                   step="1"
-                  min="-10"
-                  max="40"
+                  min=${this.useImperial ? "14" : "-10"}
+                  max=${this.useImperial ? "104" : "40"}
                   @change=${this._onOutdoorCoolingMinChanged}
                 ></ha-textfield>
                 <span class="field-hint">${localize("settings.outdoor_cooling_min_hint", l)}</span>
               </div>
               <div class="threshold-field">
                 <ha-textfield
-                  .value=${String(this._outdoorHeatingMax)}
+                  .value=${String(this._outdoorHeatingMax.toFixed(1))}
                   .label=${localize("settings.outdoor_heating_max", l)}
-                  .suffix=${"°C"}
+                  .suffix=${tempUnit(this.useImperial)}
                   type="number"
                   step="1"
-                  min="0"
-                  max="40"
+                  min=${this.useImperial ? "32" : "0"}
+                  max=${this.useImperial ? "104" : "40"}
                   @change=${this._onOutdoorHeatingMaxChanged}
                 ></ha-textfield>
                 <span class="field-hint">${localize("settings.outdoor_heating_max_hint", l)}</span>
@@ -769,7 +771,7 @@ export class RsSettings extends LitElement {
                 ></ha-entity-picker>
                 ${outdoorTemp !== null
                   ? html`<div class="current-value">
-                      ${localize("settings.outdoor_current", l, { temp: String(outdoorTemp) })}
+                      ${localize("settings.outdoor_current", l, { temp: outdoorTemp.toFixed(1), unit: (this.hass.states[this._outdoorTempSensor]?.attributes?.unit_of_measurement as string) ?? tempUnit(this.useImperial) })}
                     </div>`
                   : this._outdoorTempSensor
                     ? html`<div class="current-value muted">
@@ -912,9 +914,9 @@ export class RsSettings extends LitElement {
                       @selected=${this._onMoldIntensityChanged}
                       @closed=${(e: Event) => e.stopPropagation()}
                     >
-                      <mwc-list-item value="light">${localize("mold.intensity_light", l)}</mwc-list-item>
-                      <mwc-list-item value="medium">${localize("mold.intensity_medium", l)}</mwc-list-item>
-                      <mwc-list-item value="strong">${localize("mold.intensity_strong", l)}</mwc-list-item>
+                      <mwc-list-item value="light">${localize("mold.intensity_light", l, { delta: "1", unit: tempUnit(this.useImperial) })}</mwc-list-item>
+                      <mwc-list-item value="medium">${localize("mold.intensity_medium", l, { delta: "2", unit: tempUnit(this.useImperial) })}</mwc-list-item>
+                      <mwc-list-item value="strong">${localize("mold.intensity_strong", l, { delta: "3", unit: tempUnit(this.useImperial) })}</mwc-list-item>
                     </ha-select>
                     <span class="field-hint">${localize("mold.intensity_hint", l)}</span>
                   </div>
@@ -1087,6 +1089,7 @@ export class RsSettings extends LitElement {
     return entity.attributes?.device_class === "humidity";
   };
 
+
   private _getSensorValue(entityId: string): number | null {
     const state = this.hass.states[entityId];
     if (!state || state.state === "unavailable" || state.state === "unknown") {
@@ -1117,9 +1120,9 @@ export class RsSettings extends LitElement {
   }
 
   private _onVacationTempChanged(e: Event) {
-    const value = parseFloat((e.target as HTMLInputElement).value);
-    if (!isNaN(value)) {
-      this._vacationTemp = value;
+    const displayVal = parseFloat((e.target as HTMLInputElement).value);
+    if (!isNaN(displayVal)) {
+      this._vacationTemp = displayVal;
       this._autoSave();
     }
   }
@@ -1194,18 +1197,22 @@ export class RsSettings extends LitElement {
   }
 
   private _onOutdoorCoolingMinChanged(e: Event) {
-    const value = parseFloat((e.target as HTMLInputElement).value);
-    if (!isNaN(value) && value !== this._outdoorCoolingMin) {
-      this._outdoorCoolingMin = value;
-      this._autoSave();
+    const displayVal = parseFloat((e.target as HTMLInputElement).value);
+    if (!isNaN(displayVal)) {
+      if (displayVal !== this._outdoorCoolingMin) {
+        this._outdoorCoolingMin = displayVal;
+        this._autoSave();
+      }
     }
   }
 
   private _onOutdoorHeatingMaxChanged(e: Event) {
-    const value = parseFloat((e.target as HTMLInputElement).value);
-    if (!isNaN(value) && value !== this._outdoorHeatingMax) {
-      this._outdoorHeatingMax = value;
-      this._autoSave();
+    const displayVal = parseFloat((e.target as HTMLInputElement).value);
+    if (!isNaN(displayVal)) {
+      if (displayVal !== this._outdoorHeatingMax) {
+        this._outdoorHeatingMax = displayVal;
+        this._autoSave();
+      }
     }
   }
 

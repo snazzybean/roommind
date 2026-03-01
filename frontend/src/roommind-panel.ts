@@ -8,6 +8,7 @@ import type {
 import { getEntitiesForArea } from "./utils/room-state";
 import { loadHaElements } from "./load-ha-elements";
 import { localize } from "./utils/localize";
+import { tempUnit } from "./utils/temperature";
 import { mdiEyeOff } from "./utils/icons";
 import "./components/rs-settings";
 import "./components/rs-analytics";
@@ -55,6 +56,9 @@ export class RoomMindPanel extends LitElement {
   @state() private _anyoneHome = true;
   @state() private _presencePersons: string[] = [];
   @state() private _saveStatus: "idle" | "saving" | "saved" | "error" = "idle";
+  private get _useImperial(): boolean {
+    return this.hass?.config?.unit_system?.temperature === "°F";
+  }
 
   private _refreshInterval?: ReturnType<typeof setInterval>;
   private _routeApplied = false;
@@ -406,6 +410,7 @@ export class RoomMindPanel extends LitElement {
           .rooms=${this._rooms}
           .initialRoom=${this._analyticsRoom}
           .controlMode=${this._controlMode}
+          .useImperial=${this._useImperial}
           @room-selected=${this._onAnalyticsRoomSelected}
         ></rs-analytics>`;
       case "settings":
@@ -427,6 +432,7 @@ export class RoomMindPanel extends LitElement {
             .hass=${this.hass}
             .presenceEnabled=${this._presenceEnabled}
             .presencePersons=${this._presencePersons}
+            .useImperial=${this._useImperial}
             @back-clicked=${this._onBackFromDetail}
             @room-updated=${this._onRoomUpdated}
           ></rs-room-detail>
@@ -512,7 +518,8 @@ export class RoomMindPanel extends LitElement {
                 <div class="vacation-text">
                   <span class="vacation-title">${localize("vacation.banner_title", this.hass.language)}</span>
                   <span class="vacation-detail">${localize("vacation.banner_detail", this.hass.language, {
-                    temp: String(this._vacationTemp),
+                    temp: this._vacationTemp!.toFixed(1),
+                    unit: tempUnit(this._useImperial),
                     date: this._vacationUntil
                       ? new Date(this._vacationUntil * 1000).toLocaleString(this.hass.language, { dateStyle: "medium", timeStyle: "short" })
                       : "—",
@@ -549,6 +556,7 @@ export class RoomMindPanel extends LitElement {
               .tempSensorCount=${info.tempSensorCount}
               .hass=${this.hass}
               .controlMode=${this._controlMode}
+              .useImperial=${this._useImperial}
               @area-selected=${this._onAreaSelected}
               @hide-room=${this._onHideRoom}
             ></rs-area-card>
@@ -559,7 +567,7 @@ export class RoomMindPanel extends LitElement {
   }
 
   private _renderSettings() {
-    return html`<rs-settings .hass=${this.hass} .rooms=${this._rooms}></rs-settings>`;
+    return html`<rs-settings .hass=${this.hass} .rooms=${this._rooms} .useImperial=${this._useImperial}></rs-settings>`;
   }
 
   private _computeAreaInfos(): AreaInfo[] {
