@@ -4,7 +4,7 @@
 
 | Name                                                |    Stmts |     Miss |   Cover |   Missing |
 |---------------------------------------------------- | -------: | -------: | ------: | --------: |
-| custom\_components/roommind/\_\_init\_\_.py         |       76 |       54 |     29% |31-33, 39-57, 62-66, 71-80, 85-108, 113-151 |
+| custom\_components/roommind/\_\_init\_\_.py         |       85 |       63 |     26% |31-33, 39-57, 62-76, 81-90, 95-118, 123-161 |
 | custom\_components/roommind/analytics\_simulator.py |      143 |       18 |     87% |105-111, 122-129, 173-174, 196, 269-270 |
 | custom\_components/roommind/config\_flow.py         |       11 |       11 |      0% |      3-23 |
 | custom\_components/roommind/const.py                |       49 |        0 |    100% |           |
@@ -24,7 +24,7 @@
 | custom\_components/roommind/store.py                |       68 |        1 |     99% |       115 |
 | custom\_components/roommind/thermal\_model.py       |      372 |       27 |     93% |84, 112, 146, 180, 328, 333, 346, 350, 352, 374, 380, 416, 426-427, 437-438, 488, 598, 682, 723, 769-770, 851, 859, 890, 913-916 |
 | custom\_components/roommind/websocket\_api.py       |      271 |       98 |     64% |61-66, 71-86, 304, 331-332, 342, 514-650, 736-745 |
-| **TOTAL**                                           | **2275** |  **458** | **80%** |           |
+| **TOTAL**                                           | **2284** |  **467** | **80%** |           |
 
 
 ## Setup coverage badge
