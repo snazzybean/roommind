@@ -579,7 +579,7 @@ export class RsSettings extends LitElement {
                     ${this._presencePersons.length > 0 ? html`
                       <div class="presence-person-list">
                         ${this._presencePersons.map((pid) => {
-                          const name = this.hass.states[pid]?.attributes?.friendly_name ?? pid.replace("person.", "");
+                          const name = this.hass.states[pid]?.attributes?.friendly_name ?? pid.split(".").slice(1).join(".");
                           return html`
                             <div class="presence-person-row">
                               <ha-icon icon="mdi:account" style="--mdc-icon-size: 18px; color: var(--secondary-text-color)"></ha-icon>
@@ -598,9 +598,9 @@ export class RsSettings extends LitElement {
                     ` : nothing}
                     <ha-entity-picker
                       .hass=${this.hass}
-                      .includeDomains=${["person"]}
+                      .includeDomains=${["person", "binary_sensor", "input_boolean"]}
                       .entityFilter=${(entity: { entity_id: string }) => !this._presencePersons.includes(entity.entity_id)}
-                      .label=${localize("presence.add_person", l)}
+                      .label=${localize("presence.add_entity", l)}
                       @value-changed=${(e: CustomEvent) => {
                         const val = e.detail?.value;
                         if (val && !this._presencePersons.includes(val)) {

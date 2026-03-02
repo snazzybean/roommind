@@ -245,6 +245,7 @@
   "presence.hint": "Uses eco temperature when nobody is home.",
   "presence.hint_detail": "When enabled, all rooms switch to eco temperature as soon as none of the configured persons are home. You can optionally restrict per room which persons are relevant.",
   "presence.add_person": "Add person",
+  "presence.add_entity": "Add presence entity",
   "presence.person_label": "Person",
   "presence.banner_title": "Nobody home",
   "presence.banner_detail": "All rooms set to eco temperature",

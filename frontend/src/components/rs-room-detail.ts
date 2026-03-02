@@ -785,7 +785,7 @@ export class RsRoomDetail extends LitElement {
             <div class="presence-chips">
               ${this.presencePersons.map((pid) => {
                 const active = this._selectedPresencePersons.includes(pid);
-                const name = this.hass.states[pid]?.attributes?.friendly_name ?? pid.replace("person.", "");
+                const name = this.hass.states[pid]?.attributes?.friendly_name ?? pid.split(".").slice(1).join(".");
                 return html`
                   <button
                     class="presence-chip ${active ? "active" : ""}"
@@ -815,8 +815,9 @@ export class RsRoomDetail extends LitElement {
             ${this._selectedPresencePersons.length > 0 ? html`
               <div class="presence-list">
                 ${this._selectedPresencePersons.map((pid) => {
-                  const name = this.hass.states[pid]?.attributes?.friendly_name ?? pid.replace("person.", "");
-                  const isHome = this.hass.states[pid]?.state === "home";
+                  const name = this.hass.states[pid]?.attributes?.friendly_name ?? pid.split(".").slice(1).join(".");
+                  const st = this.hass.states[pid]?.state;
+                  const isHome = pid.startsWith("person.") ? st === "home" : st === "on";
                   return html`
                     <div class="presence-row ${isHome ? "home" : "away"}">
                       <span class="presence-dot"></span>

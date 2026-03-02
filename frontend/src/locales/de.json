@@ -245,6 +245,7 @@
   "presence.hint": "Eco-Temperatur wenn niemand zu Hause ist.",
   "presence.hint_detail": "Wenn aktiviert, werden alle Räume auf Eco-Temperatur gesetzt, sobald keine der konfigurierten Personen zu Hause ist. Pro Raum kann optional eingeschränkt werden, welche Personen relevant sind.",
   "presence.add_person": "Person hinzufügen",
+  "presence.add_entity": "Präsenz-Entity hinzufügen",
   "presence.person_label": "Person",
   "presence.banner_title": "Niemand zu Hause",
   "presence.banner_detail": "Alle Räume auf Eco-Temperatur",

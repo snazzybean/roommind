@@ -27,6 +27,16 @@ def is_presence_away(hass: HomeAssistant, room: dict, settings: dict) -> bool:
         state = hass.states.get(pid)
         if state is None or state.state in ("unavailable", "unknown"):
             return False  # fail-safe: treat as home
-        if state.state == "home":
+        if _is_entity_home(state):
             return False
     return True
+
+
+def _is_entity_home(state) -> bool:
+    """Check if a presence entity indicates someone is home.
+
+    person.* uses "home"/"not_home"; binary_sensor/input_boolean use "on"/"off".
+    """
+    if state.entity_id.startswith("person."):
+        return state.state == "home"
+    return state.state == "on"
