@@ -5,7 +5,7 @@ import { LitElement, html, css, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import type { HomeAssistant, GlobalSettings, HassEntity, RoomConfig, NotificationTarget } from "../types";
 import { localize } from "../utils/localize";
-import { fireSaveStatus } from "../utils/events";
+import { fireSaveStatus, getSelectValue } from "../utils/events";
 import { formatTemp, tempUnit, toDisplay, toCelsius, tempStep, tempRange, toDisplayDelta } from "../utils/temperature";
 
 @customElement("rs-settings")
@@ -910,12 +910,17 @@ export class RsSettings extends LitElement {
                       style="width: 100%;"
                       .value=${this._moldPreventionIntensity}
                       .label=${localize("mold.intensity", l)}
+                      .options=${[
+                        { value: "light", label: localize("mold.intensity_light", l, { delta: String(toDisplayDelta(1, this.hass)), unit: tempUnit(this.hass) }) },
+                        { value: "medium", label: localize("mold.intensity_medium", l, { delta: String(toDisplayDelta(2, this.hass)), unit: tempUnit(this.hass) }) },
+                        { value: "strong", label: localize("mold.intensity_strong", l, { delta: String(toDisplayDelta(3, this.hass)), unit: tempUnit(this.hass) }) },
+                      ]}
                       @selected=${this._onMoldIntensityChanged}
                       @closed=${(e: Event) => e.stopPropagation()}
                     >
-                      <mwc-list-item value="light">${localize("mold.intensity_light", l, { delta: String(toDisplayDelta(1, this.hass)), unit: tempUnit(this.hass) })}</mwc-list-item>
-                      <mwc-list-item value="medium">${localize("mold.intensity_medium", l, { delta: String(toDisplayDelta(2, this.hass)), unit: tempUnit(this.hass) })}</mwc-list-item>
-                      <mwc-list-item value="strong">${localize("mold.intensity_strong", l, { delta: String(toDisplayDelta(3, this.hass)), unit: tempUnit(this.hass) })}</mwc-list-item>
+                      <ha-list-item value="light">${localize("mold.intensity_light", l, { delta: String(toDisplayDelta(1, this.hass)), unit: tempUnit(this.hass) })}</ha-list-item>
+                      <ha-list-item value="medium">${localize("mold.intensity_medium", l, { delta: String(toDisplayDelta(2, this.hass)), unit: tempUnit(this.hass) })}</ha-list-item>
+                      <ha-list-item value="strong">${localize("mold.intensity_strong", l, { delta: String(toDisplayDelta(3, this.hass)), unit: tempUnit(this.hass) })}</ha-list-item>
                     </ha-select>
                     <span class="field-hint">${localize("mold.intensity_hint", l)}</span>
                   </div>
@@ -972,11 +977,15 @@ export class RsSettings extends LitElement {
                             ></ha-entity-picker>
                             <ha-select
                               .value=${t.notify_when}
+                              .options=${[
+                                { value: "always", label: localize("mold.target_when_always", l) },
+                                { value: "home_only", label: localize("mold.target_when_home", l) },
+                              ]}
                               @selected=${(e: Event) => this._onMoldTargetWhenChanged(idx, e)}
                               @closed=${(e: Event) => e.stopPropagation()}
                             >
-                              <mwc-list-item value="always">${localize("mold.target_when_always", l)}</mwc-list-item>
-                              <mwc-list-item value="home_only">${localize("mold.target_when_home", l)}</mwc-list-item>
+                              <ha-list-item value="always">${localize("mold.target_when_always", l)}</ha-list-item>
+                              <ha-list-item value="home_only">${localize("mold.target_when_home", l)}</ha-list-item>
                             </ha-select>
                           </div>
                         </div>
@@ -1055,11 +1064,12 @@ export class RsSettings extends LitElement {
                     <ha-select
                       .value=${this._resetSelectedRoom}
                       .label=${localize("settings.reset_room_select", l)}
+                      .options=${configuredRooms.map((room) => ({ value: room.areaId, label: room.name }))}
                       @selected=${this._onResetRoomSelected}
                       @closed=${(e: Event) => e.stopPropagation()}
                     >
                       ${configuredRooms.map(
-                        (room) => html`<mwc-list-item .value=${room.areaId}>${room.name}</mwc-list-item>`
+                        (room) => html`<ha-list-item .value=${room.areaId}>${room.name}</ha-list-item>`
                       )}
                     </ha-select>
                     <button
@@ -1237,8 +1247,7 @@ export class RsSettings extends LitElement {
   }
 
   private _onResetRoomSelected(e: Event) {
-    const target = e.target as HTMLElement & { value?: string };
-    this._resetSelectedRoom = target.value ?? "";
+    this._resetSelectedRoom = getSelectValue(e);
   }
 
   private async _resetRoomModel(areaId: string) {
@@ -1295,7 +1304,7 @@ export class RsSettings extends LitElement {
   }
 
   private _onMoldTargetWhenChanged(idx: number, e: Event) {
-    const value = (e.target as HTMLElement & { value?: string }).value as "always" | "home_only";
+    const value = getSelectValue(e) as "always" | "home_only";
     if (!value) return;
     const targets = [...this._moldNotificationTargets];
     targets[idx] = { ...targets[idx], notify_when: value };
@@ -1343,7 +1352,7 @@ export class RsSettings extends LitElement {
   }
 
   private _onMoldIntensityChanged(e: Event) {
-    const value = (e.target as HTMLElement & { value?: string }).value as "light" | "medium" | "strong";
+    const value = getSelectValue(e) as "light" | "medium" | "strong";
     if (value && value !== this._moldPreventionIntensity) {
       this._moldPreventionIntensity = value;
       this._autoSave();

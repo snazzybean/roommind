@@ -7,6 +7,7 @@ import type { HomeAssistant, RoomConfig } from "../types";
 import { localize, type TranslationKey } from "../utils/localize";
 import { infoIconStyles } from "../styles/info-icon-styles";
 import { formatTemp, tempUnit, toDisplay, toDisplayDelta } from "../utils/temperature";
+import { getSelectValue } from "../utils/events";
 
 interface AnalyticsDataPoint {
   ts: number;
@@ -172,6 +173,7 @@ export class RsAnalytics extends LitElement {
         <ha-select
           .value=${this._selectedRoom}
           .label=${localize("analytics.select_room", l)}
+          .options=${rooms.map((r) => ({ value: r.area_id, label: r.name }))}
           naturalMenuWidth
           fixedMenuPosition
           @selected=${this._onRoomSelected}
@@ -832,8 +834,7 @@ export class RsAnalytics extends LitElement {
 
 
   private _onRoomSelected(e: Event) {
-    const target = e.target as HTMLElement & { value?: string };
-    const value = target.value ?? "";
+    const value = getSelectValue(e);
     if (value && value !== this._selectedRoom) {
       this._selectedRoom = value;
       this.dispatchEvent(

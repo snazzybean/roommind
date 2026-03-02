@@ -6,7 +6,7 @@ import type {
 } from "../types";
 import { getEntitiesForArea } from "../utils/room-state";
 import { localize } from "../utils/localize";
-import { openEntityInfo } from "../utils/events";
+import { getSelectValue, openEntityInfo } from "../utils/events";
 import { tempUnit } from "../utils/temperature";
 
 @customElement("rs-device-section")
@@ -507,11 +507,14 @@ export class RsDeviceSection extends LitElement {
                 class="device-type-select"
                 outlined
                 .value=${isAc ? "ac" : "thermostat"}
+                .options=${[
+                  { value: "thermostat", label: localize("devices.type_thermostat", this.hass.language) },
+                  { value: "ac", label: localize("devices.type_ac", this.hass.language) },
+                ]}
                 @selected=${(e: Event) => {
-                  const target = e.target as HTMLElement & { value: string };
                   this._onDeviceTypeChange(
                     entityId,
-                    target.value as "thermostat" | "ac"
+                    getSelectValue(e) as "thermostat" | "ac"
                   );
                 }}
                 @closed=${(e: Event) => e.stopPropagation()}

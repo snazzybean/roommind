@@ -3,7 +3,7 @@ import { customElement, property } from "lit/decorators.js";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import type { HomeAssistant, ScheduleEntry } from "../types";
 import { localize } from "../utils/localize";
-import { openEntityInfo } from "../utils/events";
+import { getSelectValue, openEntityInfo } from "../utils/events";
 import { formatTemp, tempUnit, toDisplay, toCelsius, tempStep, tempRange } from "../utils/temperature";
 
 @customElement("rs-schedule-settings")
@@ -545,6 +545,13 @@ export class RsScheduleSettings extends LitElement {
       <div class="add-schedule-row">
         <ha-select
           .value=${""}
+          .options=${[
+            { value: "", label: localize("schedule.add_schedule", l) },
+            ...availableEntities.map((entityId) => ({
+              value: entityId,
+              label: (this.hass.states[entityId]?.attributes?.friendly_name as string) || entityId,
+            })),
+          ]}
           @selected=${this._onAddSchedule}
           @closed=${(e: Event) => e.stopPropagation()}
           fixedMenuPosition
@@ -639,8 +646,7 @@ export class RsScheduleSettings extends LitElement {
   }
 
   private _onAddSchedule(e: Event) {
-    const target = e.target as HTMLElement & { value: string };
-    const entityId = target.value;
+    const entityId = getSelectValue(e);
     if (!entityId) return;
 
     const newSchedules = [...this.schedules, { entity_id: entityId }];
@@ -654,7 +660,7 @@ export class RsScheduleSettings extends LitElement {
 
     // Reset the select back to the placeholder
     requestAnimationFrame(() => {
-      target.value = "";
+      (e.target as HTMLElement & { value: string }).value = "";
     });
   }
 

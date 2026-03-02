@@ -8,7 +8,7 @@ declare global {
     "ha-card": HTMLElement & { header?: string };
     "ha-button": HTMLElement & { disabled?: boolean; raised?: boolean; outlined?: boolean };
     "ha-icon": HTMLElement & { icon: string };
-    "ha-select": HTMLElement & { value?: string; label?: string; naturalMenuWidth?: boolean; fixedMenuPosition?: boolean };
+    "ha-select": HTMLElement & { value?: string; label?: string; naturalMenuWidth?: boolean; fixedMenuPosition?: boolean; options?: Array<{ value: string; label: string }> | string[] };
     "ha-list-item": HTMLElement & { value?: string; selected?: boolean };
     "ha-textfield": HTMLElement & {
       value?: string;
