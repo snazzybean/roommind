@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-    <title>Coverage for custom_components/roomsense/coordinator.py: 78%</title>
+    <title>Coverage for custom_components/roommind/coordinator.py: 78%</title>
     <link rel="icon" sizes="32x32" href="favicon_32_cb_c827f16f.png">
     <link rel="stylesheet" href="style_cb_9ff733b0.css" type="text/css">
     <script src="coverage_html_cb_dd2e7eb5.js" defer></script>
@@ -11,7 +11,7 @@
 <header>
     <div class="content">
         <h1>
-            <span class="text">Coverage for </span><b>custom_components&#8201;/&#8201;roomsense&#8201;/&#8201;coordinator.py</b>:
+            <span class="text">Coverage for </span><b>custom_components&#8201;/&#8201;roommind&#8201;/&#8201;coordinator.py</b>:
             <span class="pc_cov">78%</span>
         </h1>
         <aside id="help_panel_wrapper">
@@ -60,12 +60,12 @@
             <button type="button" class="exc show_exc button_toggle_exc" value="exc" data-shortcut="x" title="Toggle lines excluded">0<span class="text"> excluded</span></button>
         </h2>
         <p class="text">
-            <a id="prevFileLink" class="nav" href="z_113ed0cb7e134087_const_py.html">&#xab; prev</a> &nbsp; &nbsp;
+            <a id="prevFileLink" class="nav" href="z_e1a10107a084a5d3_const_py.html">&#xab; prev</a> &nbsp; &nbsp;
             <a id="indexLink" class="nav" href="index.html">&Hat; index</a> &nbsp; &nbsp;
-            <a id="nextFileLink" class="nav" href="z_113ed0cb7e134087_diagnostics_py.html">&#xbb; next</a>
+            <a id="nextFileLink" class="nav" href="z_e1a10107a084a5d3_diagnostics_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.13.1">coverage.py v7.13.1</a>,
-            created at 2026-03-01 18:49 +0000
+            created at 2026-03-02 01:10 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -80,7 +80,7 @@
     </div>
 </header>
 <main id="source">
-    <p class="pln"><span class="n"><a id="t1" href="#t1">1</a></span><span class="t"><span class="str">"""DataUpdateCoordinator for RoomSense."""</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t1" href="#t1">1</a></span><span class="t"><span class="str">"""DataUpdateCoordinator for RoomMind."""</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t2" href="#t2">2</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t3" href="#t3">3</a></span><span class="t"><span class="key">from</span> <span class="nam">__future__</span> <span class="key">import</span> <span class="nam">annotations</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t4" href="#t4">4</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
@@ -112,8 +112,8 @@
     <p class="mis show_mis"><span class="n"><a id="t30" href="#t30">30</a></span><span class="t">    <span class="key">return</span> <span class="nam">area</span><span class="op">.</span><span class="nam">name</span> <span class="key">if</span> <span class="nam">area</span> <span class="key">else</span> <span class="nam">area_id</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t31" href="#t31">31</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t32" href="#t32">32</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t33" href="#t33">33</a></span><span class="t"><span class="key">class</span> <span class="nam">RoomSenseCoordinator</span><span class="op">(</span><span class="nam">DataUpdateCoordinator</span><span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t34" href="#t34">34</a></span><span class="t">    <span class="str">"""Central coordinator for RoomSense room data and state."""</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t33" href="#t33">33</a></span><span class="t"><span class="key">class</span> <span class="nam">RoomMindCoordinator</span><span class="op">(</span><span class="nam">DataUpdateCoordinator</span><span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t34" href="#t34">34</a></span><span class="t">    <span class="str">"""Central coordinator for RoomMind room data and state."""</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t35" href="#t35">35</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t36" href="#t36">36</a></span><span class="t">    <span class="key">def</span> <span class="nam">__init__</span><span class="op">(</span><span class="nam">self</span><span class="op">,</span> <span class="nam">hass</span><span class="op">:</span> <span class="nam">HomeAssistant</span><span class="op">,</span> <span class="nam">entry</span><span class="op">:</span> <span class="nam">ConfigEntry</span><span class="op">)</span> <span class="op">-></span> <span class="key">None</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t37" href="#t37">37</a></span><span class="t">        <span class="str">"""Initialize the coordinator."""</span>&nbsp;</span><span class="r"></span></p>
@@ -189,7 +189,7 @@
     <p class="pln"><span class="n"><a id="t107" href="#t107">107</a></span><span class="t">        <span class="com"># Initialize history store (once)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t108" href="#t108">108</a></span><span class="t">        <span class="key">if</span> <span class="nam">self</span><span class="op">.</span><span class="nam">_history_store</span> <span class="key">is</span> <span class="key">None</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t109" href="#t109">109</a></span><span class="t">            <span class="nam">self</span><span class="op">.</span><span class="nam">_history_store</span> <span class="op">=</span> <span class="nam">HistoryStore</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t110" href="#t110">110</a></span><span class="t">                <span class="nam">self</span><span class="op">.</span><span class="nam">hass</span><span class="op">.</span><span class="nam">config</span><span class="op">.</span><span class="nam">path</span><span class="op">(</span><span class="str">".storage/roomsense_history"</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t110" href="#t110">110</a></span><span class="t">                <span class="nam">self</span><span class="op">.</span><span class="nam">hass</span><span class="op">.</span><span class="nam">config</span><span class="op">.</span><span class="nam">path</span><span class="op">(</span><span class="str">".storage/roommind_history"</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t111" href="#t111">111</a></span><span class="t">            <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t112" href="#t112">112</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t113" href="#t113">113</a></span><span class="t">        <span class="nam">room_states</span><span class="op">:</span> <span class="nam">dict</span><span class="op">[</span><span class="nam">str</span><span class="op">,</span> <span class="nam">dict</span><span class="op">]</span> <span class="op">=</span> <span class="op">{</span><span class="op">}</span>&nbsp;</span><span class="r"></span></p>
@@ -372,7 +372,7 @@
     <p class="run run2"><span class="n"><a id="t290" href="#t290">290</a></span><span class="t">                                    <span class="fst">f"</span><span class="op">{</span><span class="nam">current_humidity</span><span class="op">:</span><span class="fst">.0f</span><span class="op">}</span><span class="fst">% humidity, </span><span class="fst">"</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t291" href="#t291">291</a></span><span class="t">                                    <span class="fst">f"</span><span class="fst">estimated surface RH </span><span class="op">{</span><span class="nam">mold_surface_rh</span><span class="op">:</span><span class="fst">.0f</span><span class="op">}</span><span class="fst">%</span><span class="fst">"</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t292" href="#t292">292</a></span><span class="t">                                <span class="op">)</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t293" href="#t293">293</a></span><span class="t">                                <span class="nam">title</span><span class="op">=</span><span class="str">"RoomSense: Mold Risk Warning"</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t293" href="#t293">293</a></span><span class="t">                                <span class="nam">title</span><span class="op">=</span><span class="str">"RoomMind: Mold Risk Warning"</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t294" href="#t294">294</a></span><span class="t">                                <span class="nam">tag_suffix</span><span class="op">=</span><span class="str">"risk"</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t295" href="#t295">295</a></span><span class="t">                            <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t296" href="#t296">296</a></span><span class="t">                            <span class="nam">self</span><span class="op">.</span><span class="nam">_mold_throttler</span><span class="op">.</span><span class="nam">record_sent</span><span class="op">(</span><span class="fst">f"</span><span class="fst">detect_</span><span class="op">{</span><span class="nam">area_id</span><span class="op">}</span><span class="fst">"</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
@@ -402,7 +402,7 @@
     <p class="mis mis2 show_mis"><span class="n"><a id="t320" href="#t320">320</a></span><span class="t">                                        <span class="fst">f"</span><span class="fst">temperature raised by </span><span class="fst">"</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis mis2 show_mis"><span class="n"><a id="t321" href="#t321">321</a></span><span class="t">                                        <span class="fst">f"</span><span class="op">{</span><span class="nam">mold_prevention_temp_delta</span><span class="op">:</span><span class="fst">.0f</span><span class="op">}</span><span class="fst">&#176;C</span><span class="fst">"</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis mis2 show_mis"><span class="n"><a id="t322" href="#t322">322</a></span><span class="t">                                    <span class="op">)</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis mis2 show_mis"><span class="n"><a id="t323" href="#t323">323</a></span><span class="t">                                    <span class="nam">title</span><span class="op">=</span><span class="str">"RoomSense: Mold Prevention"</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis mis2 show_mis"><span class="n"><a id="t323" href="#t323">323</a></span><span class="t">                                    <span class="nam">title</span><span class="op">=</span><span class="str">"RoomMind: Mold Prevention"</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis mis2 show_mis"><span class="n"><a id="t324" href="#t324">324</a></span><span class="t">                                    <span class="nam">tag_suffix</span><span class="op">=</span><span class="str">"prevention"</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis mis2 show_mis"><span class="n"><a id="t325" href="#t325">325</a></span><span class="t">                                <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis show_mis"><span class="n"><a id="t326" href="#t326">326</a></span><span class="t">                                <span class="nam">self</span><span class="op">.</span><span class="nam">_mold_throttler</span><span class="op">.</span><span class="nam">record_sent</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
@@ -926,12 +926,12 @@
 <footer>
     <div class="content">
         <p>
-            <a class="nav" href="z_113ed0cb7e134087_const_py.html">&#xab; prev</a> &nbsp; &nbsp;
+            <a class="nav" href="z_e1a10107a084a5d3_const_py.html">&#xab; prev</a> &nbsp; &nbsp;
             <a class="nav" href="index.html">&Hat; index</a> &nbsp; &nbsp;
-            <a class="nav" href="z_113ed0cb7e134087_diagnostics_py.html">&#xbb; next</a>
+            <a class="nav" href="z_e1a10107a084a5d3_diagnostics_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.13.1">coverage.py v7.13.1</a>,
-            created at 2026-03-01 18:49 +0000
+            created at 2026-03-02 01:10 +0000
         </p>
     </div>
 </footer>
