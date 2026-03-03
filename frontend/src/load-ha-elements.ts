@@ -7,8 +7,11 @@
 export const loadHaElements = async (): Promise<void> => {
   if (customElements.get("ha-entity-picker")) return;
 
-  // Step 1: Load base HA components via partial-panel-resolver
-  if (!customElements.get("ha-card")) {
+  // Step 1: Load base HA components via partial-panel-resolver.
+  // Guard on ha-selector (not ha-card) because ha-card can be defined by
+  // other HA modules without the config/automation route being loaded.
+  // We need ha-selector for the entity-picker fallback below.
+  if (!customElements.get("ha-selector")) {
     await customElements.whenDefined("partial-panel-resolver");
     const ppr = document.createElement("partial-panel-resolver") as any;
     ppr.hass = {
@@ -23,7 +26,7 @@ export const loadHaElements = async (): Promise<void> => {
   }
 
   // Step 2: Force-load ha-entity-picker via loadCardHelpers.
-  // The automation route alone doesn't reliably register it in HA 2025+.
+  // Works on older HA versions where the entities card editor still imports it.
   if (!customElements.get("ha-entity-picker")) {
     try {
       const helpers = await (window as any).loadCardHelpers();
@@ -33,7 +36,40 @@ export const loadHaElements = async (): Promise<void> => {
       });
       await card.constructor.getConfigElement();
     } catch {
-      // Fallback: entity picker may already be available
+      // May fail in HA 2025.5+ where entities editor was refactored
+    }
+  }
+
+  // Step 2 fallback: ha-selector lazy-imports ha-selector-entity (which
+  // statically imports ha-entity-picker) only when it renders with an
+  // entity selector.  Briefly render one offscreen to trigger that chain.
+  if (!customElements.get("ha-entity-picker")) {
+    try {
+      await Promise.race([
+        customElements.whenDefined("ha-selector"),
+        new Promise<void>((_, rej) =>
+          setTimeout(() => rej(new Error("timeout")), 10_000)
+        ),
+      ]);
+      const hass = (document.querySelector("home-assistant") as any)?.hass;
+      const offscreen = document.createElement("div");
+      offscreen.style.cssText =
+        "position:fixed;left:-9999px;opacity:0;pointer-events:none";
+      document.body.appendChild(offscreen);
+      try {
+        const sel = document.createElement("ha-selector") as any;
+        sel.hass = hass;
+        sel.selector = { entity: {} };
+        offscreen.appendChild(sel);
+        await Promise.race([
+          customElements.whenDefined("ha-entity-picker"),
+          new Promise<void>((r) => setTimeout(r, 5000)),
+        ]);
+      } finally {
+        offscreen.remove();
+      }
+    } catch {
+      // ha-entity-picker could not be loaded
     }
   }
 
