@@ -444,6 +444,18 @@ class MPCController:
         eid = data.get("entity_id")
         state = self.hass.states.get(eid) if eid else None
 
+        # Clamp temperature to device min/max range (before redundancy check
+        # so that e.g. 30°C clamped to 25°C is correctly seen as redundant
+        # when the device is already at 25°C)
+        if service == "set_temperature" and state and "temperature" in data:
+            dev_min = state.attributes.get("min_temp")
+            dev_max = state.attributes.get("max_temp")
+            temp = data["temperature"]
+            if dev_max is not None and temp > dev_max:
+                data = {**data, "temperature": dev_max}
+            if dev_min is not None and temp < dev_min:
+                data = {**data, "temperature": dev_min}
+
         # Skip redundant commands (avoids IR blaster beeping every cycle)
         if state:
             if service == "set_hvac_mode" and state.state == data.get("hvac_mode"):
@@ -453,16 +465,6 @@ class MPCController:
                 desired = data.get("temperature")
                 if current is not None and desired is not None and round(current, 1) == round(desired, 1):
                     return
-
-        # Clamp temperature to device min/max range
-        if service == "set_temperature" and state and "temperature" in data:
-            dev_min = state.attributes.get("min_temp")
-            dev_max = state.attributes.get("max_temp")
-            temp = data["temperature"]
-            if dev_max is not None and temp > dev_max:
-                data = {**data, "temperature": dev_max}
-            if dev_min is not None and temp < dev_min:
-                data = {**data, "temperature": dev_min}
 
         try:
             await self.hass.services.async_call("climate", service, data, blocking=True)
