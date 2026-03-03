@@ -54,8 +54,8 @@
             </div>
         </aside>
         <h2>
-            <span class="text">49 statements &nbsp;</span>
-            <button type="button" class="run button_toggle_run" value="run" data-shortcut="r" title="Toggle lines run">49<span class="text"> run</span></button>
+            <span class="text">51 statements &nbsp;</span>
+            <button type="button" class="run button_toggle_run" value="run" data-shortcut="r" title="Toggle lines run">51<span class="text"> run</span></button>
             <button type="button" class="mis show_mis button_toggle_mis" value="mis" data-shortcut="m" title="Toggle lines missing">0<span class="text"> missing</span></button>
             <button type="button" class="exc show_exc button_toggle_exc" value="exc" data-shortcut="x" title="Toggle lines excluded">0<span class="text"> excluded</span></button>
         </h2>
@@ -65,7 +65,7 @@
             <a id="nextFileLink" class="nav" href="z_e1a10107a084a5d3_coordinator_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.13.1">coverage.py v7.13.1</a>,
-            created at 2026-03-03 20:50 +0000
+            created at 2026-03-03 23:21 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -156,17 +156,38 @@
     <p class="run"><span class="n"><a id="t74" href="#t74">74</a></span><span class="t"><span class="nam">MOLD_HYSTERESIS</span> <span class="op">=</span> <span class="num">5.0</span>                 <span class="com"># surface RH must drop this much below warning to clear</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t75" href="#t75">75</a></span><span class="t"><span class="nam">MIN_MOLD_GROWTH_TEMP</span> <span class="op">=</span> <span class="num">5.0</span>            <span class="com"># &#176;C &#8212; below this surface temp, mold risk negligible</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t76" href="#t76">76</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t77" href="#t77">77</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t78" href="#t78">78</a></span><span class="t"><span class="key">def</span> <span class="nam">build_override_live</span><span class="op">(</span><span class="nam">room</span><span class="op">:</span> <span class="nam">dict</span><span class="op">)</span> <span class="op">-></span> <span class="nam">dict</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t79" href="#t79">79</a></span><span class="t">    <span class="str">"""Build override fields for live data from a room config dict."""</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t80" href="#t80">80</a></span><span class="t">    <span class="nam">override_until</span> <span class="op">=</span> <span class="nam">room</span><span class="op">.</span><span class="nam">get</span><span class="op">(</span><span class="str">"override_until"</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t81" href="#t81">81</a></span><span class="t">    <span class="nam">active</span> <span class="op">=</span> <span class="nam">bool</span><span class="op">(</span><span class="nam">override_until</span> <span class="key">is</span> <span class="key">not</span> <span class="key">None</span> <span class="key">and</span> <span class="nam">time</span><span class="op">.</span><span class="nam">time</span><span class="op">(</span><span class="op">)</span> <span class="op">&lt;</span> <span class="nam">override_until</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t82" href="#t82">82</a></span><span class="t">    <span class="key">return</span> <span class="op">{</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t83" href="#t83">83</a></span><span class="t">        <span class="str">"override_active"</span><span class="op">:</span> <span class="nam">active</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t84" href="#t84">84</a></span><span class="t">        <span class="str">"override_type"</span><span class="op">:</span> <span class="nam">room</span><span class="op">.</span><span class="nam">get</span><span class="op">(</span><span class="str">"override_type"</span><span class="op">)</span> <span class="key">if</span> <span class="nam">active</span> <span class="key">else</span> <span class="key">None</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t85" href="#t85">85</a></span><span class="t">        <span class="str">"override_temp"</span><span class="op">:</span> <span class="nam">room</span><span class="op">.</span><span class="nam">get</span><span class="op">(</span><span class="str">"override_temp"</span><span class="op">)</span> <span class="key">if</span> <span class="nam">active</span> <span class="key">else</span> <span class="key">None</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t86" href="#t86">86</a></span><span class="t">        <span class="str">"override_until"</span><span class="op">:</span> <span class="nam">override_until</span> <span class="key">if</span> <span class="nam">active</span> <span class="key">else</span> <span class="key">None</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t87" href="#t87">87</a></span><span class="t">    <span class="op">}</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t77" href="#t77">77</a></span><span class="t"><span class="com"># Heating system profiles &#8212; residual heat modeling per system type</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t78" href="#t78">78</a></span><span class="t"><span class="com"># tau_minutes: exponential decay time constant of residual heat after heating stops</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t79" href="#t79">79</a></span><span class="t"><span class="com"># initial_fraction: fraction of beta_h at t=0 (fully charged thermal mass)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t80" href="#t80">80</a></span><span class="t"><span class="com"># tau_charge_minutes: time constant for thermal mass to charge (how long heating must run)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t81" href="#t81">81</a></span><span class="t"><span class="com"># min_run_minutes: minimum heating run time for the MPC optimizer</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t82" href="#t82">82</a></span><span class="t"><span class="nam">HEATING_SYSTEM_PROFILES</span><span class="op">:</span> <span class="nam">dict</span><span class="op">[</span><span class="nam">str</span><span class="op">,</span> <span class="nam">dict</span><span class="op">[</span><span class="nam">str</span><span class="op">,</span> <span class="nam">float</span><span class="op">]</span><span class="op">]</span> <span class="op">=</span> <span class="op">{</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t83" href="#t83">83</a></span><span class="t">    <span class="str">"radiator"</span><span class="op">:</span> <span class="op">{</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t84" href="#t84">84</a></span><span class="t">        <span class="str">"tau_minutes"</span><span class="op">:</span> <span class="num">10.0</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t85" href="#t85">85</a></span><span class="t">        <span class="str">"initial_fraction"</span><span class="op">:</span> <span class="num">0.3</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t86" href="#t86">86</a></span><span class="t">        <span class="str">"tau_charge_minutes"</span><span class="op">:</span> <span class="num">15.0</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t87" href="#t87">87</a></span><span class="t">        <span class="str">"min_run_minutes"</span><span class="op">:</span> <span class="num">10.0</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t88" href="#t88">88</a></span><span class="t">    <span class="op">}</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t89" href="#t89">89</a></span><span class="t">    <span class="str">"underfloor"</span><span class="op">:</span> <span class="op">{</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t90" href="#t90">90</a></span><span class="t">        <span class="str">"tau_minutes"</span><span class="op">:</span> <span class="num">90.0</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t91" href="#t91">91</a></span><span class="t">        <span class="str">"initial_fraction"</span><span class="op">:</span> <span class="num">0.85</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t92" href="#t92">92</a></span><span class="t">        <span class="str">"tau_charge_minutes"</span><span class="op">:</span> <span class="num">60.0</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t93" href="#t93">93</a></span><span class="t">        <span class="str">"min_run_minutes"</span><span class="op">:</span> <span class="num">30.0</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t94" href="#t94">94</a></span><span class="t">    <span class="op">}</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t95" href="#t95">95</a></span><span class="t"><span class="op">}</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t96" href="#t96">96</a></span><span class="t"><span class="nam">RESIDUAL_HEAT_CUTOFF</span> <span class="op">=</span> <span class="num">0.02</span>  <span class="com"># below this q_residual is treated as zero</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t97" href="#t97">97</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t98" href="#t98">98</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t99" href="#t99">99</a></span><span class="t"><span class="key">def</span> <span class="nam">build_override_live</span><span class="op">(</span><span class="nam">room</span><span class="op">:</span> <span class="nam">dict</span><span class="op">)</span> <span class="op">-></span> <span class="nam">dict</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t100" href="#t100">100</a></span><span class="t">    <span class="str">"""Build override fields for live data from a room config dict."""</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t101" href="#t101">101</a></span><span class="t">    <span class="nam">override_until</span> <span class="op">=</span> <span class="nam">room</span><span class="op">.</span><span class="nam">get</span><span class="op">(</span><span class="str">"override_until"</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t102" href="#t102">102</a></span><span class="t">    <span class="nam">active</span> <span class="op">=</span> <span class="nam">bool</span><span class="op">(</span><span class="nam">override_until</span> <span class="key">is</span> <span class="key">not</span> <span class="key">None</span> <span class="key">and</span> <span class="nam">time</span><span class="op">.</span><span class="nam">time</span><span class="op">(</span><span class="op">)</span> <span class="op">&lt;</span> <span class="nam">override_until</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t103" href="#t103">103</a></span><span class="t">    <span class="key">return</span> <span class="op">{</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t104" href="#t104">104</a></span><span class="t">        <span class="str">"override_active"</span><span class="op">:</span> <span class="nam">active</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t105" href="#t105">105</a></span><span class="t">        <span class="str">"override_type"</span><span class="op">:</span> <span class="nam">room</span><span class="op">.</span><span class="nam">get</span><span class="op">(</span><span class="str">"override_type"</span><span class="op">)</span> <span class="key">if</span> <span class="nam">active</span> <span class="key">else</span> <span class="key">None</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t106" href="#t106">106</a></span><span class="t">        <span class="str">"override_temp"</span><span class="op">:</span> <span class="nam">room</span><span class="op">.</span><span class="nam">get</span><span class="op">(</span><span class="str">"override_temp"</span><span class="op">)</span> <span class="key">if</span> <span class="nam">active</span> <span class="key">else</span> <span class="key">None</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t107" href="#t107">107</a></span><span class="t">        <span class="str">"override_until"</span><span class="op">:</span> <span class="nam">override_until</span> <span class="key">if</span> <span class="nam">active</span> <span class="key">else</span> <span class="key">None</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t108" href="#t108">108</a></span><span class="t">    <span class="op">}</span>&nbsp;</span><span class="r"></span></p>
 </main>
 <footer>
     <div class="content">
@@ -176,7 +197,7 @@
             <a class="nav" href="z_e1a10107a084a5d3_coordinator_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.13.1">coverage.py v7.13.1</a>,
-            created at 2026-03-03 20:50 +0000
+            created at 2026-03-03 23:21 +0000
         </p>
     </div>
 </footer>
