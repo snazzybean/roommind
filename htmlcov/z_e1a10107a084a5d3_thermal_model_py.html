@@ -55,8 +55,8 @@
         </aside>
         <h2>
             <span class="text">372 statements &nbsp;</span>
-            <button type="button" class="run button_toggle_run" value="run" data-shortcut="r" title="Toggle lines run">345<span class="text"> run</span></button>
-            <button type="button" class="mis show_mis button_toggle_mis" value="mis" data-shortcut="m" title="Toggle lines missing">27<span class="text"> missing</span></button>
+            <button type="button" class="run button_toggle_run" value="run" data-shortcut="r" title="Toggle lines run">347<span class="text"> run</span></button>
+            <button type="button" class="mis show_mis button_toggle_mis" value="mis" data-shortcut="m" title="Toggle lines missing">25<span class="text"> missing</span></button>
             <button type="button" class="exc show_exc button_toggle_exc" value="exc" data-shortcut="x" title="Toggle lines excluded">0<span class="text"> excluded</span></button>
         </h2>
         <p class="text">
@@ -65,7 +65,7 @@
             <a id="nextFileLink" class="nav" href="z_e1a10107a084a5d3_websocket_api_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.13.1">coverage.py v7.13.1</a>,
-            created at 2026-03-03 20:16 +0000
+            created at 2026-03-03 20:50 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -677,7 +677,7 @@
     <p class="run"><span class="n"><a id="t595" href="#t595">595</a></span><span class="t">            <span class="key">if</span> <span class="nam">mode</span> <span class="op">==</span> <span class="str">"heating"</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t596" href="#t596">596</a></span><span class="t">                <span class="nam">F</span><span class="op">[</span><span class="num">0</span><span class="op">]</span><span class="op">[</span><span class="num">2</span><span class="op">]</span> <span class="op">=</span> <span class="nam">power_fraction</span> <span class="op">*</span> <span class="nam">dt_h</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t597" href="#t597">597</a></span><span class="t">            <span class="key">elif</span> <span class="nam">mode</span> <span class="op">==</span> <span class="str">"cooling"</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis show_mis"><span class="n"><a id="t598" href="#t598">598</a></span><span class="t">                <span class="nam">F</span><span class="op">[</span><span class="num">0</span><span class="op">]</span><span class="op">[</span><span class="num">3</span><span class="op">]</span> <span class="op">=</span> <span class="op">-</span><span class="nam">power_fraction</span> <span class="op">*</span> <span class="nam">dt_h</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t598" href="#t598">598</a></span><span class="t">                <span class="nam">F</span><span class="op">[</span><span class="num">0</span><span class="op">]</span><span class="op">[</span><span class="num">3</span><span class="op">]</span> <span class="op">=</span> <span class="op">-</span><span class="nam">power_fraction</span> <span class="op">*</span> <span class="nam">dt_h</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t599" href="#t599">599</a></span><span class="t">            <span class="com"># Solar: dT_new/d_beta_s = q_solar * dt_h</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t600" href="#t600">600</a></span><span class="t">            <span class="nam">F</span><span class="op">[</span><span class="num">0</span><span class="op">]</span><span class="op">[</span><span class="num">4</span><span class="op">]</span> <span class="op">=</span> <span class="nam">q_solar</span> <span class="op">*</span> <span class="nam">dt_h</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t601" href="#t601">601</a></span><span class="t">        <span class="key">else</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
@@ -938,7 +938,7 @@
     <p class="run"><span class="n"><a id="t856" href="#t856">856</a></span><span class="t">    <span class="key">def</span> <span class="nam">get_mode_counts</span><span class="op">(</span><span class="nam">self</span><span class="op">,</span> <span class="nam">area_id</span><span class="op">:</span> <span class="nam">str</span><span class="op">)</span> <span class="op">-></span> <span class="nam">tuple</span><span class="op">[</span><span class="nam">int</span><span class="op">,</span> <span class="nam">int</span><span class="op">,</span> <span class="nam">int</span><span class="op">]</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t857" href="#t857">857</a></span><span class="t">        <span class="str">"""Return (n_idle, n_heating, n_cooling) for *area_id*."""</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t858" href="#t858">858</a></span><span class="t">        <span class="key">if</span> <span class="nam">area_id</span> <span class="key">not</span> <span class="key">in</span> <span class="nam">self</span><span class="op">.</span><span class="nam">_estimators</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis show_mis"><span class="n"><a id="t859" href="#t859">859</a></span><span class="t">            <span class="key">return</span> <span class="op">(</span><span class="num">0</span><span class="op">,</span> <span class="num">0</span><span class="op">,</span> <span class="num">0</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t859" href="#t859">859</a></span><span class="t">            <span class="key">return</span> <span class="op">(</span><span class="num">0</span><span class="op">,</span> <span class="num">0</span><span class="op">,</span> <span class="num">0</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t860" href="#t860">860</a></span><span class="t">        <span class="nam">est</span> <span class="op">=</span> <span class="nam">self</span><span class="op">.</span><span class="nam">_estimators</span><span class="op">[</span><span class="nam">area_id</span><span class="op">]</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t861" href="#t861">861</a></span><span class="t">        <span class="key">return</span> <span class="op">(</span><span class="nam">est</span><span class="op">.</span><span class="nam">_n_idle</span><span class="op">,</span> <span class="nam">est</span><span class="op">.</span><span class="nam">_n_heating</span><span class="op">,</span> <span class="nam">est</span><span class="op">.</span><span class="nam">_n_cooling</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t862" href="#t862">862</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
@@ -1005,7 +1005,7 @@
             <a class="nav" href="z_e1a10107a084a5d3_websocket_api_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.13.1">coverage.py v7.13.1</a>,
-            created at 2026-03-03 20:16 +0000
+            created at 2026-03-03 20:50 +0000
         </p>
     </div>
 </footer>
