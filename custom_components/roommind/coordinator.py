@@ -444,7 +444,14 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                     exc_info=True,
                 )
         else:
-            # Climate control disabled (learn-only) — do NOT send any commands
+            # Climate control disabled (learn-only) — do NOT send any commands.
+            # Observe actual device state for accurate model training.
+            observed_mode, observed_pf = self._observe_device_action(room)
+            if observed_mode is not None and observed_mode != MODE_IDLE:
+                _LOGGER.debug(
+                    "Room '%s': device self-regulating (%s), using for training",
+                    area_id, observed_mode,
+                )
             mode = MODE_IDLE
             power_fraction = 0.0
 
@@ -454,6 +461,17 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             for eid in room.get("thermostats", []):
                 self._valve_last_actuation[eid] = now_ts
             self._valve_actuation_dirty = True
+
+        # Determine mode for EKF training: when control is disabled, use
+        # observed device state so self-regulating thermostats don't corrupt
+        # the model (see #36).
+        climate_active = settings.get("climate_control_active", True)
+        if climate_active:
+            ekf_mode: str | None = mode
+            ekf_pf = power_fraction
+        else:
+            ekf_mode = observed_mode   # may be None → skip training
+            ekf_pf = observed_pf
 
         # Update thermal model with observation (EKF online learning)
         # Updates are accumulated over ~3 min for better signal-to-noise ratio.
@@ -469,10 +487,17 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 self._model_manager.update_window_open(
                     area_id, current_temp, T_outdoor, dt_minutes,
                 )
+            elif ekf_mode is None:
+                # Unobservable device state (control disabled, no hvac_action)
+                # — flush pending data and skip training to prevent corruption.
+                self._flush_ekf_accumulator(area_id, current_temp, T_outdoor, room)
+                self._ekf_accumulated_dt.pop(area_id, None)
+                self._ekf_accumulated_mode.pop(area_id, None)
+                self._ekf_accumulated_pf.pop(area_id, None)
             else:
                 # Normal: accumulate and batch EKF updates
                 prev_mode = self._ekf_accumulated_mode.get(area_id)
-                if prev_mode is not None and prev_mode != mode:
+                if prev_mode is not None and prev_mode != ekf_mode:
                     # Mode changed — flush with the previous mode
                     self._flush_ekf_accumulator(area_id, current_temp, T_outdoor, room)
 
@@ -480,15 +505,15 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 new_dt = old_dt + dt_minutes
                 if new_dt > 0:
                     old_pf = self._ekf_accumulated_pf.get(area_id, 1.0)
-                    self._ekf_accumulated_pf[area_id] = (old_pf * old_dt + power_fraction * dt_minutes) / new_dt
+                    self._ekf_accumulated_pf[area_id] = (old_pf * old_dt + ekf_pf * dt_minutes) / new_dt
                 self._ekf_accumulated_dt[area_id] = new_dt
-                self._ekf_accumulated_mode[area_id] = mode
+                self._ekf_accumulated_mode[area_id] = ekf_mode
 
                 if self._ekf_accumulated_dt[area_id] >= EKF_UPDATE_MIN_DT:
                     can_heat, can_cool = get_can_heat_cool(room, acs_can_heat=check_acs_can_heat(self.hass, room))
                     pf = self._ekf_accumulated_pf.pop(area_id, 1.0)
                     self._model_manager.update(
-                        area_id, current_temp, T_outdoor, mode,
+                        area_id, current_temp, T_outdoor, ekf_mode,
                         self._ekf_accumulated_dt[area_id],
                         can_heat=can_heat, can_cool=can_cool,
                         power_fraction=pf,
@@ -658,6 +683,57 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 except (ValueError, TypeError):
                     continue
         return None
+
+    def _observe_device_action(self, room: dict) -> tuple[str | None, float]:
+        """Observe actual hvac_action from climate devices for model training.
+
+        When climate control is disabled, devices may still self-regulate.
+        This method reads the actual device state so the EKF receives
+        correct mode information instead of blindly assuming idle.
+
+        Returns (observed_mode, power_fraction):
+          - ("heating", 1.0) / ("cooling", 1.0) / ("idle", 0.0) when conclusive
+          - (None, 0.0) when state is unobservable (caller should skip training)
+        """
+        dominated: str | None = None
+
+        for eid in room.get("thermostats", []) + room.get("acs", []):
+            state = self.hass.states.get(eid)
+            if state is None or state.state in ("unavailable", "unknown"):
+                continue
+
+            # Device explicitly off → conclusively idle
+            if state.state == "off":
+                if dominated is None:
+                    dominated = "idle"
+                continue
+
+            # Device in an active hvac_mode → need hvac_action to determine firing
+            action = state.attributes.get("hvac_action")
+            if action is None:
+                # No hvac_action attribute → can't tell if firing → unobservable
+                return (None, 0.0)
+
+            if action in ("heating", "preheating"):
+                if dominated == "cooling":
+                    return (None, 0.0)  # conflicting → skip
+                dominated = "heating"
+            elif action == "cooling":
+                if dominated == "heating":
+                    return (None, 0.0)  # conflicting → skip
+                dominated = "cooling"
+            elif action in ("idle", "off"):
+                if dominated is None:
+                    dominated = "idle"
+            else:
+                # drying, fan, etc. — unknown thermal effect → skip
+                return (None, 0.0)
+
+        if dominated is None:
+            return (None, 0.0)  # no devices or all unavailable
+
+        pf = 1.0 if dominated in ("heating", "cooling") else 0.0
+        return (dominated, pf)
 
     def _is_window_open(self, room: dict) -> bool:
         """Return True if any configured window/door sensor reports 'on' (open)."""
