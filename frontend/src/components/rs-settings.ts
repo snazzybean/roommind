@@ -1126,6 +1126,12 @@ export class RsSettings extends LitElement {
                         (room) => html`<ha-list-item .value=${room.areaId}>${room.name}</ha-list-item>`
                       )}
                     </ha-select>
+                    ${this._resetSelectedRoom
+                      ? html`<ha-icon-button
+                          .path=${"M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z"}
+                          @click=${this._clearResetSelection}
+                        ></ha-icon-button>`
+                      : nothing}
                     <button
                       class="reset-btn"
                       ?disabled=${!this._resetSelectedRoom}
@@ -1323,6 +1329,10 @@ export class RsSettings extends LitElement {
 
   private _onResetRoomSelected(e: Event) {
     this._resetSelectedRoom = getSelectValue(e);
+  }
+
+  private _clearResetSelection() {
+    this._resetSelectedRoom = "";
   }
 
   private async _resetRoomModel(areaId: string) {
