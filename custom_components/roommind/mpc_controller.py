@@ -110,6 +110,19 @@ async def async_turn_off_climate(
         )
 
 
+def resolve_hvac_mode(desired: str, hvac_modes: list[str]) -> str | None:
+    """Pick the best available hvac_mode for the desired intent.
+
+    Fallback: heat/cool/heat_cool -> "auto" if desired mode unavailable.
+    Returns None if no compatible mode exists.
+    """
+    if not hvac_modes or desired in hvac_modes:
+        return desired
+    if desired in ("heat", "cool", "heat_cool") and "auto" in hvac_modes:
+        return "auto"
+    return None
+
+
 # Maximum prediction uncertainty (degC) for MPC to be used.
 # Physical meaning: "use MPC when the 5-min prediction is accurate to ±0.5°C."
 MPC_MAX_PREDICTION_STD = 0.5
@@ -134,7 +147,7 @@ def check_acs_can_heat(hass: HomeAssistant, room_config: dict) -> bool:
         if state is None:
             continue
         modes = state.attributes.get("hvac_modes", [])
-        if "heat" in modes or "heat_cool" in modes:
+        if "heat" in modes or "heat_cool" in modes or "auto" in modes:
             return True
     return False
 
@@ -547,6 +560,9 @@ class MPCController:
                 elif can_heat and "heat" in ac_modes:
                     await self._call("set_hvac_mode", {"entity_id": eid, "hvac_mode": "heat"})
                     await self._call("set_temperature", {"entity_id": eid, "temperature": ha_target})
+                elif "auto" in ac_modes:
+                    await self._call("set_hvac_mode", {"entity_id": eid, "hvac_mode": "auto"})
+                    await self._call("set_temperature", {"entity_id": eid, "temperature": ha_target})
                 else:
                     await self._call("set_hvac_mode", {"entity_id": eid, "hvac_mode": "off"})
             return
@@ -579,6 +595,9 @@ class MPCController:
                 elif "heat_cool" in ac_modes:
                     await self._call("set_hvac_mode", {"entity_id": eid, "hvac_mode": "heat_cool"})
                     await self._call("set_temperature", {"entity_id": eid, "temperature": ha_target})
+                elif "auto" in ac_modes:
+                    await self._call("set_hvac_mode", {"entity_id": eid, "hvac_mode": "auto"})
+                    await self._call("set_temperature", {"entity_id": eid, "temperature": ha_target})
                 else:
                     await self._call("set_hvac_mode", {"entity_id": eid, "hvac_mode": "off"})
         elif mode == MODE_COOLING:
@@ -600,6 +619,23 @@ class MPCController:
         if service == "set_hvac_mode" and data.get("hvac_mode") == "off" and eid:
             await async_turn_off_climate(self.hass, eid, area_id=self._area_id)
             return
+
+        # Resolve hvac_mode to a supported mode (handles auto-only devices)
+        if service == "set_hvac_mode" and state:
+            hvac_modes = state.attributes.get("hvac_modes") or []
+            resolved = resolve_hvac_mode(data["hvac_mode"], hvac_modes)
+            if resolved is None:
+                _LOGGER.debug(
+                    "Area '%s': device '%s' does not support '%s' or any fallback, skipping",
+                    self._area_id, eid, data["hvac_mode"],
+                )
+                return
+            if resolved != data["hvac_mode"]:
+                _LOGGER.debug(
+                    "Area '%s': device '%s' resolved '%s' -> '%s'",
+                    self._area_id, eid, data["hvac_mode"], resolved,
+                )
+                data = {**data, "hvac_mode": resolved}
 
         # Clamp temperature to device min/max range (before redundancy check
         # so that e.g. 30°C clamped to 25°C is correctly seen as redundant

@@ -15,7 +15,7 @@ from .const import DEFAULT_MOLD_COOLDOWN_MINUTES, DEFAULT_MOLD_HUMIDITY_THRESHOL
 from .mold_utils import calculate_mold_risk, mold_prevention_delta
 from .notification_utils import NotificationThrottler, dismiss_mold_notification, async_send_mold_notification
 from .history_store import HistoryStore
-from .mpc_controller import DEFAULT_OUTDOOR_TEMP_FALLBACK, MPCController, async_turn_off_climate, check_acs_can_heat, get_can_heat_cool, is_mpc_active
+from .mpc_controller import DEFAULT_OUTDOOR_TEMP_FALLBACK, MPCController, async_turn_off_climate, check_acs_can_heat, get_can_heat_cool, is_mpc_active, resolve_hvac_mode
 from .sensor_utils import read_sensor_value
 from .solar import compute_q_solar_norm
 from .temp_utils import celsius_delta_to_ha, celsius_to_ha_temp, ha_temp_to_celsius, ha_temp_unit_str
@@ -696,12 +696,20 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             last = self._valve_last_actuation.get(eid, 0)
             if now - last >= threshold:
                 try:
+                    eid_state = self.hass.states.get(eid)
+                    vp_modes = (eid_state.attributes.get("hvac_modes") or []) if eid_state else []
+                    vp_resolved = resolve_hvac_mode("heat", vp_modes)
+                    if vp_resolved is None:
+                        _LOGGER.debug(
+                            "Valve protection: '%s' supports neither 'heat' nor 'auto', skipping",
+                            eid,
+                        )
+                        continue
                     await self.hass.services.async_call(
                         "climate", "set_hvac_mode",
-                        {"entity_id": eid, "hvac_mode": "heat"}, blocking=True,
+                        {"entity_id": eid, "hvac_mode": vp_resolved}, blocking=True,
                     )
                     boost_temp = celsius_to_ha_temp(self.hass, HEATING_BOOST_TARGET)
-                    eid_state = self.hass.states.get(eid)
                     if eid_state:
                         dev_max = eid_state.attributes.get("max_temp")
                         if dev_max is not None and boost_temp > dev_max:

@@ -1808,6 +1808,47 @@ class TestValveProtection:
         assert "climate.old_thermostat" not in coordinator._valve_last_actuation
         assert "climate.living_room" in coordinator._valve_last_actuation
 
+    @pytest.mark.asyncio
+    async def test_valve_protection_auto_only_thermostat(self, hass, mock_config_entry):
+        """TRV with only 'off'+'auto' gets 'auto' mode during valve cycling."""
+        store = _make_store_mock({"living_room_abc12345": SAMPLE_ROOM})
+        store.get_settings.return_value = {
+            "valve_protection_enabled": True,
+            "valve_protection_interval_days": 7,
+        }
+        store.async_save_settings = AsyncMock()
+        hass.data = {"roommind": {"store": store}}
+
+        trv_state = MagicMock()
+        trv_state.state = "off"
+        trv_state.attributes = {
+            "hvac_modes": ["off", "auto"], "temperature": None,
+            "min_temp": 5.0, "max_temp": 25.0, "current_temperature": 21.0,
+        }
+        base_get = make_mock_states_get(temp="21.0")
+
+        def custom_get(eid):
+            if eid == "climate.living_room":
+                return trv_state
+            return base_get(eid)
+
+        hass.states.get = MagicMock(side_effect=custom_get)
+        hass.services.async_call = AsyncMock()
+
+        coordinator = _create_coordinator(hass, mock_config_entry)
+        coordinator._valve_last_actuation["climate.living_room"] = time.time() - 8 * 86400
+        coordinator._valve_protection_count = 119
+        await coordinator._async_update_data()
+
+        assert "climate.living_room" in coordinator._valve_cycling
+        climate_calls = [
+            c for c in hass.services.async_call.call_args_list
+            if c[0][0] == "climate" and c[0][2].get("entity_id") == "climate.living_room"
+        ]
+        hvac_calls = [c for c in climate_calls if c[0][1] == "set_hvac_mode"]
+        assert any(c[0][2]["hvac_mode"] == "auto" for c in hvac_calls)
+        assert not any(c[0][2]["hvac_mode"] == "heat" for c in hvac_calls)
+
 
 class TestMoldRiskDetection:
     """Tests for mold risk detection and prevention in the coordinator."""
