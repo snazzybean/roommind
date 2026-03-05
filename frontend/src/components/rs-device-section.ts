@@ -386,7 +386,7 @@ export class RsDeviceSection extends LitElement {
       ? allAreaEntities.filter(
           (e) =>
             e.entity_id.startsWith("binary_sensor.") &&
-            ["window", "door"].includes(
+            ["window", "door", "opening"].includes(
               this.hass.states[e.entity_id]?.attributes?.device_class as string,
             ),
         )
@@ -794,7 +794,7 @@ export class RsDeviceSection extends LitElement {
     }
     if (id.startsWith("binary_sensor.")) {
       const dc = this.hass.states[id]?.attributes?.device_class;
-      if (dc !== "window" && dc !== "door") return false;
+      if (dc !== "window" && dc !== "door" && dc !== "opening") return false;
     }
     // input_number: allow all (no device_class filtering)
     return true;
