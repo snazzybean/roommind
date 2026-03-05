@@ -632,7 +632,7 @@ export class RsSettings extends LitElement {
                     ` : nothing}
                     <ha-entity-picker
                       .hass=${this.hass}
-                      .includeDomains=${["person", "binary_sensor", "input_boolean"]}
+                      .includeDomains=${["person", "device_tracker", "binary_sensor", "input_boolean"]}
                       .entityFilter=${(entity: { entity_id: string }) => !this._presencePersons.includes(entity.entity_id)}
                       .label=${localize("presence.add_entity", l)}
                       @value-changed=${(e: CustomEvent) => {

@@ -857,7 +857,7 @@ export class RsRoomDetail extends LitElement {
                 ${this._selectedPresencePersons.map((pid) => {
                   const name = this.hass.states[pid]?.attributes?.friendly_name ?? pid.split(".").slice(1).join(".");
                   const st = this.hass.states[pid]?.state;
-                  const isHome = pid.startsWith("person.") ? st === "home" : st === "on";
+                  const isHome = pid.startsWith("person.") || pid.startsWith("device_tracker.") ? st === "home" : st === "on";
                   return html`
                     <div class="presence-row ${isHome ? "home" : "away"}">
                       <span class="presence-dot"></span>

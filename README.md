@@ -19,7 +19,7 @@
 - **Solar Gain Awareness** — Estimates solar irradiance from sun position and weather data. The model learns each room's solar response and reduces heating when sun is expected.
 - **Multi-Scheduler** — Multiple schedule entities per room with selector switching via `input_boolean` or `input_number`.
 - **Manual Override** — Boost, eco, or custom temperature with configurable duration and instant UI feedback.
-- **Presence-Based Scheduling** — Link schedules to `person.*` entities. A room's comfort schedule only applies when assigned persons are home — otherwise eco temperature is used.
+- **Presence-Based Scheduling** — Link schedules to `person.*`, `device_tracker.*`, `binary_sensor.*`, or `input_boolean.*` entities. A room's comfort schedule only applies when assigned persons are home — otherwise eco temperature is used.
 - **Vacation Mode** — Global setback temperature with end date for all rooms.
 - **Window/Door Pause** — Automatically pauses climate control when windows or doors are open, with configurable delays.
 - **Mold Risk Detection & Prevention** — Science-based mold risk assessment using surface humidity estimation (DIN 4108-2). Configurable notifications and automatic temperature raise to prevent mold growth.
@@ -130,7 +130,7 @@ Overrides have the highest priority and auto-clear when the timer expires.
 
 #### Presence
 
-Optionally assign `person.*` entities per room. The room's comfort schedule only applies when at least one assigned person is home — otherwise eco temperature is used. If no per-room persons are set, the global person list from settings applies.
+Optionally assign `person.*`, `device_tracker.*`, `binary_sensor.*`, or `input_boolean.*` entities per room. The room's comfort schedule only applies when at least one assigned person is home — otherwise eco temperature is used. If no per-room persons are set, the global person list from settings applies.
 
 ### Settings
 
@@ -145,7 +145,7 @@ Access settings via the gear tab in the RoomMind panel.
 | **Climate Control** | Master switch — when off, all devices are set to idle |
 | **Model Learning** | Enable/disable thermal model training globally. Expand to pause learning for individual rooms |
 | **Vacation Mode** | Set a global setback temperature + end date. All rooms use the vacation temperature until it expires |
-| **Presence** | Track `person.*` entities globally. Rooms only use comfort temperature when assigned persons are home |
+| **Presence** | Track `person.*`, `device_tracker.*`, `binary_sensor.*`, or `input_boolean.*` entities globally. Rooms only use comfort temperature when assigned persons are home |
 | **Valve Protection** | Periodically opens idle TRV valves to prevent seizing. Configure the idle threshold (1–90 days, default: 7) |
 
 #### Sensors & Weather
@@ -212,7 +212,7 @@ Manual Override  →  Vacation  →  Presence Away  →  Schedule Block  →  Co
 
 - **Manual override** — user-set temperature with timer (boost/eco/custom)
 - **Vacation** — global setback temperature until the configured end date
-- **Presence away** — eco temperature when all assigned persons are `not_home`
+- **Presence away** — eco temperature when all assigned persons are away (`not_home` for `person`/`device_tracker`, `off` for `binary_sensor`/`input_boolean`)
 - **Schedule block** — temperature from the active schedule block (if set), otherwise comfort temperature
 - **Comfort / Eco** — comfort when schedule is on, eco when schedule is off
 - **Mold prevention** — when active, adds +1/+2/+3 °C on top of the resolved target above
@@ -299,7 +299,7 @@ Hard-refresh your browser: **Cmd+Shift+R** (Mac) or **Ctrl+Shift+R** (Windows/Li
 
 - **Home Assistant** 2024.1.0 or newer
 - At least one HA **area** with a `climate.*` entity
-- Optional: external temperature sensor, humidity sensor, window/door sensors, weather entity, `schedule.*` helpers, `person.*` entities
+- Optional: external temperature sensor, humidity sensor, window/door sensors, weather entity, `schedule.*` helpers, `person.*` / `device_tracker.*` entities
 
 No external dependencies or cloud services required — everything runs locally.
 
