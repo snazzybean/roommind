@@ -1,7 +1,7 @@
 import { LitElement, html, css, nothing } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
-import type { HomeAssistant, ScheduleEntry } from "../types";
+import type { HomeAssistant, ScheduleEntry, ClimateMode } from "../types";
 import { localize } from "../utils/localize";
 import { getSelectValue, openEntityInfo } from "../utils/events";
 import { formatTemp, tempUnit, toDisplay, toCelsius, tempStep, tempRange } from "../utils/temperature";
@@ -12,8 +12,11 @@ export class RsScheduleSettings extends LitElement {
   @property({ attribute: false }) public schedules: ScheduleEntry[] = [];
   @property({ type: String }) public scheduleSelectorEntity = "";
   @property({ type: Number }) public activeScheduleIndex = 0;
-  @property({ type: Number }) public comfortTemp = 21.0;
-  @property({ type: Number }) public ecoTemp = 17.0;
+  @property({ type: Number }) public comfortHeat = 21.0;
+  @property({ type: Number }) public comfortCool = 24.0;
+  @property({ type: Number }) public ecoHeat = 17.0;
+  @property({ type: Number }) public ecoCool = 27.0;
+  @property({ type: String }) public climateMode: ClimateMode = "auto";
 
   @property({ type: Boolean }) public editing = false;
 
@@ -321,7 +324,43 @@ export class RsScheduleSettings extends LitElement {
       margin-top: 8px;
     }
 
+    .temp-grid-auto {
+      display: grid;
+      grid-template-columns: auto 1fr 1fr;
+      gap: 8px 12px;
+      align-items: center;
+      margin-top: 16px;
+    }
+    .temp-grid-header {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--secondary-text-color);
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+      text-align: center;
+    }
+    .temp-grid-row-label {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--secondary-text-color);
+      white-space: nowrap;
+    }
 
+    @media (max-width: 600px) {
+      .temp-grid-auto {
+        grid-template-columns: 1fr 1fr;
+      }
+      .temp-grid-row-label {
+        grid-column: 1 / -1;
+        margin-top: 8px;
+      }
+      .temp-grid-header {
+        display: none;
+      }
+    }
 
   `;
 
@@ -361,11 +400,33 @@ export class RsScheduleSettings extends LitElement {
         `
         : html`<div class="no-schedules">${localize("schedule.no_schedules", l)}</div>`}
 
-      <div class="view-temps">
-        ${localize("schedule.view_comfort", l, { temp: formatTemp(this.comfortTemp, this.hass), unit: tempUnit(this.hass) })}
-        \u00A0\u00B7\u00A0
-        ${localize("schedule.view_eco", l, { temp: formatTemp(this.ecoTemp, this.hass), unit: tempUnit(this.hass) })}
-      </div>
+      ${this.climateMode === "auto" ? html`
+        <div class="view-temps">
+          ${localize("schedule.view_heat", l, {
+            comfort: formatTemp(this.comfortHeat, this.hass),
+            eco: formatTemp(this.ecoHeat, this.hass),
+            unit: tempUnit(this.hass)
+          })}
+          \u00A0\u00B7\u00A0
+          ${localize("schedule.view_cool", l, {
+            comfort: formatTemp(this.comfortCool, this.hass),
+            eco: formatTemp(this.ecoCool, this.hass),
+            unit: tempUnit(this.hass)
+          })}
+        </div>
+      ` : html`
+        <div class="view-temps">
+          ${localize("schedule.view_comfort", l, {
+            temp: formatTemp(this.climateMode === "cool_only" ? this.comfortCool : this.comfortHeat, this.hass),
+            unit: tempUnit(this.hass)
+          })}
+          \u00A0\u00B7\u00A0
+          ${localize("schedule.view_eco", l, {
+            temp: formatTemp(this.climateMode === "cool_only" ? this.ecoCool : this.ecoHeat, this.hass),
+            unit: tempUnit(this.hass)
+          })}
+        </div>
+      `}
 
       ${this.scheduleSelectorEntity
         ? html`<div class="view-selector-info">
@@ -385,34 +446,70 @@ export class RsScheduleSettings extends LitElement {
       ${this._renderAddSchedule()}
       ${this._renderSelectorSection()}
 
-      <div class="temp-inputs">
-        <div class="temp-input-group">
-          <ha-textfield
-            type="number"
-            label=${localize("schedule.comfort_label", l)}
-            suffix=${tempUnit(this.hass)}
-            .value=${String(toDisplay(this.comfortTemp, this.hass))}
-            step=${tempStep(this.hass)}
-            min=${tempRange(5, 35, this.hass).min}
-            max=${tempRange(5, 35, this.hass).max}
-            @change=${this._onComfortTempChange}
+      ${this.climateMode === "auto" ? html`
+        <div class="temp-grid-auto">
+          <div class="temp-grid-header"></div>
+          <div class="temp-grid-header">${localize("schedule.column_comfort", l)}</div>
+          <div class="temp-grid-header">${localize("schedule.column_eco", l)}</div>
+          <div class="temp-grid-row-label">
+            <ha-icon icon="mdi:fire" style="--mdc-icon-size:16px"></ha-icon>
+            ${localize("schedule.row_heat", l)}
+          </div>
+          <ha-textfield type="number"
+            .value=${String(toDisplay(this.comfortHeat, this.hass))}
+            suffix=${tempUnit(this.hass)} step=${tempStep(this.hass)}
+            min=${tempRange(5, 35, this.hass).min} max=${tempRange(5, 35, this.hass).max}
+            @change=${this._onComfortHeatChange}
+          ></ha-textfield>
+          <ha-textfield type="number"
+            .value=${String(toDisplay(this.ecoHeat, this.hass))}
+            suffix=${tempUnit(this.hass)} step=${tempStep(this.hass)}
+            min=${tempRange(5, 35, this.hass).min} max=${tempRange(5, 35, this.hass).max}
+            @change=${this._onEcoHeatChange}
+          ></ha-textfield>
+          <div class="temp-grid-row-label">
+            <ha-icon icon="mdi:snowflake" style="--mdc-icon-size:16px"></ha-icon>
+            ${localize("schedule.row_cool", l)}
+          </div>
+          <ha-textfield type="number"
+            .value=${String(toDisplay(this.comfortCool, this.hass))}
+            suffix=${tempUnit(this.hass)} step=${tempStep(this.hass)}
+            min=${tempRange(5, 35, this.hass).min} max=${tempRange(5, 35, this.hass).max}
+            @change=${this._onComfortCoolChange}
+          ></ha-textfield>
+          <ha-textfield type="number"
+            .value=${String(toDisplay(this.ecoCool, this.hass))}
+            suffix=${tempUnit(this.hass)} step=${tempStep(this.hass)}
+            min=${tempRange(5, 35, this.hass).min} max=${tempRange(5, 35, this.hass).max}
+            @change=${this._onEcoCoolChange}
           ></ha-textfield>
         </div>
-        <div class="temp-input-group">
-          <ha-textfield
-            type="number"
-            label=${localize("schedule.eco_label", l)}
-            suffix=${tempUnit(this.hass)}
-            .value=${String(toDisplay(this.ecoTemp, this.hass))}
-            step=${tempStep(this.hass)}
-            min=${tempRange(5, 35, this.hass).min}
-            max=${tempRange(5, 35, this.hass).max}
-            @change=${this._onEcoTempChange}
-          ></ha-textfield>
+      ` : html`
+        <div class="temp-inputs">
+          <div class="temp-input-group">
+            <ha-textfield type="number"
+              label=${localize("schedule.comfort_label", l)}
+              suffix=${tempUnit(this.hass)} step=${tempStep(this.hass)}
+              .value=${String(toDisplay(this.climateMode === "cool_only" ? this.comfortCool : this.comfortHeat, this.hass))}
+              min=${tempRange(5, 35, this.hass).min} max=${tempRange(5, 35, this.hass).max}
+              @change=${this.climateMode === "cool_only" ? this._onComfortCoolChange : this._onComfortHeatChange}
+            ></ha-textfield>
+          </div>
+          <div class="temp-input-group">
+            <ha-textfield type="number"
+              label=${localize("schedule.eco_label", l)}
+              suffix=${tempUnit(this.hass)} step=${tempStep(this.hass)}
+              .value=${String(toDisplay(this.climateMode === "cool_only" ? this.ecoCool : this.ecoHeat, this.hass))}
+              min=${tempRange(5, 35, this.hass).min} max=${tempRange(5, 35, this.hass).max}
+              @change=${this.climateMode === "cool_only" ? this._onEcoCoolChange : this._onEcoHeatChange}
+            ></ha-textfield>
+          </div>
         </div>
-      </div>
+      `}
       <div class="fallback-hint">
-        ${localize("schedule.comfort_hint", l)}
+        ${this.climateMode === "auto"
+          ? localize("schedule.comfort_hint_auto", l)
+          : localize("schedule.comfort_hint", l)}
       </div>
 
       <ha-expansion-panel outlined header=${localize("schedule.help_header", l)}>
@@ -441,6 +538,15 @@ export class RsScheduleSettings extends LitElement {
         <span class="yaml-key">data</span>:
           <span class="yaml-key">temperature</span>: <span class="yaml-value">21.5</span></div>
           <p style="margin-top: 8px">${unsafeHTML(localize("schedule.help_block_note", l))}</p>
+
+          <p style="margin-top: 12px"><strong>${localize("schedule.help_split_title", l)}</strong></p>
+          <p>${unsafeHTML(localize("schedule.help_split", l))}</p>
+          <div class="yaml-block">      - <span class="yaml-key">from</span>: <span class="yaml-value">"06:00:00"</span>
+        <span class="yaml-key">to</span>: <span class="yaml-value">"08:00:00"</span>
+        <span class="yaml-key">data</span>:
+          <span class="yaml-key">heat_temperature</span>: <span class="yaml-value">21</span>
+          <span class="yaml-key">cool_temperature</span>: <span class="yaml-value">24</span></div>
+          <p style="margin-top: 8px">${unsafeHTML(localize("schedule.help_split_note", l))}</p>
 
           <p style="margin-top: 12px"><strong>${localize("schedule.help_multi_title", l)}</strong></p>
           <p>${unsafeHTML(localize("schedule.help_multi", l))}</p>
@@ -635,10 +741,10 @@ export class RsScheduleSettings extends LitElement {
       if (blockTemp != null) {
         return localize("schedule.from_schedule", l, { temp: String(blockTemp), unit: tempUnit(this.hass) });
       }
-      return localize("schedule.fallback", l, { temp: formatTemp(this.comfortTemp, this.hass), unit: tempUnit(this.hass) });
+      return localize("schedule.fallback", l, { temp: formatTemp(this.climateMode === "cool_only" ? this.comfortCool : this.comfortHeat, this.hass), unit: tempUnit(this.hass) });
     }
 
-    return localize("schedule.eco_detail", l, { temp: formatTemp(this.ecoTemp, this.hass), unit: tempUnit(this.hass) });
+    return localize("schedule.eco_detail", l, { temp: formatTemp(this.climateMode === "cool_only" ? this.ecoCool : this.ecoHeat, this.hass), unit: tempUnit(this.hass) });
   }
 
   private _getScheduleEntities(): string[] {
@@ -713,30 +819,56 @@ export class RsScheduleSettings extends LitElement {
     );
   }
 
-  private _onComfortTempChange(e: Event) {
+  private _onComfortHeatChange(e: Event) {
     const target = e.target as HTMLElement & { value: string };
-    this.dispatchEvent(
-      new CustomEvent("comfort-temp-changed", {
-        detail: {
-          value: toCelsius(parseFloat(target.value) || toDisplay(21.0, this.hass), this.hass),
-        },
-        bubbles: true,
-        composed: true,
-      })
-    );
+    const val = toCelsius(parseFloat(target.value) || toDisplay(21.0, this.hass), this.hass);
+    this.dispatchEvent(new CustomEvent("comfort-heat-changed", {
+      detail: { value: val }, bubbles: true, composed: true,
+    }));
+    if (this.comfortCool < val) {
+      this.dispatchEvent(new CustomEvent("comfort-cool-changed", {
+        detail: { value: val }, bubbles: true, composed: true,
+      }));
+    }
   }
 
-  private _onEcoTempChange(e: Event) {
+  private _onComfortCoolChange(e: Event) {
     const target = e.target as HTMLElement & { value: string };
-    this.dispatchEvent(
-      new CustomEvent("eco-temp-changed", {
-        detail: {
-          value: toCelsius(parseFloat(target.value) || toDisplay(17.0, this.hass), this.hass),
-        },
-        bubbles: true,
-        composed: true,
-      })
-    );
+    const val = toCelsius(parseFloat(target.value) || toDisplay(24.0, this.hass), this.hass);
+    this.dispatchEvent(new CustomEvent("comfort-cool-changed", {
+      detail: { value: val }, bubbles: true, composed: true,
+    }));
+    if (this.comfortHeat > val) {
+      this.dispatchEvent(new CustomEvent("comfort-heat-changed", {
+        detail: { value: val }, bubbles: true, composed: true,
+      }));
+    }
+  }
+
+  private _onEcoHeatChange(e: Event) {
+    const target = e.target as HTMLElement & { value: string };
+    const val = toCelsius(parseFloat(target.value) || toDisplay(17.0, this.hass), this.hass);
+    this.dispatchEvent(new CustomEvent("eco-heat-changed", {
+      detail: { value: val }, bubbles: true, composed: true,
+    }));
+    if (this.ecoCool < val) {
+      this.dispatchEvent(new CustomEvent("eco-cool-changed", {
+        detail: { value: val }, bubbles: true, composed: true,
+      }));
+    }
+  }
+
+  private _onEcoCoolChange(e: Event) {
+    const target = e.target as HTMLElement & { value: string };
+    const val = toCelsius(parseFloat(target.value) || toDisplay(27.0, this.hass), this.hass);
+    this.dispatchEvent(new CustomEvent("eco-cool-changed", {
+      detail: { value: val }, bubbles: true, composed: true,
+    }));
+    if (this.ecoHeat > val) {
+      this.dispatchEvent(new CustomEvent("eco-heat-changed", {
+        detail: { value: val }, bubbles: true, composed: true,
+      }));
+    }
   }
 
 }

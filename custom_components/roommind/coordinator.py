@@ -11,7 +11,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
-from .const import DEFAULT_MOLD_COOLDOWN_MINUTES, DEFAULT_MOLD_HUMIDITY_THRESHOLD, DEFAULT_MOLD_SUSTAINED_MINUTES, DEFAULT_VALVE_PROTECTION_INTERVAL, DOMAIN, EKF_UPDATE_MIN_DT, HEATING_BOOST_TARGET, HISTORY_ROTATE_CYCLES, HISTORY_WRITE_CYCLES, MAX_PREDICTION_DELTA, MODE_HEATING, MODE_IDLE, MOLD_HYSTERESIS, MOLD_RISK_CRITICAL, MOLD_RISK_OK, MOLD_RISK_WARNING, MOLD_SURFACE_RH_WARNING, SCHEDULE_STATE_ON, THERMAL_SAVE_CYCLES, UPDATE_INTERVAL, VALVE_PROTECTION_CHECK_CYCLES, VALVE_PROTECTION_CYCLE_DURATION, build_override_live
+from .const import CLIMATE_MODE_COOL_ONLY, CLIMATE_MODE_HEAT_ONLY, DEFAULT_COMFORT_COOL, DEFAULT_COMFORT_HEAT, DEFAULT_ECO_COOL, DEFAULT_ECO_HEAT, DEFAULT_MOLD_COOLDOWN_MINUTES, DEFAULT_MOLD_HUMIDITY_THRESHOLD, DEFAULT_MOLD_SUSTAINED_MINUTES, DEFAULT_VALVE_PROTECTION_INTERVAL, DOMAIN, EKF_UPDATE_MIN_DT, HEATING_BOOST_TARGET, HISTORY_ROTATE_CYCLES, HISTORY_WRITE_CYCLES, MAX_PREDICTION_DELTA, MODE_COOLING, MODE_HEATING, MODE_IDLE, MOLD_HYSTERESIS, MOLD_RISK_CRITICAL, MOLD_RISK_OK, MOLD_RISK_WARNING, MOLD_SURFACE_RH_WARNING, SCHEDULE_STATE_ON, THERMAL_SAVE_CYCLES, TargetTemps, UPDATE_INTERVAL, VALVE_PROTECTION_CHECK_CYCLES, VALVE_PROTECTION_CYCLE_DURATION, build_override_live
 from .mold_utils import calculate_mold_risk, mold_prevention_delta
 from .notification_utils import NotificationThrottler, dismiss_mold_notification, async_send_mold_notification
 from .history_store import HistoryStore
@@ -355,20 +355,27 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                         self._mold_throttler.clear(f"detect_{area_id}")
                         self._mold_throttler.clear(f"prevent_{area_id}")
 
-        # Determine target temperature from HA schedule entity
-        # Returns None when devices should be turned off (presence_away_action
-        # or schedule_off_action is "off").
-        target_temp = self._resolve_target_temp(room, settings)
+        # Determine dual heat/cool target temperatures
+        # Returns TargetTemps(heat, cool). None values mean "force off".
+        targets = self._resolve_target_temps(room, settings)
 
-        # Apply mold prevention temperature delta (additive on resolved target).
+        # Apply mold prevention temperature delta (heating target only).
         # Safety: mold prevention overrides "off" to prevent structural damage.
-        force_off = target_temp is None
+        force_off = targets.heat is None and targets.cool is None
         if mold_prevention_active_room and mold_prevention_temp_delta > 0:
             if force_off:
-                target_temp = room.get("eco_temp", 17.0) + mold_prevention_temp_delta
+                eco_heat = room.get("eco_heat", room.get("eco_temp", DEFAULT_ECO_HEAT))
+                eco_cool = room.get("eco_cool", DEFAULT_ECO_COOL)
+                targets = TargetTemps(
+                    heat=eco_heat + mold_prevention_temp_delta,
+                    cool=eco_cool,
+                )
                 force_off = False
-            else:
-                target_temp += mold_prevention_temp_delta
+            elif targets.heat is not None:
+                targets = TargetTemps(
+                    heat=targets.heat + mold_prevention_temp_delta,
+                    cool=targets.cool,
+                )
 
         # Read schedule blocks for MPC lookahead (pre-heating/pre-cooling)
         from .schedule_utils import get_active_schedule_entity, make_target_resolver, read_schedule_blocks
@@ -413,7 +420,21 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             q_residual=q_residual,
             heating_system_type=system_type,
         )
-        mode, power_fraction = await controller.async_evaluate(current_temp, target_temp)
+        mode, power_fraction = await controller.async_evaluate(current_temp, targets)
+
+        # Compute effective single target_temp for display/history (mode + climate_mode aware)
+        climate_mode = room.get("climate_mode", "auto")
+        if climate_mode == CLIMATE_MODE_COOL_ONLY:
+            target_temp = targets.cool
+        elif climate_mode == CLIMATE_MODE_HEAT_ONLY:
+            target_temp = targets.heat
+        else:  # auto
+            if mode == MODE_HEATING and targets.heat is not None:
+                target_temp = targets.heat
+            elif mode == MODE_COOLING and targets.cool is not None:
+                target_temp = targets.cool
+            else:
+                target_temp = targets.heat if targets.heat is not None else targets.cool
 
         # Force idle when target resolved to "off" (presence away or schedule off)
         if force_off:
@@ -492,7 +513,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         if climate_active:
             try:
                 await controller.async_apply(
-                    mode, target_temp, power_fraction=power_fraction,
+                    mode, targets, power_fraction=power_fraction,
                     current_temp=current_temp, exclude_eids=cycling_eids,
                 )
             except Exception:  # noqa: BLE001
@@ -630,6 +651,8 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             "current_temp": current_temp,
             "current_humidity": current_humidity,
             "target_temp": target_temp,
+            "heat_target": targets.heat,
+            "cool_target": targets.cool,
             "mode": display_mode,
             "heating_power": round(display_pf * 100) if display_mode != MODE_IDLE else 0,
             "trv_setpoint": self._compute_trv_setpoint(mode, power_fraction, current_temp, target_temp, has_external_sensor, device_max_temp),
@@ -877,21 +900,21 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         from .schedule_utils import resolve_schedule_index
         return resolve_schedule_index(self.hass, room)
 
-    def _resolve_target_temp(self, room: dict, settings: dict) -> float | None:
-        """Resolve target temperature.
+    def _resolve_target_temps(self, room: dict, settings: dict) -> TargetTemps:
+        """Resolve dual heat/cool target temperatures.
 
-        Priority: override > vacation > presence away > schedule block temp > comfort/eco temp.
-        Returns None when action is "off" (devices should be turned off).
+        Priority: override > vacation > presence away > schedule block temp > comfort/eco.
+        Returns TargetTemps(heat, cool). None values mean "force off".
         """
-        # 1. Check active override
+        # 1. Override — single-point target
         override_until = room.get("override_until")
         if override_until is not None:
             if time.time() < override_until:
                 override_temp = room.get("override_temp")
                 if override_temp is not None:
-                    return float(override_temp)
+                    t = float(override_temp)
+                    return TargetTemps(heat=t, cool=t)
             else:
-                # Expired — clear asynchronously
                 area_id = room.get("area_id", "unknown")
                 store = self.hass.data[DOMAIN]["store"]
                 self.hass.async_create_task(
@@ -902,15 +925,16 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                     })
                 )
 
-        # 2. Vacation mode: global setback temperature
+        # 2. Vacation — heat setback, cooling stays at eco_cool
         vacation_until = settings.get("vacation_until")
         if vacation_until is not None:
             if time.time() < vacation_until:
                 vacation_temp = settings.get("vacation_temp")
                 if vacation_temp is not None:
-                    return float(vacation_temp)
+                    t = float(vacation_temp)
+                    eco_cool = room.get("eco_cool", DEFAULT_ECO_COOL)
+                    return TargetTemps(heat=t, cool=max(t, eco_cool))
             else:
-                # Expired — clear asynchronously
                 self.hass.async_create_task(
                     self.hass.data[DOMAIN]["store"].async_save_settings({
                         "vacation_until": None,
@@ -920,46 +944,63 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         # 2.5 Presence-based eco or off
         if self._is_presence_away(room, settings):
             if settings.get("presence_away_action", "eco") == "off":
-                return None
-            return room.get("eco_temp", 17.0)
+                return TargetTemps(heat=None, cool=None)
+            return TargetTemps(
+                heat=room.get("eco_heat", room.get("eco_temp", DEFAULT_ECO_HEAT)),
+                cool=room.get("eco_cool", DEFAULT_ECO_COOL),
+            )
 
         # 3. Schedule / comfort / eco
-        comfort_temp = room.get("comfort_temp", 21.0)
-        eco_temp = room.get("eco_temp", 17.0)
+        comfort_heat = room.get("comfort_heat", room.get("comfort_temp", DEFAULT_COMFORT_HEAT))
+        comfort_cool = room.get("comfort_cool", DEFAULT_COMFORT_COOL)
+        eco_heat = room.get("eco_heat", room.get("eco_temp", DEFAULT_ECO_HEAT))
+        eco_cool = room.get("eco_cool", DEFAULT_ECO_COOL)
 
         idx = self._get_active_schedule_index(room)
         if idx < 0:
-            return comfort_temp
+            return TargetTemps(heat=comfort_heat, cool=comfort_cool)
 
         schedules = room.get("schedules", [])
         schedule_entity_id = schedules[idx].get("entity_id", "")
 
         if not schedule_entity_id:
-            return comfort_temp
+            return TargetTemps(heat=comfort_heat, cool=comfort_cool)
 
         state = self.hass.states.get(schedule_entity_id)
         if state is None or state.state in ("unavailable", "unknown"):
-            _LOGGER.debug(
-                "Area '%s': schedule entity '%s' unavailable, using comfort_temp",
-                room.get("area_id", "unknown"),
-                schedule_entity_id,
-            )
-            return comfort_temp
+            return TargetTemps(heat=comfort_heat, cool=comfort_cool)
 
         if state.state == SCHEDULE_STATE_ON:
-            # Check for temperature in schedule block data attributes
+            # Check for split heat/cool temps first
+            heat_temp = state.attributes.get("heat_temperature")
+            cool_temp = state.attributes.get("cool_temperature")
+            if heat_temp is not None or cool_temp is not None:
+                h = comfort_heat
+                c = comfort_cool
+                if heat_temp is not None:
+                    try:
+                        h = ha_temp_to_celsius(self.hass, float(heat_temp))
+                    except (ValueError, TypeError):
+                        pass
+                if cool_temp is not None:
+                    try:
+                        c = ha_temp_to_celsius(self.hass, float(cool_temp))
+                    except (ValueError, TypeError):
+                        pass
+                return TargetTemps(heat=h, cool=c)
             block_temp = state.attributes.get("temperature")
             if block_temp is not None:
                 try:
-                    return ha_temp_to_celsius(self.hass, float(block_temp))
+                    t = ha_temp_to_celsius(self.hass, float(block_temp))
+                    return TargetTemps(heat=t, cool=t)  # single-point
                 except (ValueError, TypeError):
                     pass
-            return comfort_temp
+            return TargetTemps(heat=comfort_heat, cool=comfort_cool)
 
         # Schedule is "off" -> eco or off
         if settings.get("schedule_off_action", "eco") == "off":
-            return None
-        return eco_temp
+            return TargetTemps(heat=None, cool=None)
+        return TargetTemps(heat=eco_heat, cool=eco_cool)
 
     async def async_room_added(self, room: dict) -> None:
         """Create sensor entities for a newly added room and refresh data."""

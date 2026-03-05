@@ -266,3 +266,100 @@ async def test_thermal_data_migration_from_old_store(store):
     await store.async_load()
     # After fresh load, thermal data should be empty dict
     assert store.get_thermal_data() == {}
+
+
+# ---------------------------------------------------------------------------
+# Split heat/cool temperature migration
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_migrate_room_temps_adds_split_fields(store):
+    """Room with only comfort_temp/eco_temp gets split fields on read."""
+    from custom_components.roommind.const import DEFAULT_COMFORT_COOL, DEFAULT_ECO_COOL
+
+    stored_data = {
+        "rooms": {
+            "wohnzimmer": {
+                "area_id": "wohnzimmer",
+                "comfort_temp": 22.0,
+                "eco_temp": 18.0,
+                "thermostats": [],
+                "acs": [],
+                "schedules": [],
+            }
+        }
+    }
+    store._store.async_load = AsyncMock(return_value=stored_data)
+    await store.async_load()
+
+    room = store.get_room("wohnzimmer")
+    assert room is not None
+    assert room["comfort_heat"] == 22.0
+    assert room["comfort_cool"] == DEFAULT_COMFORT_COOL  # 24.0
+    assert room["eco_heat"] == 18.0
+    assert room["eco_cool"] == DEFAULT_ECO_COOL  # 27.0
+
+
+@pytest.mark.asyncio
+async def test_migrate_room_temps_preserves_existing(store):
+    """Room that already has split fields is not overwritten by migration."""
+    stored_data = {
+        "rooms": {
+            "wohnzimmer": {
+                "area_id": "wohnzimmer",
+                "comfort_temp": 22.0,
+                "eco_temp": 18.0,
+                "comfort_heat": 20.0,
+                "comfort_cool": 25.0,
+                "eco_heat": 16.0,
+                "eco_cool": 28.0,
+                "thermostats": [],
+                "acs": [],
+                "schedules": [],
+            }
+        }
+    }
+    store._store.async_load = AsyncMock(return_value=stored_data)
+    await store.async_load()
+
+    room = store.get_room("wohnzimmer")
+    assert room is not None
+    # Migration must NOT overwrite existing split fields
+    assert room["comfort_heat"] == 20.0
+    assert room["comfort_cool"] == 25.0
+    assert room["eco_heat"] == 16.0
+    assert room["eco_cool"] == 28.0
+
+
+# ---------------------------------------------------------------------------
+# Reverse-sync: comfort_temp/eco_temp → comfort_heat/eco_heat
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_save_comfort_temp_reverse_syncs_comfort_heat(store):
+    """Saving comfort_temp without comfort_heat should update comfort_heat too."""
+    await store.async_load()
+
+    # Create a room first (so it has comfort_heat from defaults)
+    await store.async_save_room("wohnzimmer", {"thermostats": ["climate.wz_trv"]})
+
+    # Now update with only comfort_temp (no comfort_heat in the dict)
+    updated = await store.async_save_room("wohnzimmer", {"comfort_temp": 22.0})
+
+    assert updated["comfort_heat"] == 22.0
+
+
+@pytest.mark.asyncio
+async def test_save_eco_temp_reverse_syncs_eco_heat(store):
+    """Saving eco_temp without eco_heat should update eco_heat too."""
+    await store.async_load()
+
+    # Create a room first
+    await store.async_save_room("wohnzimmer", {"thermostats": ["climate.wz_trv"]})
+
+    # Now update with only eco_temp (no eco_heat in the dict)
+    updated = await store.async_save_room("wohnzimmer", {"eco_temp": 16.0})
+
+    assert updated["eco_heat"] == 16.0

@@ -22,6 +22,8 @@ export interface RoomLiveData {
   current_temp: number | null;
   current_humidity: number | null;
   target_temp: number | null;
+  heat_target: number | null;
+  cool_target: number | null;
   mode: RoomMode;
   heating_power: number; // 0-100
   trv_setpoint: number | null; // TRV target temp when heating (Full Control)
@@ -52,8 +54,12 @@ export interface RoomConfig {
   climate_mode: ClimateMode;
   schedules: ScheduleEntry[];
   schedule_selector_entity: string;
-  comfort_temp: number;
-  eco_temp: number;
+  comfort_temp?: number;
+  eco_temp?: number;
+  comfort_heat: number;
+  comfort_cool: number;
+  eco_heat: number;
+  eco_cool: number;
   override_temp?: number | null;
   override_until?: number | null;
   override_type?: OverrideType | null;

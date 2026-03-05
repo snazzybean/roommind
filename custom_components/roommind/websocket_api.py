@@ -16,6 +16,10 @@ from homeassistant.core import HomeAssistant, callback
 
 from .const import (
     CLIMATE_MODES,
+    DEFAULT_COMFORT_COOL,
+    DEFAULT_COMFORT_HEAT,
+    DEFAULT_ECO_COOL,
+    DEFAULT_ECO_HEAT,
     DOMAIN,
     OVERRIDE_TYPES,
     build_override_live,
@@ -37,7 +41,9 @@ _ROOM_SAVE_FIELDS = (
     "thermostats", "acs", "temperature_sensor", "humidity_sensor",
     "climate_mode", "schedules", "schedule_selector_entity",
     "window_sensors", "window_open_delay", "window_close_delay",
-    "comfort_temp", "eco_temp", "presence_persons", "display_name",
+    "comfort_temp", "eco_temp",
+    "comfort_heat", "comfort_cool", "eco_heat", "eco_cool",
+    "presence_persons", "display_name",
     "heating_system_type",
 )
 
@@ -131,6 +137,8 @@ async def websocket_list_rooms(
             "current_temp": live.get("current_temp"),
             "current_humidity": live.get("current_humidity"),
             "target_temp": live.get("target_temp"),
+            "heat_target": live.get("heat_target"),
+            "cool_target": live.get("cool_target"),
             "mode": live.get("mode", "idle"),
             "heating_power": live.get("heating_power", 0),
             "trv_setpoint": live.get("trv_setpoint"),
@@ -192,6 +200,10 @@ async def websocket_list_rooms(
         vol.Optional("window_close_delay"): vol.Coerce(int),
         vol.Optional("comfort_temp"): vol.Coerce(float),
         vol.Optional("eco_temp"): vol.Coerce(float),
+        vol.Optional("comfort_heat"): vol.Coerce(float),
+        vol.Optional("comfort_cool"): vol.Coerce(float),
+        vol.Optional("eco_heat"): vol.Coerce(float),
+        vol.Optional("eco_cool"): vol.Coerce(float),
         vol.Optional("presence_persons"): [str],
         vol.Optional("display_name"): str,
         vol.Optional("heating_system_type"): vol.In(
@@ -293,9 +305,17 @@ async def websocket_override_set(
 
     # Resolve override temperature
     if override_type == "boost":
-        override_temp = room.get("comfort_temp", 21.0)
+        climate_mode = room.get("climate_mode", "auto")
+        if climate_mode == "cool_only":
+            override_temp = room.get("comfort_cool", DEFAULT_COMFORT_COOL)
+        else:
+            override_temp = room.get("comfort_heat", room.get("comfort_temp", DEFAULT_COMFORT_HEAT))
     elif override_type == "eco":
-        override_temp = room.get("eco_temp", 17.0)
+        climate_mode = room.get("climate_mode", "auto")
+        if climate_mode == "cool_only":
+            override_temp = room.get("eco_cool", DEFAULT_ECO_COOL)
+        else:
+            override_temp = room.get("eco_heat", room.get("eco_temp", DEFAULT_ECO_HEAT))
     else:  # custom
         override_temp = msg.get("temperature")
         if override_temp is None:
@@ -467,21 +487,36 @@ async def _compute_target_forecast(
     hours: float = 3.0,
     interval_minutes: int = 5,
 ) -> list[dict]:
-    """Compute target temperature forecast for the next N hours."""
+    """Compute target temperature forecast for the next N hours.
+
+    Each point contains ``target_temp`` (chart display, mode-aware),
+    ``heat_target`` and ``cool_target`` (for MPC simulator).
+    """
+    from .const import (
+        CLIMATE_MODE_COOL_ONLY,
+        CLIMATE_MODE_HEAT_ONLY,
+        DEFAULT_COMFORT_COOL,
+        DEFAULT_COMFORT_HEAT,
+        DEFAULT_ECO_COOL,
+        DEFAULT_ECO_HEAT,
+    )
     from .presence_utils import is_presence_away
     from .schedule_utils import (
         get_active_schedule_entity,
         read_schedule_blocks,
-        resolve_target_at_time,
+        resolve_targets_at_time,
     )
     from .temp_utils import ha_temp_to_celsius
 
-    comfort_temp = room.get("comfort_temp", 21.0)
-    eco_temp = room.get("eco_temp", 17.0)
+    comfort_heat = room.get("comfort_heat", room.get("comfort_temp", DEFAULT_COMFORT_HEAT))
+    comfort_cool = room.get("comfort_cool", DEFAULT_COMFORT_COOL)
+    eco_heat = room.get("eco_heat", room.get("eco_temp", DEFAULT_ECO_HEAT))
+    eco_cool = room.get("eco_cool", DEFAULT_ECO_COOL)
     override_until = room.get("override_until")
     override_temp = room.get("override_temp")
     vacation_until = settings.get("vacation_until")
     vacation_temp = settings.get("vacation_temp")
+    climate_mode = room.get("climate_mode", "auto")
 
     presence_away = is_presence_away(hass, room, settings)
 
@@ -497,23 +532,41 @@ async def _compute_target_forecast(
     result: list[dict] = []
     ts = now
     while ts <= end_ts:
-        target = resolve_target_at_time(
+        targets = resolve_targets_at_time(
             ts, schedule_blocks,
             override_until, override_temp,
             vacation_until, vacation_temp,
-            comfort_temp, eco_temp,
+            comfort_heat, comfort_cool,
+            eco_heat, eco_cool,
             presence_away=presence_away,
             block_temp_converter=converter,
             presence_away_action=settings.get("presence_away_action", "eco"),
             schedule_off_action=settings.get("schedule_off_action", "eco"),
         )
-        if target is not None:
-            target = round(target + mold_prevention_delta, 1)
+        heat_target = targets.heat
+        cool_target = targets.cool
+
+        # Apply mold prevention delta to heat target only
+        if heat_target is not None:
+            heat_target = round(heat_target + mold_prevention_delta, 1)
         elif mold_prevention_delta > 0:
-            # Safety: mold prevention overrides "off" to prevent structural
-            # damage, matching coordinator behavior.
-            target = round(eco_temp + mold_prevention_delta, 1)
-        result.append({"ts": round(ts, 1), "target_temp": target})
+            heat_target = round(eco_heat + mold_prevention_delta, 1)
+
+        # Chart display: mode-aware single value
+        if climate_mode == CLIMATE_MODE_COOL_ONLY:
+            target = cool_target
+        elif climate_mode == CLIMATE_MODE_HEAT_ONLY:
+            target = heat_target
+        else:
+            # Auto mode: show heat target (primary for chart line)
+            target = heat_target
+
+        result.append({
+            "ts": round(ts, 1),
+            "target_temp": target,
+            "heat_target": heat_target,
+            "cool_target": cool_target,
+        })
         ts += interval_minutes * 60
     return result
 

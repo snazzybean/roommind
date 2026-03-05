@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 from unittest.mock import MagicMock, AsyncMock
 
+from custom_components.roommind.const import TargetTemps
 from custom_components.roommind.mpc_controller import (
     MPCController,
     async_turn_off_climate,
@@ -1545,7 +1546,7 @@ async def test_bangbang_heating_stickiness():
         outdoor_temp=5.0, settings={}, has_external_sensor=True,
     )
     ctrl.previous_mode = MODE_HEATING
-    mode = ctrl._evaluate_bangbang(20.0, 21.0)
+    mode = ctrl._evaluate_bangbang(20.0, TargetTemps(heat=21.0, cool=24.0))
     assert mode == MODE_HEATING
 
 
@@ -1560,7 +1561,7 @@ async def test_bangbang_heating_reaches_target():
         outdoor_temp=5.0, settings={}, has_external_sensor=True,
     )
     ctrl.previous_mode = MODE_HEATING
-    mode = ctrl._evaluate_bangbang(21.5, 21.0)
+    mode = ctrl._evaluate_bangbang(21.5, TargetTemps(heat=21.0, cool=24.0))
     assert mode == MODE_IDLE
 
 
@@ -1575,7 +1576,7 @@ async def test_bangbang_cooling_stickiness():
         outdoor_temp=30.0, settings={}, has_external_sensor=True,
     )
     ctrl.previous_mode = MODE_COOLING
-    mode = ctrl._evaluate_bangbang(25.0, 23.0)
+    mode = ctrl._evaluate_bangbang(25.0, TargetTemps(heat=21.0, cool=23.0))
     assert mode == MODE_COOLING
 
 
@@ -1590,7 +1591,7 @@ async def test_bangbang_cooling_reaches_target():
         outdoor_temp=30.0, settings={}, has_external_sensor=True,
     )
     ctrl.previous_mode = MODE_COOLING
-    mode = ctrl._evaluate_bangbang(22.5, 23.0)
+    mode = ctrl._evaluate_bangbang(22.5, TargetTemps(heat=21.0, cool=23.0))
     assert mode == MODE_IDLE
 
 
@@ -1605,7 +1606,7 @@ async def test_bangbang_idle_to_heating():
         outdoor_temp=5.0, settings={}, has_external_sensor=True,
     )
     ctrl.previous_mode = MODE_IDLE
-    mode = ctrl._evaluate_bangbang(20.0, 21.0)
+    mode = ctrl._evaluate_bangbang(20.0, TargetTemps(heat=21.0, cool=24.0))
     assert mode == MODE_HEATING
 
 
@@ -1620,7 +1621,7 @@ async def test_bangbang_idle_to_cooling():
         outdoor_temp=30.0, settings={}, has_external_sensor=True,
     )
     ctrl.previous_mode = MODE_IDLE
-    mode = ctrl._evaluate_bangbang(24.0, 23.0)
+    mode = ctrl._evaluate_bangbang(24.0, TargetTemps(heat=21.0, cool=23.0))
     assert mode == MODE_COOLING
 
 
@@ -1635,7 +1636,7 @@ async def test_bangbang_idle_deadband():
         outdoor_temp=5.0, settings={}, has_external_sensor=True,
     )
     ctrl.previous_mode = MODE_IDLE
-    mode = ctrl._evaluate_bangbang(20.9, 21.0)
+    mode = ctrl._evaluate_bangbang(20.9, TargetTemps(heat=21.0, cool=24.0))
     assert mode == MODE_IDLE
 
 
@@ -1649,8 +1650,8 @@ async def test_bangbang_none_inputs():
         hass, room, model_manager=mgr,
         outdoor_temp=5.0, settings={}, has_external_sensor=True,
     )
-    assert ctrl._evaluate_bangbang(None, 21.0) == MODE_IDLE
-    assert ctrl._evaluate_bangbang(20.0, None) == MODE_IDLE
+    assert ctrl._evaluate_bangbang(None, TargetTemps(heat=21.0, cool=24.0)) == MODE_IDLE
+    assert ctrl._evaluate_bangbang(20.0, TargetTemps(heat=None, cool=None)) == MODE_IDLE
 
 
 # ---------------------------------------------------------------------------
@@ -1668,11 +1669,11 @@ async def test_evaluate_mpc_none_inputs():
         hass, room, model_manager=mgr,
         outdoor_temp=5.0, settings={}, has_external_sensor=True,
     )
-    mode, pf = ctrl._evaluate_mpc(None, 21.0)
+    mode, pf = ctrl._evaluate_mpc(None, TargetTemps(heat=21.0, cool=24.0))
     assert mode == MODE_IDLE
     assert pf == 0.0
 
-    mode, pf = ctrl._evaluate_mpc(20.0, None)
+    mode, pf = ctrl._evaluate_mpc(20.0, TargetTemps(heat=None, cool=None))
     assert mode == MODE_IDLE
     assert pf == 0.0
 
@@ -1973,7 +1974,7 @@ async def test_managed_mode_none_target():
         hass, room, model_manager=mgr,
         outdoor_temp=5.0, settings={}, has_external_sensor=False,
     )
-    assert ctrl._evaluate_managed_mode(None) == MODE_IDLE
+    assert ctrl._evaluate_managed_mode(TargetTemps(heat=None, cool=None)) == MODE_IDLE
 
 
 @pytest.mark.asyncio
@@ -1986,7 +1987,7 @@ async def test_managed_mode_cool_only_can_cool():
         hass, room, model_manager=mgr,
         outdoor_temp=30.0, settings={}, has_external_sensor=False,
     )
-    assert ctrl._evaluate_managed_mode(23.0) == MODE_COOLING
+    assert ctrl._evaluate_managed_mode(TargetTemps(heat=21.0, cool=23.0)) == MODE_COOLING
 
 
 @pytest.mark.asyncio
@@ -1999,7 +2000,7 @@ async def test_managed_mode_cool_only_gated():
         hass, room, model_manager=mgr,
         outdoor_temp=5.0, settings={}, has_external_sensor=False,
     )
-    assert ctrl._evaluate_managed_mode(23.0) == MODE_IDLE
+    assert ctrl._evaluate_managed_mode(TargetTemps(heat=21.0, cool=23.0)) == MODE_IDLE
 
 
 @pytest.mark.asyncio
@@ -2012,7 +2013,7 @@ async def test_managed_mode_heat_only_can_heat():
         hass, room, model_manager=mgr,
         outdoor_temp=5.0, settings={}, has_external_sensor=False,
     )
-    assert ctrl._evaluate_managed_mode(21.0) == MODE_HEATING
+    assert ctrl._evaluate_managed_mode(TargetTemps(heat=21.0, cool=24.0)) == MODE_HEATING
 
 
 @pytest.mark.asyncio
@@ -2025,7 +2026,7 @@ async def test_managed_mode_heat_only_gated():
         hass, room, model_manager=mgr,
         outdoor_temp=30.0, settings={}, has_external_sensor=False,
     )
-    assert ctrl._evaluate_managed_mode(21.0) == MODE_IDLE
+    assert ctrl._evaluate_managed_mode(TargetTemps(heat=21.0, cool=24.0)) == MODE_IDLE
 
 
 @pytest.mark.asyncio
@@ -2040,7 +2041,7 @@ async def test_managed_mode_auto_both_available():
         outdoor_temp=18.0, settings={},  # between cooling_min(16) and heating_max(22)
         has_external_sensor=False,
     )
-    assert ctrl._evaluate_managed_mode(21.0) == MODE_HEATING
+    assert ctrl._evaluate_managed_mode(TargetTemps(heat=21.0, cool=24.0)) == MODE_HEATING
 
 
 @pytest.mark.asyncio
@@ -2054,7 +2055,7 @@ async def test_managed_mode_auto_only_cool():
         hass, room, model_manager=mgr,
         outdoor_temp=30.0, settings={}, has_external_sensor=False,
     )
-    assert ctrl._evaluate_managed_mode(23.0) == MODE_COOLING
+    assert ctrl._evaluate_managed_mode(TargetTemps(heat=21.0, cool=23.0)) == MODE_COOLING
 
 
 @pytest.mark.asyncio
@@ -2067,7 +2068,7 @@ async def test_managed_mode_auto_neither():
         hass, room, model_manager=mgr,
         outdoor_temp=30.0, settings={}, has_external_sensor=False,
     )
-    assert ctrl._evaluate_managed_mode(21.0) == MODE_IDLE
+    assert ctrl._evaluate_managed_mode(TargetTemps(heat=21.0, cool=24.0)) == MODE_IDLE
 
 
 # ---------------------------------------------------------------------------
@@ -2095,7 +2096,7 @@ def test_evaluate_mpc_safety_guard_heating_above_target(monkeypatch):
         lambda *a, **kw: fake_plan,
     )
     # current_temp=22 >= target=21 → safety guard should override to idle
-    mode, pf = ctrl._evaluate_mpc(22.0, 21.0)
+    mode, pf = ctrl._evaluate_mpc(22.0, TargetTemps(heat=21.0, cool=24.0))
     assert mode == MODE_IDLE
     assert pf == 0.0
 
@@ -2120,7 +2121,7 @@ def test_evaluate_mpc_safety_guard_cooling_below_target(monkeypatch):
         lambda *a, **kw: fake_plan,
     )
     # current_temp=22 <= target=23 → safety guard should override to idle
-    mode, pf = ctrl._evaluate_mpc(22.0, 23.0)
+    mode, pf = ctrl._evaluate_mpc(22.0, TargetTemps(heat=21.0, cool=23.0))
     assert mode == MODE_IDLE
     assert pf == 0.0
 
@@ -2141,7 +2142,7 @@ def test_evaluate_mpc_no_target_resolver():
         target_resolver=None,
     )
     # Call _evaluate_mpc — it should use [target_temp] * horizon_blocks
-    mode, pf = ctrl._evaluate_mpc(17.0, 21.0)
+    mode, pf = ctrl._evaluate_mpc(17.0, TargetTemps(heat=21.0, cool=24.0))
     assert mode in (MODE_HEATING, MODE_IDLE, MODE_COOLING)
     # Should also store a last_plan
     assert ctrl.last_plan is not None
@@ -2155,9 +2156,9 @@ def test_evaluate_mpc_with_target_resolver():
     ctrl = MPCController(
         hass, room, model_manager=mgr,
         outdoor_temp=5.0, settings={}, has_external_sensor=True,
-        target_resolver=lambda ts: 21.0,  # constant resolver
+        target_resolver=lambda ts: TargetTemps(heat=21.0, cool=24.0),  # constant resolver
     )
-    mode, pf = ctrl._evaluate_mpc(17.0, 21.0)
+    mode, pf = ctrl._evaluate_mpc(17.0, TargetTemps(heat=21.0, cool=24.0))
     assert mode in (MODE_HEATING, MODE_IDLE, MODE_COOLING)
     assert ctrl.last_plan is not None
 
@@ -2407,3 +2408,200 @@ def test_acs_can_heat_auto_mode():
     state.attributes = {"hvac_modes": ["off", "auto"]}
     hass.states.get = MagicMock(return_value=state)
     assert check_acs_can_heat(hass, {"acs": ["climate.ac1"]}) is True
+
+
+# ---------------------------------------------------------------------------
+# Dead-band tests for bangbang with split targets
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_bangbang_deadband_split_targets():
+    """Inside dead band (between heat and cool), bangbang returns idle."""
+    hass = build_hass()
+    room = make_room()
+    model_mgr = RoomModelManager()
+    ctrl = MPCController(
+        hass, room, model_manager=model_mgr,
+        outdoor_temp=5.0, settings={}, has_external_sensor=True,
+    )
+    mode, pf = await ctrl.async_evaluate(
+        current_temp=22.5,
+        targets=TargetTemps(heat=21.0, cool=24.0),
+    )
+    assert mode == MODE_IDLE
+    assert pf == 0.0
+
+
+@pytest.mark.asyncio
+async def test_bangbang_heats_with_split_below_heat():
+    """Below heat target with split targets, bangbang heats."""
+    hass = build_hass()
+    room = make_room()
+    model_mgr = RoomModelManager()
+    ctrl = MPCController(
+        hass, room, model_manager=model_mgr,
+        outdoor_temp=5.0, settings={}, has_external_sensor=True,
+    )
+    mode, pf = await ctrl.async_evaluate(
+        current_temp=20.5,
+        targets=TargetTemps(heat=21.0, cool=24.0),
+    )
+    assert mode == MODE_HEATING
+    assert pf == 1.0  # bangbang: full power
+
+
+@pytest.mark.asyncio
+async def test_bangbang_cools_with_split_above_cool():
+    """Above cool target with split targets, bangbang cools."""
+    hass = build_hass()
+    room = make_room(thermostats=[], acs=["climate.ac"])
+    model_mgr = RoomModelManager()
+    ctrl = MPCController(
+        hass, room, model_manager=model_mgr,
+        outdoor_temp=30.0, settings={}, has_external_sensor=True,
+    )
+    mode, pf = await ctrl.async_evaluate(
+        current_temp=24.5,
+        targets=TargetTemps(heat=21.0, cool=24.0),
+    )
+    assert mode == MODE_COOLING
+    assert pf == 1.0  # bangbang: full power
+
+
+@pytest.mark.asyncio
+async def test_bangbang_heat_only_none_cool():
+    """TargetTemps(heat=21.0, cool=None) below heat target heats."""
+    hass = build_hass()
+    room = make_room()
+    model_mgr = RoomModelManager()
+    ctrl = MPCController(
+        hass, room, model_manager=model_mgr,
+        outdoor_temp=5.0, settings={}, has_external_sensor=True,
+    )
+    mode, pf = await ctrl.async_evaluate(
+        current_temp=20.5,
+        targets=TargetTemps(heat=21.0, cool=None),
+    )
+    assert mode == MODE_HEATING
+    assert pf == 1.0
+
+
+@pytest.mark.asyncio
+async def test_bangbang_cool_only_none_heat():
+    """TargetTemps(heat=None, cool=24.0) above cool target cools."""
+    hass = build_hass()
+    room = make_room(thermostats=[], acs=["climate.ac"])
+    model_mgr = RoomModelManager()
+    ctrl = MPCController(
+        hass, room, model_manager=model_mgr,
+        outdoor_temp=30.0, settings={}, has_external_sensor=True,
+    )
+    mode, pf = await ctrl.async_evaluate(
+        current_temp=24.5,
+        targets=TargetTemps(heat=None, cool=24.0),
+    )
+    assert mode == MODE_COOLING
+    assert pf == 1.0
+
+
+# ---------------------------------------------------------------------------
+# async_evaluate with split TargetTemps (full flow)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_async_evaluate_split_deadband_idle():
+    """Full async_evaluate: temp in dead band → IDLE."""
+    hass = build_hass()
+    room = make_room(acs=["climate.ac"])
+    model_mgr = RoomModelManager()
+    ctrl = MPCController(
+        hass, room, model_manager=model_mgr,
+        outdoor_temp=20.0, settings={}, has_external_sensor=True,
+    )
+    mode, pf = await ctrl.async_evaluate(
+        current_temp=22.5,
+        targets=TargetTemps(heat=21.0, cool=24.0),
+    )
+    assert mode == MODE_IDLE
+    assert pf == 0.0
+
+
+@pytest.mark.asyncio
+async def test_async_evaluate_split_heats_below_heat():
+    """Full async_evaluate: temp below heat target → HEATING."""
+    hass = build_hass()
+    room = make_room()
+    model_mgr = RoomModelManager()
+    ctrl = MPCController(
+        hass, room, model_manager=model_mgr,
+        outdoor_temp=5.0, settings={}, has_external_sensor=True,
+    )
+    mode, pf = await ctrl.async_evaluate(
+        current_temp=20.5,
+        targets=TargetTemps(heat=21.0, cool=24.0),
+    )
+    assert mode == MODE_HEATING
+    assert pf == 1.0
+
+
+@pytest.mark.asyncio
+async def test_async_evaluate_split_cools_above_cool():
+    """Full async_evaluate: temp above cool target → COOLING."""
+    hass = build_hass()
+    room = make_room(thermostats=[], acs=["climate.ac"])
+    model_mgr = RoomModelManager()
+    ctrl = MPCController(
+        hass, room, model_manager=model_mgr,
+        outdoor_temp=30.0, settings={}, has_external_sensor=True,
+    )
+    mode, pf = await ctrl.async_evaluate(
+        current_temp=24.5,
+        targets=TargetTemps(heat=21.0, cool=24.0),
+    )
+    assert mode == MODE_COOLING
+    assert pf == 1.0
+
+
+# ---------------------------------------------------------------------------
+# Stickiness with split TargetTemps
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_bangbang_stickiness_heating_stops_in_deadband():
+    """Was HEATING at 22.0 (>heat=21, <cool=24) → should go IDLE, not COOLING."""
+    hass = build_hass()
+    room = make_room(acs=["climate.ac"])
+    model_mgr = RoomModelManager()
+    ctrl = MPCController(
+        hass, room, model_manager=model_mgr,
+        outdoor_temp=20.0, settings={}, has_external_sensor=True,
+        previous_mode=MODE_HEATING,
+    )
+    mode, pf = await ctrl.async_evaluate(
+        current_temp=22.0,
+        targets=TargetTemps(heat=21.0, cool=24.0),
+    )
+    assert mode == MODE_IDLE
+    assert pf == 0.0
+
+
+@pytest.mark.asyncio
+async def test_bangbang_stickiness_cooling_stops_in_deadband():
+    """Was COOLING at 23.0 (<cool=24, >heat=21) → should go IDLE, not HEATING."""
+    hass = build_hass()
+    room = make_room(thermostats=[], acs=["climate.ac"])
+    model_mgr = RoomModelManager()
+    ctrl = MPCController(
+        hass, room, model_manager=model_mgr,
+        outdoor_temp=30.0, settings={}, has_external_sensor=True,
+        previous_mode=MODE_COOLING,
+    )
+    mode, pf = await ctrl.async_evaluate(
+        current_temp=23.0,
+        targets=TargetTemps(heat=21.0, cool=24.0),
+    )
+    assert mode == MODE_IDLE
+    assert pf == 0.0

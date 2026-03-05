@@ -1,6 +1,7 @@
 """Constants for the RoomMind integration."""
 
 import time
+from typing import NamedTuple
 
 from homeassistant.const import Platform
 
@@ -33,6 +34,19 @@ SCHEDULE_STATE_ON = "on"
 # Defaults
 DEFAULT_COMFORT_TEMP = 21.0
 DEFAULT_ECO_TEMP = 17.0
+
+# Split heat/cool defaults
+DEFAULT_COMFORT_HEAT = 21.0
+DEFAULT_COMFORT_COOL = 24.0
+DEFAULT_ECO_HEAT = 17.0
+DEFAULT_ECO_COOL = 27.0
+
+
+class TargetTemps(NamedTuple):
+    """Dual-target temperatures for heating and cooling."""
+
+    heat: float | None = None  # None = don't heat / force off
+    cool: float | None = None  # None = don't cool / force off
 
 # Smart control defaults
 BANGBANG_HEAT_HYSTERESIS = 0.2  # °C below target → start heating (bang-bang fallback)

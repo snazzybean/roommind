@@ -6,6 +6,7 @@ import time
 from datetime import datetime
 from unittest.mock import MagicMock
 
+from custom_components.roommind.const import TargetTemps
 from custom_components.roommind.schedule_utils import (
     get_active_schedule_entity,
     make_target_resolver,
@@ -497,7 +498,7 @@ class TestMakeTargetResolverOffActions:
         resolver = make_target_resolver(
             None, room, settings, presence_away=True,
         )
-        assert resolver(time.time()) is None
+        assert resolver(time.time()) == TargetTemps(heat=None, cool=None)
 
     def test_resolver_returns_none_for_schedule_off(self):
         """Resolver returns None when schedule_off_action is 'off' and outside blocks."""
@@ -513,7 +514,7 @@ class TestMakeTargetResolverOffActions:
         ts = dt.timestamp()
         blocks = {"monday": [{"from": "08:00:00", "to": "12:00:00", "data": {"temperature": 22.0}}]}
         resolver2 = make_target_resolver(blocks, room, settings)
-        assert resolver2(ts) is None
+        assert resolver2(ts) == TargetTemps(heat=None, cool=None)
 
     def test_resolver_skips_mold_delta_when_none(self):
         """Mold delta is NOT added when base target is None."""
@@ -522,7 +523,7 @@ class TestMakeTargetResolverOffActions:
         resolver = make_target_resolver(
             None, room, settings, presence_away=True, mold_prevention_delta=2.0,
         )
-        assert resolver(time.time()) is None
+        assert resolver(time.time()) == TargetTemps(heat=None, cool=None)
 
 
 # ---------------------------------------------------------------------------
@@ -591,8 +592,8 @@ class TestMakeTargetResolverMoldDelta:
         resolver = make_target_resolver(
             None, room, settings, mold_prevention_delta=2.0,
         )
-        # No schedule → comfort_temp 21 + delta 2 = 23
-        assert resolver(time.time()) == 23.0
+        # No schedule → comfort_temp 21 + delta 2 = 23 (mold delta only on .heat)
+        assert resolver(time.time()).heat == 23.0
 
     def test_resolver_zero_delta_no_change(self):
         """With zero delta, resolver returns base target unchanged."""
@@ -601,7 +602,7 @@ class TestMakeTargetResolverMoldDelta:
         resolver = make_target_resolver(
             None, room, settings, mold_prevention_delta=0.0,
         )
-        assert resolver(time.time()) == 21.0
+        assert resolver(time.time()).heat == 21.0
 
     def test_resolver_delta_applies_to_all_timestamps(self):
         """Delta should be applied consistently across different timestamps."""
@@ -611,10 +612,10 @@ class TestMakeTargetResolverMoldDelta:
             None, room, settings, mold_prevention_delta=3.0,
         )
         now = time.time()
-        # All timestamps should have the delta applied
-        assert resolver(now) == 24.0
-        assert resolver(now + 300) == 24.0
-        assert resolver(now + 3600) == 24.0
+        # All timestamps should have the delta applied (mold delta only on .heat)
+        assert resolver(now).heat == 24.0
+        assert resolver(now + 300).heat == 24.0
+        assert resolver(now + 3600).heat == 24.0
 
 
 class TestFahrenheitBlockConversion:
@@ -719,7 +720,7 @@ class TestFahrenheitBlockConversion:
         )
         import pytest as _pytest
 
-        assert resolver(ts) == _pytest.approx(22.0, abs=0.1)
+        assert resolver(ts).heat == _pytest.approx(22.0, abs=0.1)
 
     def test_make_target_resolver_celsius_no_conversion(self):
         """make_target_resolver with Celsius hass does not alter block temps."""
@@ -747,4 +748,350 @@ class TestFahrenheitBlockConversion:
         resolver = make_target_resolver(
             schedule_blocks, room, settings, hass=hass,
         )
-        assert resolver(ts) == 22.5
+        assert resolver(ts).heat == 22.5
+
+
+# ---------------------------------------------------------------------------
+# resolve_targets_at_time (dual heat/cool)
+# ---------------------------------------------------------------------------
+
+
+class TestResolveTargetsAtTime:
+    """Tests for the new resolve_targets_at_time with split heat/cool fields."""
+
+    def test_comfort_fields_when_schedule_on(self):
+        """Inside a schedule block without custom temp returns comfort_heat/comfort_cool."""
+        from custom_components.roommind.schedule_utils import resolve_targets_at_time
+
+        dt = datetime(2025, 1, 6, 10, 0, 0)  # Monday 10:00
+        ts = dt.timestamp()
+        schedule_blocks = {
+            "monday": [
+                {"from": "08:00:00", "to": "12:00:00", "data": {}},
+            ],
+        }
+        result = resolve_targets_at_time(
+            ts=ts,
+            schedule_blocks=schedule_blocks,
+            override_until=None,
+            override_temp=None,
+            vacation_until=None,
+            vacation_temp=None,
+            comfort_heat=21.0,
+            comfort_cool=24.0,
+            eco_heat=17.0,
+            eco_cool=27.0,
+        )
+        assert result == TargetTemps(heat=21.0, cool=24.0)
+
+    def test_eco_fields_when_schedule_off(self):
+        """Outside schedule blocks returns eco_heat/eco_cool."""
+        from custom_components.roommind.schedule_utils import resolve_targets_at_time
+
+        dt = datetime(2025, 1, 6, 6, 0, 0)  # Monday 06:00 - before blocks
+        ts = dt.timestamp()
+        schedule_blocks = {
+            "monday": [
+                {"from": "08:00:00", "to": "12:00:00", "data": {}},
+            ],
+        }
+        result = resolve_targets_at_time(
+            ts=ts,
+            schedule_blocks=schedule_blocks,
+            override_until=None,
+            override_temp=None,
+            vacation_until=None,
+            vacation_temp=None,
+            comfort_heat=21.0,
+            comfort_cool=24.0,
+            eco_heat=17.0,
+            eco_cool=27.0,
+        )
+        assert result == TargetTemps(heat=17.0, cool=27.0)
+
+    def test_presence_away_action_off_returns_none_none(self):
+        """presence_away_action='off' returns TargetTemps(None, None)."""
+        from custom_components.roommind.schedule_utils import resolve_targets_at_time
+
+        now = time.time()
+        result = resolve_targets_at_time(
+            ts=now,
+            schedule_blocks=None,
+            override_until=None,
+            override_temp=None,
+            vacation_until=None,
+            vacation_temp=None,
+            comfort_heat=21.0,
+            comfort_cool=24.0,
+            eco_heat=17.0,
+            eco_cool=27.0,
+            presence_away=True,
+            presence_away_action="off",
+        )
+        assert result == TargetTemps(heat=None, cool=None)
+
+    def test_presence_away_eco_returns_eco_temps(self):
+        """presence_away_action='eco' returns eco heat/cool."""
+        from custom_components.roommind.schedule_utils import resolve_targets_at_time
+
+        now = time.time()
+        result = resolve_targets_at_time(
+            ts=now,
+            schedule_blocks=None,
+            override_until=None,
+            override_temp=None,
+            vacation_until=None,
+            vacation_temp=None,
+            comfort_heat=21.0,
+            comfort_cool=24.0,
+            eco_heat=17.0,
+            eco_cool=27.0,
+            presence_away=True,
+            presence_away_action="eco",
+        )
+        assert result == TargetTemps(heat=17.0, cool=27.0)
+
+    def test_override_creates_single_point(self):
+        """Active override creates TargetTemps(heat=override, cool=override)."""
+        from custom_components.roommind.schedule_utils import resolve_targets_at_time
+
+        now = time.time()
+        result = resolve_targets_at_time(
+            ts=now,
+            schedule_blocks=None,
+            override_until=now + 3600,
+            override_temp=25.0,
+            vacation_until=None,
+            vacation_temp=None,
+            comfort_heat=21.0,
+            comfort_cool=24.0,
+            eco_heat=17.0,
+            eco_cool=27.0,
+        )
+        assert result == TargetTemps(heat=25.0, cool=25.0)
+
+    def test_schedule_block_with_temperature_creates_single_point(self):
+        """Schedule block with custom temperature creates TargetTemps(heat=t, cool=t)."""
+        from custom_components.roommind.schedule_utils import resolve_targets_at_time
+
+        dt = datetime(2025, 1, 6, 10, 0, 0)  # Monday 10:00
+        ts = dt.timestamp()
+        schedule_blocks = {
+            "monday": [
+                {"from": "08:00:00", "to": "12:00:00", "data": {"temperature": 22.5}},
+            ],
+        }
+        result = resolve_targets_at_time(
+            ts=ts,
+            schedule_blocks=schedule_blocks,
+            override_until=None,
+            override_temp=None,
+            vacation_until=None,
+            vacation_temp=None,
+            comfort_heat=21.0,
+            comfort_cool=24.0,
+            eco_heat=17.0,
+            eco_cool=27.0,
+        )
+        assert result == TargetTemps(heat=22.5, cool=22.5)
+
+
+class TestMakeTargetResolverCoolValues:
+    """Tests that make_target_resolver returns correct .cool values."""
+
+    def test_resolver_returns_correct_cool(self):
+        """Resolver returns correct .cool value from room config."""
+        room = {
+            "comfort_temp": 21.0,
+            "eco_temp": 17.0,
+            "comfort_heat": 21.0,
+            "comfort_cool": 24.0,
+            "eco_heat": 17.0,
+            "eco_cool": 27.0,
+        }
+        settings: dict = {}
+        resolver = make_target_resolver(None, room, settings)
+        result = resolver(time.time())
+        assert result.heat == 21.0
+        assert result.cool == 24.0
+
+    def test_mold_delta_applies_only_to_heat(self):
+        """Mold prevention delta only raises .heat, not .cool."""
+        room = {
+            "comfort_temp": 21.0,
+            "eco_temp": 17.0,
+            "comfort_heat": 21.0,
+            "comfort_cool": 24.0,
+            "eco_heat": 17.0,
+            "eco_cool": 27.0,
+        }
+        settings: dict = {}
+        resolver = make_target_resolver(None, room, settings, mold_prevention_delta=2.0)
+        result = resolver(time.time())
+        assert result.heat == 23.0  # 21 + 2
+        assert result.cool == 24.0  # unchanged
+
+
+# ---------------------------------------------------------------------------
+# Split block temperature support (resolve_targets_at_time)
+# ---------------------------------------------------------------------------
+
+
+class TestResolveTargetsAtTimeSplitBlockTemps:
+    """Tests for schedule blocks with heat_temperature / cool_temperature."""
+
+    def test_resolve_targets_with_split_block_temps(self):
+        """Block with heat_temperature and cool_temperature returns split TargetTemps."""
+        from custom_components.roommind.schedule_utils import resolve_targets_at_time
+
+        dt = datetime(2025, 1, 6, 10, 0, 0)  # Monday 10:00
+        ts = dt.timestamp()
+        schedule_blocks = {
+            "monday": [
+                {
+                    "from": "08:00:00",
+                    "to": "12:00:00",
+                    "data": {"heat_temperature": 21, "cool_temperature": 24},
+                },
+            ],
+        }
+        result = resolve_targets_at_time(
+            ts=ts,
+            schedule_blocks=schedule_blocks,
+            override_until=None,
+            override_temp=None,
+            vacation_until=None,
+            vacation_temp=None,
+            comfort_heat=20.0,
+            comfort_cool=26.0,
+            eco_heat=17.0,
+            eco_cool=27.0,
+        )
+        assert result == TargetTemps(heat=21.0, cool=24.0)
+
+    def test_resolve_targets_with_only_heat_block_temp(self):
+        """Block with only heat_temperature falls back to comfort_cool."""
+        from custom_components.roommind.schedule_utils import resolve_targets_at_time
+
+        dt = datetime(2025, 1, 6, 10, 0, 0)  # Monday 10:00
+        ts = dt.timestamp()
+        schedule_blocks = {
+            "monday": [
+                {
+                    "from": "08:00:00",
+                    "to": "12:00:00",
+                    "data": {"heat_temperature": 21},
+                },
+            ],
+        }
+        result = resolve_targets_at_time(
+            ts=ts,
+            schedule_blocks=schedule_blocks,
+            override_until=None,
+            override_temp=None,
+            vacation_until=None,
+            vacation_temp=None,
+            comfort_heat=20.0,
+            comfort_cool=26.0,
+            eco_heat=17.0,
+            eco_cool=27.0,
+        )
+        assert result == TargetTemps(heat=21.0, cool=26.0)
+
+    def test_resolve_targets_with_only_cool_block_temp(self):
+        """Block with only cool_temperature falls back to comfort_heat."""
+        from custom_components.roommind.schedule_utils import resolve_targets_at_time
+
+        dt = datetime(2025, 1, 6, 10, 0, 0)  # Monday 10:00
+        ts = dt.timestamp()
+        schedule_blocks = {
+            "monday": [
+                {
+                    "from": "08:00:00",
+                    "to": "12:00:00",
+                    "data": {"cool_temperature": 24},
+                },
+            ],
+        }
+        result = resolve_targets_at_time(
+            ts=ts,
+            schedule_blocks=schedule_blocks,
+            override_until=None,
+            override_temp=None,
+            vacation_until=None,
+            vacation_temp=None,
+            comfort_heat=20.0,
+            comfort_cool=26.0,
+            eco_heat=17.0,
+            eco_cool=27.0,
+        )
+        assert result == TargetTemps(heat=20.0, cool=24.0)
+
+    def test_resolve_targets_single_temp_still_works(self):
+        """Block with only temperature creates single-point (backward compat)."""
+        from custom_components.roommind.schedule_utils import resolve_targets_at_time
+
+        dt = datetime(2025, 1, 6, 10, 0, 0)  # Monday 10:00
+        ts = dt.timestamp()
+        schedule_blocks = {
+            "monday": [
+                {
+                    "from": "08:00:00",
+                    "to": "12:00:00",
+                    "data": {"temperature": 22},
+                },
+            ],
+        }
+        result = resolve_targets_at_time(
+            ts=ts,
+            schedule_blocks=schedule_blocks,
+            override_until=None,
+            override_temp=None,
+            vacation_until=None,
+            vacation_temp=None,
+            comfort_heat=20.0,
+            comfort_cool=26.0,
+            eco_heat=17.0,
+            eco_cool=27.0,
+        )
+        assert result == TargetTemps(heat=22.0, cool=22.0)
+
+    def test_vacation_cool_target_uses_eco_cool(self):
+        """Vacation should keep cool at eco_cool, not collapse to vacation_temp."""
+        from custom_components.roommind.schedule_utils import resolve_targets_at_time
+
+        ts = time.time()
+        result = resolve_targets_at_time(
+            ts=ts,
+            schedule_blocks=None,
+            override_until=None,
+            override_temp=None,
+            vacation_until=ts + 3600,
+            vacation_temp=17.0,
+            comfort_heat=21.0,
+            comfort_cool=24.0,
+            eco_heat=17.0,
+            eco_cool=27.0,
+        )
+        assert result.heat == 17.0
+        assert result.cool == 27.0  # eco_cool, not 17
+
+    def test_vacation_cool_target_at_least_vacation_temp(self):
+        """If vacation_temp > eco_cool, cool should be vacation_temp (max)."""
+        from custom_components.roommind.schedule_utils import resolve_targets_at_time
+
+        ts = time.time()
+        result = resolve_targets_at_time(
+            ts=ts,
+            schedule_blocks=None,
+            override_until=None,
+            override_temp=None,
+            vacation_until=ts + 3600,
+            vacation_temp=30.0,
+            comfort_heat=21.0,
+            comfort_cool=24.0,
+            eco_heat=17.0,
+            eco_cool=27.0,
+        )
+        assert result.heat == 30.0
+        assert result.cool == 30.0  # max(30, 27) = 30

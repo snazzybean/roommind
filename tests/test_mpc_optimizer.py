@@ -16,7 +16,7 @@ def test_optimizer_idle_at_target():
     plan = opt.optimize(
         T_room=21.0,
         T_outdoor_series=[21.0] * 12,
-        target_series=[21.0] * 12,
+        heat_target_series=[21.0] * 12,
         dt_minutes=5,
     )
     assert plan.actions[0] == "idle"
@@ -29,7 +29,7 @@ def test_optimizer_heats_when_cold():
     plan = opt.optimize(
         T_room=17.0,
         T_outdoor_series=[5.0] * 24,
-        target_series=[21.0] * 24,
+        heat_target_series=[21.0] * 24,
         dt_minutes=5,
     )
     assert plan.actions[0] == "heating"
@@ -43,7 +43,7 @@ def test_optimizer_cools_when_hot():
     plan = opt.optimize(
         T_room=27.0,
         T_outdoor_series=[30.0] * 24,
-        target_series=[23.0] * 24,
+        heat_target_series=[23.0] * 24,
         dt_minutes=5,
     )
     assert plan.actions[0] == "cooling"
@@ -59,7 +59,7 @@ def test_optimizer_preheats():
     plan = opt.optimize(
         T_room=17.0,
         T_outdoor_series=[17.0] * 24,
-        target_series=targets,
+        heat_target_series=targets,
         dt_minutes=5,
     )
     # Should start heating before block 6 (pre-heating)
@@ -75,7 +75,7 @@ def test_optimizer_stops_near_target():
     plan = opt.optimize(
         T_room=18.0,
         T_outdoor_series=[5.0] * 72,
-        target_series=[21.0] * 72,
+        heat_target_series=[21.0] * 72,
         dt_minutes=5,
     )
     assert plan.actions[0] == "heating", "Should heat when below target"
@@ -93,7 +93,7 @@ def test_optimizer_min_run_time():
     plan = opt.optimize(
         T_room=20.5,
         T_outdoor_series=[5.0] * 12,
-        target_series=[21.0] * 12,
+        heat_target_series=[21.0] * 12,
         dt_minutes=5,
     )
     # Any heating run should be at least 2 blocks
@@ -116,7 +116,7 @@ def test_optimizer_outdoor_gating():
     plan = opt.optimize(
         T_room=25.0,
         T_outdoor_series=[10.0] * 12,  # below 16°C
-        target_series=[22.0] * 12,
+        heat_target_series=[22.0] * 12,
         dt_minutes=5,
     )
     assert all(a == "idle" for a in plan.actions)
@@ -171,7 +171,7 @@ def test_power_fractions_in_plan():
     plan = opt.optimize(
         T_room=17.0,
         T_outdoor_series=[5.0] * 12,
-        target_series=[21.0] * 12,
+        heat_target_series=[21.0] * 12,
         dt_minutes=5,
     )
     assert len(plan.power_fractions) == len(plan.actions)
@@ -203,7 +203,7 @@ def test_power_fraction_clamped():
     plan = opt.optimize(
         T_room=17.0,
         T_outdoor_series=[5.0] * 12,
-        target_series=[21.0] * 12,
+        heat_target_series=[21.0] * 12,
         dt_minutes=5,
     )
     for i, a in enumerate(plan.actions):
@@ -227,14 +227,14 @@ def test_optimizer_residual_reduces_heating():
     plan_no_res = opt.optimize(
         T_room=19.5,
         T_outdoor_series=[10.0] * n,
-        target_series=[21.0] * n,
+        heat_target_series=[21.0] * n,
         dt_minutes=5,
     )
     # With significant residual heat
     plan_res = opt.optimize(
         T_room=19.5,
         T_outdoor_series=[10.0] * n,
-        target_series=[21.0] * n,
+        heat_target_series=[21.0] * n,
         dt_minutes=5,
         residual_series=[0.5, 0.4, 0.3, 0.2, 0.15, 0.1, 0.05, 0.0, 0.0, 0.0, 0.0, 0.0],
     )
@@ -269,7 +269,7 @@ def test_optimizer_min_run_blocks_from_profile():
     plan = opt.optimize(
         T_room=17.0,
         T_outdoor_series=[5.0] * 12,
-        target_series=[21.0] * 12,
+        heat_target_series=[21.0] * 12,
         dt_minutes=5,
     )
     # If heating starts, it should run for at least 6 blocks
@@ -281,3 +281,66 @@ def test_optimizer_min_run_blocks_from_profile():
             else:
                 break
         assert heating_count >= 6
+
+
+# ---------------------------------------------------------------------------
+# Dead-band tests (split heat/cool targets)
+# ---------------------------------------------------------------------------
+
+
+def test_optimizer_deadband_idle():
+    """Inside the dead band (between heat and cool targets) should be idle."""
+    model = RCModel(C=2.0, U=50.0, Q_heat=1000.0, Q_cool=1500.0)
+    opt = MPCOptimizer(model)
+    plan = opt.optimize(
+        T_room=22.5,
+        T_outdoor_series=[22.5] * 12,
+        heat_target_series=[21.0] * 12,
+        cool_target_series=[24.0] * 12,
+        dt_minutes=5,
+    )
+    assert plan.actions[0] == "idle"
+
+
+def test_optimizer_heats_below_heat_target():
+    """Below heat target with dead band should heat."""
+    model = RCModel(C=2.0, U=50.0, Q_heat=1000.0, Q_cool=1500.0)
+    opt = MPCOptimizer(model)
+    plan = opt.optimize(
+        T_room=19.0,
+        T_outdoor_series=[5.0] * 12,
+        heat_target_series=[21.0] * 12,
+        cool_target_series=[24.0] * 12,
+        dt_minutes=5,
+    )
+    assert plan.actions[0] == "heating"
+
+
+def test_optimizer_cools_above_cool_target():
+    """Above cool target with dead band should cool."""
+    model = RCModel(C=2.0, U=50.0, Q_heat=1000.0, Q_cool=200.0)
+    opt = MPCOptimizer(model, can_heat=False, can_cool=True)
+    plan = opt.optimize(
+        T_room=25.0,
+        T_outdoor_series=[30.0] * 12,
+        heat_target_series=[21.0] * 12,
+        cool_target_series=[24.0] * 12,
+        dt_minutes=5,
+    )
+    assert plan.actions[0] == "cooling"
+
+
+def test_optimizer_inverted_targets_clamped():
+    """Inverted heat > cool targets should be clamped to equal."""
+    model = RCModel(C=2.0, U=50.0, Q_heat=1000.0, Q_cool=1500.0)
+    opt = MPCOptimizer(model)
+    # heat=25 > cool=21 is inverted; after clamping cool becomes 25
+    # Room at 23 < 25 → should heat
+    plan = opt.optimize(
+        T_room=23.0,
+        T_outdoor_series=[20.0] * 12,
+        heat_target_series=[25.0] * 12,
+        cool_target_series=[21.0] * 12,
+        dt_minutes=5,
+    )
+    assert plan.actions[0] == "heating"

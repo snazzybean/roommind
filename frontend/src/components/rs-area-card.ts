@@ -490,11 +490,22 @@ export class RsAreaCard extends LitElement {
   }
 
   private _renderTargetInfo(live: NonNullable<RoomConfig["live"]>) {
-    if (live.target_temp === null) return nothing;
+    if (live.target_temp === null && live.heat_target === null) return nothing;
+
+    // Show range for auto mode with different heat/cool targets
+    const climateMode = this.config?.climate_mode ?? "auto";
+    const showRange = climateMode === "auto"
+      && live.heat_target != null
+      && live.cool_target != null
+      && live.heat_target !== live.cool_target;
+
+    const targetDisplay = showRange
+      ? html`<span class="target-value">${formatTemp(live.heat_target!, this.hass)} – ${formatTemp(live.cool_target!, this.hass)}${tempUnit(this.hass)}</span>`
+      : html`<span class="target-value">${formatTemp((live.target_temp ?? live.heat_target)!, this.hass)}${tempUnit(this.hass)}</span>`;
 
     return html`
       <span class="target-info">
-        ${localize("card.target", this.hass.language)} <span class="target-value">${formatTemp(live.target_temp, this.hass)}${tempUnit(this.hass)}</span>
+        ${localize("card.target", this.hass.language)} ${targetDisplay}
         ${live.override_active
           ? html`<ha-icon class="override-icon" icon="mdi:timer-outline"></ha-icon>`
           : nothing}

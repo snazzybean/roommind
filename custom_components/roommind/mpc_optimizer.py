@@ -54,7 +54,8 @@ class MPCOptimizer:
         self,
         T_room: float,
         T_outdoor_series: list[float],
-        target_series: list[float],
+        heat_target_series: list[float],
+        cool_target_series: list[float] | None = None,
         dt_minutes: float = 5.0,
         *,
         solar_series: list[float] | None = None,
@@ -64,8 +65,20 @@ class MPCOptimizer:
 
         Uses forward simulation with greedy optimization per block,
         considering minimum run time constraints.
+
+        Accepts dual target series (heat_target_series + cool_target_series)
+        for dead-band-aware optimization. If cool_target_series is None,
+        it defaults to heat_target_series (single-target behavior).
         """
-        n_blocks = min(len(T_outdoor_series), len(target_series))
+        if cool_target_series is None:
+            cool_target_series = list(heat_target_series)
+
+        # Clamp inverted targets: cool must be >= heat
+        cool_target_series = [
+            max(h, c) for h, c in zip(heat_target_series, cool_target_series)
+        ]
+
+        n_blocks = min(len(T_outdoor_series), len(heat_target_series), len(cool_target_series))
         if n_blocks == 0 or not math.isfinite(T_room):
             return MPCPlan(actions=[], temperatures=[T_room], dt_minutes=dt_minutes)
 
@@ -81,7 +94,8 @@ class MPCOptimizer:
 
         for i in range(n_blocks):
             T_out = T_outdoor_series[i]
-            target = target_series[i]
+            heat_tgt = heat_target_series[i]
+            cool_tgt = cool_target_series[i]
             qs = q_solar[i] if i < len(q_solar) else 0.0
             qr = q_residual[i] if i < len(q_residual) else 0.0
 
@@ -106,8 +120,9 @@ class MPCOptimizer:
                 future_residual = q_residual[i:] if q_residual else None
                 for action in available:
                     cost = self._evaluate_action(
-                        action, current_temp, T_out, target,
-                        T_outdoor_series[i:], target_series[i:], dt_minutes,
+                        action, current_temp, T_out, heat_tgt, cool_tgt,
+                        T_outdoor_series[i:], heat_target_series[i:],
+                        cool_target_series[i:], dt_minutes,
                         future_solar=future_solar,
                         future_residual=future_residual,
                     )
@@ -116,8 +131,10 @@ class MPCOptimizer:
                         best_action = action
 
             # Compute proportional power fraction for this block
+            # Use heat target for heating power, cool target for cooling power
+            pf_target = heat_tgt if best_action == MODE_HEATING else cool_tgt
             pf, _ = self.compute_optimal_power(
-                current_temp, T_out, target, dt_minutes, q_solar=qs, q_residual=qr,
+                current_temp, T_out, pf_target, dt_minutes, q_solar=qs, q_residual=qr,
             )
             if best_action == MODE_IDLE:
                 pf = 0.0
@@ -162,9 +179,11 @@ class MPCOptimizer:
         action: str,
         T_room: float,
         T_outdoor: float,
-        target: float,
+        heat_target: float,
+        cool_target: float,
         future_T_outdoor: list[float],
-        future_targets: list[float],
+        future_heat_targets: list[float],
+        future_cool_targets: list[float],
         dt_minutes: float,
         *,
         future_solar: list[float] | None = None,
@@ -194,9 +213,14 @@ class MPCOptimizer:
             # Clamp temperature in lookahead to prevent cost explosion
             # from implausible model predictions
             T = max(self.temp_min, min(self.temp_max, T))
-            tgt = future_targets[j]
-            # Comfort cost: squared deviation from target
-            total_cost += self.w_comfort * (T - tgt) ** 2
+            h_tgt = future_heat_targets[j] if j < len(future_heat_targets) else heat_target
+            c_tgt = future_cool_targets[j] if j < len(future_cool_targets) else cool_target
+            # Dead-band-aware comfort cost: zero inside the band
+            if T < h_tgt:
+                total_cost += self.w_comfort * (T - h_tgt) ** 2
+            elif T > c_tgt:
+                total_cost += self.w_comfort * (T - c_tgt) ** 2
+            # else: inside dead band, no comfort cost
             # Energy cost: proportional to HVAC power for min_run blocks
             if j < self.min_run_blocks and action != MODE_IDLE:
                 total_cost += self.w_energy * abs(Q) / 1000.0

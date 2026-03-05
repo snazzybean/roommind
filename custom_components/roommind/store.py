@@ -7,10 +7,31 @@ import copy
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 
-from .const import DEFAULT_COMFORT_TEMP, DEFAULT_ECO_TEMP, DOMAIN
+from .const import (
+    DEFAULT_COMFORT_COOL,
+    DEFAULT_COMFORT_HEAT,
+    DEFAULT_COMFORT_TEMP,
+    DEFAULT_ECO_COOL,
+    DEFAULT_ECO_HEAT,
+    DEFAULT_ECO_TEMP,
+    DOMAIN,
+)
 
 STORAGE_VERSION = 1
 STORAGE_KEY = DOMAIN
+
+
+def _migrate_room_temps(room: dict) -> dict:
+    """Migrate legacy single comfort/eco temps to split heat/cool fields."""
+    if "comfort_heat" not in room:
+        room["comfort_heat"] = room.get("comfort_temp", DEFAULT_COMFORT_HEAT)
+    if "comfort_cool" not in room:
+        room["comfort_cool"] = DEFAULT_COMFORT_COOL
+    if "eco_heat" not in room:
+        room["eco_heat"] = room.get("eco_temp", DEFAULT_ECO_HEAT)
+    if "eco_cool" not in room:
+        room["eco_cool"] = DEFAULT_ECO_COOL
+    return room
 
 
 class RoomMindStore:
@@ -39,13 +60,20 @@ class RoomMindStore:
         await self._store.async_save({"rooms": self._data, "settings": self._settings, "thermal_data": self._thermal_data})
 
     def get_rooms(self) -> dict[str, dict]:
-        """Return a deep copy of all rooms."""
-        return copy.deepcopy(dict(self._data))
+        """Return a deep copy of all rooms (with migration applied)."""
+        rooms = copy.deepcopy(dict(self._data))
+        for room in rooms.values():
+            _migrate_room_temps(room)
+        return rooms
 
     def get_room(self, area_id: str) -> dict | None:
         """Return a deep copy of a single room by area ID, or None if not found."""
         room = self._data.get(area_id)
-        return copy.deepcopy(room) if room is not None else None
+        if room is None:
+            return None
+        result = copy.deepcopy(room)
+        _migrate_room_temps(result)
+        return result
 
     def get_settings(self) -> dict:
         """Return a deep copy of global settings."""
@@ -84,10 +112,22 @@ class RoomMindStore:
             for key, value in config.items():
                 if key != "area_id":
                     existing[key] = value
+            # Sync legacy fields from split fields for backward compat
+            if "comfort_heat" in config:
+                existing["comfort_temp"] = config["comfort_heat"]
+            if "eco_heat" in config:
+                existing["eco_temp"] = config["eco_heat"]
+            # Reverse-sync: legacy callers sending only comfort_temp/eco_temp
+            if "comfort_temp" in config and "comfort_heat" not in config:
+                existing["comfort_heat"] = config["comfort_temp"]
+            if "eco_temp" in config and "eco_heat" not in config:
+                existing["eco_heat"] = config["eco_temp"]
             await self._async_save()
             return existing
         else:
-            # Create new
+            # Create new — derive split fields from legacy if needed
+            comfort_heat = config.get("comfort_heat", config.get("comfort_temp", DEFAULT_COMFORT_HEAT))
+            eco_heat = config.get("eco_heat", config.get("eco_temp", DEFAULT_ECO_HEAT))
             room = {
                 "area_id": area_id,
                 "thermostats": config.get("thermostats", []),
@@ -100,8 +140,12 @@ class RoomMindStore:
                 "window_sensors": config.get("window_sensors", []),
                 "window_open_delay": config.get("window_open_delay", 0),
                 "window_close_delay": config.get("window_close_delay", 0),
-                "comfort_temp": config.get("comfort_temp", DEFAULT_COMFORT_TEMP),
-                "eco_temp": config.get("eco_temp", DEFAULT_ECO_TEMP),
+                "comfort_temp": comfort_heat,
+                "eco_temp": eco_heat,
+                "comfort_heat": comfort_heat,
+                "comfort_cool": config.get("comfort_cool", DEFAULT_COMFORT_COOL),
+                "eco_heat": eco_heat,
+                "eco_cool": config.get("eco_cool", DEFAULT_ECO_COOL),
                 "presence_persons": config.get("presence_persons", []),
                 "display_name": config.get("display_name", ""),
                 "heating_system_type": config.get("heating_system_type", ""),

@@ -36,8 +36,10 @@ export class RsRoomDetail extends LitElement {
   @state() private _climateMode: ClimateMode = "auto";
   @state() private _schedules: ScheduleEntry[] = [];
   @state() private _scheduleSelectorEntity = "";
-  @state() private _comfortTemp = 21.0;
-  @state() private _ecoTemp = 17.0;
+  @state() private _comfortHeat = 21.0;
+  @state() private _comfortCool = 24.0;
+  @state() private _ecoHeat = 17.0;
+  @state() private _ecoCool = 27.0;
   @state() private _error = "";
   @state() private _dirty = false;
   @state() private _overridePending: OverrideType | null = null;
@@ -424,8 +426,10 @@ export class RsRoomDetail extends LitElement {
       this._climateMode = this.config.climate_mode;
       this._schedules = this.config.schedules ?? [];
       this._scheduleSelectorEntity = this.config.schedule_selector_entity ?? "";
-      this._comfortTemp = this.config.comfort_temp ?? 21.0;
-      this._ecoTemp = this.config.eco_temp ?? 17.0;
+      this._comfortHeat = this.config.comfort_heat ?? this.config.comfort_temp ?? 21.0;
+      this._comfortCool = this.config.comfort_cool ?? 24.0;
+      this._ecoHeat = this.config.eco_heat ?? this.config.eco_temp ?? 17.0;
+      this._ecoCool = this.config.eco_cool ?? 27.0;
       this._selectedPresencePersons = this.config.presence_persons ?? [];
       this._displayName = this.config.display_name ?? "";
       this._heatingSystemType = this.config.heating_system_type ?? "";
@@ -440,8 +444,10 @@ export class RsRoomDetail extends LitElement {
       this._climateMode = "auto";
       this._schedules = [];
       this._scheduleSelectorEntity = "";
-      this._comfortTemp = 21.0;
-      this._ecoTemp = 17.0;
+      this._comfortHeat = 21.0;
+      this._comfortCool = 24.0;
+      this._ecoHeat = 17.0;
+      this._ecoCool = 27.0;
       this._selectedPresencePersons = [];
       this._displayName = "";
       this._heatingSystemType = "";
@@ -500,13 +506,18 @@ export class RsRoomDetail extends LitElement {
               .schedules=${this._schedules}
               .scheduleSelectorEntity=${this._scheduleSelectorEntity}
               .activeScheduleIndex=${this.config?.live?.active_schedule_index ?? -1}
-              .comfortTemp=${this._comfortTemp}
-              .ecoTemp=${this._ecoTemp}
+              .comfortHeat=${this._comfortHeat}
+              .comfortCool=${this._comfortCool}
+              .ecoHeat=${this._ecoHeat}
+              .ecoCool=${this._ecoCool}
+              .climateMode=${this._climateMode}
               .editing=${this._editingSchedule}
               @schedules-changed=${this._onSchedulesChanged}
               @schedule-selector-changed=${this._onScheduleSelectorChanged}
-              @comfort-temp-changed=${this._onComfortTempChanged}
-              @eco-temp-changed=${this._onEcoTempChanged}
+              @comfort-heat-changed=${this._onComfortHeatChanged}
+              @comfort-cool-changed=${this._onComfortCoolChanged}
+              @eco-heat-changed=${this._onEcoHeatChanged}
+              @eco-cool-changed=${this._onEcoCoolChanged}
             ></rs-schedule-settings>
             ${this.config ? this._renderOverrideSection() : nothing}
           </rs-section-card>
@@ -570,13 +581,27 @@ export class RsRoomDetail extends LitElement {
     this._autoSave();
   }
 
-  private _onComfortTempChanged(e: CustomEvent<{ value: number }>) {
-    this._comfortTemp = e.detail.value;
+  private _onComfortHeatChanged(e: CustomEvent<{ value: number }>) {
+    this._comfortHeat = e.detail.value;
+    if (this._comfortCool < this._comfortHeat) this._comfortCool = this._comfortHeat;
     this._autoSave();
   }
 
-  private _onEcoTempChanged(e: CustomEvent<{ value: number }>) {
-    this._ecoTemp = e.detail.value;
+  private _onComfortCoolChanged(e: CustomEvent<{ value: number }>) {
+    this._comfortCool = e.detail.value;
+    if (this._comfortHeat > this._comfortCool) this._comfortHeat = this._comfortCool;
+    this._autoSave();
+  }
+
+  private _onEcoHeatChanged(e: CustomEvent<{ value: number }>) {
+    this._ecoHeat = e.detail.value;
+    if (this._ecoCool < this._ecoHeat) this._ecoCool = this._ecoHeat;
+    this._autoSave();
+  }
+
+  private _onEcoCoolChanged(e: CustomEvent<{ value: number }>) {
+    this._ecoCool = e.detail.value;
+    if (this._ecoHeat > this._ecoCool) this._ecoHeat = this._ecoCool;
     this._autoSave();
   }
 
@@ -722,8 +747,10 @@ export class RsRoomDetail extends LitElement {
         climate_mode: this._climateMode,
         schedules: this._schedules,
         schedule_selector_entity: this._scheduleSelectorEntity,
-        comfort_temp: this._comfortTemp,
-        eco_temp: this._ecoTemp,
+        comfort_heat: this._comfortHeat,
+        comfort_cool: this._comfortCool,
+        eco_heat: this._ecoHeat,
+        eco_cool: this._ecoCool,
         presence_persons: this._selectedPresencePersons.filter(p => p),
         display_name: this._displayName,
         heating_system_type: this._heatingSystemType,
@@ -882,8 +909,8 @@ export class RsRoomDetail extends LitElement {
               @click=${() => isActive ? this._onClearOverride() : this._onOverridePreset(t)}
             >
               <ha-icon icon=${t === "boost" ? "mdi:fire" : t === "eco" ? "mdi:leaf" : "mdi:thermometer"}></ha-icon>
-              ${t === "boost" ? `${localize("override.comfort", this.hass.language)} ${formatTemp(this._comfortTemp, this.hass)}${tempUnit(this.hass)}`
-                : t === "eco" ? `${localize("override.eco", this.hass.language)} ${formatTemp(this._ecoTemp, this.hass)}${tempUnit(this.hass)}`
+              ${t === "boost" ? `${localize("override.comfort", this.hass.language)} ${formatTemp(this._climateMode === "cool_only" ? this._comfortCool : this._comfortHeat, this.hass)}${tempUnit(this.hass)}`
+                : t === "eco" ? `${localize("override.eco", this.hass.language)} ${formatTemp(this._climateMode === "cool_only" ? this._ecoCool : this._ecoHeat, this.hass)}${tempUnit(this.hass)}`
                 : localize("override.custom", this.hass.language)}
             </button>
           `;
@@ -935,7 +962,7 @@ export class RsRoomDetail extends LitElement {
     } else {
       this._overridePending = type;
       if (type === "custom") {
-        this._overrideCustomTemp = this._comfortTemp;
+        this._overrideCustomTemp = this._climateMode === "cool_only" ? this._comfortCool : this._comfortHeat;
       }
     }
     this._overrideError = "";
@@ -951,9 +978,9 @@ export class RsRoomDetail extends LitElement {
     const pendingType = this._overridePending;
     let temp: number;
     if (pendingType === "boost") {
-      temp = this._comfortTemp;
+      temp = this._climateMode === "cool_only" ? this._comfortCool : this._comfortHeat;
     } else if (pendingType === "eco") {
-      temp = this._ecoTemp;
+      temp = this._climateMode === "cool_only" ? this._ecoCool : this._ecoHeat;
     } else {
       temp = this._overrideCustomTemp;
     }

@@ -194,17 +194,19 @@ def _simulate_mpc(
 
     for i in range(len(target_forecast)):
         tgt = target_forecast[i]["target_temp"]
+        h_tgt = target_forecast[i].get("heat_target", tgt)
+        c_tgt = target_forecast[i].get("cool_target", tgt)
 
-        # Force idle when target is None (devices turned off)
-        if tgt is None:
+        # Force idle when both targets are None (devices turned off)
+        if h_tgt is None and c_tgt is None:
             action = MODE_IDLE
             pf = 0.0
         # External stickiness: once heating/cooling, continue until
         # target is reached.  Mirrors real HVAC behaviour.
-        elif prev_action == MODE_HEATING and T < tgt and can_heat:
+        elif prev_action == MODE_HEATING and h_tgt is not None and T < h_tgt and can_heat:
             action = MODE_HEATING
             pf = 1.0
-        elif prev_action == MODE_COOLING and T > tgt and can_cool:
+        elif prev_action == MODE_COOLING and c_tgt is not None and T > c_tgt and can_cool:
             action = MODE_COOLING
             pf = 1.0
         elif prev_action != MODE_IDLE and blocks_in_action < min_run:
@@ -212,8 +214,12 @@ def _simulate_mpc(
             pf = 1.0
         else:
             remaining_outdoor = outdoor_series[i:]
-            remaining_targets = [
-                tf["target_temp"] if tf["target_temp"] is not None else T
+            remaining_heat_targets = [
+                tf.get("heat_target", tf["target_temp"]) if tf.get("heat_target", tf["target_temp"]) is not None else T
+                for tf in target_forecast[i:]
+            ]
+            remaining_cool_targets = [
+                tf.get("cool_target", tf["target_temp"]) if tf.get("cool_target", tf["target_temp"]) is not None else T
                 for tf in target_forecast[i:]
             ]
             remaining_solar = solar_series[i:] if solar_series else None
@@ -229,7 +235,8 @@ def _simulate_mpc(
             plan = optimizer.optimize(
                 T_room=T,
                 T_outdoor_series=remaining_outdoor,
-                target_series=remaining_targets,
+                heat_target_series=remaining_heat_targets,
+                cool_target_series=remaining_cool_targets,
                 dt_minutes=5.0,
                 solar_series=remaining_solar,
                 residual_series=remaining_residual,
@@ -313,25 +320,27 @@ def _simulate_bangbang(
 
     for i, tf in enumerate(target_forecast):
         tgt = tf["target_temp"]
-        if tgt is None:
-            # Force idle when target is None (devices turned off)
+        h_tgt = tf.get("heat_target", tgt)
+        c_tgt = tf.get("cool_target", tgt)
+        if h_tgt is None and c_tgt is None:
+            # Force idle when both targets are None (devices turned off)
             sim_mode = MODE_IDLE
             blocks_in_mode = 0
         elif sim_mode != MODE_IDLE and blocks_in_mode < min_run:
             pass  # honour minimum run time
         elif sim_mode == MODE_HEATING:
-            if T >= tgt:
+            if h_tgt is None or T >= h_tgt:
                 sim_mode = MODE_IDLE
                 blocks_in_mode = 0
         elif sim_mode == MODE_COOLING:
-            if T <= tgt:
+            if c_tgt is None or T <= c_tgt:
                 sim_mode = MODE_IDLE
                 blocks_in_mode = 0
         else:
-            if has_heat and T < tgt - BANGBANG_HEAT_HYSTERESIS:
+            if has_heat and h_tgt is not None and T < h_tgt - BANGBANG_HEAT_HYSTERESIS:
                 sim_mode = MODE_HEATING
                 blocks_in_mode = 0
-            elif has_cool and T > tgt + BANGBANG_COOL_HYSTERESIS:
+            elif has_cool and c_tgt is not None and T > c_tgt + BANGBANG_COOL_HYSTERESIS:
                 sim_mode = MODE_COOLING
                 blocks_in_mode = 0
 

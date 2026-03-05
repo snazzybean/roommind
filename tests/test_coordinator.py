@@ -1097,6 +1097,27 @@ class TestVacationMode:
         room_state = data["rooms"]["living_room_abc12345"]
         assert room_state["target_temp"] == 21.0  # comfort_temp from schedule
 
+    @pytest.mark.asyncio
+    async def test_vacation_cool_target_stays_at_eco_cool(self, hass, mock_config_entry):
+        """Vacation should not collapse cool_target to vacation_temp."""
+        room = {**SAMPLE_ROOM, "eco_cool": 27.0}
+        store = _make_store_mock({"living_room_abc12345": room})
+        store.get_settings.return_value = {
+            "vacation_temp": 15.0,
+            "vacation_until": time.time() + 86400,
+        }
+        hass.data = {"roommind": {"store": store}}
+
+        hass.states.get = MagicMock(side_effect=make_mock_states_get())
+        hass.services.async_call = AsyncMock()
+
+        coordinator = _create_coordinator(hass, mock_config_entry)
+        data = await coordinator._async_update_data()
+
+        room_state = data["rooms"]["living_room_abc12345"]
+        assert room_state["heat_target"] == 15.0
+        assert room_state["cool_target"] == 27.0  # eco_cool, not 15
+
 
 # ---------------------------------------------------------------------------
 # T2b: Presence Detection Tests

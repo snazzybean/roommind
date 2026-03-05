@@ -309,7 +309,8 @@ export class RsHeroStatus extends LitElement {
     return null;
   }
 
-  private _renderTargetSection(targetTemp: number | null) {
+  private _renderTargetSection(live: NonNullable<RoomConfig["live"]>) {
+    const targetTemp = live.target_temp;
     const l = this.hass?.language ?? "en";
     const ov = this._getEffectiveOverride();
 
@@ -335,11 +336,21 @@ export class RsHeroStatus extends LitElement {
       `;
     }
 
-    if (targetTemp !== null) {
+    if (targetTemp !== null || (live.heat_target != null && live.cool_target != null)) {
+      const climateMode = this.config?.climate_mode ?? "auto";
+      const showRange = climateMode === "auto"
+        && live.heat_target != null
+        && live.cool_target != null
+        && live.heat_target !== live.cool_target;
+
+      const display = showRange
+        ? html`${formatTemp(live.heat_target!, this.hass)} – ${formatTemp(live.cool_target!, this.hass)}${tempUnit(this.hass)}`
+        : html`${formatTemp((targetTemp ?? live.heat_target)!, this.hass)}${tempUnit(this.hass)}`;
+
       return html`
         <div class="hero-target">
           <div class="hero-target-label">${localize("hero.target", l)}</div>
-          <div class="hero-target-value">${formatTemp(targetTemp, this.hass)}${tempUnit(this.hass)}</div>
+          <div class="hero-target-value">${display}</div>
         </div>
       `;
     }
@@ -466,7 +477,7 @@ export class RsHeroStatus extends LitElement {
                       <span class="hero-unit">${tempUnit(this.hass)}</span>
                     `
                   : html`<span class="hero-current" style="opacity: 0.3">--</span>`}
-                ${this._renderTargetSection(live.target_temp)}
+                ${this._renderTargetSection(live)}
               </div>
               ${live.current_humidity !== null
                 ? html`<div class="hero-metric">
