@@ -86,7 +86,9 @@ async def async_get_config_entry_diagnostics(
     if coordinator and coordinator._history_store:
         for area_id in rooms_config:
             try:
-                rows = coordinator._history_store.read_detail(area_id, max_age=7200)
+                rows = await hass.async_add_executor_job(
+                    coordinator._history_store.read_detail, area_id, 7200
+                )
                 recent_history[area_id] = [
                     {
                         "ts": row.get("timestamp", ""),

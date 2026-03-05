@@ -606,10 +606,14 @@ async def websocket_get_analytics(
     if history_store:
         if custom_start is not None:
             detail = _csv_to_points(
-                history_store.read_detail(area_id, start_ts=custom_start, end_ts=custom_end)
+                await hass.async_add_executor_job(
+                    history_store.read_detail, area_id, None, custom_start, custom_end
+                )
             )
             history = _csv_to_points(
-                history_store.read_history(area_id, start_ts=custom_start, end_ts=custom_end)
+                await hass.async_add_executor_job(
+                    history_store.read_history, area_id, None, custom_start, custom_end
+                )
             )
         else:
             max_age_map = {
@@ -622,8 +626,12 @@ async def websocket_get_analytics(
                 "90d": 7776000,
             }
             max_age = max_age_map.get(range_key, 43200)
-            detail = _csv_to_points(history_store.read_detail(area_id, max_age=max_age))
-            history = _csv_to_points(history_store.read_history(area_id, max_age=max_age))
+            detail = _csv_to_points(
+                await hass.async_add_executor_job(history_store.read_detail, area_id, max_age)
+            )
+            history = _csv_to_points(
+                await hass.async_add_executor_job(history_store.read_history, area_id, max_age)
+            )
 
     # Model info (only if estimator exists — avoid auto-creating for unknown rooms)
     model_info: dict = {}
