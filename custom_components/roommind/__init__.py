@@ -52,7 +52,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     await _async_register_panel(hass)
-    _check_version_mismatch(hass)
+    await _async_check_version_mismatch(hass)
 
     return True
 
@@ -60,6 +60,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 async def _async_migrate_storage(hass: HomeAssistant) -> None:
     """Migrate storage from old 'roomsense' name if present."""
     storage_dir = Path(hass.config.path(".storage"))
+    await hass.async_add_executor_job(_migrate_storage_sync, storage_dir)
+
+
+def _migrate_storage_sync(storage_dir: Path) -> None:
+    """Blocking portion of storage migration — must run in an executor."""
     # Rename main storage file
     old_path = storage_dir / "roomsense"
     new_path = storage_dir / "roommind"
@@ -77,6 +82,8 @@ async def _async_migrate_storage(hass: HomeAssistant) -> None:
         except Exception:  # noqa: BLE001
             _LOGGER.warning("Failed to migrate storage key")
     # Migrate history CSV directory
+    import shutil
+
     old_history = storage_dir / "roomsense_history"
     new_history = storage_dir / "roommind_history"
     if old_history.exists():
@@ -96,7 +103,6 @@ async def _async_migrate_storage(hass: HomeAssistant) -> None:
                     new_csv.write_text("\n".join(merged) + "\n")
                 else:
                     old_csv.rename(new_csv)
-            import shutil
             shutil.rmtree(old_history)
             _LOGGER.info("Merged old history into 'roommind_history'")
 
@@ -115,11 +121,15 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return unload_ok
 
 
-def _check_version_mismatch(hass: HomeAssistant) -> None:
+async def _async_check_version_mismatch(hass: HomeAssistant) -> None:
     """Compare in-memory VERSION (from boot) with manifest.json on disk."""
+    manifest_path = Path(__file__).parent / "manifest.json"
     try:
-        manifest_path = Path(__file__).parent / "manifest.json"
-        disk_version = json.loads(manifest_path.read_text())["version"]
+        disk_version: str = (
+            await hass.async_add_executor_job(
+                lambda: json.loads(manifest_path.read_text())["version"]
+            )
+        )
     except Exception:  # noqa: BLE001
         return
 
