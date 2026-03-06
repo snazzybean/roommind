@@ -25,7 +25,7 @@
 | custom\_components/roommind/store.py                |       95 |        3 |     97% |117, 119, 160 |
 | custom\_components/roommind/temp\_utils.py          |       26 |        0 |    100% |           |
 | custom\_components/roommind/thermal\_model.py       |      380 |       25 |     93% |86, 116, 152, 188, 336, 341, 354, 358, 360, 383, 425, 435-436, 446-447, 499, 612, 700, 741, 787-788, 871, 910, 933-936 |
-| custom\_components/roommind/websocket\_api.py       |      312 |       32 |     90% |310, 316, 335, 362-363, 373, 552-553, 557, 559, 672-674, 689-691, 693-715 |
+| custom\_components/roommind/websocket\_api.py       |      312 |       32 |     90% |310, 316, 335, 362-363, 373, 552-553, 557, 559, 680-682, 697-699, 701-723 |
 | **TOTAL**                                           | **2898** |  **307** | **89%** |           |
 
 
