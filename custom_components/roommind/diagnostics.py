@@ -77,7 +77,7 @@ async def async_get_config_entry_diagnostics(
         "humidity": coordinator.outdoor_humidity if coordinator else None,
     }
     if coordinator:
-        forecast = coordinator._outdoor_forecast
+        forecast = coordinator._weather_manager._outdoor_forecast
         outdoor["forecast_available"] = bool(forecast)
         outdoor["forecast_points"] = len(forecast) if forecast else 0
 

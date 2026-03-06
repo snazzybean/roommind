@@ -1043,8 +1043,8 @@ def _make_analytics_coordinator(history_rows=None, estimator=None, rooms_live=No
     coordinator.rooms = rooms_live or {}
     coordinator.outdoor_temp = 5.0
     coordinator.outdoor_humidity = 60
-    coordinator._outdoor_forecast = []
-    coordinator._window_paused = {}
+    coordinator._weather_manager._outdoor_forecast = []
+    coordinator._window_manager._paused = {}
 
     if history_rows is not None:
         hs = MagicMock()

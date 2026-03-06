@@ -105,7 +105,7 @@ async def test_diagnostics_with_coordinator_and_model(hass, mock_config_entry):
     }
     coordinator.outdoor_temp = 5.0
     coordinator.outdoor_humidity = 60
-    coordinator._outdoor_forecast = [{"temperature": 6.0}, {"temperature": 7.0}]
+    coordinator._weather_manager._outdoor_forecast = [{"temperature": 6.0}, {"temperature": 7.0}]
     coordinator._history_store = None
 
     est = _make_estimator()
@@ -140,7 +140,7 @@ async def test_diagnostics_room_without_estimator(hass, mock_config_entry):
     coordinator.rooms = {}
     coordinator.outdoor_temp = None
     coordinator.outdoor_humidity = None
-    coordinator._outdoor_forecast = []
+    coordinator._weather_manager._outdoor_forecast = []
     coordinator._history_store = None
     coordinator._model_manager._estimators = {}
 
@@ -167,7 +167,7 @@ async def test_diagnostics_history_store_with_rows(hass, mock_config_entry):
     coordinator.rooms = {}
     coordinator.outdoor_temp = 5.0
     coordinator.outdoor_humidity = 60
-    coordinator._outdoor_forecast = []
+    coordinator._weather_manager._outdoor_forecast = []
     coordinator._history_store = history_store
     coordinator._model_manager._estimators = {}
 
@@ -192,7 +192,7 @@ async def test_diagnostics_history_store_exception(hass, mock_config_entry):
     coordinator.rooms = {}
     coordinator.outdoor_temp = 5.0
     coordinator.outdoor_humidity = 60
-    coordinator._outdoor_forecast = []
+    coordinator._weather_manager._outdoor_forecast = []
     coordinator._history_store = history_store
     coordinator._model_manager._estimators = {}
 
@@ -238,7 +238,7 @@ async def test_diagnostics_history_capped_at_240(hass, mock_config_entry):
     coordinator.rooms = {}
     coordinator.outdoor_temp = 5.0
     coordinator.outdoor_humidity = 60
-    coordinator._outdoor_forecast = []
+    coordinator._weather_manager._outdoor_forecast = []
     coordinator._history_store = history_store
     coordinator._model_manager._estimators = {}
 

@@ -12,7 +12,6 @@ from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .const import CLIMATE_MODE_COOL_ONLY, CLIMATE_MODE_HEAT_ONLY, DEFAULT_COMFORT_COOL, DEFAULT_COMFORT_HEAT, DEFAULT_ECO_COOL, DEFAULT_ECO_HEAT, DOMAIN, EKF_UPDATE_MIN_DT, HEATING_BOOST_TARGET, HISTORY_ROTATE_CYCLES, HISTORY_WRITE_CYCLES, MAX_PREDICTION_DELTA, MODE_COOLING, MODE_HEATING, MODE_IDLE, SCHEDULE_STATE_ON, THERMAL_SAVE_CYCLES, TargetTemps, UPDATE_INTERVAL, VALVE_PROTECTION_CHECK_CYCLES, build_override_live
-from .utils.notification_utils import NotificationThrottler
 from .utils.history_store import HistoryStore
 from .control.mpc_controller import DEFAULT_OUTDOOR_TEMP_FALLBACK, MPCController, check_acs_can_heat, get_can_heat_cool, is_mpc_active
 from .utils.sensor_utils import read_sensor_value
@@ -78,94 +77,6 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         self._residual_tracker = ResidualHeatTracker()
         # Track which rooms already have sensor entities registered
         self._entity_areas: set[str] = set()
-
-    # Backwards-compatible accessors for extracted manager internals
-    @property
-    def _outdoor_forecast(self) -> list[dict]:
-        return self._weather_manager._outdoor_forecast
-
-    @_outdoor_forecast.setter
-    def _outdoor_forecast(self, value: list[dict]) -> None:
-        self._weather_manager._outdoor_forecast = value
-
-    async def _read_weather_forecast(self, settings: dict) -> list[dict]:
-        return await self._weather_manager.async_read_forecast(settings)
-
-    def _convert_forecast_temps(self, forecasts: list[dict]) -> list[dict]:
-        return self._weather_manager._convert_forecast_temps(forecasts)
-
-    @staticmethod
-    def _extract_cloud_series(forecast: list[dict]) -> list[float | None] | None:
-        return WeatherManager.extract_cloud_series(forecast)
-
-    @property
-    def _mold_risk_since(self) -> dict[str, float]:
-        return self._mold_manager._risk_since
-
-    @property
-    def _mold_prevention_active(self) -> dict[str, bool]:
-        return self._mold_manager._prevention_active
-
-    @property
-    def _mold_throttler(self) -> NotificationThrottler:
-        return self._mold_manager._throttler
-    @property
-    def _window_open_since(self) -> dict[str, float]:
-        return self._window_manager._open_since
-
-    @property
-    def _window_closed_since(self) -> dict[str, float]:
-        return self._window_manager._closed_since
-
-    @property
-    def _window_paused(self) -> dict[str, bool]:
-        return self._window_manager._paused
-
-    @property
-    def _valve_cycling(self) -> dict[str, float]:
-        return self._valve_manager._cycling
-
-    @property
-    def _valve_last_actuation(self) -> dict[str, float]:
-        return self._valve_manager._last_actuation
-
-    @_valve_last_actuation.setter
-    def _valve_last_actuation(self, value: dict[str, float]) -> None:
-        self._valve_manager._last_actuation = value
-
-    @property
-    def _valve_actuation_dirty(self) -> bool:
-        return self._valve_manager._actuation_dirty
-
-    @_valve_actuation_dirty.setter
-    def _valve_actuation_dirty(self, value: bool) -> None:
-        self._valve_manager._actuation_dirty = value
-
-    @property
-    def _valve_protection_count(self) -> int:
-        return self._valve_manager._check_count
-
-    @_valve_protection_count.setter
-    def _valve_protection_count(self, value: int) -> None:
-        self._valve_manager._check_count = value
-
-    async def _async_valve_protection_finish(self) -> None:
-        await self._valve_manager.async_finish_cycles()
-
-    async def _async_valve_protection_check(self, rooms: dict, settings: dict) -> None:
-        await self._valve_manager.async_check_and_cycle(rooms, settings)
-
-    @property
-    def _heating_off_since(self) -> dict[str, float]:
-        return self._residual_tracker._off_since
-
-    @property
-    def _heating_off_power(self) -> dict[str, float]:
-        return self._residual_tracker._off_power
-
-    @property
-    def _heating_on_since(self) -> dict[str, float]:
-        return self._residual_tracker._on_since
 
     async def _async_update_data(self) -> dict:
         """Fetch and compute state for all rooms.

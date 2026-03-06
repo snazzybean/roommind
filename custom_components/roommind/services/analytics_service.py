@@ -257,23 +257,23 @@ async def build_analytics_data(
             if current_t is not None:
                 T_out_now = coordinator.outdoor_temp if coordinator.outdoor_temp is not None else DEFAULT_OUTDOOR_TEMP_FALLBACK
                 outdoor_series = build_forecast_outdoor_series(
-                    coordinator._outdoor_forecast, T_out_now, len(target_forecast),
+                    coordinator._weather_manager._outdoor_forecast, T_out_now, len(target_forecast),
                 )
                 solar_series = build_forecast_solar_series(
                     hass.config.latitude, hass.config.longitude,
-                    coordinator._outdoor_forecast, len(target_forecast),
+                    coordinator._weather_manager._outdoor_forecast, len(target_forecast),
                 )
                 # Residual heat state for analytics simulation
                 system_type = room_config.get("heating_system_type", "")
                 sim_q_residual = 0.0
                 sim_heat_dur = 0.0
                 sim_last_pf = 1.0
-                if system_type and area_id in getattr(coordinator, "_heating_off_since", {}):
+                if system_type and area_id in getattr(coordinator._residual_tracker, "_off_since", {}):
                     import time as _time
-                    off_since = coordinator._heating_off_since[area_id]
+                    off_since = coordinator._residual_tracker._off_since[area_id]
                     elapsed = (_time.time() - off_since) / 60.0
-                    sim_heat_dur = (off_since - coordinator._heating_on_since.get(area_id, off_since)) / 60.0
-                    sim_last_pf = coordinator._heating_off_power.get(area_id, 1.0)
+                    sim_heat_dur = (off_since - coordinator._residual_tracker._on_since.get(area_id, off_since)) / 60.0
+                    sim_last_pf = coordinator._residual_tracker._off_power.get(area_id, 1.0)
                     from ..control.residual_heat import compute_residual_heat
                     sim_q_residual = compute_residual_heat(elapsed, system_type, sim_last_pf, sim_heat_dur)
 
@@ -283,7 +283,7 @@ async def build_analytics_data(
                     target_forecast=target_forecast,
                     outdoor_series=outdoor_series,
                     current_temp=current_t,
-                    window_open=coordinator._window_paused.get(area_id, False),
+                    window_open=coordinator._window_manager._paused.get(area_id, False),
                     mpc_active=mpc_active,
                     room_config=room_config,
                     settings=settings,
