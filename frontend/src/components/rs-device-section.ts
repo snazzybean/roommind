@@ -24,6 +24,7 @@ export class RsDeviceSection extends LitElement {
 
   @property({ type: Boolean }) public editing = false;
   @state() private _systemTypeInfoExpanded = false;
+  @state() private _showBoostHint = false;
 
   static styles = css`
     :host {
@@ -178,6 +179,21 @@ export class RsDeviceSection extends LitElement {
       line-height: 1.5;
       color: var(--secondary-text-color);
       padding: 8px 14px 4px;
+    }
+
+    .boost-hint {
+      display: flex; align-items: flex-start; gap: 8px;
+      margin-top: 8px; padding: 8px 12px;
+      background: rgba(var(--rgb-primary-color, 3, 169, 244), 0.08);
+      border-radius: 8px; font-size: 13px;
+      color: var(--primary-text-color);
+      line-height: 1.4;
+      --mdc-icon-size: 18px;
+    }
+    .boost-hint ha-icon {
+      color: var(--primary-color);
+      flex-shrink: 0;
+      margin-top: 1px;
     }
 
     ha-entity-picker {
@@ -549,6 +565,12 @@ export class RsDeviceSection extends LitElement {
             <ha-list-item value="radiator">${localize("devices.system_type_radiator", this.hass.language)}</ha-list-item>
             <ha-list-item value="underfloor">${localize("devices.system_type_underfloor", this.hass.language)}</ha-list-item>
           </ha-select>
+          ${this._showBoostHint ? html`
+            <div class="boost-hint">
+              <ha-icon icon="mdi:information-outline"></ha-icon>
+              <span>${localize("devices.heating_system_type_boost_hint", this.hass.language)}</span>
+            </div>
+          ` : nothing}
         </div>
       ` : nothing}
 
@@ -771,6 +793,7 @@ export class RsDeviceSection extends LitElement {
   private _onHeatingSystemTypeChange(e: Event) {
     const raw = getSelectValue(e) ?? "";
     const value = raw === "standard" ? "" : raw;
+    this._showBoostHint = true;
     this.dispatchEvent(
       new CustomEvent("heating-system-type-changed", {
         detail: { value },

@@ -759,6 +759,29 @@ class ThermalEKF:
             "k_window_n": self._k_window_n,
         }
 
+    def boost_covariance(self, factor: float = 2.5, floor_frac: float = 0.3) -> None:
+        """Multiply covariance P by *factor*, floored at *floor_frac* of P_initial.
+
+        Used to accelerate re-learning after room physics change (e.g. new
+        radiator, insulation, furniture).  The floor prevents repeated clicks
+        from destroying the matrix.
+        """
+        p_init_diag = [
+            self._P_INIT_T,
+            self._P_INIT_ALPHA,
+            self._P_INIT_BETA,
+            self._P_INIT_BETA,
+            self._P_INIT_BETA_S,
+        ]
+        for i in range(self._N):
+            for j in range(self._N):
+                boosted = self._P[i][j] * factor
+                if i == j:
+                    floor = p_init_diag[i] * floor_frac
+                    boosted = max(boosted, floor)
+                self._P[i][j] = boosted
+        self._enforce_psd()
+
     @classmethod
     def from_dict(cls, data: dict) -> ThermalEKF:
         """Restore EKF from persisted data."""
@@ -880,6 +903,11 @@ class RoomModelManager:
         est = self._estimators[area_id]
         return (est._n_idle, est._n_heating, est._n_cooling)
 
+    def get_n_observations(self, area_id: str) -> int:
+        """Return total number of EKF updates for *area_id*."""
+        est = self._estimators.get(area_id)
+        return est._n_updates if est else 0
+
     def update_window_open(
         self,
         area_id: str,
@@ -909,6 +937,17 @@ class RoomModelManager:
         if area_id not in self._estimators:
             return ThermalEKF._K_WINDOW_DEFAULT
         return self._estimators[area_id].k_window
+
+    def boost_learning(self, area_id: str) -> int:
+        """Boost covariance for *area_id* to accelerate re-learning.
+
+        Returns the current ``n_updates`` (used as cooldown anchor).
+        """
+        est = self._estimators.get(area_id)
+        if est is None:
+            return 0
+        est.boost_covariance()
+        return est._n_updates
 
     def remove_room(self, area_id: str) -> None:
         """Discard learned data for *area_id*."""

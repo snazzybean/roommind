@@ -1,5 +1,5 @@
 /**
- * rs-settings-reset – Reset thermal data card.
+ * rs-settings-reset – Boost learning & reset thermal data cards.
  */
 import { LitElement, html, css, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
@@ -7,12 +7,17 @@ import type { HomeAssistant, RoomConfig } from "../../types";
 import { localize } from "../../utils/localize";
 import { fireSaveStatus, getSelectValue } from "../../utils/events";
 
+const BOOST_COOLDOWN = 250;
+
 @customElement("rs-settings-reset")
 export class RsSettingsReset extends LitElement {
   @property({ attribute: false }) public hass!: HomeAssistant;
   @property({ attribute: false }) public rooms: Record<string, RoomConfig> = {};
+  @property({ attribute: false }) public settings: Record<string, any> = {};
+  @property({ attribute: false }) public roomsLive: Record<string, any> = {};
 
   @state() private _resetSelectedRoom = "";
+  @state() private _boostSelectedRoom = "";
 
   render() {
     const l = this.hass.language;
@@ -23,6 +28,75 @@ export class RsSettingsReset extends LitElement {
       }))
       .sort((a, b) => a.name.localeCompare(b.name));
 
+    return html`
+      ${this._renderBoostCard(l, configuredRooms)}
+      ${this._renderResetCard(l, configuredRooms)}
+    `;
+  }
+
+  private _renderBoostCard(l: string, configuredRooms: { areaId: string; name: string }[]) {
+    const boostApplied = this.settings?.boost_applied_at ?? {};
+    const selRoom = this._boostSelectedRoom;
+    const nObs = selRoom ? (this.roomsLive?.[selRoom]?.n_observations ?? 0) : 0;
+    const appliedAt = selRoom ? boostApplied[selRoom] : undefined;
+    const isCooldown = appliedAt !== undefined && (nObs - appliedAt) < BOOST_COOLDOWN;
+
+    return html`
+      <ha-card>
+        <div class="card-header">
+          <div class="header-title">
+            <ha-icon icon="mdi:lightning-bolt"></ha-icon>
+            <span>${localize("settings.boost_title", l)}</span>
+          </div>
+        </div>
+        <div class="card-content">
+          <p class="hint">${localize("settings.boost_hint", l)}</p>
+
+          <div class="settings-section first">
+            ${configuredRooms.length > 0
+              ? html`
+                  <div class="reset-room-row">
+                    <ha-select
+                      .value=${this._boostSelectedRoom}
+                      .label=${localize("settings.boost_room_select", l)}
+                      .options=${configuredRooms.map((room) => ({ value: room.areaId, label: room.name }))}
+                      fixedMenuPosition
+                      @selected=${(e: Event) => { this._boostSelectedRoom = getSelectValue(e); }}
+                      @closed=${(e: Event) => e.stopPropagation()}
+                    >
+                      ${configuredRooms.map(
+                        (room) => html`<ha-list-item .value=${room.areaId}>${room.name}</ha-list-item>`
+                      )}
+                    </ha-select>
+                    ${this._boostSelectedRoom
+                      ? html`<ha-icon-button
+                          .path=${"M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z"}
+                          @click=${() => { this._boostSelectedRoom = ""; }}
+                        ></ha-icon-button>`
+                      : nothing}
+                    ${selRoom && isCooldown
+                      ? html`<span class="boost-status">
+                          <ha-icon icon="mdi:check-circle-outline"></ha-icon>
+                          ${localize("settings.boost_cooldown", l)}
+                        </span>`
+                      : html`<button
+                          class="boost-btn"
+                          ?disabled=${!selRoom || isCooldown}
+                          @click=${() => selRoom && this._boostLearning(selRoom)}
+                        >
+                          <ha-icon icon="mdi:lightning-bolt"></ha-icon>
+                          ${localize("settings.boost_btn", l)}
+                        </button>`}
+                  </div>
+                `
+              : html`<p class="hint">${localize("settings.boost_no_rooms", l)}</p>`}
+          </div>
+        </div>
+      </ha-card>
+    `;
+  }
+
+  private _renderResetCard(l: string, configuredRooms: { areaId: string; name: string }[]) {
     return html`
       <ha-card>
         <div class="card-header">
@@ -90,6 +164,27 @@ export class RsSettingsReset extends LitElement {
     `;
   }
 
+  private async _boostLearning(areaId: string) {
+    try {
+      fireSaveStatus(this, "saving");
+      const result = await this.hass.callWS<{ n_observations: number }>({
+        type: "roommind/model/boost_learning",
+        area_id: areaId,
+      });
+      fireSaveStatus(this, "saved");
+      // Notify parent to update cooldown state
+      this.dispatchEvent(
+        new CustomEvent("boost-applied", {
+          detail: { area_id: areaId, n_observations: result.n_observations },
+          bubbles: true,
+          composed: true,
+        })
+      );
+    } catch {
+      fireSaveStatus(this, "error");
+    }
+  }
+
   private async _resetRoomModel(areaId: string) {
     const l = this.hass.language;
     if (!confirm(localize("settings.reset_room_confirm", l))) return;
@@ -116,6 +211,8 @@ export class RsSettingsReset extends LitElement {
 
   static styles = css`
     :host { display: block; }
+
+    ha-card { margin-bottom: 16px; }
 
     .card-header {
       display: flex; justify-content: space-between; align-items: center;
@@ -147,6 +244,23 @@ export class RsSettingsReset extends LitElement {
     .reset-btn:hover { background: rgba(211, 47, 47, 0.08); }
     .reset-btn:disabled { opacity: 0.4; cursor: not-allowed; }
     .reset-btn:disabled:hover { background: transparent; }
+
+    .boost-btn {
+      display: flex; align-items: center; gap: 6px;
+      padding: 8px 14px; border: 1px solid var(--primary-color); border-radius: 8px;
+      background: transparent; color: var(--primary-color);
+      font-size: 13px; font-family: inherit; cursor: pointer;
+      transition: background 0.15s; --mdc-icon-size: 16px; white-space: nowrap;
+    }
+    .boost-btn:hover { background: rgba(var(--rgb-primary-color), 0.08); }
+    .boost-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .boost-btn:disabled:hover { background: transparent; }
+
+    .boost-status {
+      display: flex; align-items: center; gap: 6px;
+      color: var(--success-color, #4caf50); font-size: 13px;
+      --mdc-icon-size: 16px; white-space: nowrap;
+    }
 
     .reset-room-row { display: flex; align-items: center; gap: 12px; }
     .reset-room-row ha-select { flex: 1; }

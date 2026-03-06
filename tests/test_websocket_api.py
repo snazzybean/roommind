@@ -1267,13 +1267,13 @@ async def test_analytics_mold_delta_from_live(ws_hass, store, connection):
 
 
 def test_register_websocket_commands(hass):
-    """async_register_websocket_commands registers all 10 commands."""
+    """async_register_websocket_commands registers all 11 commands."""
     from unittest.mock import patch
     from custom_components.roommind.websocket_api import async_register_websocket_commands
 
     with patch("custom_components.roommind.websocket_api.websocket_api.async_register_command") as mock_reg:
         async_register_websocket_commands(hass)
-        assert mock_reg.call_count == 10
+        assert mock_reg.call_count == 11
 
 
 # ---------------------------------------------------------------------------

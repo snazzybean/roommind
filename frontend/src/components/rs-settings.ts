@@ -47,6 +47,7 @@ export class RsSettings extends LitElement {
   @state() private _moldPreventionEnabled = false;
   @state() private _moldPreventionIntensity: "light" | "medium" | "strong" = "medium";
   @state() private _moldPreventionNotify = false;
+  @state() private _boostAppliedAt: Record<string, number> = {};
   @state() private _loaded = false;
 
   private _saveDebounce?: ReturnType<typeof setTimeout>;
@@ -99,6 +100,7 @@ export class RsSettings extends LitElement {
       this._moldPreventionEnabled = s.mold_prevention_enabled ?? false;
       this._moldPreventionIntensity = s.mold_prevention_intensity ?? "medium";
       this._moldPreventionNotify = s.mold_prevention_notify_enabled ?? false;
+      this._boostAppliedAt = s.boost_applied_at ?? {};
     } catch (err) {
       console.debug("[RoomMind] loadSettings:", err);
     } finally {
@@ -164,9 +166,19 @@ export class RsSettings extends LitElement {
         <rs-settings-reset
           .hass=${this.hass}
           .rooms=${this.rooms}
+          .settings=${{ boost_applied_at: this._boostAppliedAt }}
+          .roomsLive=${Object.fromEntries(
+            Object.entries(this.rooms).map(([id, r]) => [id, (r as any).live ?? {}])
+          )}
+          @boost-applied=${this._onBoostApplied}
         ></rs-settings-reset>
       </div>
     `;
+  }
+
+  private _onBoostApplied(e: CustomEvent<{ area_id: string; n_observations: number }>) {
+    const { area_id, n_observations } = e.detail;
+    this._boostAppliedAt = { ...this._boostAppliedAt, [area_id]: n_observations };
   }
 
   private _onSettingChanged(e: CustomEvent<{ key: string; value: unknown }>) {

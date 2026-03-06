@@ -101,6 +101,7 @@ export interface GlobalSettings {
   mold_prevention_notify_targets?: NotificationTarget[];
   room_order?: string[];
   group_by_floor?: boolean;
+  boost_applied_at?: Record<string, number>;
 }
 
 // HA types for panel integration

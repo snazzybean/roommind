@@ -132,6 +132,7 @@ async def websocket_list_rooms(
             "mold_surface_rh": live.get("mold_surface_rh"),
             "mold_prevention_active": live.get("mold_prevention_active", False),
             "mold_prevention_delta": live.get("mold_prevention_delta", 0),
+            "n_observations": live.get("n_observations", 0),
         }
         result[area_id] = room_data
 
@@ -563,6 +564,38 @@ async def websocket_thermal_reset_all(
     connection.send_result(msg["id"], {"success": True})
 
 
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "roommind/model/boost_learning",
+        vol.Required("area_id"): str,
+    }
+)
+@websocket_api.async_response
+async def websocket_boost_learning(
+    hass: HomeAssistant,
+    connection: ActiveConnection,
+    msg: dict,
+) -> None:
+    """Boost EKF covariance for a room to accelerate re-learning."""
+    store = hass.data[DOMAIN]["store"]
+    coordinator = _get_coordinator(hass)
+    area_id = msg["area_id"]
+
+    if not coordinator:
+        connection.send_error(msg["id"], "no_coordinator", "Coordinator not ready")
+        return
+
+    n_obs = coordinator._model_manager.boost_learning(area_id)
+
+    # Persist cooldown anchor in settings
+    settings = store.get_settings()
+    boost_applied = dict(settings.get("boost_applied_at", {}))
+    boost_applied[area_id] = n_obs
+    await store.async_save_settings({"boost_applied_at": boost_applied})
+
+    connection.send_result(msg["id"], {"success": True, "n_observations": n_obs})
+
+
 # ---------------------------------------------------------------------------
 # Registration
 # ---------------------------------------------------------------------------
@@ -580,3 +613,4 @@ def async_register_websocket_commands(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, websocket_get_analytics)
     websocket_api.async_register_command(hass, websocket_thermal_reset)
     websocket_api.async_register_command(hass, websocket_thermal_reset_all)
+    websocket_api.async_register_command(hass, websocket_boost_learning)

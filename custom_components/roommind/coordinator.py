@@ -530,6 +530,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             ),
             "mold_prevention_active": mold_prevention_active_room,
             "mold_prevention_delta": mold_prevention_temp_delta,
+            "n_observations": self._model_manager.get_n_observations(area_id),
         }
 
     @staticmethod
