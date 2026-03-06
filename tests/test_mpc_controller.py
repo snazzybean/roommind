@@ -169,6 +169,9 @@ async def test_mpc_path_when_confident():
     # Mock prediction_std to be low (confident) + enough training data
     model_mgr.get_prediction_std = MagicMock(return_value=0.1)
     model_mgr.get_mode_counts = MagicMock(return_value=(100, 30, 0))
+    # Mock a realistic trained model (2 EKF updates give alpha=_ALPHA_MIN which is
+    # too low for the optimizer to distinguish heating from idle via T_eq clamping)
+    model_mgr.get_model = MagicMock(return_value=RCModel(C=1.0, U=0.15, Q_heat=3.0, Q_cool=4.0))
     ctrl = MPCController(
         hass, room, model_manager=model_mgr,
         outdoor_temp=5.0, settings={}, has_external_sensor=True,
@@ -190,6 +193,9 @@ async def test_confidence_transition_threshold():
 
     # Enough training data for MPC
     model_mgr.get_mode_counts = MagicMock(return_value=(100, 30, 0))
+    # Mock a realistic trained model (2 EKF updates give alpha=_ALPHA_MIN which is
+    # too low for the optimizer to distinguish heating from idle via T_eq clamping)
+    model_mgr.get_model = MagicMock(return_value=RCModel(C=1.0, U=0.15, Q_heat=3.0, Q_cool=4.0))
 
     # Just above threshold — bang-bang
     model_mgr.get_prediction_std = MagicMock(return_value=0.5)
@@ -463,6 +469,9 @@ async def test_proportional_power_far_from_target():
     model_mgr.update("living_room", 16.0, 5.0, "heating", 5.0)
     model_mgr.get_prediction_std = MagicMock(return_value=0.1)
     model_mgr.get_mode_counts = MagicMock(return_value=(100, 30, 0))
+    # Mock a realistic trained model (2 EKF updates give alpha=_ALPHA_MIN which is
+    # too low for the optimizer to distinguish heating from idle via T_eq clamping)
+    model_mgr.get_model = MagicMock(return_value=RCModel(C=1.0, U=0.15, Q_heat=3.0, Q_cool=4.0))
     ctrl = MPCController(
         hass, room, model_manager=model_mgr,
         outdoor_temp=5.0, settings={}, has_external_sensor=True,

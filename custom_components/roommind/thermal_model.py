@@ -540,7 +540,7 @@ class ThermalEKF:
         """
         return RCModel(
             C=1.0,
-            U=max(self._x[1], 0.1),
+            U=max(self._x[1], self._ALPHA_MIN),
             Q_heat=max(self._x[2], 0.0),
             Q_cool=max(self._x[3], 0.0),
             Q_solar=max(self._x[4], 0.0),
