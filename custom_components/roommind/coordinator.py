@@ -163,7 +163,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                             "target_temp": target_temp,
                             "mode": mode,
                             "predicted_temp": predicted,
-                            "window_open": rs.get("window_open", False),
+                            "window_open": rs.get("raw_window_open", rs.get("window_open", False)),
                             "heating_power": rs.get("heating_power", 0),
                             "solar_irradiance": round(self._current_q_solar, 3),
                         })
@@ -172,7 +172,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 # Compute prediction for the *next* write cycle (~3 min ahead)
                 if current_temp is not None and self.outdoor_temp is not None:
                     try:
-                        is_window_open = rs.get("window_open", False)
+                        is_window_open = rs.get("raw_window_open", rs.get("window_open", False))
                         if is_window_open:
                             raw_pred = self._model_manager.predict_window_open(
                                 area_id, current_temp, self.outdoor_temp, 3.0,
@@ -421,11 +421,27 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             dt_minutes = UPDATE_INTERVAL / 60.0
             T_outdoor = self.outdoor_temp if self.outdoor_temp is not None else current_temp
             if window_open:
-                # Window open: flush pending EKF update, then learn k_window
+                # Window open (past delay): flush pending EKF update, then learn k_window
                 self._flush_ekf_accumulator(area_id, current_temp, T_outdoor, room, q_residual=q_residual)
                 self._model_manager.update_window_open(
                     area_id, current_temp, T_outdoor, dt_minutes,
                 )
+            elif raw_open:
+                # Window detected but still within open_delay — flush accumulator
+                # and skip EKF training to prevent the temperature drop from
+                # corrupting the thermal model parameters.
+                self._flush_ekf_accumulator(area_id, current_temp, T_outdoor, room, q_residual=q_residual)
+                self._ekf_accumulated_dt.pop(area_id, None)
+                self._ekf_accumulated_mode.pop(area_id, None)
+                self._ekf_accumulated_pf.pop(area_id, None)
+                # Learn k_window only when heating is confirmed off and no
+                # residual heat remains — otherwise the ongoing heat input
+                # masks the true open-window cooling rate and underestimates
+                # k_window.
+                if mode == MODE_IDLE and q_residual == 0.0:
+                    self._model_manager.update_window_open(
+                        area_id, current_temp, T_outdoor, dt_minutes,
+                    )
             elif ekf_mode is None:
                 # Unobservable device state (control disabled, no hvac_action)
                 # — flush pending data and skip training to prevent corruption.
@@ -518,6 +534,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             "heating_power": round(display_pf * 100) if display_mode != MODE_IDLE else 0,
             "trv_setpoint": self._compute_trv_setpoint(mode, power_fraction, current_temp, target_temp, has_external_sensor, device_max_temp),
             "window_open": window_open,
+            "raw_window_open": raw_open,
             **build_override_live(room),
             "active_schedule_index": self._get_active_schedule_index(room),
             "confidence": self._model_manager.get_confidence(area_id),
