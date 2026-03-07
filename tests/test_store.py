@@ -363,3 +363,29 @@ async def test_save_eco_temp_reverse_syncs_eco_heat(store):
     updated = await store.async_save_room("wohnzimmer", {"eco_temp": 16.0})
 
     assert updated["eco_heat"] == 16.0
+
+
+@pytest.mark.asyncio
+async def test_save_room_syncs_comfort_heat_to_comfort_temp_on_update(store):
+    """Updating an existing room with comfort_heat should sync comfort_temp."""
+    await store.async_load()
+    await store.async_save_room("wohnzimmer", {})
+    updated = await store.async_save_room("wohnzimmer", {"comfort_heat": 23.0})
+    assert updated["comfort_temp"] == 23.0
+
+
+@pytest.mark.asyncio
+async def test_save_room_syncs_eco_heat_to_eco_temp_on_update(store):
+    """Updating an existing room with eco_heat should sync eco_temp."""
+    await store.async_load()
+    await store.async_save_room("wohnzimmer", {})
+    updated = await store.async_save_room("wohnzimmer", {"eco_heat": 15.0})
+    assert updated["eco_temp"] == 15.0
+
+
+@pytest.mark.asyncio
+async def test_update_room_missing_raises_key_error(store):
+    """async_update_room on a non-existent room should raise KeyError."""
+    await store.async_load()
+    with pytest.raises(KeyError):
+        await store.async_update_room("nonexistent", {"comfort_temp": 21.0})

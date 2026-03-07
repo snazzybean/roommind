@@ -27,7 +27,7 @@ jobs:
           pip install pytest pytest-asyncio pytest-cov homeassistant voluptuous
 
       - name: Run tests with coverage
-        run: pytest tests/ -v --cov=custom_components/roommind --cov-report=term
+        run: pytest tests/ -v --cov=custom_components/roommind --cov-report=term --cov-fail-under=95
         env:
           COVERAGE_RCFILE: .coveragerc
 

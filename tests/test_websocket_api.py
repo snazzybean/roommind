@@ -1362,3 +1362,127 @@ async def test_save_room_heating_system_type_defaults_empty(ws_hass, store, conn
     assert room.get("heating_system_type", "") == ""
 
 
+
+
+# ---------------------------------------------------------------------------
+# Override set: cool_only climate mode paths
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_override_set_boost_cool_only_uses_comfort_cool(ws_hass, store, connection):
+    """Boost override in cool_only room uses comfort_cool temperature."""
+    await store.async_load()
+    await store.async_save_room("room1", {"climate_mode": "cool_only", "comfort_cool": 26.0})
+    connection.send_result.reset_mock()
+
+    msg = {
+        "id": 1, "type": "roommind/override/set",
+        "area_id": "room1", "override_type": "boost", "duration": 1.0,
+    }
+    await _override_set(ws_hass, connection, msg)
+
+    room = store.get_room("room1")
+    assert room["override_temp"] == 26.0
+
+
+@pytest.mark.asyncio
+async def test_override_set_eco_cool_only_uses_eco_cool(ws_hass, store, connection):
+    """Eco override in cool_only room uses eco_cool temperature."""
+    await store.async_load()
+    await store.async_save_room("room1", {"climate_mode": "cool_only", "eco_cool": 29.0})
+    connection.send_result.reset_mock()
+
+    msg = {
+        "id": 1, "type": "roommind/override/set",
+        "area_id": "room1", "override_type": "eco", "duration": 1.0,
+    }
+    await _override_set(ws_hass, connection, msg)
+
+    room = store.get_room("room1")
+    assert room["override_temp"] == 29.0
+
+
+@pytest.mark.asyncio
+async def test_override_set_triggers_coordinator_refresh(ws_hass, store, connection):
+    """override/set notifies coordinator via async_request_refresh."""
+    await store.async_load()
+    await store.async_save_room("kitchen", {})
+
+    mock_coordinator = MagicMock()
+    mock_coordinator.async_request_refresh = AsyncMock()
+    ws_hass.data[DOMAIN]["coordinator"] = mock_coordinator
+
+    msg = {
+        "id": 1, "type": "roommind/override/set",
+        "area_id": "kitchen", "override_type": "boost", "duration": 1.0,
+    }
+    await _override_set(ws_hass, connection, msg)
+
+    mock_coordinator.async_request_refresh.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_override_clear_nonexistent_room_errors(ws_hass, store, connection):
+    """Clearing override on non-existent room sends an error."""
+    await store.async_load()
+
+    msg = {"id": 1, "type": "roommind/override/clear", "area_id": "does_not_exist"}
+    await _override_clear(ws_hass, connection, msg)
+
+    connection.send_error.assert_called_once()
+    assert connection.send_error.call_args[0][1] == "not_found"
+
+
+@pytest.mark.asyncio
+async def test_override_clear_triggers_coordinator_refresh(ws_hass, store, connection):
+    """override/clear notifies coordinator via async_request_refresh."""
+    await store.async_load()
+    await store.async_save_room("hall", {})
+
+    mock_coordinator = MagicMock()
+    mock_coordinator.async_request_refresh = AsyncMock()
+    ws_hass.data[DOMAIN]["coordinator"] = mock_coordinator
+
+    msg = {"id": 1, "type": "roommind/override/clear", "area_id": "hall"}
+    await _override_clear(ws_hass, connection, msg)
+
+    mock_coordinator.async_request_refresh.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Boost learning
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_boost_learning_no_coordinator_errors(ws_hass, store, connection):
+    """boost_learning without coordinator sends an error."""
+    from custom_components.roommind.websocket_api import websocket_boost_learning
+    _boost_learning = websocket_boost_learning.__wrapped__
+
+    await store.async_load()
+    # No coordinator in hass.data
+    msg = {"id": 1, "type": "roommind/model/boost_learning", "area_id": "living_room"}
+    await _boost_learning(ws_hass, connection, msg)
+
+    connection.send_error.assert_called_once()
+    assert connection.send_error.call_args[0][1] == "no_coordinator"
+
+
+@pytest.mark.asyncio
+async def test_boost_learning_success(ws_hass, store, connection):
+    """boost_learning with coordinator boosts EKF and persists cooldown."""
+    from custom_components.roommind.websocket_api import websocket_boost_learning
+    _boost_learning = websocket_boost_learning.__wrapped__
+
+    await store.async_load()
+
+    mock_coordinator = MagicMock()
+    mock_coordinator._model_manager = MagicMock()
+    mock_coordinator._model_manager.boost_learning = MagicMock(return_value=42)
+    ws_hass.data[DOMAIN]["coordinator"] = mock_coordinator
+
+    msg = {"id": 1, "type": "roommind/model/boost_learning", "area_id": "living_room"}
+    await _boost_learning(ws_hass, connection, msg)
+
+    mock_coordinator._model_manager.boost_learning.assert_called_once_with("living_room")
+    connection.send_result.assert_called_once_with(1, {"success": True, "n_observations": 42})

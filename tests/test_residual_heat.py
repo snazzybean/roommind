@@ -151,3 +151,14 @@ def test_min_run_blocks_never_below_two():
 def test_min_run_blocks_zero_dt():
     """Zero dt returns fallback."""
     assert get_min_run_blocks("underfloor", 0.0) == 2
+
+
+def test_tau_zero_returns_zero():
+    """A profile with tau=0 should return 0.0 to avoid division by zero."""
+    from unittest.mock import patch
+    from custom_components.roommind.control import residual_heat as rh
+
+    fake_profiles = {"zero_tau": {"tau_minutes": 0, "initial_fraction": 0.5}}
+    with patch.object(rh, "HEATING_SYSTEM_PROFILES", fake_profiles):
+        result = rh.compute_residual_heat(5.0, "zero_tau", 1.0, 60.0)
+    assert result == 0.0

@@ -34,6 +34,8 @@ class TestMultiCycle:
         mode1 = data1["rooms"]["living_room"]["mode"]
 
         # Cycle 2: temp at target -> should idle
+        # Backdate mode_on_since to bypass min-run enforcement window
+        coordinator._mode_on_since["living_room"] = coordinator._mode_on_since.get("living_room", 0) - 4000
         coordinator.hass.states.get = MagicMock(side_effect=make_hass_states(temp="21.5"))
         data2 = await coordinator._async_update_data()
         mode2 = data2["rooms"]["living_room"]["mode"]

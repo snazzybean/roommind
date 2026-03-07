@@ -219,3 +219,42 @@ def test_dismiss_notification_prevention_suffix():
         dismiss_mold_notification(hass, "bedroom", "prevention")
 
     mock_dismiss.assert_called_once_with(hass, "roommind_mold_bedroom_prevention")
+
+
+@pytest.mark.asyncio
+async def test_send_notification_skips_target_with_empty_entity_id():
+    """Target with empty entity_id should be skipped (no notify call)."""
+    hass = MagicMock()
+    hass.services.async_call = AsyncMock()
+
+    targets = [{"entity_id": "", "person_entity": "", "notify_when": "always"}]
+
+    with patch(
+        "custom_components.roommind.utils.notification_utils.async_create"
+    ) as mock_create:
+        await async_send_mold_notification(
+            hass, "living_room", "Wohnzimmer", targets,
+            message="Test", title="Test",
+        )
+
+    hass.services.async_call.assert_not_called()
+    mock_create.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_send_notification_service_exception_triggers_fallback():
+    """If notify service raises, warning is logged and fallback is used."""
+    hass = MagicMock()
+    hass.services.async_call = AsyncMock(side_effect=Exception("service unavailable"))
+
+    targets = [{"entity_id": "notify.test", "person_entity": "", "notify_when": "always"}]
+
+    with patch(
+        "custom_components.roommind.utils.notification_utils.async_create"
+    ) as mock_create:
+        await async_send_mold_notification(
+            hass, "living_room", "Wohnzimmer", targets,
+            message="Test", title="Test",
+        )
+
+    mock_create.assert_called_once()

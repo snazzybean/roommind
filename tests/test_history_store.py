@@ -314,3 +314,26 @@ def test_safe_ts_non_numeric():
 def test_safe_ts_none_value():
     """None timestamp returns 0.0."""
     assert HistoryStore._safe_ts({"timestamp": None}) == 0.0
+
+
+def test_read_detail_with_end_ts_filter(history_dir):
+    """read_detail with end_ts filters out records after the cutoff."""
+    import time as _time
+    store = HistoryStore(history_dir)
+    now = _time.time()
+    store.record("living_room", {"room_temp": 21.0, "outdoor_temp": 5.0, "target_temp": 21.0, "mode": "idle", "predicted_temp": 21.0})
+    rows = store.read_detail("living_room", end_ts=now - 10)
+    assert len(rows) == 0
+
+
+def test_rotate_trims_old_history(history_dir):
+    """rotate() should trim history records older than HISTORY_MAX_AGE."""
+    import time as _time
+    from custom_components.roommind.utils.history_store import HISTORY_MAX_AGE
+    store = HistoryStore(history_dir)
+    # Write one very old record directly into history
+    old_ts = _time.time() - HISTORY_MAX_AGE - 1000
+    store._append_history("room1", [{"timestamp": str(old_ts), "room_temp": "20.0"}])
+    assert len(store.read_history("room1")) == 1
+    store.rotate("room1")
+    assert len(store.read_history("room1")) == 0

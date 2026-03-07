@@ -77,6 +77,8 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         self._residual_tracker = ResidualHeatTracker()
         # Track which rooms already have sensor entities registered
         self._entity_areas: set[str] = set()
+        # Min-run enforcement: timestamp when current non-idle mode started
+        self._mode_on_since: dict[str, float] = {}
 
     async def _async_update_data(self) -> dict:
         """Fetch and compute state for all rooms.
@@ -303,6 +305,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             outdoor_forecast=outdoor_forecast,
             settings=settings,
             previous_mode=self._previous_modes.get(area_id, MODE_IDLE),
+            mode_on_since=self._mode_on_since.get(area_id),
             has_external_sensor=has_external_sensor,
             target_resolver=target_resolver,
             q_solar=self._current_q_solar,
@@ -467,6 +470,12 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             self._ekf_accumulated_mode.pop(area_id, None)
             self._ekf_accumulated_pf.pop(area_id, None)
 
+        # Update mode-start tracking for min-run enforcement in the next cycle
+        _prev_mode = self._previous_modes.get(area_id, MODE_IDLE)
+        if mode != MODE_IDLE and _prev_mode != mode:
+            self._mode_on_since[area_id] = time.time()
+        elif mode == MODE_IDLE:
+            self._mode_on_since.pop(area_id, None)
         self._previous_modes[area_id] = mode
 
         # Compute MPC status for live data
@@ -809,6 +818,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         self._pending_predictions.pop(area_id, None)
         self._residual_tracker.remove_room(area_id)
         self._entity_areas.discard(area_id)
+        self._mode_on_since.pop(area_id, None)
         self._model_manager.remove_room(area_id)
         if self._history_store:
             await self.hass.async_add_executor_job(self._history_store.remove_room, area_id)

@@ -3202,6 +3202,9 @@ class TestResidualHeatTracking:
         assert aid in coordinator._residual_tracker._on_since
         assert coordinator._previous_modes.get(aid) == "heating"
 
+        # Backdate mode_on_since so the min-run window has already elapsed
+        coordinator._mode_on_since[aid] = time.time() - 10000
+
         # Cycle 2: idle (schedule off -> eco 17, temp 18 above eco -> idle)
         hass.states.get = make_mock_states_get(
             temp="18.0", schedule_state="off",
@@ -3232,6 +3235,9 @@ class TestResidualHeatTracking:
         coordinator = _create_coordinator(hass, mock_config_entry)
         await coordinator._async_update_data()
         assert coordinator._previous_modes.get(aid) == "heating"
+
+        # Backdate mode_on_since so the min-run window has already elapsed
+        coordinator._mode_on_since[aid] = time.time() - 10000
 
         # Cycle 2: idle
         hass.states.get = make_mock_states_get(
