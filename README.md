@@ -4,7 +4,7 @@
 
 | Name                                                            |    Stmts |     Miss |   Cover |   Missing |
 |---------------------------------------------------------------- | -------: | -------: | ------: | --------: |
-| custom\_components/roommind/\_\_init\_\_.py                     |      103 |       81 |     21% |31-33, 39-57, 62-101, 106-115, 120-143, 148-186 |
+| custom\_components/roommind/\_\_init\_\_.py                     |      105 |       82 |     22% |31-33, 39-57, 62-63, 69-107, 112-121, 126-153, 158-196 |
 | custom\_components/roommind/config\_flow.py                     |       11 |       11 |      0% |      3-23 |
 | custom\_components/roommind/const.py                            |       59 |        0 |    100% |           |
 | custom\_components/roommind/control/\_\_init\_\_.py             |        0 |        0 |    100% |           |
@@ -36,7 +36,7 @@
 | custom\_components/roommind/utils/sensor\_utils.py              |       15 |        0 |    100% |           |
 | custom\_components/roommind/utils/temp\_utils.py                |       26 |        0 |    100% |           |
 | custom\_components/roommind/websocket\_api.py                   |      190 |        0 |    100% |           |
-| **TOTAL**                                                       | **3047** |  **152** | **95%** |           |
+| **TOTAL**                                                       | **3049** |  **153** | **95%** |           |
 
 
 ## Setup coverage badge
