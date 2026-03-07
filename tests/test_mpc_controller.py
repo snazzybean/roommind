@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 import pytest
 from unittest.mock import MagicMock, AsyncMock
 
@@ -1663,6 +1664,58 @@ async def test_bangbang_none_inputs():
     assert ctrl._evaluate_bangbang(20.0, TargetTemps(heat=None, cool=None)) == MODE_IDLE
 
 
+@pytest.mark.asyncio
+async def test_bangbang_heating_min_run_holds_at_target():
+    """Underfloor heating must keep running when at target but within min-run window."""
+    hass = build_hass()
+    room = make_room()
+    mgr = RoomModelManager()
+    ctrl = MPCController(
+        hass, room, model_manager=mgr,
+        outdoor_temp=5.0, settings={}, has_external_sensor=True,
+        previous_mode=MODE_HEATING,
+        heating_system_type="underfloor",
+        mode_on_since=time.time() - 60,  # 1 min in, window is 30 min
+    )
+    # current_temp equals target — without min-run this would go idle
+    mode = ctrl._evaluate_bangbang(21.0, TargetTemps(heat=21.0, cool=24.0))
+    assert mode == MODE_HEATING
+
+
+@pytest.mark.asyncio
+async def test_bangbang_heating_idles_after_min_run():
+    """Underfloor heating goes idle at target once the min-run window has elapsed."""
+    hass = build_hass()
+    room = make_room()
+    mgr = RoomModelManager()
+    ctrl = MPCController(
+        hass, room, model_manager=mgr,
+        outdoor_temp=5.0, settings={}, has_external_sensor=True,
+        previous_mode=MODE_HEATING,
+        heating_system_type="underfloor",
+        mode_on_since=time.time() - 2000,  # 33 min ago, past 30-min window
+    )
+    mode = ctrl._evaluate_bangbang(21.5, TargetTemps(heat=21.0, cool=24.0))
+    assert mode == MODE_IDLE
+
+
+@pytest.mark.asyncio
+async def test_bangbang_cooling_min_run_holds_at_target():
+    """Cooling must keep running when at target but within min-run window."""
+    hass = build_hass()
+    room = make_room(acs=["climate.ac1"], climate_mode="cool_only")
+    mgr = RoomModelManager()
+    ctrl = MPCController(
+        hass, room, model_manager=mgr,
+        outdoor_temp=30.0, settings={}, has_external_sensor=True,
+        previous_mode=MODE_COOLING,
+        heating_system_type="underfloor",
+        mode_on_since=time.time() - 60,
+    )
+    mode = ctrl._evaluate_bangbang(23.0, TargetTemps(heat=21.0, cool=23.0))
+    assert mode == MODE_COOLING
+
+
 # ---------------------------------------------------------------------------
 # _evaluate_mpc edge cases
 # ---------------------------------------------------------------------------
@@ -2131,6 +2184,84 @@ def test_evaluate_mpc_safety_guard_cooling_below_target(monkeypatch):
     )
     # current_temp=22 <= target=23 → safety guard should override to idle
     mode, pf = ctrl._evaluate_mpc(22.0, TargetTemps(heat=21.0, cool=23.0))
+    assert mode == MODE_IDLE
+    assert pf == 0.0
+
+
+def test_evaluate_mpc_safety_guard_respects_min_run_heating(monkeypatch):
+    """Safety guard must NOT override heating when within minimum run window."""
+    hass = build_hass()
+    room = make_room()
+    mgr = RoomModelManager()
+    ctrl = MPCController(
+        hass, room, model_manager=mgr,
+        outdoor_temp=5.0, settings={}, has_external_sensor=True,
+        previous_mode=MODE_HEATING,
+        heating_system_type="underfloor",
+        mode_on_since=time.time() - 60,  # started 1 min ago (within 30-min window)
+    )
+    fake_plan = MPCPlan(
+        actions=[MODE_HEATING] * 6,
+        temperatures=[22.0] * 7,
+        power_fractions=[0.8] * 6,
+    )
+    monkeypatch.setattr(
+        "custom_components.roommind.control.mpc_controller.MPCOptimizer.optimize",
+        lambda *a, **kw: fake_plan,
+    )
+    # current_temp=22 >= target=21 but we're in min-run window → must keep heating
+    mode, pf = ctrl._evaluate_mpc(22.0, TargetTemps(heat=21.0, cool=24.0))
+    assert mode == MODE_HEATING
+
+
+def test_evaluate_mpc_safety_guard_fires_after_min_run_heating(monkeypatch):
+    """Safety guard must override heating when minimum run window has elapsed."""
+    hass = build_hass()
+    room = make_room()
+    mgr = RoomModelManager()
+    ctrl = MPCController(
+        hass, room, model_manager=mgr,
+        outdoor_temp=5.0, settings={}, has_external_sensor=True,
+        previous_mode=MODE_HEATING,
+        heating_system_type="underfloor",
+        mode_on_since=time.time() - 2000,  # started 33 min ago (past 30-min window)
+    )
+    fake_plan = MPCPlan(
+        actions=[MODE_HEATING] * 6,
+        temperatures=[22.0] * 7,
+        power_fractions=[0.8] * 6,
+    )
+    monkeypatch.setattr(
+        "custom_components.roommind.control.mpc_controller.MPCOptimizer.optimize",
+        lambda *a, **kw: fake_plan,
+    )
+    mode, pf = ctrl._evaluate_mpc(22.0, TargetTemps(heat=21.0, cool=24.0))
+    assert mode == MODE_IDLE
+    assert pf == 0.0
+
+
+def test_evaluate_mpc_safety_guard_fires_after_default_min_run_heating(monkeypatch):
+    """Safety guard must override heating when default minimum run window has elapsed."""
+    hass = build_hass()
+    room = make_room()
+    mgr = RoomModelManager()
+    ctrl = MPCController(
+        hass, room, model_manager=mgr,
+        outdoor_temp=5.0, settings={}, has_external_sensor=True,
+        previous_mode=MODE_HEATING,
+        heating_system_type="",
+        mode_on_since=time.time() - 660,  # started 11 min ago (past 10-min default window)
+    )
+    fake_plan = MPCPlan(
+        actions=[MODE_HEATING] * 6,
+        temperatures=[22.0] * 7,
+        power_fractions=[0.8] * 6,
+    )
+    monkeypatch.setattr(
+        "custom_components.roommind.control.mpc_controller.MPCOptimizer.optimize",
+        lambda *a, **kw: fake_plan,
+    )
+    mode, pf = ctrl._evaluate_mpc(22.0, TargetTemps(heat=21.0, cool=24.0))
     assert mode == MODE_IDLE
     assert pf == 0.0
 
