@@ -1,6 +1,7 @@
 import { LitElement, html, css, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { infoIconStyles } from "../styles/info-icon-styles";
+import "./shared/rs-badge";
 
 const PENCIL_PATH =
   "M20.71,7.04C21.1,6.65 21.1,6 20.71,5.63L18.37,3.29C18,2.9 17.35,2.9 16.96,3.29L15.12,5.12L18.87,8.87M3,17.25V21H6.75L17.81,9.93L14.06,6.18L3,17.25Z";
@@ -15,6 +16,8 @@ export class RsSectionCard extends LitElement {
   @property({ type: Boolean }) public editable = false;
   @property({ type: Boolean }) public editing = false;
   @property({ type: String }) public doneLabel = "";
+  @property({ type: String }) public badge = "";
+  @property({ type: String }) public badgeHint = "";
   @property({ type: Boolean }) public hasInfo = false;
   @state() private _infoExpanded = false;
 
@@ -93,6 +96,9 @@ export class RsSectionCard extends LitElement {
         <div class="section-header">
           <ha-icon class="section-icon" icon=${this.icon}></ha-icon>
           <h3 class="section-title">${this.heading}</h3>
+          ${this.badge
+            ? html`<rs-badge .label=${this.badge} .hint=${this.badgeHint}></rs-badge>`
+            : nothing}
           ${this.hasInfo
             ? html`
                 <ha-icon

@@ -11,11 +11,12 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
-from .const import CLIMATE_MODE_COOL_ONLY, CLIMATE_MODE_HEAT_ONLY, DEFAULT_COMFORT_COOL, DEFAULT_COMFORT_HEAT, DEFAULT_ECO_COOL, DEFAULT_ECO_HEAT, DOMAIN, EKF_UPDATE_MIN_DT, HEATING_BOOST_TARGET, HISTORY_ROTATE_CYCLES, HISTORY_WRITE_CYCLES, MAX_PREDICTION_DELTA, MODE_COOLING, MODE_HEATING, MODE_IDLE, SCHEDULE_STATE_ON, THERMAL_SAVE_CYCLES, TargetTemps, UPDATE_INTERVAL, VALVE_PROTECTION_CHECK_CYCLES, build_override_live
+from .const import CLIMATE_MODE_COOL_ONLY, CLIMATE_MODE_HEAT_ONLY, COVER_DEFAULT_BETA_S, COVER_MIN_IDLE_FOR_LEARNED, COVER_SOLAR_LOOKAHEAD_H, DEFAULT_COMFORT_COOL, DEFAULT_COMFORT_HEAT, DEFAULT_ECO_COOL, DEFAULT_ECO_HEAT, DOMAIN, EKF_UPDATE_MIN_DT, HEATING_BOOST_TARGET, HISTORY_ROTATE_CYCLES, HISTORY_WRITE_CYCLES, MAX_PREDICTION_DELTA, MODE_COOLING, MODE_HEATING, MODE_IDLE, SCHEDULE_STATE_ON, THERMAL_SAVE_CYCLES, TargetTemps, UPDATE_INTERVAL, VALVE_PROTECTION_CHECK_CYCLES, build_override_live
 from .utils.history_store import HistoryStore
 from .control.mpc_controller import DEFAULT_OUTDOOR_TEMP_FALLBACK, MPCController, check_acs_can_heat, get_can_heat_cool, is_mpc_active
 from .utils.sensor_utils import read_sensor_value
-from .control.solar import compute_q_solar_norm
+from .control.solar import compute_q_solar_norm, solar_elevation
+from .utils.schedule_utils import resolve_schedule_index
 from .utils.temp_utils import celsius_delta_to_ha, ha_temp_to_celsius, ha_temp_unit_str
 from .control.thermal_model import RoomModelManager
 from .managers.mold_manager import MoldManager
@@ -75,8 +76,13 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         self._mold_manager = MoldManager(hass)
         # Residual heat tracking (heating → idle transition)
         self._residual_tracker = ResidualHeatTracker()
-        # Track which rooms already have sensor entities registered
+        # Cover/blind automatic control
+        from .managers.cover_manager import CoverManager
+        self._cover_manager = CoverManager()
+        # Track which rooms already have entity platform entities registered
         self._entity_areas: set[str] = set()
+        self._switch_entity_areas: set[str] = set()
+        self._binary_sensor_entity_areas: set[str] = set()
 
     async def _async_update_data(self) -> dict:
         """Fetch and compute state for all rooms.
@@ -166,6 +172,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                             "window_open": rs.get("window_open", False),
                             "heating_power": rs.get("heating_power", 0),
                             "solar_irradiance": round(self._current_q_solar, 3),
+                            "blind_position": rs.get("blind_position"),
                         })
                 except Exception:  # noqa: BLE001
                     _LOGGER.warning("History record failed for '%s'", area_id)
@@ -181,7 +188,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                             model = self._model_manager.get_model(area_id)
                             hp = rs.get("heating_power", 100) / 100.0
                             Q = hp * model.Q_heat if mode == "heating" else (-hp * model.Q_cool if mode == "cooling" else 0.0)
-                            raw_pred = model.predict(current_temp, self.outdoor_temp, Q, 3.0, q_solar=self._current_q_solar)
+                            raw_pred = model.predict(current_temp, self.outdoor_temp, Q, 3.0, q_solar=self._current_q_solar * rs.get("shading_factor", 1.0))
                         # Sanity clamp: prevent unrealistic jumps in one prediction step
                         clamped = max(current_temp - MAX_PREDICTION_DELTA, min(current_temp + MAX_PREDICTION_DELTA, raw_pred))
                         self._pending_predictions[area_id] = round(clamped, 2)
@@ -220,6 +227,26 @@ class RoomMindCoordinator(DataUpdateCoordinator):
 
         self.rooms = room_states
         return {"rooms": room_states}
+
+    def _estimate_solar_peak_temp(
+        self, area_id: str, current_temp: float | None, target_temp: float, q_solar: float,
+    ) -> float:
+        """Estimate peak room temperature from solar gain (without MPC).
+
+        Uses EKF-learned beta_s if available, otherwise a conservative default.
+        Falls back to target_temp as base when no room temp sensor.
+        """
+        try:
+            n_idle, _, _ = self._model_manager.get_mode_counts(area_id)
+            if n_idle >= COVER_MIN_IDLE_FOR_LEARNED:
+                beta_s = self._model_manager.get_model(area_id).Q_solar
+            else:
+                beta_s = COVER_DEFAULT_BETA_S
+        except Exception:  # noqa: BLE001
+            beta_s = COVER_DEFAULT_BETA_S
+
+        base_temp = current_temp if current_temp is not None else target_temp
+        return base_temp + beta_s * q_solar * COVER_SOLAR_LOOKAHEAD_H
 
     async def _async_process_room(self, room: dict, settings: dict, outdoor_forecast: list[dict]) -> dict:
         """Process a single room: read sensor, evaluate schedule, apply control."""
@@ -294,6 +321,28 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             area_id, system_type, self._previous_modes.get(area_id, MODE_IDLE),
         )
 
+        # Read current cover positions for shading factor
+        from .managers.cover_manager import compute_shading_factor
+        cover_eids: list[str] = room.get("covers", [])
+        cover_positions: list[int] = []
+        for eid in cover_eids:
+            cstate = self.hass.states.get(eid)
+            if cstate is None:
+                continue
+            pos = cstate.attributes.get("current_position")
+            if pos is not None:
+                cover_positions.append(int(pos))
+            elif cstate.state == "closed":
+                cover_positions.append(0)
+            elif cstate.state == "open":
+                cover_positions.append(100)
+        if cover_positions:
+            self._cover_manager.update_position(
+                area_id, int(sum(cover_positions) / len(cover_positions)),
+                override_minutes=room.get("covers_override_minutes", 60),
+            )
+        shading_factor = compute_shading_factor(cover_positions)
+
         # Determine and apply mode with MPC controller
         controller = MPCController(
             self.hass,
@@ -311,6 +360,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             cloud_series=WeatherManager.extract_cloud_series(outdoor_forecast),
             q_residual=q_residual,
             heating_system_type=system_type,
+            shading_factor=shading_factor,
         )
         mode, power_fraction = await controller.async_evaluate(current_temp, targets)
 
@@ -398,6 +448,100 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             mode = MODE_IDLE
             power_fraction = 0.0
 
+        # --- Cover/blind automatic control ---
+        from .managers.cover_manager import CoverManager as _CM
+        has_override = (
+            room.get("override_temp") is not None
+            and room.get("override_until") is not None
+            and room.get("override_until", 0) > time.time()
+        )
+        # Use the appropriate target for cover decisions
+        cover_target = (
+            targets.cool if mode == MODE_COOLING and targets.cool is not None
+            else targets.heat if targets.heat is not None
+            else 22.0
+        )
+        # Compute MPC active status for cover decisions (also used later for room_state)
+        _cover_mpc_active = False
+        if has_external_sensor:
+            try:
+                _ch, _cc = get_can_heat_cool(room, self.outdoor_temp, acs_can_heat=check_acs_can_heat(self.hass, room))
+                _T_out = self.outdoor_temp if self.outdoor_temp is not None else DEFAULT_OUTDOOR_TEMP_FALLBACK
+                _cover_mpc_active = is_mpc_active(
+                    self._model_manager, area_id, _ch, _cc,
+                    current_temp or 20.0, _T_out,
+                )
+            except Exception:  # noqa: BLE001
+                _cover_mpc_active = False
+        # --- Cover forced position (schedule / night close) ---
+        _forced_position: int | None = None
+        _forced_reason = ""
+        _active_cover_sched_idx = -1
+        cover_schedules = room.get("cover_schedules", [])
+        if cover_schedules:
+            _active_cover_sched_idx = resolve_schedule_index(
+                self.hass, room,
+                schedules_key="cover_schedules",
+                selector_key="cover_schedule_selector_entity",
+            )
+            if 0 <= _active_cover_sched_idx < len(cover_schedules):
+                entry = cover_schedules[_active_cover_sched_idx]
+                eid = entry.get("entity_id", "")
+                if eid:
+                    _sched_st = self.hass.states.get(eid)
+                    if _sched_st is not None and _sched_st.state == "on":
+                        # Read position from schedule block data (like temperature)
+                        # Fallback: 0 = fully closed
+                        _block_pos = _sched_st.attributes.get("position")
+                        try:
+                            _forced_position = max(0, min(100, int(_block_pos))) if _block_pos is not None else 0
+                        except (ValueError, TypeError):
+                            _forced_position = 0
+                        _forced_reason = "schedule_active"
+        if _forced_position is None and room.get("covers_night_close", False):
+            _elev = solar_elevation(
+                self.hass.config.latitude,
+                self.hass.config.longitude,
+                time.time(),
+            )
+            if _elev <= 0:
+                _forced_position = room.get("covers_night_position", 0)
+                _forced_reason = "night_close"
+
+        # Tiered cover prediction: MPC if available, else simple solar estimate.
+        # Note: simple estimate intentionally uses unshaded q_solar to prevent
+        # oscillation (shaded → low prediction → retract → sun hits → deploy).
+        # MPC (Tier 3) handles shading correctly via lookahead planning.
+        _cover_predicted_peak = controller.predicted_peak_temp
+        if _cover_predicted_peak is None:
+            _cover_predicted_peak = self._estimate_solar_peak_temp(
+                area_id, current_temp, cover_target, self._current_q_solar,
+            )
+
+        cover_decision = self._cover_manager.evaluate(
+            area_id,
+            covers_auto_enabled=room.get("covers_auto_enabled", False),
+            cover_entity_ids=cover_eids,
+            covers_deploy_threshold=room.get("covers_deploy_threshold", 1.5),
+            covers_min_position=room.get("covers_min_position", 0),
+            covers_outdoor_min_temp=room.get("covers_outdoor_min_temp"),
+            predicted_peak_temp=_cover_predicted_peak,
+            target_temp=cover_target,
+            q_solar=self._current_q_solar,
+            outdoor_temp=self.outdoor_temp,
+            has_active_override=has_override,
+            forced_position=_forced_position,
+            forced_reason=_forced_reason,
+        )
+        if cover_decision.changed:
+            _LOGGER.debug(
+                "Cover control [%s]: %s → position %d%%",
+                area_id, cover_decision.reason, cover_decision.target_position,
+            )
+            await _CM.async_apply(
+                self.hass, cover_eids, cover_decision.target_position
+            )
+
         # Track valve actuation during normal heating
         if mode == MODE_HEATING:
             self._valve_manager.record_heating(room.get("thermostats", []))
@@ -422,14 +566,14 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             T_outdoor = self.outdoor_temp if self.outdoor_temp is not None else current_temp
             if window_open:
                 # Window open: flush pending EKF update, then learn k_window
-                self._flush_ekf_accumulator(area_id, current_temp, T_outdoor, room, q_residual=q_residual)
+                self._flush_ekf_accumulator(area_id, current_temp, T_outdoor, room, q_residual=q_residual, shading_factor=shading_factor)
                 self._model_manager.update_window_open(
                     area_id, current_temp, T_outdoor, dt_minutes,
                 )
             elif ekf_mode is None:
                 # Unobservable device state (control disabled, no hvac_action)
                 # — flush pending data and skip training to prevent corruption.
-                self._flush_ekf_accumulator(area_id, current_temp, T_outdoor, room, q_residual=q_residual)
+                self._flush_ekf_accumulator(area_id, current_temp, T_outdoor, room, q_residual=q_residual, shading_factor=shading_factor)
                 self._ekf_accumulated_dt.pop(area_id, None)
                 self._ekf_accumulated_mode.pop(area_id, None)
                 self._ekf_accumulated_pf.pop(area_id, None)
@@ -438,7 +582,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 prev_mode = self._ekf_accumulated_mode.get(area_id)
                 if prev_mode is not None and prev_mode != ekf_mode:
                     # Mode changed — flush with the previous mode
-                    self._flush_ekf_accumulator(area_id, current_temp, T_outdoor, room, q_residual=q_residual)
+                    self._flush_ekf_accumulator(area_id, current_temp, T_outdoor, room, q_residual=q_residual, shading_factor=shading_factor)
 
                 old_dt = self._ekf_accumulated_dt.get(area_id, 0.0)
                 new_dt = old_dt + dt_minutes
@@ -456,7 +600,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                         self._ekf_accumulated_dt[area_id],
                         can_heat=can_heat, can_cool=can_cool,
                         power_fraction=pf,
-                        q_solar=self._current_q_solar,
+                        q_solar=self._current_q_solar * shading_factor,
                         q_residual=q_residual,
                     )
                     self._ekf_accumulated_dt[area_id] = 0.0
@@ -469,18 +613,8 @@ class RoomMindCoordinator(DataUpdateCoordinator):
 
         self._previous_modes[area_id] = mode
 
-        # Compute MPC status for live data
-        mpc_active = False
-        if has_external_sensor and settings.get("control_mode") == "mpc":
-            try:
-                can_heat, can_cool = get_can_heat_cool(room, self.outdoor_temp, acs_can_heat=check_acs_can_heat(self.hass, room))
-                T_out = self.outdoor_temp if self.outdoor_temp is not None else DEFAULT_OUTDOOR_TEMP_FALLBACK
-                mpc_active = is_mpc_active(
-                    self._model_manager, area_id, can_heat, can_cool,
-                    current_temp or 20.0, T_out,
-                )
-            except Exception:  # noqa: BLE001
-                mpc_active = False
+        # Reuse MPC active status computed earlier for cover control
+        mpc_active = _cover_mpc_active
 
         # Minimum max_temp across thermostats (for UI display clamping)
         trv_max_temps = []
@@ -530,7 +664,22 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             ),
             "mold_prevention_active": mold_prevention_active_room,
             "mold_prevention_delta": mold_prevention_temp_delta,
+            "shading_factor": shading_factor,
             "n_observations": self._model_manager.get_n_observations(area_id),
+            "blind_position": (
+                self._cover_manager.get_current_position(area_id)
+                if cover_eids else None
+            ),
+            "cover_auto_paused": (
+                self._cover_manager.is_user_override_active(area_id)
+                if cover_eids else False
+            ),
+            "cover_forced_reason": (
+                _forced_reason if cover_eids and _forced_position is not None else ""
+            ),
+            "active_cover_schedule_index": (
+                _active_cover_sched_idx if cover_eids else -1
+            ),
         }
 
     @staticmethod
@@ -551,7 +700,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
 
     def _flush_ekf_accumulator(
         self, area_id: str, current_temp: float, T_outdoor: float, room: dict,
-        q_residual: float = 0.0,
+        q_residual: float = 0.0, shading_factor: float = 1.0,
     ) -> None:
         """Flush accumulated EKF update (on mode change or window open)."""
         accumulated = self._ekf_accumulated_dt.pop(area_id, 0.0)
@@ -562,7 +711,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             self._model_manager.update(
                 area_id, current_temp, T_outdoor, prev_mode, accumulated,
                 can_heat=can_heat, can_cool=can_cool, power_fraction=pf,
-                q_solar=self._current_q_solar,
+                q_solar=self._current_q_solar * shading_factor,
                 q_residual=q_residual,
             )
 
@@ -775,14 +924,32 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         return TargetTemps(heat=eco_heat, cool=eco_cool)
 
     async def async_room_added(self, room: dict) -> None:
-        """Create sensor entities for a newly added room and refresh data."""
+        """Create entity platform entities for a newly added/updated room and refresh data."""
         area_id = room["area_id"]
+        has_covers = bool(room.get("covers"))
+
         if area_id not in self._entity_areas and hasattr(self, "async_add_entities") and self.async_add_entities:
             from .sensor import _create_room_entities
 
             entities = _create_room_entities(self, area_id)
             self.async_add_entities(entities)
             self._entity_areas.add(area_id)
+
+        # Cover entities: only create when covers are configured.
+        # Not removed on save — cleanup_orphaned_entities() handles that at startup
+        # so brief config changes don't break user automations.
+        if has_covers:
+            if area_id not in self._switch_entity_areas and hasattr(self, "async_add_switch_entities") and self.async_add_switch_entities:
+                from .switch import _create_room_switches
+
+                self.async_add_switch_entities(_create_room_switches(self, area_id))
+                self._switch_entity_areas.add(area_id)
+            if area_id not in self._binary_sensor_entity_areas and hasattr(self, "async_add_binary_sensor_entities") and self.async_add_binary_sensor_entities:
+                from .binary_sensor import _create_room_binary_sensors
+
+                self.async_add_binary_sensor_entities(_create_room_binary_sensors(self, area_id))
+                self._binary_sensor_entity_areas.add(area_id)
+
         await self.async_request_refresh()
 
     async def async_room_removed(self, area_id: str) -> None:
@@ -808,10 +975,63 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         self._last_temps.pop(area_id, None)
         self._pending_predictions.pop(area_id, None)
         self._residual_tracker.remove_room(area_id)
+        self._cover_manager.remove_room(area_id)
         self._entity_areas.discard(area_id)
+        self._switch_entity_areas.discard(area_id)
+        self._binary_sensor_entity_areas.discard(area_id)
         self._model_manager.remove_room(area_id)
         if self._history_store:
             await self.hass.async_add_executor_job(self._history_store.remove_room, area_id)
 
         await self.async_request_refresh()
+
+    def cleanup_orphaned_entities(self) -> None:
+        """Remove entities that no longer match any registered entity type.
+
+        Called at startup to clean up entities from removed features.
+        """
+        from homeassistant.helpers import entity_registry as er
+
+        store = self.hass.data[DOMAIN]["store"]
+        rooms = store.get_rooms()
+        registry = er.async_get(self.hass)
+
+        # Known valid suffixes for each condition
+        always_valid = ("_target_temp", "_mode")
+        cover_only = ("_cover_auto", "_cover_paused")
+
+        to_remove: list[str] = []
+        for entity_entry in registry.entities.values():
+            uid = entity_entry.unique_id
+            if not uid or not uid.startswith(f"{DOMAIN}_"):
+                continue
+
+            # Extract area_id: roommind_{area_id}_{suffix}
+            parts = uid.removeprefix(f"{DOMAIN}_")
+            # Find which room this belongs to
+            matched_area = None
+            for area_id in rooms:
+                if parts.startswith(f"{area_id}_"):
+                    matched_area = area_id
+                    break
+
+            if matched_area is None:
+                # Room no longer exists — orphaned entity
+                to_remove.append(entity_entry.entity_id)
+                continue
+
+            suffix = parts.removeprefix(f"{matched_area}")
+            room = rooms[matched_area]
+
+            if suffix in always_valid:
+                continue
+            if suffix in cover_only and room.get("covers"):
+                continue
+
+            # Entity doesn't match any valid type — orphaned
+            to_remove.append(entity_entry.entity_id)
+
+        for eid in to_remove:
+            _LOGGER.info("Removing orphaned entity: %s", eid)
+            registry.async_remove(eid)
 

@@ -18,6 +18,10 @@ export interface ScheduleEntry {
   entity_id: string;
 }
 
+export interface CoverScheduleEntry {
+  entity_id: string;
+}
+
 export interface RoomLiveData {
   current_temp: number | null;
   current_humidity: number | null;
@@ -40,6 +44,10 @@ export interface RoomLiveData {
   mold_surface_rh: number | null;
   mold_prevention_active: boolean;
   mold_prevention_delta: number;
+  blind_position: number | null;
+  cover_auto_paused: boolean;
+  cover_forced_reason: string;
+  active_cover_schedule_index: number;
 }
 
 export interface RoomConfig {
@@ -66,6 +74,16 @@ export interface RoomConfig {
   presence_persons?: string[];
   display_name?: string;
   heating_system_type?: string;
+  covers?: string[];
+  covers_auto_enabled?: boolean;
+  covers_deploy_threshold?: number;
+  covers_min_position?: number;
+  covers_outdoor_min_temp?: number | null;
+  covers_override_minutes?: number;
+  cover_schedules?: CoverScheduleEntry[];
+  cover_schedule_selector_entity?: string;
+  covers_night_close?: boolean;
+  covers_night_position?: number;
   live?: RoomLiveData;
 }
 
@@ -161,6 +179,7 @@ export interface AnalyticsDataPoint {
   predicted_temp: number | null;
   window_open: boolean;
   heating_power: number | null;
+  blind_position?: number | null;
 }
 
 export interface AnalyticsData {

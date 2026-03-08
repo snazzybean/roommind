@@ -51,6 +51,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
+    # Clean up orphaned entities (e.g. cover entities for rooms without covers)
+    coordinator.cleanup_orphaned_entities()
+
     await _async_register_panel(hass)
     _check_version_mismatch(hass)
 

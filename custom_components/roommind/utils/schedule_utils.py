@@ -154,17 +154,26 @@ def resolve_targets_at_time(
     return TargetTemps(heat=eco_heat, cool=eco_cool)
 
 
-def resolve_schedule_index(hass: "HomeAssistant", room: dict) -> int:
+def resolve_schedule_index(
+    hass: "HomeAssistant",
+    room: dict,
+    *,
+    schedules_key: str = "schedules",
+    selector_key: str = "schedule_selector_entity",
+) -> int:
     """Return the 0-based index of the active schedule, or -1 if none.
 
     This is the single source of truth for schedule selector resolution,
     used by both the coordinator and schedule_utils helpers.
+
+    Supports custom key names for reuse with different schedule types
+    (e.g. cover schedules).
     """
-    schedules = room.get("schedules", [])
+    schedules = room.get(schedules_key, [])
     if not schedules:
         return -1
 
-    selector_entity = room.get("schedule_selector_entity", "")
+    selector_entity = room.get(selector_key, "")
     if not selector_entity:
         return 0
 

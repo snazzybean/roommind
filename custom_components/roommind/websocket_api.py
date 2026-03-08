@@ -49,6 +49,10 @@ _ROOM_SAVE_FIELDS = (
     "comfort_heat", "comfort_cool", "eco_heat", "eco_cool",
     "presence_persons", "display_name",
     "heating_system_type",
+    "covers", "covers_auto_enabled", "covers_deploy_threshold",
+    "covers_min_position", "covers_outdoor_min_temp", "covers_override_minutes",
+    "cover_schedules", "cover_schedule_selector_entity",
+    "covers_night_close", "covers_night_position",
 )
 
 _SETTINGS_SAVE_FIELDS = (
@@ -133,6 +137,10 @@ async def websocket_list_rooms(
             "mold_prevention_active": live.get("mold_prevention_active", False),
             "mold_prevention_delta": live.get("mold_prevention_delta", 0),
             "n_observations": live.get("n_observations", 0),
+            "blind_position": live.get("blind_position"),
+            "cover_auto_paused": live.get("cover_auto_paused", False),
+            "cover_forced_reason": live.get("cover_forced_reason", ""),
+            "active_cover_schedule_index": live.get("active_cover_schedule_index", -1),
         }
         result[area_id] = room_data
 
@@ -189,6 +197,28 @@ async def websocket_list_rooms(
         vol.Optional("display_name"): str,
         vol.Optional("heating_system_type"): vol.In(
             ["", "radiator", "underfloor"]
+        ),
+        vol.Optional("covers"): [str],
+        vol.Optional("covers_auto_enabled"): bool,
+        vol.Optional("covers_deploy_threshold"): vol.All(vol.Coerce(float), vol.Range(min=0)),
+        vol.Optional("covers_min_position"): vol.All(
+            vol.Coerce(int), vol.Range(min=0, max=99)
+        ),
+        vol.Optional("covers_outdoor_min_temp"): vol.Any(
+            None, vol.All(vol.Coerce(float), vol.Range(min=0, max=35))
+        ),
+        vol.Optional("covers_override_minutes"): vol.All(
+            vol.Coerce(int), vol.Range(min=0, max=480)
+        ),
+        vol.Optional("cover_schedules"): [
+            {
+                vol.Required("entity_id"): str,
+            }
+        ],
+        vol.Optional("cover_schedule_selector_entity"): str,
+        vol.Optional("covers_night_close"): bool,
+        vol.Optional("covers_night_position"): vol.All(
+            vol.Coerce(int), vol.Range(min=0, max=100)
         ),
     }
 )

@@ -149,6 +149,16 @@ class RoomMindStore:
                 "presence_persons": config.get("presence_persons", []),
                 "display_name": config.get("display_name", ""),
                 "heating_system_type": config.get("heating_system_type", ""),
+                "covers": config.get("covers", []),
+                "covers_auto_enabled": config.get("covers_auto_enabled", False),
+                "covers_deploy_threshold": config.get("covers_deploy_threshold", 1.5),
+                "covers_min_position": config.get("covers_min_position", 0),
+                "covers_outdoor_min_temp": config.get("covers_outdoor_min_temp", 10.0),
+                "covers_override_minutes": config.get("covers_override_minutes", 60),
+                "cover_schedules": config.get("cover_schedules", []),
+                "cover_schedule_selector_entity": config.get("cover_schedule_selector_entity", ""),
+                "covers_night_close": config.get("covers_night_close", False),
+                "covers_night_position": config.get("covers_night_position", 0),
             }
             self._data[area_id] = room
             await self._async_save()

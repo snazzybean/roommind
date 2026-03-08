@@ -16,6 +16,11 @@ export class RsThresholdField extends LitElement {
       display: block;
     }
 
+    ha-textfield {
+      display: block;
+      width: 100%;
+    }
+
     .hint {
       font-size: 13px;
       color: var(--secondary-text-color);

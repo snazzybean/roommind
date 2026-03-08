@@ -9,7 +9,7 @@ DOMAIN = "roommind"
 VERSION = "1.3.4"
 
 # Platforms
-PLATFORMS = [Platform.SENSOR]
+PLATFORMS = [Platform.SENSOR, Platform.SWITCH, Platform.BINARY_SENSOR]
 
 # Climate modes
 CLIMATE_MODE_AUTO = "auto"
@@ -108,6 +108,18 @@ HEATING_SYSTEM_PROFILES: dict[str, dict[str, float]] = {
     },
 }
 RESIDUAL_HEAT_CUTOFF = 0.02  # below this q_residual is treated as zero
+
+# Blind/cover control
+COVER_SOLAR_MIN: float = 0.15
+COVER_HYSTERESIS: float = 1.0
+COVER_MIN_HOLD_SECONDS: int = 900
+COVER_POS_SCALE: float = 25.0
+COVER_MAX_EFFECTIVENESS: float = 0.85
+COVER_USER_CONFLICT_THRESHOLD: int = 15
+COVER_USER_OVERRIDE_MINUTES: int = 60
+COVER_DEFAULT_BETA_S: float = 3.0       # °C/h per unit q_solar (default for rooms without learned data)
+COVER_SOLAR_LOOKAHEAD_H: float = 1.0    # 1 hour lookahead for simple solar prediction
+COVER_MIN_IDLE_FOR_LEARNED: int = 30    # Min idle observations before trusting EKF's beta_s
 
 
 def build_override_live(room: dict) -> dict:

@@ -6,6 +6,7 @@ import type {
   RoomConfig,
   ClimateMode,
   ScheduleEntry,
+  CoverScheduleEntry,
 } from "../types";
 import "./rs-hero-status";
 import "./rs-climate-mode-selector";
@@ -14,6 +15,7 @@ import "./rs-device-section";
 import "./rs-section-card";
 import "./rs-override-section";
 import "./rs-presence-section";
+import "./rs-covers-section";
 import { localize } from "../utils/localize";
 import { fireSaveStatus } from "../utils/events";
 
@@ -50,6 +52,17 @@ export class RsRoomDetail extends LitElement {
   @state() private _selectedPresencePersons: string[] = [];
   @state() private _displayName = "";
   @state() private _heatingSystemType = "";
+  @state() private _selectedCovers: Set<string> = new Set();
+  @state() private _coversAutoEnabled = false;
+  @state() private _coversDeployThreshold = 1.5;
+  @state() private _coversMinPosition = 0;
+  @state() private _coversOutdoorMinTemp: number | null = 10.0;
+  @state() private _coversOverrideMinutes = 60;
+  @state() private _coverSchedules: CoverScheduleEntry[] = [];
+  @state() private _coverScheduleSelectorEntity = "";
+  @state() private _coversNightClose = false;
+  @state() private _coversNightPosition = 0;
+  @state() private _editingCovers = false;
 
 
   private _prevAreaId: string | null = null;
@@ -84,6 +97,23 @@ export class RsRoomDetail extends LitElement {
     }
 
     /* Section cards handled by rs-section-card */
+
+    /* YAML code block for info panels (slotted into rs-section-card) */
+    .yaml-block {
+      background: var(--primary-background-color, #f5f5f5);
+      border: 1px solid var(--divider-color, #e0e0e0);
+      border-radius: 6px;
+      padding: 10px 14px;
+      margin: 8px 0;
+      font-family: var(--code-font-family, monospace);
+      font-size: 12px;
+      line-height: 1.6;
+      white-space: pre;
+      overflow-x: auto;
+      color: var(--primary-text-color);
+    }
+    .yaml-key { color: #0550ae; }
+    .yaml-value { color: #0a3069; }
 
     /* Actions */
     .actions {
@@ -171,6 +201,16 @@ export class RsRoomDetail extends LitElement {
       this._selectedPresencePersons = this.config.presence_persons ?? [];
       this._displayName = this.config.display_name ?? "";
       this._heatingSystemType = this.config.heating_system_type ?? "";
+      this._selectedCovers = new Set(this.config.covers ?? []);
+      this._coversAutoEnabled = this.config.covers_auto_enabled ?? false;
+      this._coversDeployThreshold = this.config.covers_deploy_threshold ?? 1.5;
+      this._coversMinPosition = this.config.covers_min_position ?? 0;
+      this._coversOutdoorMinTemp = this.config.covers_outdoor_min_temp !== undefined ? this.config.covers_outdoor_min_temp : 10.0;
+      this._coversOverrideMinutes = this.config.covers_override_minutes ?? 60;
+      this._coverSchedules = this.config.cover_schedules ?? [];
+      this._coverScheduleSelectorEntity = this.config.cover_schedule_selector_entity ?? "";
+      this._coversNightClose = this.config.covers_night_close ?? false;
+      this._coversNightPosition = this.config.covers_night_position ?? 0;
     } else {
       this._selectedThermostats = new Set();
       this._selectedAcs = new Set();
@@ -189,6 +229,16 @@ export class RsRoomDetail extends LitElement {
       this._selectedPresencePersons = [];
       this._displayName = "";
       this._heatingSystemType = "";
+      this._selectedCovers = new Set();
+      this._coversAutoEnabled = false;
+      this._coversDeployThreshold = 1.5;
+      this._coversMinPosition = 0;
+      this._coversOutdoorMinTemp = 10.0;
+      this._coversOverrideMinutes = 60;
+      this._coverSchedules = [];
+      this._coverScheduleSelectorEntity = "";
+      this._coversNightClose = false;
+      this._coversNightPosition = 0;
     }
     this._dirty = false;
 
@@ -196,6 +246,7 @@ export class RsRoomDetail extends LitElement {
     const hasDevices = this._selectedThermostats.size > 0 || this._selectedAcs.size > 0 || !!this._selectedTempSensor;
     this._editingSchedule = this._schedules.length === 0;
     this._editingDevices = !hasDevices;
+    this._editingCovers = this._selectedCovers.size === 0;
   }
 
   /** Expose effective override for hero-status via the override sub-component. */
@@ -341,6 +392,69 @@ export class RsRoomDetail extends LitElement {
             @presence-persons-changed=${this._onPresencePersonsChanged}
             @editing-changed=${this._onPresenceEditingChanged}
           ></rs-presence-section>
+
+          <rs-section-card
+            icon="mdi:blinds-horizontal"
+            .heading=${localize("room.section.covers", this.hass.language)}
+            .badge=${localize("badge.beta", this.hass.language)}
+            .badgeHint=${localize("badge.beta_hint", this.hass.language)}
+            hasInfo
+            editable
+            .editing=${this._editingCovers}
+            .doneLabel=${localize("covers.done", this.hass.language)}
+            @edit-click=${() => { this._editingCovers = true; }}
+            @done-click=${() => { this._editingCovers = false; }}
+          >
+            <div slot="info">
+              <b>${localize("covers.info.selection_title", this.hass.language)}</b><br>
+              ${localize("covers.info.selection_body", this.hass.language)}
+              <br><br>
+              <b>${localize("covers.info.schedule_title", this.hass.language)}</b><br>
+              ${localize("covers.info.schedule_body", this.hass.language)}
+              <div class="yaml-block"><span class="yaml-key">schedule</span>:
+  <span class="yaml-key">cover_evening</span>:
+    <span class="yaml-key">name</span>: <span class="yaml-value">Cover Evening</span>
+    <span class="yaml-key">monday</span>:
+      - <span class="yaml-key">from</span>: <span class="yaml-value">"20:00:00"</span>
+        <span class="yaml-key">to</span>: <span class="yaml-value">"06:00:00"</span>
+        <span class="yaml-key">data</span>:
+          <span class="yaml-key">position</span>: <span class="yaml-value">10</span></div>
+              <b>${localize("covers.info.solar_title", this.hass.language)}</b><br>
+              ${localize("covers.info.solar_body", this.hass.language)}
+              <br><br>
+              <b>${localize("covers.info.night_title", this.hass.language)}</b><br>
+              ${localize("covers.info.night_body", this.hass.language)}
+              <br><br>
+              <b>${localize("covers.info.override_title", this.hass.language)}</b><br>
+              ${localize("covers.info.override_body", this.hass.language)}
+              <br><br>
+              <b>${localize("covers.info.priority_title", this.hass.language)}</b><br>
+              ${localize("covers.info.priority_body", this.hass.language)}
+              <br><br>
+              <b>${localize("covers.info.entities_title", this.hass.language)}</b><br>
+              ${localize("covers.info.entities_body", this.hass.language)}
+            </div>
+            <rs-covers-section
+              .hass=${this.hass}
+              .area=${this.area}
+              .editing=${this._editingCovers}
+              .selectedCovers=${this._selectedCovers}
+              .autoEnabled=${this._coversAutoEnabled}
+              .deployThreshold=${this._coversDeployThreshold}
+              .minPosition=${this._coversMinPosition}
+              .outdoorMinTemp=${this._coversOutdoorMinTemp}
+              .overrideMinutes=${this._coversOverrideMinutes}
+              .coverSchedules=${this._coverSchedules}
+              .coverScheduleSelectorEntity=${this._coverScheduleSelectorEntity}
+              .activeCoverScheduleIndex=${this.config?.live?.active_cover_schedule_index ?? -1}
+              .nightClose=${this._coversNightClose}
+              .nightPosition=${this._coversNightPosition}
+              .forcedReason=${this.config?.live?.cover_forced_reason ?? ""}
+              .autoPaused=${this.config?.live?.cover_auto_paused ?? false}
+              @covers-toggle=${this._onCoversToggle}
+              @setting-changed=${this._onCoverSettingChanged}
+            ></rs-covers-section>
+          </rs-section-card>
         </div>
       </div>
     `;
@@ -507,6 +621,35 @@ export class RsRoomDetail extends LitElement {
     this._editingPresence = e.detail.editing;
   }
 
+  // ---- Cover event handlers ----
+
+  private _onCoversToggle(e: CustomEvent<{ entityId: string; checked: boolean }>) {
+    const { entityId, checked } = e.detail;
+    const next = new Set(this._selectedCovers);
+    if (checked) {
+      next.add(entityId);
+    } else {
+      next.delete(entityId);
+    }
+    this._selectedCovers = next;
+    this._autoSave();
+  }
+
+  private _onCoverSettingChanged(e: CustomEvent<{ key: string; value: unknown }>) {
+    const { key, value } = e.detail;
+    e.stopPropagation();
+    if (key === "covers_auto_enabled") this._coversAutoEnabled = value as boolean;
+    else if (key === "covers_deploy_threshold") this._coversDeployThreshold = value as number;
+    else if (key === "covers_min_position") this._coversMinPosition = value as number;
+    else if (key === "covers_outdoor_min_temp") this._coversOutdoorMinTemp = value as number | null;
+    else if (key === "covers_override_minutes") this._coversOverrideMinutes = value as number;
+    else if (key === "cover_schedules") this._coverSchedules = value as CoverScheduleEntry[];
+    else if (key === "cover_schedule_selector_entity") this._coverScheduleSelectorEntity = value as string;
+    else if (key === "covers_night_close") this._coversNightClose = value as boolean;
+    else if (key === "covers_night_position") this._coversNightPosition = value as number;
+    this._autoSave();
+  }
+
   // ---- Auto-save ----
 
   private _onDisplayNameChanged(e: CustomEvent<{ value: string }>) {
@@ -545,6 +688,16 @@ export class RsRoomDetail extends LitElement {
         presence_persons: this._selectedPresencePersons.filter(p => p),
         display_name: this._displayName,
         heating_system_type: this._heatingSystemType,
+        covers: [...this._selectedCovers],
+        covers_auto_enabled: this._coversAutoEnabled,
+        covers_deploy_threshold: this._coversDeployThreshold,
+        covers_min_position: this._coversMinPosition,
+        covers_outdoor_min_temp: this._coversOutdoorMinTemp,
+        covers_override_minutes: this._coversOverrideMinutes,
+        cover_schedules: this._coverSchedules,
+        cover_schedule_selector_entity: this._coverScheduleSelectorEntity,
+        covers_night_close: this._coversNightClose,
+        covers_night_position: this._coversNightPosition,
       });
 
       this._dirty = false;

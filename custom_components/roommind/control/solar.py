@@ -66,6 +66,11 @@ def _solar_elevation(latitude: float, longitude: float, timestamp: float) -> flo
     return math.degrees(math.asin(sin_elev))
 
 
+def solar_elevation(latitude: float, longitude: float, timestamp: float) -> float:
+    """Public API: solar elevation angle in degrees (negative = below horizon)."""
+    return _solar_elevation(latitude, longitude, timestamp)
+
+
 def _clear_sky_ghi(elevation_deg: float) -> float:
     """Estimate clear-sky GHI in W/m² using the Meinel model.
 

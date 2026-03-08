@@ -38,4 +38,20 @@ export const infoIconStyles = css`
     color: var(--primary-text-color);
     font-size: 13px;
   }
+
+  .info-panel .yaml-block {
+    background: var(--primary-background-color, #f5f5f5);
+    border: 1px solid var(--divider-color, #e0e0e0);
+    border-radius: 6px;
+    padding: 10px 14px;
+    margin: 8px 0;
+    font-family: var(--code-font-family, monospace);
+    font-size: 12px;
+    line-height: 1.6;
+    white-space: pre;
+    overflow-x: auto;
+    color: var(--primary-text-color);
+  }
+  .info-panel .yaml-key { color: #0550ae; }
+  .info-panel .yaml-value { color: #0a3069; }
 `;

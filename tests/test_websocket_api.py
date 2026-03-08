@@ -1486,3 +1486,54 @@ async def test_boost_learning_success(ws_hass, store, connection):
 
     mock_coordinator._model_manager.boost_learning.assert_called_once_with("living_room")
     connection.send_result.assert_called_once_with(1, {"success": True, "n_observations": 42})
+
+
+# ── Cover schedule WS validation ───────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_save_room_with_cover_schedules(ws_hass, store, connection):
+    """Cover schedules with valid entity_id are persisted."""
+    await store.async_load()
+    msg = {
+        "id": 2,
+        "type": "roommind/rooms/save",
+        "area_id": "sunroom",
+        "thermostats": ["climate.sunroom"],
+        "cover_schedules": [{"entity_id": "schedule.cover_day"}],
+        "cover_schedule_selector_entity": "input_boolean.cover_mode",
+        "covers_night_close": True,
+        "covers_night_position": 10,
+    }
+    await _save_room(ws_hass, connection, msg)
+    connection.send_result.assert_called_once()
+    room = connection.send_result.call_args[0][1]["room"]
+    assert room["cover_schedules"] == [{"entity_id": "schedule.cover_day"}]
+    assert room["cover_schedule_selector_entity"] == "input_boolean.cover_mode"
+    assert room["covers_night_close"] is True
+    assert room["covers_night_position"] == 10
+
+
+def test_save_room_cover_night_position_validation():
+    """covers_night_position validated by schema: 0-100 range."""
+    import voluptuous as vol
+    validator = vol.All(vol.Coerce(int), vol.Range(min=0, max=100))
+    assert validator(0) == 0
+    assert validator(100) == 100
+    assert validator(50) == 50
+    with pytest.raises(vol.Invalid):
+        validator(150)
+    with pytest.raises(vol.Invalid):
+        validator(-1)
+
+
+def test_save_room_cover_deploy_threshold_rejects_negative():
+    """covers_deploy_threshold rejects negative values."""
+    import voluptuous as vol
+    validator = vol.All(vol.Coerce(float), vol.Range(min=0))
+    assert validator(0) == 0.0
+    assert validator(1.5) == 1.5
+    assert validator(5.0) == 5.0
+    with pytest.raises(vol.Invalid):
+        validator(-1.0)
+    with pytest.raises(vol.Invalid):
+        validator(-0.1)

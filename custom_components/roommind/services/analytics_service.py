@@ -37,6 +37,16 @@ def _safe_float(value: str) -> float | None:
         return None
 
 
+def _safe_int(value: str) -> int | None:
+    """Convert CSV string to int, or None for empty/invalid values."""
+    if not value:
+        return None
+    try:
+        return int(float(value))
+    except (ValueError, TypeError):
+        return None
+
+
 def _csv_to_points(rows: list[dict]) -> list[dict]:
     """Convert CSV rows (string values, 'timestamp' key) to typed points ('ts' key)."""
     result = []
@@ -53,6 +63,7 @@ def _csv_to_points(rows: list[dict]) -> list[dict]:
             "predicted_temp": _safe_float(row.get("predicted_temp", "")),
             "window_open": row.get("window_open", "") in ("True", "true", "1"),
             "heating_power": _safe_float(row.get("heating_power", "")),
+            "blind_position": _safe_int(row.get("blind_position", "")),
         })
     return result
 
@@ -259,9 +270,16 @@ async def build_analytics_data(
                 outdoor_series = build_forecast_outdoor_series(
                     coordinator._weather_manager._outdoor_forecast, T_out_now, len(target_forecast),
                 )
+                # Shading factor from current cover positions
+                live = coordinator.rooms.get(area_id, {})
+                _shading = 1.0
+                if live.get("blind_position") is not None:
+                    from ..managers.cover_manager import compute_shading_factor
+                    _shading = compute_shading_factor([live["blind_position"]])
                 solar_series = build_forecast_solar_series(
                     hass.config.latitude, hass.config.longitude,
                     coordinator._weather_manager._outdoor_forecast, len(target_forecast),
+                    shading_factor=_shading,
                 )
                 # Residual heat state for analytics simulation
                 system_type = room_config.get("heating_system_type", "")

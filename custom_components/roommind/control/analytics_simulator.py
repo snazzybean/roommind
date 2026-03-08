@@ -36,6 +36,7 @@ def build_forecast_outdoor_series(
 def build_forecast_solar_series(
     latitude: float, longitude: float,
     forecast: list[dict], n_blocks: int,
+    shading_factor: float = 1.0,
 ) -> list[float] | None:
     """Build solar series for analytics prediction from forecast cloud coverage.
 
@@ -49,7 +50,10 @@ def build_forecast_solar_series(
     cloud_series: list[float | None] | None = None
     if forecast:
         cloud_series = [f.get("cloud_coverage") for f in forecast]
-    return build_solar_series(latitude, longitude, n_blocks, 5.0, cloud_series=cloud_series)
+    series = build_solar_series(latitude, longitude, n_blocks, 5.0, cloud_series=cloud_series)
+    if series is not None and shading_factor != 1.0:
+        series = [s * shading_factor for s in series]
+    return series
 
 
 def compute_observed_idle_rate(

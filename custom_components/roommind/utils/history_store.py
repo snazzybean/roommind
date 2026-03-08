@@ -9,7 +9,7 @@ import time
 
 _LOGGER = logging.getLogger(__name__)
 
-DETAIL_FIELDS = ["timestamp", "room_temp", "outdoor_temp", "target_temp", "mode", "predicted_temp", "window_open", "heating_power", "solar_irradiance"]
+DETAIL_FIELDS = ["timestamp", "room_temp", "outdoor_temp", "target_temp", "mode", "predicted_temp", "window_open", "heating_power", "solar_irradiance", "blind_position"]
 DETAIL_MAX_AGE = 48 * 3600  # 48 hours
 HISTORY_MAX_AGE = 90 * 24 * 3600  # 90 days
 
@@ -50,6 +50,7 @@ class HistoryStore:
                 "window_open": data.get("window_open", ""),
                 "heating_power": data.get("heating_power", ""),
                 "solar_irradiance": data.get("solar_irradiance", ""),
+                "blind_position": data.get("blind_position", ""),
             })
 
     def read_detail(
@@ -158,7 +159,7 @@ class HistoryStore:
         for bucket_key in sorted(buckets):
             bucket = buckets[bucket_key]
             avg_row = {"timestamp": bucket_key * bucket_seconds, "mode": bucket[0]["mode"], "window_open": bucket[0].get("window_open", "")}
-            for field in ("room_temp", "outdoor_temp", "target_temp", "predicted_temp", "heating_power", "solar_irradiance"):
+            for field in ("room_temp", "outdoor_temp", "target_temp", "predicted_temp", "heating_power", "solar_irradiance", "blind_position"):
                 vals = []
                 for r in bucket:
                     v = r.get(field, "")
