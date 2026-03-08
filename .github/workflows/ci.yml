@@ -28,8 +28,6 @@ jobs:
 
       - name: Run tests with coverage
         run: pytest tests/ -v --cov=custom_components/roommind --cov-report=term --cov-fail-under=95
-        env:
-          COVERAGE_RCFILE: .coveragerc
 
       - name: Coverage badge
         uses: py-cov-action/python-coverage-comment-action@v3
@@ -54,6 +52,37 @@ jobs:
       - name: Type check
         working-directory: frontend
         run: npx tsc --noEmit
+
+      - name: ESLint
+        working-directory: frontend
+        run: npx eslint src/
+
+      - name: Prettier check
+        working-directory: frontend
+        run: npx prettier --check src/
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python tools
+        run: pip install ruff mypy
+
+      - name: Ruff check
+        run: ruff check custom_components/ tests/
+
+      - name: Ruff format check
+        run: ruff format --check custom_components/ tests/
+
+      - name: mypy
+        run: mypy custom_components/roommind/
 
   hacs:
     name: HACS validation
