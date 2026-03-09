@@ -30,7 +30,7 @@ export interface RoomLiveData {
   cool_target: number | null;
   mode: RoomMode;
   heating_power: number; // 0-100
-  trv_setpoint: number | null; // TRV target temp when heating (Full Control)
+  device_setpoint: number | null; // Device target temp in Full Control mode
   override_active: boolean;
   override_type: OverrideType | null;
   override_temp: number | null;

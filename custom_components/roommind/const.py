@@ -55,6 +55,8 @@ BANGBANG_COOL_HYSTERESIS = 0.2  # °C above target → start cooling (bang-bang 
 DEFAULT_OUTDOOR_COOLING_MIN = 16  # Hard block: NEVER cool if outdoor < this
 DEFAULT_OUTDOOR_HEATING_MAX = 22  # Don't heat if outdoor > this
 HEATING_BOOST_TARGET = 30  # TRV target when actively heating (forces valve open)
+AC_HEATING_BOOST_TARGET = 30  # AC target when actively heating (Full Control)
+AC_COOLING_BOOST_TARGET = 16  # AC target when actively cooling (Full Control)
 MIN_POWER_FRACTION = 0.15  # Minimum non-zero power fraction (prevents TRV dead zone)
 
 # Update interval in seconds

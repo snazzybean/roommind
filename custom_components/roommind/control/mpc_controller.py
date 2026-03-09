@@ -11,6 +11,8 @@ from typing import Any, cast
 from homeassistant.core import HomeAssistant
 
 from ..const import (
+    AC_COOLING_BOOST_TARGET,
+    AC_HEATING_BOOST_TARGET,
     BANGBANG_COOL_HYSTERESIS,
     BANGBANG_HEAT_HYSTERESIS,
     CLIMATE_MODE_COOL_ONLY,
@@ -685,24 +687,42 @@ class MPCController:
             for eid in thermostats:
                 await self._call("set_hvac_mode", {"entity_id": eid, "hvac_mode": "heat"})
                 await self._call("set_temperature", {"entity_id": eid, "temperature": ha_trv})
-            # ACs: heat-capable ones get actual target temp, others turn off
-            ha_target = celsius_to_ha_temp(self.hass, effective_target)
+            # ACs: proportional setpoint in Full Control, actual target otherwise
+            if self.has_external_sensor and current_temp is not None:
+                ac_heat_target = round(
+                    current_temp + power_fraction * (AC_HEATING_BOOST_TARGET - current_temp),
+                    1,
+                )
+                ac_heat_target = max(effective_target, ac_heat_target)
+                ac_heat_target = min(AC_HEATING_BOOST_TARGET, ac_heat_target)
+            else:
+                ac_heat_target = effective_target
+            ha_ac_target = celsius_to_ha_temp(self.hass, ac_heat_target)
             for eid in self.acs:
                 ac_state = self.hass.states.get(eid)
                 ac_modes = (ac_state.attributes.get("hvac_modes") or []) if ac_state else []
                 if "heat" in ac_modes:
                     await self._call("set_hvac_mode", {"entity_id": eid, "hvac_mode": "heat"})
-                    await self._call("set_temperature", {"entity_id": eid, "temperature": ha_target})
+                    await self._call("set_temperature", {"entity_id": eid, "temperature": ha_ac_target})
                 elif "heat_cool" in ac_modes:
                     await self._call("set_hvac_mode", {"entity_id": eid, "hvac_mode": "heat_cool"})
-                    await self._call("set_temperature", {"entity_id": eid, "temperature": ha_target})
+                    await self._call("set_temperature", {"entity_id": eid, "temperature": ha_ac_target})
                 elif "auto" in ac_modes:
                     await self._call("set_hvac_mode", {"entity_id": eid, "hvac_mode": "auto"})
-                    await self._call("set_temperature", {"entity_id": eid, "temperature": ha_target})
+                    await self._call("set_temperature", {"entity_id": eid, "temperature": ha_ac_target})
                 else:
                     await self._call("set_hvac_mode", {"entity_id": eid, "hvac_mode": "off"})
         elif mode == MODE_COOLING:
-            ha_target = celsius_to_ha_temp(self.hass, effective_target)
+            if self.has_external_sensor and current_temp is not None:
+                ac_cool_target = round(
+                    current_temp - power_fraction * (current_temp - AC_COOLING_BOOST_TARGET),
+                    1,
+                )
+                ac_cool_target = max(AC_COOLING_BOOST_TARGET, ac_cool_target)
+                ac_cool_target = min(effective_target, ac_cool_target)
+            else:
+                ac_cool_target = effective_target
+            ha_target = celsius_to_ha_temp(self.hass, ac_cool_target)
             for eid in self.acs:
                 await self._call("set_hvac_mode", {"entity_id": eid, "hvac_mode": "cool"})
                 await self._call("set_temperature", {"entity_id": eid, "temperature": ha_target})

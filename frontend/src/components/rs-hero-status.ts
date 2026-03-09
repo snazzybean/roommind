@@ -506,11 +506,13 @@ export class RsHeroStatus extends LitElement {
                     })}
                   </div>`
                 : nothing}
-              ${live.trv_setpoint != null
+              ${live.device_setpoint != null
                 ? html`<div class="hero-metric">
-                    <ha-icon icon="mdi:radiator"></ha-icon>
-                    ${localize("hero.trv_setpoint", this.hass?.language ?? "en", {
-                      value: formatTemp(live.trv_setpoint, this.hass),
+                    <ha-icon
+                      icon=${live.mode === "cooling" ? "mdi:snowflake" : "mdi:radiator"}
+                    ></ha-icon>
+                    ${localize("hero.device_setpoint", this.hass?.language ?? "en", {
+                      value: formatTemp(live.device_setpoint, this.hass),
                       unit: tempUnit(this.hass),
                     })}
                   </div>`

@@ -13,6 +13,8 @@ from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .const import (
+    AC_COOLING_BOOST_TARGET,
+    AC_HEATING_BOOST_TARGET,
     CLIMATE_MODE_COOL_ONLY,
     CLIMATE_MODE_HEAT_ONLY,
     DEFAULT_COMFORT_COOL,
@@ -556,6 +558,14 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 trv_max_temps.append(st.attributes["max_temp"])
         device_max_temp = min(trv_max_temps) if trv_max_temps else None
 
+        # Maximum min_temp across ACs (for UI display clamping)
+        ac_min_temps = []
+        for eid in room.get("acs", []):
+            st = self.hass.states.get(eid)
+            if st and st.attributes.get("min_temp") is not None:
+                ac_min_temps.append(st.attributes["min_temp"])
+        device_min_temp = max(ac_min_temps) if ac_min_temps else None
+
         # Compute display mode: when control is off, show actual device state
         # without affecting internal tracking (residual heat, valve actuation,
         # _previous_modes).  See #36.
@@ -582,8 +592,16 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             "cool_target": targets.cool,
             "mode": display_mode,
             "heating_power": round(display_pf * 100) if display_mode != MODE_IDLE else 0,
-            "trv_setpoint": self._compute_trv_setpoint(
-                mode, power_fraction, current_temp, target_temp, has_external_sensor, device_max_temp
+            "device_setpoint": self._compute_device_setpoint(
+                mode,
+                power_fraction,
+                current_temp,
+                target_temp,
+                has_external_sensor,
+                device_max_temp=device_max_temp,
+                device_min_temp=device_min_temp,
+                has_thermostats=bool(room.get("thermostats")),
+                has_acs=bool(room.get("acs")),
             ),
             "window_open": window_open,
             **build_override_live(room),
@@ -605,23 +623,41 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         }
 
     @staticmethod
-    def _compute_trv_setpoint(
+    def _compute_device_setpoint(
         mode: str,
         power_fraction: float,
         current_temp: float | None,
         target_temp: float | None,
         has_external_sensor: bool,
         device_max_temp: float | None = None,
+        device_min_temp: float | None = None,
+        has_thermostats: bool = True,
+        has_acs: bool = False,
     ) -> float | None:
-        """Compute the TRV setpoint sent to thermostats (for UI display)."""
-        if mode != MODE_HEATING or not has_external_sensor or current_temp is None or target_temp is None:
+        """Compute the device setpoint for UI display (Full Control only)."""
+        if not has_external_sensor or current_temp is None or target_temp is None:
             return None
-        trv = round(current_temp + power_fraction * (HEATING_BOOST_TARGET - current_temp), 1)
-        trv = max(target_temp, trv)
-        trv = min(HEATING_BOOST_TARGET, trv)
-        if device_max_temp is not None:
-            trv = min(trv, device_max_temp)
-        return trv
+
+        if mode == MODE_HEATING:
+            boost = HEATING_BOOST_TARGET if has_thermostats else AC_HEATING_BOOST_TARGET
+            if not has_thermostats and not has_acs:
+                return None
+            sp = round(current_temp + power_fraction * (boost - current_temp), 1)
+            sp = max(target_temp, sp)
+            sp = min(boost, sp)
+            if device_max_temp is not None:
+                sp = min(sp, device_max_temp)
+            return sp
+
+        if mode == MODE_COOLING and has_acs:
+            sp = round(current_temp - power_fraction * (current_temp - AC_COOLING_BOOST_TARGET), 1)
+            sp = max(AC_COOLING_BOOST_TARGET, sp)
+            sp = min(target_temp, sp)
+            if device_min_temp is not None:
+                sp = max(sp, device_min_temp)
+            return sp
+
+        return None
 
     def _read_device_temp(self, room: dict) -> float | None:
         """Read current_temperature from the first thermostat or AC entity."""

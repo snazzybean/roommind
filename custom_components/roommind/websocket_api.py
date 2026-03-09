@@ -160,7 +160,7 @@ async def websocket_list_rooms(
             "cool_target": live.get("cool_target"),
             "mode": live.get("mode", "idle"),
             "heating_power": live.get("heating_power", 0),
-            "trv_setpoint": live.get("trv_setpoint"),
+            "device_setpoint": live.get("device_setpoint"),
             "window_open": live.get("window_open", False),
             **build_override_live(room_config),
             "active_schedule_index": live.get("active_schedule_index", -1),

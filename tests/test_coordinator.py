@@ -3212,52 +3212,108 @@ class TestValveProtectionCheck:
         assert coordinator._valve_manager._actuation_dirty is True
 
 
-class TestComputeTrvSetpoint:
-    """Tests for _compute_trv_setpoint static method."""
+class TestComputeDeviceSetpoint:
+    """Tests for _compute_device_setpoint static method."""
 
     def test_idle_returns_none(self, hass, mock_config_entry):
         coordinator = _create_coordinator(hass, mock_config_entry)
-        result = coordinator._compute_trv_setpoint("idle", 0.5, 20.0, 21.0, True)
+        result = coordinator._compute_device_setpoint("idle", 0.5, 20.0, 21.0, True)
         assert result is None
 
     def test_no_external_sensor_returns_none(self, hass, mock_config_entry):
         coordinator = _create_coordinator(hass, mock_config_entry)
-        result = coordinator._compute_trv_setpoint("heating", 0.5, 20.0, 21.0, False)
+        result = coordinator._compute_device_setpoint("heating", 0.5, 20.0, 21.0, False)
         assert result is None
 
     def test_none_current_temp_returns_none(self, hass, mock_config_entry):
         coordinator = _create_coordinator(hass, mock_config_entry)
-        result = coordinator._compute_trv_setpoint("heating", 0.5, None, 21.0, True)
+        result = coordinator._compute_device_setpoint("heating", 0.5, None, 21.0, True)
         assert result is None
 
     def test_heating_computes_setpoint(self, hass, mock_config_entry):
         coordinator = _create_coordinator(hass, mock_config_entry)
         # power_fraction=0.5, current=20, target=21, boost=30
-        # trv = 20 + 0.5 * (30 - 20) = 25.0
-        result = coordinator._compute_trv_setpoint("heating", 0.5, 20.0, 21.0, True)
+        # sp = 20 + 0.5 * (30 - 20) = 25.0
+        result = coordinator._compute_device_setpoint("heating", 0.5, 20.0, 21.0, True)
         assert result == 25.0
 
     def test_heating_floor_at_target(self, hass, mock_config_entry):
         coordinator = _create_coordinator(hass, mock_config_entry)
         # power_fraction=0.01, current=20, target=21
-        # trv = 20 + 0.01 * (30 - 20) = 20.1 → clamped to target 21.0
-        result = coordinator._compute_trv_setpoint("heating", 0.01, 20.0, 21.0, True)
+        # sp = 20 + 0.01 * (30 - 20) = 20.1 → clamped to target 21.0
+        result = coordinator._compute_device_setpoint("heating", 0.01, 20.0, 21.0, True)
         assert result == 21.0
 
     def test_clamped_to_device_max_temp(self, hass, mock_config_entry):
         coordinator = _create_coordinator(hass, mock_config_entry)
-        # power_fraction=0.5, current=20 → trv = 25.0, but device max is 25
-        result = coordinator._compute_trv_setpoint("heating", 0.5, 20.0, 21.0, True, device_max_temp=25.0)
+        # power_fraction=0.5, current=20 → sp = 25.0, but device max is 25
+        result = coordinator._compute_device_setpoint("heating", 0.5, 20.0, 21.0, True, device_max_temp=25.0)
         assert result == 25.0
-        # power_fraction=1.0, current=20 → trv = 30.0, but device max is 25
-        result = coordinator._compute_trv_setpoint("heating", 1.0, 20.0, 21.0, True, device_max_temp=25.0)
+        # power_fraction=1.0, current=20 → sp = 30.0, but device max is 25
+        result = coordinator._compute_device_setpoint("heating", 1.0, 20.0, 21.0, True, device_max_temp=25.0)
         assert result == 25.0
 
     def test_device_max_temp_none_no_clamping(self, hass, mock_config_entry):
         coordinator = _create_coordinator(hass, mock_config_entry)
         # Without device_max_temp, should reach 30 (HEATING_BOOST_TARGET)
-        result = coordinator._compute_trv_setpoint("heating", 1.0, 20.0, 21.0, True, device_max_temp=None)
+        result = coordinator._compute_device_setpoint("heating", 1.0, 20.0, 21.0, True, device_max_temp=None)
         assert result == 30.0
+
+    def test_cooling_computes_setpoint(self, hass, mock_config_entry):
+        coordinator = _create_coordinator(hass, mock_config_entry)
+        # power_fraction=0.5, current=26, AC_COOLING_BOOST_TARGET=16
+        # sp = 26 - 0.5 * (26 - 16) = 21.0
+        result = coordinator._compute_device_setpoint("cooling", 0.5, 26.0, 23.0, True, has_acs=True)
+        assert result == 21.0
+
+    def test_cooling_without_acs_returns_none(self, hass, mock_config_entry):
+        coordinator = _create_coordinator(hass, mock_config_entry)
+        result = coordinator._compute_device_setpoint("cooling", 0.5, 26.0, 23.0, True, has_acs=False)
+        assert result is None
+
+    def test_heating_ac_only_room(self, hass, mock_config_entry):
+        coordinator = _create_coordinator(hass, mock_config_entry)
+        # AC heating: AC_HEATING_BOOST_TARGET=30
+        # sp = 20 + 0.5 * (30 - 20) = 25.0
+        result = coordinator._compute_device_setpoint(
+            "heating",
+            0.5,
+            20.0,
+            21.0,
+            True,
+            has_thermostats=False,
+            has_acs=True,
+        )
+        assert result == 25.0
+
+    def test_cooling_clamped_to_device_min(self, hass, mock_config_entry):
+        coordinator = _create_coordinator(hass, mock_config_entry)
+        # power_fraction=1.0, current=26, AC_COOLING_BOOST_TARGET=16
+        # raw = 26 - 1.0 * (26 - 16) = 16.0, device_min_temp=18 → clamped to 18.0
+        result = coordinator._compute_device_setpoint(
+            "cooling",
+            1.0,
+            26.0,
+            23.0,
+            True,
+            device_min_temp=18.0,
+            has_acs=True,
+        )
+        assert result == 18.0
+
+    def test_heating_backward_compat(self, hass, mock_config_entry):
+        coordinator = _create_coordinator(hass, mock_config_entry)
+        # Default params (has_thermostats=True, has_acs=False) should behave
+        # identically to the old _compute_trv_setpoint.
+        # sp = 20 + 0.5 * (30 - 20) = 25.0
+        result = coordinator._compute_device_setpoint(
+            "heating",
+            0.5,
+            20.0,
+            21.0,
+            True,
+        )
+        assert result == 25.0
 
 
 # ---------------------------------------------------------------------------
