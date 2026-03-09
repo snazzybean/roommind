@@ -65,7 +65,7 @@
             <a id="nextFileLink" class="nav" href="z_e1a10107a084a5d3_diagnostics_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.13.1">coverage.py v7.13.1</a>,
-            created at 2026-03-09 16:45 +0000
+            created at 2026-03-09 17:37 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -1055,7 +1055,7 @@
     <p class="run"><span class="n"><a id="t973" href="#t973">973</a></span><span class="t">        <span class="nam">to_remove</span><span class="op">:</span> <span class="nam">list</span><span class="op">[</span><span class="nam">str</span><span class="op">]</span> <span class="op">=</span> <span class="op">[</span><span class="op">]</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t974" href="#t974">974</a></span><span class="t">        <span class="key">for</span> <span class="nam">entity_entry</span> <span class="key">in</span> <span class="nam">registry</span><span class="op">.</span><span class="nam">entities</span><span class="op">.</span><span class="nam">values</span><span class="op">(</span><span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t975" href="#t975">975</a></span><span class="t">            <span class="nam">uid</span> <span class="op">=</span> <span class="nam">entity_entry</span><span class="op">.</span><span class="nam">unique_id</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t976" href="#t976">976</a></span><span class="t">            <span class="key">if</span> <span class="key">not</span> <span class="nam">uid</span> <span class="key">or</span> <span class="key">not</span> <span class="nam">uid</span><span class="op">.</span><span class="nam">startswith</span><span class="op">(</span><span class="fst">f"</span><span class="op">{</span><span class="nam">DOMAIN</span><span class="op">}</span><span class="fst">_</span><span class="fst">"</span><span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t976" href="#t976">976</a></span><span class="t">            <span class="key">if</span> <span class="key">not</span> <span class="nam">isinstance</span><span class="op">(</span><span class="nam">uid</span><span class="op">,</span> <span class="nam">str</span><span class="op">)</span> <span class="key">or</span> <span class="key">not</span> <span class="nam">uid</span><span class="op">.</span><span class="nam">startswith</span><span class="op">(</span><span class="fst">f"</span><span class="op">{</span><span class="nam">DOMAIN</span><span class="op">}</span><span class="fst">_</span><span class="fst">"</span><span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t977" href="#t977">977</a></span><span class="t">                <span class="key">continue</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t978" href="#t978">978</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t979" href="#t979">979</a></span><span class="t">            <span class="com"># Extract area_id: roommind_{area_id}_{suffix}</span>&nbsp;</span><span class="r"></span></p>
@@ -1095,7 +1095,7 @@
             <a class="nav" href="z_e1a10107a084a5d3_diagnostics_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.13.1">coverage.py v7.13.1</a>,
-            created at 2026-03-09 16:45 +0000
+            created at 2026-03-09 17:37 +0000
         </p>
     </div>
 </footer>
