@@ -6,7 +6,16 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from custom_components.roommind.control.mpc_controller import clear_command_cache
 from custom_components.roommind.store import RoomMindStore
+
+
+@pytest.fixture(autouse=True)
+def _clear_command_cache():
+    """Clear the module-level command cache between tests."""
+    clear_command_cache()
+    yield
+    clear_command_cache()
 
 
 @pytest.fixture

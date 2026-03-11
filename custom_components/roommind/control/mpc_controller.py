@@ -34,6 +34,28 @@ _LOGGER = logging.getLogger(__name__)
 
 _SENTINEL: object = object()  # default marker for backward-compat keyword detection
 
+# Cache of last successfully sent command per climate entity.
+# Fallback for IR devices that don't report temperature attributes.
+# Persists across MPCController instances (created fresh each 30s cycle),
+# resets on integration reload (module reimport).
+_last_commands: dict[str, dict[str, Any]] = {}
+
+
+def _cache_entry(service: str, data: dict) -> dict[str, Any]:
+    """Build a cache entry from a service call."""
+    return {
+        "service": service,
+        "hvac_mode": data.get("hvac_mode"),
+        "temperature": data.get("temperature"),
+        "target_temp_low": data.get("target_temp_low"),
+        "target_temp_high": data.get("target_temp_high"),
+    }
+
+
+def clear_command_cache() -> None:
+    """Clear the sent-command cache (for tests)."""
+    _last_commands.clear()
+
 
 async def async_turn_off_climate(
     hass: HomeAssistant,
@@ -54,6 +76,10 @@ async def async_turn_off_climate(
     if not hvac_modes or "off" in hvac_modes:
         if state and state.state == "off":
             return  # already off
+        # Cache fallback for IR devices
+        cached = _last_commands.get(entity_id)
+        if cached and cached.get("service") == "set_hvac_mode" and cached.get("hvac_mode") == "off":
+            return
         try:
             await hass.services.async_call(
                 "climate",
@@ -61,6 +87,7 @@ async def async_turn_off_climate(
                 {"entity_id": entity_id, "hvac_mode": "off"},
                 blocking=True,
             )
+            _last_commands[entity_id] = _cache_entry("set_hvac_mode", {"hvac_mode": "off"})
         except Exception:  # noqa: BLE001
             _LOGGER.warning(
                 "Area '%s': climate.set_hvac_mode(off) failed on '%s'",
@@ -92,11 +119,32 @@ async def async_turn_off_climate(
         )
         if cur_check is not None and round(cur_check, 1) == round(fallback_temp, 1):
             return
+        if cur_check is None:
+            cached = _last_commands.get(entity_id)
+            if cached and cached.get("service") == "set_temperature":
+                c_low = cached.get("target_temp_low")
+                c_high = cached.get("target_temp_high")
+                if (
+                    c_low is not None
+                    and c_high is not None
+                    and round(c_low, 1) == round(fallback_temp, 1)
+                    and round(c_high, 1) == round(fallback_temp, 1)
+                ):
+                    return
         svc_data: dict = {"entity_id": entity_id, "target_temp_low": fallback_temp, "target_temp_high": fallback_temp}
     else:
         current_temp_setting = state.attributes.get("temperature")
         if current_temp_setting is not None and round(current_temp_setting, 1) == round(fallback_temp, 1):
             return
+        if current_temp_setting is None:
+            cached = _last_commands.get(entity_id)
+            if (
+                cached
+                and cached.get("service") == "set_temperature"
+                and cached.get("temperature") is not None
+                and round(cached["temperature"], 1) == round(fallback_temp, 1)
+            ):
+                return
         svc_data = {"entity_id": entity_id, "temperature": fallback_temp}
 
     _LOGGER.debug(
@@ -112,6 +160,7 @@ async def async_turn_off_climate(
             svc_data,
             blocking=True,
         )
+        _last_commands[entity_id] = _cache_entry("set_temperature", svc_data)
     except Exception:  # noqa: BLE001
         _LOGGER.warning(
             "Area '%s': climate.set_temperature(%s) fallback failed on '%s'",
@@ -850,11 +899,12 @@ class MPCController:
             if dev_max is not None and data["target_temp_high"] > dev_max:
                 data = {**data, "target_temp_high": dev_max}
 
-        # Skip redundant commands (avoids IR blaster beeping every cycle)
+        # --- Redundancy: primary (device state) then fallback (sent cache) ---
+        skip = False
         if state:
             if service == "set_hvac_mode" and state.state == data.get("hvac_mode"):
-                return
-            if service == "set_temperature":
+                skip = True
+            elif service == "set_temperature":
                 if "target_temp_low" in data:
                     cur_low = state.attributes.get("target_temp_low")
                     cur_high = state.attributes.get("target_temp_high")
@@ -868,15 +918,48 @@ class MPCController:
                         and round(cur_low, 1) == round(des_low, 1)
                         and round(cur_high, 1) == round(des_high, 1)
                     ):
-                        return
+                        skip = True
                 else:
                     current = state.attributes.get("temperature")
                     desired = data.get("temperature")
                     if current is not None and desired is not None and round(current, 1) == round(desired, 1):
-                        return
+                        skip = True
+
+        # Fallback: check sent-command cache (for IR devices without state feedback)
+        if not skip and eid:
+            cached = _last_commands.get(eid)
+            if cached is not None and cached.get("service") == service:
+                if service == "set_hvac_mode":
+                    if cached.get("hvac_mode") == data.get("hvac_mode"):
+                        skip = True
+                elif service == "set_temperature":
+                    if "target_temp_low" in data:
+                        c_low = cached.get("target_temp_low")
+                        c_high = cached.get("target_temp_high")
+                        d_low = data.get("target_temp_low")
+                        d_high = data.get("target_temp_high")
+                        if (
+                            c_low is not None
+                            and d_low is not None
+                            and c_high is not None
+                            and d_high is not None
+                            and round(c_low, 1) == round(d_low, 1)
+                            and round(c_high, 1) == round(d_high, 1)
+                        ):
+                            skip = True
+                    else:
+                        c_temp = cached.get("temperature")
+                        d_temp = data.get("temperature")
+                        if c_temp is not None and d_temp is not None and round(c_temp, 1) == round(d_temp, 1):
+                            skip = True
+
+        if skip:
+            return
 
         try:
             await self.hass.services.async_call("climate", service, data, blocking=True)
+            if eid:
+                _last_commands[eid] = _cache_entry(service, data)
         except Exception:  # noqa: BLE001
             _LOGGER.warning(
                 "Area '%s': climate.%s failed on '%s'",
