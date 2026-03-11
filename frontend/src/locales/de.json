@@ -260,6 +260,7 @@
   "vacation.setback_temp": "Absenktemperatur",
   "vacation.banner_title": "Urlaubsmodus aktiv",
   "vacation.banner_detail": "{temp}{unit} bis {date}",
+  "vacation.no_end_date": "Kein Enddatum",
   "vacation.deactivate": "Deaktivieren",
 
   "tabs.analytics": "Analyse",

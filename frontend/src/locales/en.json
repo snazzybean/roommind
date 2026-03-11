@@ -260,6 +260,7 @@
   "vacation.setback_temp": "Setback temperature",
   "vacation.banner_title": "Vacation mode active",
   "vacation.banner_detail": "{temp}{unit} until {date}",
+  "vacation.no_end_date": "No end date",
   "vacation.deactivate": "Deactivate",
 
   "tabs.analytics": "Analytics",

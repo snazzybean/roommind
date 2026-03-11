@@ -1015,11 +1015,15 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         # Known valid suffixes for each condition
         always_valid = ("_target_temp", "_mode", "_override")
         cover_only = ("_cover_auto", "_cover_paused")
+        # Global entities (not per-room) that should never be cleaned up
+        global_uids = {f"{DOMAIN}_vacation"}
 
         to_remove: list[str] = []
         for entity_entry in registry.entities.values():
             uid = entity_entry.unique_id
             if not isinstance(uid, str) or not uid.startswith(f"{DOMAIN}_"):
+                continue
+            if uid in global_uids:
                 continue
 
             # Extract area_id: roommind_{area_id}_{suffix}

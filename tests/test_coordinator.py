@@ -4215,6 +4215,11 @@ class TestCoverageGaps:
         entry_other.entity_id = "sensor.other_thing"
 
         mock_registry = MagicMock()
+        # Global entity (not per-room) — should be kept
+        entry_vacation = MagicMock()
+        entry_vacation.unique_id = f"{DOMAIN}_vacation"
+        entry_vacation.entity_id = "switch.roommind_vacation"
+
         mock_registry.entities.values.return_value = [
             entry_valid_temp,
             entry_valid_mode,
@@ -4222,6 +4227,7 @@ class TestCoverageGaps:
             entry_valid_cover_paused,
             entry_orphaned_room,
             entry_other,
+            entry_vacation,
         ]
 
         with patch(
@@ -4230,7 +4236,7 @@ class TestCoverageGaps:
         ):
             coordinator.cleanup_orphaned_entities()
 
-        # Only the orphaned entity should be removed
+        # Only the orphaned entity should be removed (vacation is global, not orphaned)
         mock_registry.async_remove.assert_called_once_with("sensor.roommind_deleted_room_target_temp")
 
     def test_cleanup_orphaned_entities_removes_cover_entities_without_covers(self, hass, mock_config_entry):

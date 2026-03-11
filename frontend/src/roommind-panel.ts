@@ -6,6 +6,7 @@ import { loadHaElements } from "./load-ha-elements";
 import { localize } from "./utils/localize";
 import { formatTemp, tempUnit } from "./utils/temperature";
 import { mdiEyeOff } from "./utils/icons";
+import { VACATION_SENTINEL } from "./utils/constants";
 import "./components/rs-settings";
 import "./components/rs-analytics";
 
@@ -580,12 +581,16 @@ export class RoomMindPanel extends LitElement {
                     >${localize("vacation.banner_detail", this.hass.language, {
                       temp: formatTemp(this._vacationTemp, this.hass),
                       unit: tempUnit(this.hass),
-                      date: this._vacationUntil
-                        ? new Date(this._vacationUntil * 1000).toLocaleString(this.hass.language, {
-                            dateStyle: "medium",
-                            timeStyle: "short",
-                          })
-                        : "—",
+                      date:
+                        this._vacationUntil && this._vacationUntil < VACATION_SENTINEL
+                          ? new Date(this._vacationUntil * 1000).toLocaleString(
+                              this.hass.language,
+                              {
+                                dateStyle: "medium",
+                                timeStyle: "short",
+                              },
+                            )
+                          : localize("vacation.no_end_date", this.hass.language),
                     })}</span
                   >
                 </div>

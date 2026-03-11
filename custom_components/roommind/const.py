@@ -130,6 +130,10 @@ COVER_MIN_IDLE_FOR_LEARNED: int = 30  # Min idle observations before trusting EK
 COVER_POS_DEADBAND: int = 5  # min position change (%) to trigger motor movement
 
 
+# Far-future sentinel: vacation active indefinitely (year 2999)
+VACATION_SENTINEL_UNTIL = 32503680000.0
+
+
 def build_override_live(room: dict) -> dict:
     """Build override fields for live data from a room config dict."""
     override_temp = room.get("override_temp")

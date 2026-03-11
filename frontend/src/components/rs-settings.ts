@@ -8,6 +8,7 @@ import { customElement, property, state } from "lit/decorators.js";
 import type { HomeAssistant, GlobalSettings, RoomConfig, NotificationTarget } from "../types";
 import { localize } from "../utils/localize";
 import { fireSaveStatus } from "../utils/events";
+import { VACATION_SENTINEL } from "../utils/constants";
 import "./settings/rs-settings-panel";
 import "./settings/rs-settings-general";
 import "./settings/rs-settings-sensors";
@@ -89,8 +90,10 @@ export class RsSettings extends LitElement {
       const vUntil = s.vacation_until;
       this._vacationActive = !!(vUntil && vUntil > Date.now() / 1000);
       this._vacationTemp = s.vacation_temp ?? 15;
-      if (vUntil && vUntil > Date.now() / 1000) {
+      if (vUntil && vUntil > Date.now() / 1000 && vUntil < VACATION_SENTINEL) {
         this._vacationUntil = this._tsToDatetimeLocal(vUntil);
+      } else {
+        this._vacationUntil = "";
       }
       this._presenceEnabled = s.presence_enabled ?? false;
       this._presencePersons = s.presence_persons ?? [];
@@ -312,10 +315,11 @@ export class RsSettings extends LitElement {
         weather_entity: this._weatherEntity,
         prediction_enabled: this._predictionEnabled,
         vacation_temp: this._vacationTemp,
-        vacation_until:
-          this._vacationActive && this._vacationUntil
+        vacation_until: this._vacationActive
+          ? this._vacationUntil
             ? new Date(this._vacationUntil).getTime() / 1000
-            : null,
+            : VACATION_SENTINEL
+          : null,
         presence_enabled: this._presenceEnabled,
         presence_persons: this._presencePersons.filter((p) => p),
         presence_away_action: this._presenceAwayAction,
