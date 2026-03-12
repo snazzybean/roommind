@@ -290,13 +290,14 @@ export function buildChartOptions(
               } else {
                 parts.push(localize("analytics.heating_period", l));
               }
-              if (hp != null && hp > 0 && closest.room_temp != null) {
-                const trv =
-                  Math.round((closest.room_temp + (hp / 100) * (30 - closest.room_temp)) * 10) / 10;
-                parts.push(`TRV ${formatTemp(trv, hass)}\u00A0${unit}`);
+              if (closest.device_setpoint != null) {
+                parts.push(`TRV ${formatTemp(closest.device_setpoint, hass)}\u00A0${unit}`);
               }
             } else if (closest.mode === "cooling") {
               parts.push(localize("analytics.cooling_period", l));
+              if (closest.device_setpoint != null) {
+                parts.push(`AC ${formatTemp(closest.device_setpoint, hass)}\u00A0${unit}`);
+              }
             }
             if (closest.window_open) parts.push(localize("analytics.window_open_period", l));
             if (parts.length > 0) {

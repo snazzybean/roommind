@@ -424,3 +424,57 @@ class TestBuildAnalyticsData:
             assert kwargs["q_residual"] > 0.0
             assert kwargs["last_power_fraction"] == 0.8
             assert kwargs["heating_duration_minutes"] > 0.0
+
+
+# ---------------------------------------------------------------------------
+# _csv_to_points -- device_setpoint field
+# ---------------------------------------------------------------------------
+
+
+class TestCsvToPointsDeviceSetpoint:
+    """Tests for device_setpoint handling in _csv_to_points."""
+
+    def test_device_setpoint_converted_to_float(self):
+        """device_setpoint string is converted to float."""
+        from custom_components.roommind.services.analytics_service import _csv_to_points
+
+        rows = [
+            {
+                "timestamp": "1000",
+                "room_temp": "20.0",
+                "outdoor_temp": "5.0",
+                "target_temp": "21.0",
+                "mode": "heating",
+                "predicted_temp": "20.5",
+                "window_open": "",
+                "heating_power": "80",
+                "solar_irradiance": "",
+                "blind_position": "",
+                "device_setpoint": "24.5",
+            }
+        ]
+        points = _csv_to_points(rows)
+        assert len(points) == 1
+        assert points[0]["device_setpoint"] == 24.5
+
+    def test_missing_device_setpoint_returns_none(self):
+        """Row without device_setpoint key returns None (backward compat)."""
+        from custom_components.roommind.services.analytics_service import _csv_to_points
+
+        rows = [
+            {
+                "timestamp": "1000",
+                "room_temp": "20.0",
+                "outdoor_temp": "5.0",
+                "target_temp": "21.0",
+                "mode": "idle",
+                "predicted_temp": "20.0",
+                "window_open": "",
+                "heating_power": "",
+                "solar_irradiance": "",
+                "blind_position": "",
+            }
+        ]
+        points = _csv_to_points(rows)
+        assert len(points) == 1
+        assert points[0]["device_setpoint"] is None

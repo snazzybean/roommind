@@ -311,7 +311,7 @@ def test_read_detail_skips_corrupt_timestamps(history_dir):
     # Manually write a corrupt row
     path = store._detail_path("room_a")
     with open(path, "a") as f:
-        f.write("bad_ts,20.0,5.0,21.0,idle,20.0,,,,\n")
+        f.write("bad_ts,20.0,5.0,21.0,idle,20.0,,,,,\n")
 
     store.record(
         "room_a",
@@ -338,7 +338,7 @@ def test_rotate_skips_corrupt_timestamps(history_dir):
     # Write a corrupt row
     path = store._detail_path("room_a")
     with open(path, "a") as f:
-        f.write("not_a_number,20.0,5.0,21.0,idle,20.0,,,,\n")
+        f.write("not_a_number,20.0,5.0,21.0,idle,20.0,,,,,\n")
 
     # Should not raise
     store.rotate("room_a")
@@ -431,3 +431,81 @@ def test_rotate_trims_old_history(history_dir):
     assert len(store.read_history("room1")) == 1
     store.rotate("room1")
     assert len(store.read_history("room1")) == 0
+
+
+# ---------------------------------------------------------------------------
+# device_setpoint field
+# ---------------------------------------------------------------------------
+
+
+def test_device_setpoint_in_csv(history_dir):
+    """device_setpoint is written to CSV and read back correctly."""
+    store = HistoryStore(history_dir)
+    store.record(
+        "room_a",
+        {
+            "room_temp": 20.0,
+            "outdoor_temp": 5.0,
+            "target_temp": 21.0,
+            "mode": "heating",
+            "predicted_temp": 20.5,
+            "device_setpoint": 24.5,
+        },
+    )
+    rows = store.read_detail("room_a")
+    assert len(rows) == 1
+    assert rows[0]["device_setpoint"] == "24.5"
+
+
+def test_device_setpoint_missing_defaults_empty(history_dir):
+    """Missing device_setpoint defaults to empty string in CSV."""
+    store = HistoryStore(history_dir)
+    store.record(
+        "room_a",
+        {
+            "room_temp": 20.0,
+            "outdoor_temp": 5.0,
+            "target_temp": 21.0,
+            "mode": "idle",
+            "predicted_temp": 20.0,
+        },
+    )
+    rows = store.read_detail("room_a")
+    assert len(rows) == 1
+    assert rows[0]["device_setpoint"] == ""
+
+
+def test_downsample_takes_first_device_setpoint(history_dir):
+    """_downsample takes first device_setpoint value from each bucket (not averaged)."""
+    store = HistoryStore(history_dir)
+    rows = [
+        {
+            "timestamp": "1000",
+            "room_temp": "20.0",
+            "outdoor_temp": "5.0",
+            "target_temp": "21.0",
+            "mode": "heating",
+            "predicted_temp": "20.0",
+            "window_open": "",
+            "heating_power": "80",
+            "solar_irradiance": "",
+            "blind_position": "",
+            "device_setpoint": "24.0",
+        },
+        {
+            "timestamp": "1060",
+            "room_temp": "20.0",
+            "outdoor_temp": "5.0",
+            "target_temp": "21.0",
+            "mode": "heating",
+            "predicted_temp": "20.0",
+            "window_open": "",
+            "heating_power": "80",
+            "solar_irradiance": "",
+            "blind_position": "",
+            "device_setpoint": "26.0",
+        },
+    ]
+    result = store._downsample(rows, bucket_seconds=300)
+    assert len(result) == 1
+    assert result[0]["device_setpoint"] == "24.0"

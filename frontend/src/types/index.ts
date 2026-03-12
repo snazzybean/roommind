@@ -183,6 +183,7 @@ export interface AnalyticsDataPoint {
   heating_power: number | null;
   solar_irradiance: number | null;
   blind_position?: number | null;
+  device_setpoint?: number | null;
 }
 
 export interface AnalyticsData {

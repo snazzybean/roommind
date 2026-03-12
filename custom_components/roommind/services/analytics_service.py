@@ -66,6 +66,7 @@ def _csv_to_points(rows: list[dict]) -> list[dict]:
                 "heating_power": _safe_float(row.get("heating_power", "")),
                 "solar_irradiance": _safe_float(row.get("solar_irradiance", "")),
                 "blind_position": _safe_int(row.get("blind_position", "")),
+                "device_setpoint": _safe_float(row.get("device_setpoint", "")),
             }
         )
     return result
@@ -353,6 +354,7 @@ async def build_analytics_data(
                 "mode": "forecast",
                 "predicted_temp": pred_temps[i] if i < len(pred_temps) else None,
                 "window_open": False,
+                "device_setpoint": None,
             }
         )
 

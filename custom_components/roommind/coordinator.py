@@ -220,6 +220,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                             "heating_power": rs.get("heating_power", 0),
                             "solar_irradiance": round(self._current_q_solar, 3),
                             "blind_position": rs.get("blind_position"),
+                            "device_setpoint": rs.get("device_setpoint"),
                         },
                     )
                 except Exception:  # noqa: BLE001

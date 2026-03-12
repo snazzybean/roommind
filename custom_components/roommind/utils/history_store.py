@@ -20,6 +20,7 @@ DETAIL_FIELDS = [
     "heating_power",
     "solar_irradiance",
     "blind_position",
+    "device_setpoint",
 ]
 DETAIL_MAX_AGE = 48 * 3600  # 48 hours
 HISTORY_MAX_AGE = 90 * 24 * 3600  # 90 days
@@ -63,6 +64,7 @@ class HistoryStore:
                     "heating_power": data.get("heating_power", ""),
                     "solar_irradiance": data.get("solar_irradiance", ""),
                     "blind_position": data.get("blind_position", ""),
+                    "device_setpoint": data.get("device_setpoint", ""),
                 }
             )
 
@@ -175,6 +177,7 @@ class HistoryStore:
                 "timestamp": bucket_key * bucket_seconds,
                 "mode": bucket[0]["mode"],
                 "window_open": bucket[0].get("window_open", ""),
+                "device_setpoint": bucket[0].get("device_setpoint", ""),
             }
             for field in (
                 "room_temp",
