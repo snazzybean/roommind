@@ -5,6 +5,7 @@ import { getEntitiesForArea } from "../utils/room-state";
 import { localize } from "../utils/localize";
 import { getSelectValue, openEntityInfo } from "../utils/events";
 import { tempUnit } from "../utils/temperature";
+import { resolveHeatingSystemType } from "../utils/device-utils";
 
 @customElement("rs-device-section")
 export class RsDeviceSection extends LitElement {
@@ -27,19 +28,14 @@ export class RsDeviceSection extends LitElement {
     return new Set(this.devices.filter((d) => d.type === "trv").map((d) => d.entity_id));
   }
 
-  private get _selectedAcs(): Set<string> {
-    return new Set(this.devices.filter((d) => d.type !== "trv").map((d) => d.entity_id));
+  private get _selectedCoolingDevices(): Set<string> {
+    return new Set(
+      this.devices.filter((d) => d.type === "ac" || d.type === "heat_pump").map((d) => d.entity_id),
+    );
   }
 
   private get _heatingSystemType(): string {
-    const priority: Record<string, number> = { underfloor: 2, radiator: 1, "": 0 };
-    let best = "";
-    for (const d of this.devices) {
-      if (d.type !== "trv") continue;
-      const hst = d.heating_system_type ?? "";
-      if ((priority[hst] ?? 0) > (priority[best] ?? 0)) best = hst;
-    }
-    return best;
+    return resolveHeatingSystemType(this.devices);
   }
 
   static styles = css`
@@ -326,7 +322,7 @@ export class RsDeviceSection extends LitElement {
   }
 
   private _renderViewMode() {
-    const hasClimate = this._selectedThermostats.size > 0 || this._selectedAcs.size > 0;
+    const hasClimate = this._selectedThermostats.size > 0 || this._selectedCoolingDevices.size > 0;
     const hasTempSensor = !!this.selectedTempSensor;
     const hasHumiditySensor = !!this.selectedHumiditySensor;
 
@@ -338,7 +334,7 @@ export class RsDeviceSection extends LitElement {
                 ${localize("devices.climate_entities", this.hass.language)}
               </div>
               ${[...this._selectedThermostats].map((id) => this._renderViewRow(id, "climate"))}
-              ${[...this._selectedAcs].map((id) => this._renderViewRow(id, "climate"))}
+              ${[...this._selectedCoolingDevices].map((id) => this._renderViewRow(id, "climate"))}
             </div>
           `
         : nothing}
@@ -705,7 +701,7 @@ export class RsDeviceSection extends LitElement {
 
   private _renderClimateRow(entityId: string, external: boolean) {
     const isThermostat = this._selectedThermostats.has(entityId);
-    const isAc = this._selectedAcs.has(entityId);
+    const isAc = this._selectedCoolingDevices.has(entityId);
     const isSelected = isThermostat || isAc;
     const entityState = this.hass.states[entityId];
     const friendlyName = (entityState?.attributes?.friendly_name as string) || entityId;
@@ -876,7 +872,9 @@ export class RsDeviceSection extends LitElement {
   private _detectClimateType(entityId: string): "thermostat" | "ac" | "heat_pump" {
     const state = this.hass.states[entityId];
     const modes = (state?.attributes?.hvac_modes ?? []) as string[];
-    const canHeat = modes.some((m) => ["heat", "heat_cool", "auto"].includes(m));
+    // Only explicit heat/cool modes count. "auto" is ambiguous (device self-regulates)
+    // and should not influence the initial classification. User can override manually.
+    const canHeat = modes.some((m) => ["heat", "heat_cool"].includes(m));
     const canCool = modes.some((m) => ["cool", "heat_cool"].includes(m));
     if (canHeat && canCool) return "heat_pump";
     if (canCool) return "ac";

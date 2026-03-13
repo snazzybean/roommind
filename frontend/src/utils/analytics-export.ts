@@ -43,8 +43,10 @@ export function buildDiagnosticsString(
     room_config: {
       climate_mode: room?.climate_mode,
       has_thermostats:
-        room?.devices?.some((d) => d.type === "trv") ?? (room?.thermostats?.length || 0) > 0,
-      has_acs: room?.devices?.some((d) => d.type !== "trv") ?? (room?.acs?.length || 0) > 0,
+        room?.devices?.some((d) => d.type === "trv") ?? (room?.thermostats?.length ?? 0) > 0,
+      has_cooling_devices:
+        room?.devices?.some((d) => d.type === "ac" || d.type === "heat_pump") ??
+        (room?.acs?.length ?? 0) > 0,
       has_temp_sensor: !!room?.temperature_sensor,
       has_window_sensors: (room?.window_sensors?.length || 0) > 0,
     },

@@ -93,11 +93,20 @@ def test_devices_to_legacy_heat_pump_counts_as_ac():
     assert acs == ["climate.hp1"]
 
 
-def test_devices_to_legacy_unknown_type_defaults_to_acs():
+def test_devices_to_legacy_unknown_type_skipped():
+    """Unknown device types are logged and skipped, not silently added to acs."""
     devices = [{"entity_id": "climate.mystery", "type": "unknown_thing"}]
     thermostats, acs = devices_to_legacy(devices)
     assert thermostats == []
-    assert acs == ["climate.mystery"]
+    assert acs == []
+
+
+def test_devices_to_legacy_missing_entity_id_skipped():
+    """Devices without entity_id are logged and skipped."""
+    devices = [{"type": "trv"}, {"entity_id": "climate.ok", "type": "ac"}]
+    thermostats, acs = devices_to_legacy(devices)
+    assert thermostats == []
+    assert acs == ["climate.ok"]
 
 
 def test_round_trip_legacy_devices_legacy():
@@ -143,14 +152,15 @@ def test_ensure_room_has_devices_idempotent():
     assert room["devices"] == devices_snapshot
 
 
-def test_ensure_room_has_devices_regenerates_legacy_from_devices():
+def test_ensure_room_has_devices_consistent_devices_regenerates_legacy():
+    """When devices match legacy, devices remain source of truth."""
     room = {
         "devices": [
             {"entity_id": "climate.trv1", "type": "trv", "role": "auto", "heating_system_type": "radiator"},
             {"entity_id": "climate.ac1", "type": "ac", "role": "auto", "heating_system_type": ""},
         ],
-        "thermostats": ["stale"],
-        "acs": ["stale"],
+        "thermostats": ["climate.trv1"],
+        "acs": ["climate.ac1"],
         "heating_system_type": "stale",
     }
     ensure_room_has_devices(room)
@@ -159,12 +169,36 @@ def test_ensure_room_has_devices_regenerates_legacy_from_devices():
     assert room["heating_system_type"] == "radiator"
 
 
+def test_ensure_room_has_devices_downgrade_recovery():
+    """When legacy fields were edited during downgrade, prefer legacy over stale devices."""
+    room = {
+        "devices": [
+            {"entity_id": "climate.old_trv", "type": "trv", "role": "auto", "heating_system_type": ""},
+        ],
+        "thermostats": ["climate.new_trv"],
+        "acs": ["climate.new_ac"],
+        "heating_system_type": "radiator",
+    }
+    ensure_room_has_devices(room)
+    # Legacy was edited during downgrade -> devices re-generated from legacy
+    assert len(room["devices"]) == 2
+    assert room["devices"][0]["entity_id"] == "climate.new_trv"
+    assert room["devices"][0]["type"] == "trv"
+    assert room["devices"][0]["heating_system_type"] == "radiator"
+    assert room["devices"][1]["entity_id"] == "climate.new_ac"
+    assert room["devices"][1]["type"] == "ac"
+    assert room["thermostats"] == ["climate.new_trv"]
+    assert room["acs"] == ["climate.new_ac"]
+
+
 def test_ensure_room_has_devices_derives_heating_system_type():
     room = {
         "devices": [
             {"entity_id": "climate.trv1", "type": "trv", "role": "auto", "heating_system_type": "underfloor"},
             {"entity_id": "climate.trv2", "type": "trv", "role": "auto", "heating_system_type": "radiator"},
         ],
+        "thermostats": ["climate.trv1", "climate.trv2"],
+        "acs": [],
     }
     ensure_room_has_devices(room)
     assert room["heating_system_type"] == "underfloor"
@@ -226,11 +260,31 @@ _MIXED_DEVICES = [
 
 
 def test_get_all_entity_ids():
+    # TRVs first for deterministic ordering, then others
     assert get_all_entity_ids(_MIXED_DEVICES) == [
         "climate.trv1",
         "climate.ac1",
         "climate.hp1",
     ]
+
+
+def test_get_all_entity_ids_trvs_first():
+    """Even when ACs come first in the array, TRVs are returned first."""
+    devices = [
+        {"entity_id": "climate.ac1", "type": "ac"},
+        {"entity_id": "climate.trv1", "type": "trv"},
+        {"entity_id": "climate.hp1", "type": "heat_pump"},
+    ]
+    assert get_all_entity_ids(devices) == [
+        "climate.trv1",
+        "climate.ac1",
+        "climate.hp1",
+    ]
+
+
+def test_get_all_entity_ids_skips_missing_entity_id():
+    devices = [{"type": "trv"}, {"entity_id": "climate.ok", "type": "ac"}]
+    assert get_all_entity_ids(devices) == ["climate.ok"]
 
 
 def test_get_trv_eids():

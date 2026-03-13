@@ -5,6 +5,10 @@ Pure utility module with NO dependencies on HA or other RoomMind modules.
 
 from __future__ import annotations
 
+import logging
+
+_LOGGER = logging.getLogger(__name__)
+
 DEVICE_TYPE_TRV = "trv"
 DEVICE_TYPE_AC = "ac"
 DEVICE_TYPE_HEAT_PUMP = "heat_pump"
@@ -16,6 +20,9 @@ DEVICE_ROLE_AUTO = "auto"
 VALID_DEVICE_ROLES = {DEVICE_ROLE_PRIMARY, DEVICE_ROLE_SECONDARY, DEVICE_ROLE_AUTO}
 
 VALID_HEATING_SYSTEM_TYPES = {"", "radiator", "underfloor"}
+
+# Heating system type priority: higher = longer residual heat tau
+HST_PRIORITY = {"underfloor": 2, "radiator": 1, "": 0}
 
 
 def legacy_to_devices(
@@ -54,14 +61,22 @@ def devices_to_legacy(devices: list[dict]) -> tuple[list[str], list[str]]:
     """Extract thermostats/acs lists from devices[].
 
     TRV -> thermostats, AC/heat_pump -> acs.
-    Unknown types default to acs for graceful handling.
+    Devices with unknown types or missing entity_id are logged and skipped.
     """
-    thermostats = [d["entity_id"] for d in devices if d.get("type") == DEVICE_TYPE_TRV]
-    acs = [
-        d["entity_id"]
-        for d in devices
-        if d.get("type") in (DEVICE_TYPE_AC, DEVICE_TYPE_HEAT_PUMP) or d.get("type") not in VALID_DEVICE_TYPES
-    ]
+    thermostats: list[str] = []
+    acs: list[str] = []
+    for d in devices:
+        eid = d.get("entity_id")
+        if not eid:
+            _LOGGER.warning("Skipping device with missing entity_id: %s", d)
+            continue
+        dtype = d.get("type")
+        if dtype == DEVICE_TYPE_TRV:
+            thermostats.append(eid)
+        elif dtype in (DEVICE_TYPE_AC, DEVICE_TYPE_HEAT_PUMP):
+            acs.append(eid)
+        else:
+            _LOGGER.warning("Skipping device with unknown type '%s': %s", dtype, eid)
     return thermostats, acs
 
 
@@ -69,7 +84,8 @@ def ensure_room_has_devices(room: dict) -> dict:
     """One-time migration + read-time safety net.
 
     - No 'devices' key: generate from legacy + room-level heating_system_type
-    - 'devices' present: regenerate legacy from devices (consistency)
+    - 'devices' present but inconsistent with legacy: prefer legacy (downgrade recovery)
+    - 'devices' present and consistent: regenerate legacy from devices
     Mutates and returns room.
     """
     if "devices" not in room:
@@ -78,6 +94,23 @@ def ensure_room_has_devices(room: dict) -> dict:
             room.get("acs", []),
             room.get("heating_system_type", ""),
         )
+    else:
+        # Downgrade recovery: if legacy fields were edited while devices was stale,
+        # the legacy entity sets won't match devices. Prefer legacy in that case.
+        expected_t, expected_a = devices_to_legacy(room["devices"])
+        actual_t = room.get("thermostats", [])
+        actual_a = room.get("acs", [])
+        if set(expected_t) != set(actual_t) or set(expected_a) != set(actual_a):
+            _LOGGER.info(
+                "Device list inconsistent with legacy fields for room '%s', "
+                "re-generating devices from legacy (downgrade recovery)",
+                room.get("area_id", "unknown"),
+            )
+            room["devices"] = legacy_to_devices(
+                actual_t,
+                actual_a,
+                room.get("heating_system_type", ""),
+            )
     # Always regenerate legacy from devices (devices is source of truth after migration)
     thermostats, acs = devices_to_legacy(room["devices"])
     room["thermostats"] = thermostats
@@ -95,25 +128,31 @@ def get_room_heating_system_type(devices: list[dict]) -> str:
     underfloor (tau=90min) > radiator (tau=10min) > "" (no residual heat).
     Only TRV devices are considered (ACs/HPs have no heating system profile).
     """
-    _PRIORITY = {"underfloor": 2, "radiator": 1, "": 0}
     best = ""
     for d in devices:
         if d.get("type") != DEVICE_TYPE_TRV:
             continue
         hst = d.get("heating_system_type", "")
-        if _PRIORITY.get(hst, 0) > _PRIORITY.get(best, 0):
+        if HST_PRIORITY.get(hst, 0) > HST_PRIORITY.get(best, 0):
             best = hst
     return best
 
 
 def get_all_entity_ids(devices: list[dict]) -> list[str]:
-    """All entity_ids from devices."""
-    return [d["entity_id"] for d in devices]
+    """All entity_ids from devices, TRVs first for deterministic ordering.
+
+    Preserves relative order within each group (TRV, non-TRV).
+    This matters for functions like _read_device_temp that take the first
+    entity with a valid value.
+    """
+    trvs = [d["entity_id"] for d in devices if "entity_id" in d and d.get("type") == DEVICE_TYPE_TRV]
+    others = [d["entity_id"] for d in devices if "entity_id" in d and d.get("type") != DEVICE_TYPE_TRV]
+    return trvs + others
 
 
 def get_entity_ids_by_type(devices: list[dict], *types: str) -> list[str]:
     """Entity IDs filtered by type(s)."""
-    return [d["entity_id"] for d in devices if d.get("type") in types]
+    return [d["entity_id"] for d in devices if "entity_id" in d and d.get("type") in types]
 
 
 def get_trv_eids(devices: list[dict]) -> list[str]:
@@ -129,7 +168,7 @@ def get_ac_eids(devices: list[dict]) -> list[str]:
 def get_device_by_eid(devices: list[dict], entity_id: str) -> dict | None:
     """Find a single device by entity_id."""
     for d in devices:
-        if d["entity_id"] == entity_id:
+        if d.get("entity_id") == entity_id:
             return d
     return None
 

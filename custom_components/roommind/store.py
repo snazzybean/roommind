@@ -153,7 +153,8 @@ class RoomMindStore:
                 existing["eco_heat"] = config["eco_temp"]
             # Directional device sync
             if "devices" in config:
-                # New frontend: devices is source of truth -> regenerate legacy
+                # New frontend: devices is source of truth -> regenerate legacy.
+                # Also derive heating_system_type from devices (ignore any sent value).
                 t, a = devices_to_legacy(existing["devices"])
                 existing["thermostats"] = t
                 existing["acs"] = a

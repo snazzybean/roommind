@@ -754,15 +754,6 @@ export class RsRoomDetail extends LitElement {
     this._error = "";
 
     try {
-      // Derive room-level heating_system_type from devices
-      const hstPriority: Record<string, number> = { underfloor: 2, radiator: 1, "": 0 };
-      let bestHst = "";
-      for (const d of this._devices) {
-        if (d.type !== "trv") continue;
-        const hst = d.heating_system_type ?? "";
-        if ((hstPriority[hst] ?? 0) > (hstPriority[bestHst] ?? 0)) bestHst = hst;
-      }
-
       await this.hass.callWS({
         type: "roommind/rooms/save",
         area_id: this.area.area_id,
@@ -781,7 +772,6 @@ export class RsRoomDetail extends LitElement {
         eco_cool: this._ecoCool,
         presence_persons: this._selectedPresencePersons.filter((p) => p),
         display_name: this._displayName,
-        heating_system_type: bestHst,
         covers: [...this._selectedCovers],
         covers_auto_enabled: this._coversAutoEnabled,
         covers_deploy_threshold: this._coversDeployThreshold,
