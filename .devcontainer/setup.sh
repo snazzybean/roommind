@@ -10,6 +10,8 @@ echo "Setting up RoomMind development environment..."
 # System packages
 # ---------------------------------------------------------------------------
 echo "Installing system packages..."
+# Remove Yarn repo if present — its GPG key frequently expires and blocks apt-get update
+sudo rm -f /etc/apt/sources.list.d/yarn.list
 sudo apt-get update
 sudo apt-get install -y \
     build-essential \
