@@ -66,6 +66,7 @@ export class RsRoomDetail extends LitElement {
   @state() private _coversNightClose = false;
   @state() private _coversNightPosition = 0;
   @state() private _editingCovers = false;
+  @state() private _ignorePresence = false;
   @state() private _isOutdoor = false;
   @state() private _valveProtectionExclude: Set<string> = new Set();
   @state() private _heatSourceOrchestration = false;
@@ -237,6 +238,7 @@ export class RsRoomDetail extends LitElement {
       this._coverScheduleSelectorEntity = this.config.cover_schedule_selector_entity ?? "";
       this._coversNightClose = this.config.covers_night_close ?? false;
       this._coversNightPosition = this.config.covers_night_position ?? 0;
+      this._ignorePresence = this.config.ignore_presence ?? false;
       this._isOutdoor = this.config.is_outdoor ?? false;
       this._valveProtectionExclude = new Set(this.config.valve_protection_exclude ?? []);
       this._heatSourceOrchestration = this.config.heat_source_orchestration ?? false;
@@ -268,6 +270,7 @@ export class RsRoomDetail extends LitElement {
       this._coverScheduleSelectorEntity = "";
       this._coversNightClose = false;
       this._coversNightPosition = 0;
+      this._ignorePresence = false;
       this._isOutdoor = false;
       this._valveProtectionExclude = new Set();
       this._heatSourceOrchestration = false;
@@ -448,9 +451,11 @@ export class RsRoomDetail extends LitElement {
                   .presenceEnabled=${this.presenceEnabled}
                   .presencePersons=${this.presencePersons}
                   .selectedPresencePersons=${this._selectedPresencePersons}
+                  .ignorePresence=${this._ignorePresence}
                   .editing=${this._editingPresence}
                   .language=${this.hass.language}
                   @presence-persons-changed=${this._onPresencePersonsChanged}
+                  @ignore-presence-changed=${this._onIgnorePresenceChanged}
                   @editing-changed=${this._onPresenceEditingChanged}
                 ></rs-presence-section>
               `
@@ -689,6 +694,11 @@ export class RsRoomDetail extends LitElement {
     this._autoSave();
   }
 
+  private _onIgnorePresenceChanged(e: CustomEvent<boolean>) {
+    this._ignorePresence = e.detail;
+    this._autoSave();
+  }
+
   private _onPresenceEditingChanged(e: CustomEvent<{ editing: boolean }>) {
     this._editingPresence = e.detail.editing;
   }
@@ -787,6 +797,7 @@ export class RsRoomDetail extends LitElement {
         cover_schedule_selector_entity: this._coverScheduleSelectorEntity,
         covers_night_close: this._coversNightClose,
         covers_night_position: this._coversNightPosition,
+        ignore_presence: this._ignorePresence,
         is_outdoor: this._isOutdoor,
         valve_protection_exclude: [...this._valveProtectionExclude],
         heat_source_orchestration: this._heatSourceOrchestration,

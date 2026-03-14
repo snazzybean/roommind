@@ -105,6 +105,7 @@ export interface RoomConfig {
   cover_schedule_selector_entity?: string;
   covers_night_close?: boolean;
   covers_night_position?: number;
+  ignore_presence?: boolean;
   is_outdoor?: boolean;
   valve_protection_exclude?: string[];
   heat_source_orchestration?: boolean;
