@@ -52,8 +52,8 @@ sudo apt-get install -y \
 echo "Installing Python dependencies..."
 pip install --upgrade pip setuptools wheel
 
-echo "Installing Home Assistant..."
-pip install homeassistant
+echo "Installing Home Assistant (with all optional deps)..."
+pip install 'homeassistant[all]'
 
 echo "Installing development & test dependencies..."
 pip install \
@@ -64,9 +64,6 @@ pip install \
     ruff \
     mypy \
     pre-commit
-
-# Performance libraries to suppress HA warnings
-pip install zlib-ng isal
 
 # ---------------------------------------------------------------------------
 # Frontend dependencies
