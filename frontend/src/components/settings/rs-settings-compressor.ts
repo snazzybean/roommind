@@ -246,7 +246,7 @@ export class RsSettingsCompressor extends LitElement {
     this._fire([
       ...this.compressorGroups,
       {
-        id: crypto.randomUUID(),
+        id: self.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`,
         name: "",
         members: [],
         min_run_minutes: 15,
