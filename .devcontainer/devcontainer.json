@@ -1,6 +1,6 @@
 {
   "name": "RoomMind Development",
-  "image": "mcr.microsoft.com/devcontainers/python:3.12-bookworm",
+  "image": "mcr.microsoft.com/devcontainers/python:3.14-bookworm",
   "forwardPorts": [8123],
   "portsAttributes": {
     "8123": {
