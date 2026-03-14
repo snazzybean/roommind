@@ -11,6 +11,7 @@ from custom_components.roommind.utils.device_utils import (
     get_all_entity_ids,
     get_device_by_eid,
     get_entity_ids_by_type,
+    get_idle_action,
     get_room_heating_system_type,
     get_trv_eids,
     is_ac_type,
@@ -359,3 +360,39 @@ def test_migrate_heat_pump_devices_no_change():
     devices = [{"entity_id": "climate.trv1", "type": "trv"}]
     result = migrate_heat_pump_devices(devices)
     assert result is False
+
+
+# ---------------------------------------------------------------------------
+# get_idle_action
+# ---------------------------------------------------------------------------
+
+
+def test_legacy_to_devices_includes_idle_defaults():
+    """legacy_to_devices produces devices with idle_action='off' and idle_fan_mode=''."""
+    devices = legacy_to_devices(["climate.x"], [])
+    assert len(devices) == 1
+    assert devices[0]["idle_action"] == "off"
+    assert devices[0]["idle_fan_mode"] == ""
+
+
+def test_get_idle_action_defaults():
+    """Empty devices list returns default ('off', 'low')."""
+    action, fan_mode = get_idle_action([], "climate.nonexistent")
+    assert action == "off"
+    assert fan_mode == "low"
+
+
+def test_get_idle_action_configured():
+    """Device with idle_action='fan_only' and idle_fan_mode='auto' returns configured values."""
+    devices = [
+        {
+            "entity_id": "climate.ac1",
+            "type": "ac",
+            "role": "auto",
+            "idle_action": "fan_only",
+            "idle_fan_mode": "auto",
+        }
+    ]
+    action, fan_mode = get_idle_action(devices, "climate.ac1")
+    assert action == "fan_only"
+    assert fan_mode == "auto"
