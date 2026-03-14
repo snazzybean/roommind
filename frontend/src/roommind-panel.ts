@@ -217,12 +217,14 @@ export class RoomMindPanel extends LitElement {
       height: 28px;
       background: var(--divider-color, #444);
       margin: 0 4px;
+      flex-shrink: 0;
     }
 
     .stats-bar {
       display: flex;
       align-items: center;
-      gap: 24px;
+      flex-wrap: wrap;
+      gap: 12px 24px;
       margin-bottom: 20px;
       padding: 12px 16px;
     }
