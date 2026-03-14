@@ -400,7 +400,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
 
         schedule_entity_id = get_active_schedule_entity(self.hass, room)
         schedule_blocks = await read_schedule_blocks(self.hass, schedule_entity_id) if schedule_entity_id else None
-        presence_away = self._is_presence_away(room, settings)
+        presence_away = not room.get("ignore_presence", False) and self._is_presence_away(room, settings)
         target_resolver = make_target_resolver(
             schedule_blocks,
             room,
@@ -1022,8 +1022,8 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                     )
                 )
 
-        # 2.5 Presence-based eco or off
-        if self._is_presence_away(room, settings):
+        # 2.5 Presence-based eco or off (skip if room ignores presence)
+        if not room.get("ignore_presence", False) and self._is_presence_away(room, settings):
             if settings.get("presence_away_action", "eco") == "off":
                 return TargetTemps(heat=None, cool=None)
             return TargetTemps(

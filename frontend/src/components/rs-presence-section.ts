@@ -3,6 +3,7 @@ import { customElement, property } from "lit/decorators.js";
 import type { HomeAssistant } from "../types";
 import { localize } from "../utils/localize";
 import "./rs-section-card";
+import "./shared/rs-toggle-row";
 
 @customElement("rs-presence-section")
 export class RsPresenceSection extends LitElement {
@@ -10,6 +11,7 @@ export class RsPresenceSection extends LitElement {
   @property({ type: Boolean }) public presenceEnabled = false;
   @property({ attribute: false }) public presencePersons: string[] = [];
   @property({ attribute: false }) public selectedPresencePersons: string[] = [];
+  @property({ type: Boolean }) public ignorePresence = false;
   @property({ type: Boolean }) public editing = false;
   @property() public language = "en";
 
@@ -148,7 +150,17 @@ export class RsPresenceSection extends LitElement {
         @edit-click=${this._onEditClick}
         @done-click=${this._onDoneClick}
       >
-        ${this.editing ? this._renderEditMode() : this._renderViewMode()}
+        <rs-toggle-row
+          .label=${localize("presence.ignore_toggle", this.language)}
+          .hint=${localize("presence.ignore_hint", this.language)}
+          .checked=${this.ignorePresence}
+          @toggle-changed=${this._onIgnoreToggle}
+        ></rs-toggle-row>
+        ${this.ignorePresence
+          ? nothing
+          : this.editing
+            ? this._renderEditMode()
+            : this._renderViewMode()}
       </rs-section-card>
     `;
   }
@@ -242,6 +254,16 @@ export class RsPresenceSection extends LitElement {
     this.dispatchEvent(
       new CustomEvent("editing-changed", {
         detail: { editing: false },
+        bubbles: true,
+        composed: true,
+      }),
+    );
+  }
+
+  private _onIgnoreToggle(e: CustomEvent<boolean>) {
+    this.dispatchEvent(
+      new CustomEvent("ignore-presence-changed", {
+        detail: e.detail,
         bubbles: true,
         composed: true,
       }),
