@@ -264,14 +264,17 @@ export class RsRoomDetail extends LitElement {
     }
     this._dirty = false;
 
-    // Auto-detect editing mode
-    const hasDevices =
-      this._selectedThermostats.size > 0 ||
-      this._selectedAcs.size > 0 ||
-      !!this._selectedTempSensor;
-    this._editingSchedule = this._schedules.length === 0;
-    this._editingDevices = !hasDevices;
-    this._editingCovers = this._selectedCovers.size === 0;
+    // Auto-detect editing mode only for new (unsaved) rooms.
+    // Saved rooms with empty selections should stay in display mode.
+    if (!this.config) {
+      this._editingSchedule = true;
+      this._editingDevices = true;
+      this._editingCovers = true;
+    } else {
+      this._editingSchedule = false;
+      this._editingDevices = false;
+      this._editingCovers = false;
+    }
   }
 
   /** Expose effective override for hero-status via the override sub-component. */
