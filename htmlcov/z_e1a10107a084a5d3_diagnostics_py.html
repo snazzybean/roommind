@@ -65,7 +65,7 @@
             <a id="nextFileLink" class="nav" href="z_260372de4d6d50b3_compressor_group_manager_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.13.1">coverage.py v7.13.1</a>,
-            created at 2026-03-14 22:03 +0000
+            created at 2026-03-14 22:49 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -191,8 +191,8 @@
     <p class="run"><span class="n"><a id="t109" href="#t109">109</a></span><span class="t">        <span class="nam">group_cfg</span> <span class="op">=</span> <span class="nam">cgm</span><span class="op">.</span><span class="nam">_groups</span><span class="op">.</span><span class="nam">get</span><span class="op">(</span><span class="nam">gid</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t110" href="#t110">110</a></span><span class="t">        <span class="nam">entry</span><span class="op">:</span> <span class="nam">dict</span><span class="op">[</span><span class="nam">str</span><span class="op">,</span> <span class="nam">Any</span><span class="op">]</span> <span class="op">=</span> <span class="op">{</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t111" href="#t111">111</a></span><span class="t">            <span class="str">"active_members"</span><span class="op">:</span> <span class="nam">sorted</span><span class="op">(</span><span class="nam">state</span><span class="op">.</span><span class="nam">active_members</span><span class="op">)</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t112" href="#t112">112</a></span><span class="t">            <span class="str">"min_run_s"</span><span class="op">:</span> <span class="nam">group_cfg</span><span class="op">.</span><span class="nam">min_run</span> <span class="key">if</span> <span class="nam">group_cfg</span> <span class="key">else</span> <span class="key">None</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t113" href="#t113">113</a></span><span class="t">            <span class="str">"min_off_s"</span><span class="op">:</span> <span class="nam">group_cfg</span><span class="op">.</span><span class="nam">min_off</span> <span class="key">if</span> <span class="nam">group_cfg</span> <span class="key">else</span> <span class="key">None</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t112" href="#t112">112</a></span><span class="t">            <span class="str">"min_run_s"</span><span class="op">:</span> <span class="nam">group_cfg</span><span class="op">.</span><span class="nam">min_run_seconds</span> <span class="key">if</span> <span class="nam">group_cfg</span> <span class="key">else</span> <span class="key">None</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t113" href="#t113">113</a></span><span class="t">            <span class="str">"min_off_s"</span><span class="op">:</span> <span class="nam">group_cfg</span><span class="op">.</span><span class="nam">min_off_seconds</span> <span class="key">if</span> <span class="nam">group_cfg</span> <span class="key">else</span> <span class="key">None</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t114" href="#t114">114</a></span><span class="t">        <span class="op">}</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t115" href="#t115">115</a></span><span class="t">        <span class="key">if</span> <span class="nam">state</span><span class="op">.</span><span class="nam">compressor_on_since</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t116" href="#t116">116</a></span><span class="t">            <span class="nam">entry</span><span class="op">[</span><span class="str">"on_for_s"</span><span class="op">]</span> <span class="op">=</span> <span class="nam">round</span><span class="op">(</span><span class="nam">now</span> <span class="op">-</span> <span class="nam">state</span><span class="op">.</span><span class="nam">compressor_on_since</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
@@ -341,7 +341,7 @@
             <a class="nav" href="z_260372de4d6d50b3_compressor_group_manager_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.13.1">coverage.py v7.13.1</a>,
-            created at 2026-03-14 22:03 +0000
+            created at 2026-03-14 22:49 +0000
         </p>
     </div>
 </footer>
