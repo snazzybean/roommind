@@ -1,0 +1,74 @@
+{
+  "name": "RoomMind Development",
+  "image": "mcr.microsoft.com/devcontainers/python:3.12-bookworm",
+  "forwardPorts": [8123],
+  "portsAttributes": {
+    "8123": {
+      "label": "Home Assistant",
+      "onAutoForward": "notify"
+    }
+  },
+  "containerEnv": {
+    "TZ": "Europe/Berlin"
+  },
+  "mounts": [
+    "source=roommind-ha-config,target=/config,type=volume"
+  ],
+  "postCreateCommand": "bash .devcontainer/setup.sh",
+  "postStartCommand": "/config/start_ha.sh",
+  "remoteUser": "vscode",
+  "runArgs": ["--network=host"],
+  "features": {
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "20"
+    },
+    "ghcr.io/devcontainers/features/git:1": {}
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "charliermarsh.ruff",
+        "esbenp.prettier-vscode",
+        "dbaeumer.vscode-eslint",
+        "github.vscode-pull-request-github",
+        "ryanluker.vscode-coverage-gutters",
+        "ms-vscode.vscode-json",
+        "redhat.vscode-yaml",
+        "lit-plugin.lit-plugin"
+      ],
+      "settings": {
+        "files.eol": "\n",
+        "editor.formatOnSave": true,
+        "files.trimTrailingWhitespace": true,
+        "editor.tabSize": 4,
+        "python.defaultInterpreterPath": "/usr/local/bin/python",
+        "terminal.integrated.defaultProfile.linux": "bash",
+        "python.analysis.autoSearchPaths": true,
+        "python.analysis.extraPaths": [
+          "/config/custom_components",
+          "/workspaces/${localWorkspaceFolderBasename}/custom_components"
+        ],
+        "[python]": {
+          "editor.defaultFormatter": "charliermarsh.ruff",
+          "editor.codeActionsOnSave": {
+            "source.organizeImports.ruff": "explicit",
+            "source.fixAll.ruff": "explicit"
+          }
+        },
+        "[typescript]": {
+          "editor.defaultFormatter": "esbenp.prettier-vscode",
+          "editor.tabSize": 2
+        },
+        "[json]": {
+          "editor.defaultFormatter": "esbenp.prettier-vscode",
+          "editor.tabSize": 2
+        },
+        "yaml.schemas": {
+          "https://json.schemastore.org/github-workflow.json": "file:///workspaces/${localWorkspaceFolderBasename}/.github/workflows/*.{yml,yaml}"
+        }
+      }
+    }
+  }
+}
