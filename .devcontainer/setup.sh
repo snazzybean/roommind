@@ -145,7 +145,7 @@ cd "${WORKSPACE}"
 # ---------------------------------------------------------------------------
 echo ""
 echo "Verifying environment..."
-python -c "import homeassistant; print('  homeassistant', homeassistant.__version__)"
+python -c "from homeassistant.const import __version__; print('  homeassistant', __version__)"
 python -c "import voluptuous; print('  voluptuous OK')"
 python -c "import pytest; print('  pytest', pytest.__version__)"
 node --version | xargs -I{} echo "  node {}"
