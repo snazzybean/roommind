@@ -109,8 +109,8 @@ def _build_compressor_state(coordinator: Any) -> dict[str, Any]:
         group_cfg = cgm._groups.get(gid)
         entry: dict[str, Any] = {
             "active_members": sorted(state.active_members),
-            "min_run_s": group_cfg.min_run if group_cfg else None,
-            "min_off_s": group_cfg.min_off if group_cfg else None,
+            "min_run_s": group_cfg.min_run_seconds if group_cfg else None,
+            "min_off_s": group_cfg.min_off_seconds if group_cfg else None,
         }
         if state.compressor_on_since:
             entry["on_for_s"] = round(now - state.compressor_on_since)

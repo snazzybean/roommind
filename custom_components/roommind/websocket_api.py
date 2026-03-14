@@ -596,6 +596,14 @@ async def websocket_save_settings(
     # Validate compressor groups
     groups = changes.get("compressor_groups")
     if groups:
+        group_ids = [g.get("id", "") for g in groups]
+        if len(group_ids) != len(set(group_ids)):
+            connection.send_error(
+                msg["id"],
+                "duplicate_group_id",
+                "Compressor group IDs must be unique",
+            )
+            return
         all_members: list[str] = []
         for g in groups:
             for eid in g.get("members", []):

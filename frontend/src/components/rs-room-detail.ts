@@ -526,7 +526,7 @@ export class RsRoomDetail extends LitElement {
           ${!this._isOutdoor &&
           this._selectedTempSensor &&
           this._devices.some((d) => d.type === "trv") &&
-          this._devices.some((d) => d.type !== "trv")
+          this._devices.some((d) => d.type === "ac")
             ? html`<rs-section-card
                 icon="mdi:swap-horizontal"
                 .heading=${localize("room.section.heat_source", this.hass.language)}

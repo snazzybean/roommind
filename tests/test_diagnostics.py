@@ -468,8 +468,8 @@ async def test_diagnostics_compressor_groups(hass, mock_config_entry):
 
     now = time.time()
     group_cfg = MagicMock()
-    group_cfg.min_run = 180
-    group_cfg.min_off = 300
+    group_cfg.min_run_seconds = 180
+    group_cfg.min_off_seconds = 300
 
     group_state = MagicMock()
     group_state.active_members = {"climate.ac1"}

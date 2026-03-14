@@ -589,26 +589,34 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                     compressor_forced_on=compressor_forced_on or None,
                     compressor_forced_off=compressor_forced_off or None,
                 )
-                # Update compressor group member states
-                for eid in all_device_eids:
-                    if self._compressor_manager.get_group_for_entity(eid) is None:
-                        continue
-                    if eid in cycling_eids:
-                        continue
-                    if eid in compressor_forced_off:
-                        self._compressor_manager.update_member(eid, False)
-                    elif eid in compressor_forced_on:
-                        self._compressor_manager.update_member(eid, True)
-                    elif mode != MODE_IDLE:
-                        self._compressor_manager.update_member(eid, True)
-                    else:
-                        self._compressor_manager.update_member(eid, False)
             except Exception:  # noqa: BLE001
                 _LOGGER.warning(
                     "Room '%s': climate service call failed",
                     area_id,
                     exc_info=True,
                 )
+            # Update compressor group member states (always, even after failed apply)
+            for eid in all_device_eids:
+                if self._compressor_manager.get_group_for_entity(eid) is None:
+                    continue
+                if eid in cycling_eids:
+                    continue
+                if eid in compressor_forced_off:
+                    self._compressor_manager.update_member(eid, False)
+                elif eid in compressor_forced_on:
+                    # Verify device is actually running before tracking as active.
+                    # If user manually turned it off, respect that.
+                    dev_state = self.hass.states.get(eid)
+                    actually_on = dev_state is not None and dev_state.state not in (
+                        "off",
+                        "unavailable",
+                        "unknown",
+                    )
+                    self._compressor_manager.update_member(eid, actually_on)
+                elif mode != MODE_IDLE:
+                    self._compressor_manager.update_member(eid, True)
+                else:
+                    self._compressor_manager.update_member(eid, False)
         else:
             # Climate control disabled (learn-only) — do NOT send commands,
             # do NOT touch mode/power_fraction (used for internal tracking).

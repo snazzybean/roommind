@@ -22,7 +22,6 @@ HST_PRIORITY = {"underfloor": 2, "radiator": 1, "": 0}
 
 IDLE_ACTION_OFF = "off"
 IDLE_ACTION_FAN_ONLY = "fan_only"
-VALID_IDLE_ACTIONS = {IDLE_ACTION_OFF, IDLE_ACTION_FAN_ONLY}
 DEFAULT_IDLE_FAN_MODE = "low"
 
 
@@ -45,7 +44,7 @@ def legacy_to_devices(
                 "role": DEVICE_ROLE_AUTO,
                 "heating_system_type": heating_system_type,
                 "idle_action": IDLE_ACTION_OFF,
-                "idle_fan_mode": "",
+                "idle_fan_mode": DEFAULT_IDLE_FAN_MODE,
             }
         )
     for eid in acs:
@@ -56,7 +55,7 @@ def legacy_to_devices(
                 "role": DEVICE_ROLE_AUTO,
                 "heating_system_type": "",
                 "idle_action": IDLE_ACTION_OFF,
-                "idle_fan_mode": "",
+                "idle_fan_mode": DEFAULT_IDLE_FAN_MODE,
             }
         )
     return devices

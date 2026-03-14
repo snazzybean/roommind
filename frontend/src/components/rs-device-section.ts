@@ -1025,9 +1025,14 @@ export class RsDeviceSection extends LitElement {
   }
 
   private _onIdleActionChange(entityId: string, idleAction: string): void {
-    const newDevices = this.devices.map((d) =>
-      d.entity_id === entityId ? { ...d, idle_action: idleAction as "off" | "fan_only" } : d,
-    );
+    const newDevices = this.devices.map((d) => {
+      if (d.entity_id !== entityId) return d;
+      const updated = { ...d, idle_action: idleAction as "off" | "fan_only" };
+      if (idleAction === "fan_only" && !d.idle_fan_mode) {
+        updated.idle_fan_mode = "low";
+      }
+      return updated;
+    });
     this._fireDeviceChanged(newDevices);
   }
 

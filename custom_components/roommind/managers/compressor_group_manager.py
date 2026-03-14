@@ -7,8 +7,8 @@ minimum run and off times across all indoor units sharing a compressor.
 from __future__ import annotations
 
 import logging
-import time
 from dataclasses import dataclass, field
+from time import monotonic
 
 from ..const import DEFAULT_COMPRESSOR_MIN_OFF_MINUTES, DEFAULT_COMPRESSOR_MIN_RUN_MINUTES
 
@@ -84,7 +84,7 @@ class CompressorGroupManager:
             return True  # Compressor already running, can join
         if state.compressor_off_since is None:
             return True  # No known off time (e.g. after restart)
-        elapsed = time.time() - state.compressor_off_since
+        elapsed = monotonic() - state.compressor_off_since
         return elapsed >= self._groups[group_id].min_off_seconds
 
     def check_must_stay_active(self, entity_id: str) -> bool:
@@ -104,7 +104,7 @@ class CompressorGroupManager:
             return False  # Other members still active, this one can turn off
         if state.compressor_on_since is None:
             return False  # No known on time (e.g. after restart)
-        elapsed = time.time() - state.compressor_on_since
+        elapsed = monotonic() - state.compressor_on_since
         return elapsed < self._groups[group_id].min_run_seconds
 
     def update_member(self, entity_id: str, is_active: bool) -> None:
@@ -121,10 +121,10 @@ class CompressorGroupManager:
         is_running = len(state.active_members) > 0
         # Track transitions
         if not was_running and is_running:
-            state.compressor_on_since = time.time()
+            state.compressor_on_since = monotonic()
             state.compressor_off_since = None
         elif was_running and not is_running:
-            state.compressor_off_since = time.time()
+            state.compressor_off_since = monotonic()
             state.compressor_on_since = None
 
     def get_group_for_entity(self, entity_id: str) -> str | None:

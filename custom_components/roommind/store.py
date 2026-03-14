@@ -74,26 +74,23 @@ class RoomMindStore:
         self._settings = stored.get("settings", {}) if stored else {}
         self._thermal_data = stored.get("thermal_data", {}) if stored else {}
 
-        # One-time migration: Legacy -> Unified Device Model
-        migrated = 0
+        # One-time migrations (combined into single pass + single save)
+        device_migrated = 0
+        hp_migrated = 0
         for room in self._data.values():
             if "devices" not in room:
                 ensure_room_has_devices(room)
-                migrated += 1
-        if migrated:
-            await self._async_save()
-            _LOGGER.info("Migrated %d room(s) to unified device model", migrated)
-
-        # One-time migration: heat_pump -> ac (safety net for beta testers)
-        hp_migrated = 0
-        for room in self._data.values():
+                device_migrated += 1
             if migrate_heat_pump_devices(room.get("devices", [])):
                 t, a = devices_to_legacy(room["devices"])
                 room["thermostats"] = t
                 room["acs"] = a
                 hp_migrated += 1
-        if hp_migrated:
+        if device_migrated or hp_migrated:
             await self._async_save()
+        if device_migrated:
+            _LOGGER.info("Migrated %d room(s) to unified device model", device_migrated)
+        if hp_migrated:
             _LOGGER.info("Migrated %d room(s) from heat_pump to ac device type", hp_migrated)
 
     async def _async_save(self) -> None:

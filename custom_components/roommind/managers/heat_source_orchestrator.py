@@ -162,9 +162,17 @@ def evaluate_heat_sources(
     # Determine which source group to activate
     large_gap_threshold = primary_delta * HEAT_SOURCE_LARGE_GAP_MULTIPLIER
 
-    # Weather-based preference (None when no outdoor data available)
+    # Weather-based preference with hysteresis (None when no outdoor data available)
+    prefer_ac: bool | None
     if outdoor_temp is not None:
-        prefer_ac: bool | None = outdoor_temp > outdoor_threshold
+        if previous_active_sources == "secondary":
+            # AC was active: keep unless outdoor drops below threshold - hysteresis
+            prefer_ac = outdoor_temp > outdoor_threshold - HEAT_SOURCE_HYSTERESIS
+        elif previous_active_sources == "primary":
+            # Boiler was active: keep unless outdoor rises above threshold + hysteresis
+            prefer_ac = outdoor_temp > outdoor_threshold + HEAT_SOURCE_HYSTERESIS
+        else:
+            prefer_ac = outdoor_temp > outdoor_threshold
     else:
         prefer_ac = None
 
@@ -203,9 +211,11 @@ def evaluate_heat_sources(
     if active == "both":
         reason_parts.append(f"large gap ({delta_t:.1f}°C)")
     elif active == "primary":
-        reason_parts.append(f"boiler preferred ({delta_t:.1f}°C gap, outdoor {outdoor_temp}°C)")
+        outdoor_str = f"{outdoor_temp}°C" if outdoor_temp is not None else "n/a"
+        reason_parts.append(f"boiler preferred ({delta_t:.1f}°C gap, outdoor {outdoor_str})")
     elif active == "secondary":
-        reason_parts.append(f"AC preferred ({delta_t:.1f}°C gap, outdoor {outdoor_temp}°C)")
+        outdoor_str = f"{outdoor_temp}°C" if outdoor_temp is not None else "n/a"
+        reason_parts.append(f"AC preferred ({delta_t:.1f}°C gap, outdoor {outdoor_str})")
 
     for eid, device_type in primary_devices:
         is_active = active in ("primary", "both")

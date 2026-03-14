@@ -51,7 +51,7 @@ class TestCompressorGroupManager:
         mgr.update_member("climate.ac1", True)
         mgr.update_member("climate.ac1", False)
         # Fake time: 6 minutes ago
-        mgr._states["g1"].compressor_off_since = time.time() - 360
+        mgr._states["g1"].compressor_off_since = time.monotonic() - 360
         assert mgr.check_can_activate("climate.ac1") is True
 
     def test_min_off_ignored_if_compressor_running(self):
@@ -81,7 +81,7 @@ class TestCompressorGroupManager:
         mgr.load_groups([_make_group(min_run=15)])
         mgr.update_member("climate.ac1", True)
         # Fake: been running for 20 minutes
-        mgr._states["g1"].compressor_on_since = time.time() - 1200
+        mgr._states["g1"].compressor_on_since = time.monotonic() - 1200
         assert mgr.check_must_stay_active("climate.ac1") is False
 
     def test_not_active_member_does_not_need_to_stay(self):
@@ -183,7 +183,7 @@ class TestCompressorGroupManager:
         mgr.load_groups([_make_group(min_run=15)])
         mgr.update_member("climate.ac1", True)
         # Running for 10 min (< 15 min original)
-        mgr._states["g1"].compressor_on_since = time.time() - 600
+        mgr._states["g1"].compressor_on_since = time.monotonic() - 600
         assert mgr.check_must_stay_active("climate.ac1") is True
         # Change min_run to 5 min
         mgr.load_groups([_make_group(min_run=5)])

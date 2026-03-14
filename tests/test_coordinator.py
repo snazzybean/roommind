@@ -5399,7 +5399,13 @@ class TestHeatSourceOrchestration:
         hass.data = {"roommind": {"store": store}}
 
         # Room is at target so coordinator wants idle (temp=21, comfort=21)
-        hass.states.get = MagicMock(side_effect=make_mock_states_get(temp="21.0"))
+        # AC must have an active HA state so forced_on tracking recognises it as running
+        hass.states.get = MagicMock(
+            side_effect=make_mock_states_get(
+                temp="21.0",
+                extra={"climate.living_room_ac": ("cool", {"hvac_modes": ["cool", "off"]})},
+            )
+        )
         hass.services.async_call = AsyncMock()
 
         coordinator = _create_coordinator(hass, mock_config_entry)
@@ -5407,7 +5413,7 @@ class TestHeatSourceOrchestration:
         # Pre-load groups and mark AC as actively running (min-run not expired)
         coordinator._compressor_manager.load_groups(store.get_settings()["compressor_groups"])
         coordinator._compressor_manager.update_member("climate.living_room_ac", True)
-        # compressor_on_since is now ~time.time(), so min-run (15 min) not expired
+        # compressor_on_since is now ~monotonic(), so min-run (15 min) not expired
 
         await coordinator._async_update_data()
 

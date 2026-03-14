@@ -56,7 +56,7 @@ def test_legacy_to_devices_basic():
         "role": "auto",
         "heating_system_type": "",
         "idle_action": "off",
-        "idle_fan_mode": "",
+        "idle_fan_mode": "low",
     }
     assert devices[2]["type"] == "ac"
     assert devices[2]["heating_system_type"] == ""
@@ -368,11 +368,11 @@ def test_migrate_heat_pump_devices_no_change():
 
 
 def test_legacy_to_devices_includes_idle_defaults():
-    """legacy_to_devices produces devices with idle_action='off' and idle_fan_mode=''."""
+    """legacy_to_devices produces devices with idle_action='off' and idle_fan_mode='low'."""
     devices = legacy_to_devices(["climate.x"], [])
     assert len(devices) == 1
     assert devices[0]["idle_action"] == "off"
-    assert devices[0]["idle_fan_mode"] == ""
+    assert devices[0]["idle_fan_mode"] == "low"
 
 
 def test_get_idle_action_defaults():
