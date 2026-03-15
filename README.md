@@ -11,7 +11,7 @@
 | custom\_components/roommind/const.py                               |       86 |        0 |    100% |           |
 | custom\_components/roommind/control/\_\_init\_\_.py                |        0 |        0 |    100% |           |
 | custom\_components/roommind/control/analytics\_simulator.py        |      190 |        1 |     99% |        58 |
-| custom\_components/roommind/control/mpc\_controller.py             |      630 |       39 |     94% |224-225, 235-242, 254-255, 543-545, 676, 740-752, 832-833, 838, 919-930, 986-987, 1087-1088, 1120-1121, 1206, 1208 |
+| custom\_components/roommind/control/mpc\_controller.py             |      665 |       42 |     94% |245, 262-263, 299-300, 310-317, 329-330, 619-621, 752, 816-828, 912-913, 918, 999-1010, 1068-1069, 1169-1170, 1202-1203, 1288, 1290 |
 | custom\_components/roommind/control/mpc\_optimizer.py              |      157 |        7 |     96% |81, 112, 273, 278, 283, 291, 297 |
 | custom\_components/roommind/control/residual\_heat.py              |       24 |        0 |    100% |           |
 | custom\_components/roommind/control/solar.py                       |       54 |        1 |     98% |        70 |
@@ -36,7 +36,7 @@
 | custom\_components/roommind/store.py                               |      138 |        0 |    100% |           |
 | custom\_components/roommind/switch.py                              |       69 |        0 |    100% |           |
 | custom\_components/roommind/utils/\_\_init\_\_.py                  |        0 |        0 |    100% |           |
-| custom\_components/roommind/utils/device\_utils.py                 |       88 |        0 |    100% |           |
+| custom\_components/roommind/utils/device\_utils.py                 |       90 |        0 |    100% |           |
 | custom\_components/roommind/utils/history\_store.py                |      129 |        1 |     99% |       108 |
 | custom\_components/roommind/utils/mold\_utils.py                   |       32 |        0 |    100% |           |
 | custom\_components/roommind/utils/notification\_utils.py           |       50 |        0 |    100% |           |
@@ -45,7 +45,7 @@
 | custom\_components/roommind/utils/sensor\_utils.py                 |       15 |        0 |    100% |           |
 | custom\_components/roommind/utils/temp\_utils.py                   |       26 |        0 |    100% |           |
 | custom\_components/roommind/websocket\_api.py                      |      231 |        2 |     99% |   601-606 |
-| **TOTAL**                                                          | **4455** |  **197** | **96%** |           |
+| **TOTAL**                                                          | **4492** |  **200** | **96%** |           |
 
 
 ## Setup coverage badge
