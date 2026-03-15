@@ -2,13 +2,8 @@ name: Mutation Testing
 
 on:
   schedule:
-    - cron: "0 3 * * 1"  # Every Monday at 03:00 UTC (weekly, not nightly)
+    - cron: "0 3 * * 1"  # Every Monday at 03:00 UTC
   workflow_dispatch:
-    inputs:
-      module:
-        description: "Module to mutate (leave empty for all)"
-        required: false
-        default: ""
 
 jobs:
   mutation-test:
@@ -52,13 +47,18 @@ jobs:
             mutmut-
 
       - name: Run mutation testing
-        run: mutmut run ${{ matrix.module }}
+        run: |
+          # mutmut exits 1 when mutants survive (expected), 2+ on real errors
+          mutmut run ${{ matrix.module }} || EXIT=$?
+          if [ "${EXIT:-0}" -ge 2 ]; then
+            echo "::error::mutmut failed with exit code $EXIT"
+            exit $EXIT
+          fi
 
-      - name: Generate report
+      - name: Post summary
         if: always()
         run: |
-          echo "## Mutation: ${{ matrix.module }}" >> $GITHUB_STEP_SUMMARY
+          echo "## Mutation: \`${{ matrix.module }}\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          mutmut results >> $GITHUB_STEP_SUMMARY 2>&1 || true
-          echo '```' >> $GITHUB_STEP_SUMMARY
+          # Only write the summary line, not all mutant details (1MB limit)
+          mutmut results 2>&1 | head -20 >> $GITHUB_STEP_SUMMARY || true
