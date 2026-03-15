@@ -1,35 +1,15 @@
 name: Mutation Testing
 
 on:
-  schedule:
-    - cron: "0 3 * * 1"  # Every Monday at 03:00 UTC
   workflow_dispatch:
 
 jobs:
   mutation-test:
-    name: "Mutate: ${{ matrix.name }}"
+    name: Mutation Testing
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 360
     permissions:
       contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: coordinator
-            paths: custom_components/roommind/coordinator.py
-          - name: control
-            paths: custom_components/roommind/control/
-          - name: managers
-            paths: custom_components/roommind/managers/
-          - name: utils
-            paths: custom_components/roommind/utils/
-          - name: store
-            paths: custom_components/roommind/store.py
-          - name: websocket_api
-            paths: custom_components/roommind/websocket_api.py
-          - name: entities
-            paths: "custom_components/roommind/sensor.py, custom_components/roommind/climate.py, custom_components/roommind/switch.py, custom_components/roommind/binary_sensor.py, custom_components/roommind/diagnostics.py, custom_components/roommind/services/"
     steps:
       - uses: actions/checkout@v4
 
@@ -44,60 +24,44 @@ jobs:
           pip install -r requirements-dev.txt
           pip install "mutmut>=3.5"
 
-      - name: Configure mutmut for this module
-        run: |
-          # Build the TOML list from the comma-separated paths
-          PATHS_TOML=$(echo '${{ matrix.paths }}' | tr ',' '\n' | sed 's/^ *//;s/ *$//' | awk '{printf "\"%s\", ", $0}' | sed 's/, $//')
-          sed -i "s|paths_to_mutate = .*|paths_to_mutate = [${PATHS_TOML}]|" pyproject.toml
-          echo "=== mutmut config ==="
-          grep paths_to_mutate pyproject.toml
-
       - name: Restore mutmut cache
         uses: actions/cache@v4
         with:
-          path: .mutmut-cache
-          key: mutmut-${{ matrix.name }}-${{ hashFiles('custom_components/**/*.py') }}
+          path: mutants/
+          key: mutmut-${{ hashFiles('custom_components/**/*.py') }}
           restore-keys: |
-            mutmut-${{ matrix.name }}-
+            mutmut-
 
       - name: Run mutation testing
         run: |
-          # mutmut exits 1 when mutants survive (expected), 2+ on real errors
           mutmut run || EXIT=$?
           if [ "${EXIT:-0}" -ge 2 ]; then
             echo "::error::mutmut failed with exit code $EXIT"
             exit $EXIT
           fi
 
-      - name: Generate report
+      - name: Post summary
         if: always()
         run: |
-          # Capture full results
-          mutmut results > /tmp/mutmut-full.txt 2>&1 || true
-
-          # Summary for GitHub (full output, truncated from the start if too large)
-          echo "## Mutation: \`${{ matrix.name }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "## Mutation Testing Results" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
-          if [ "$(wc -c < /tmp/mutmut-full.txt)" -gt 500000 ]; then
+          if [ "$(mutmut results 2>&1 | wc -c)" -gt 500000 ]; then
             echo "... (truncated, full report in artifact)" >> $GITHUB_STEP_SUMMARY
-            tail -c 500000 /tmp/mutmut-full.txt >> $GITHUB_STEP_SUMMARY
+            mutmut results 2>&1 | tail -c 500000 >> $GITHUB_STEP_SUMMARY
           else
-            cat /tmp/mutmut-full.txt >> $GITHUB_STEP_SUMMARY
+            mutmut results >> $GITHUB_STEP_SUMMARY 2>&1 || true
           fi
           echo '```' >> $GITHUB_STEP_SUMMARY
 
-          # Full artifact report
-          REPORT="mutation-report-${{ matrix.name }}.txt"
-          echo "=== Mutation Report: ${{ matrix.name }} ===" > "$REPORT"
-          echo "Date: $(date -u '+%Y-%m-%d %H:%M UTC')" >> "$REPORT"
-          echo "" >> "$REPORT"
-          cat /tmp/mutmut-full.txt >> "$REPORT"
-          echo "REPORT_FILE=$REPORT" >> $GITHUB_ENV
+      - name: Generate artifact
+        if: always()
+        run: |
+          mutmut results > mutation-report.txt 2>&1 || true
 
       - name: Upload report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: mutation-report-${{ matrix.name }}
-          path: ${{ env.REPORT_FILE }}
+          name: mutation-report
+          path: mutation-report.txt
           retention-days: 30
