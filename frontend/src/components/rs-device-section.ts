@@ -425,7 +425,7 @@ export class RsDeviceSection extends LitElement {
     let displayValue = "";
     if (type === "climate") {
       const ct = attrs.current_temperature as number | undefined;
-      if (ct != null) displayValue = `${ct.toFixed(1)}\u00B0`;
+      if (ct != null) displayValue = `${ct.toFixed(1)}${tempUnit(this.hass)}`;
     } else if (type === "temp") {
       if (state && state !== "unknown" && state !== "unavailable")
         displayValue = `${Number(state).toFixed(1)}${tempUnit(this.hass)}`;
@@ -756,7 +756,7 @@ export class RsDeviceSection extends LitElement {
           <div class="device-entity">${entityId}</div>
         </div>
         ${currentTemp != null
-          ? html`<span class="device-value">${currentTemp.toFixed(1)}°</span>`
+          ? html`<span class="device-value">${currentTemp.toFixed(1)}${tempUnit(this.hass)}</span>`
           : currentState && currentState !== "unavailable"
             ? html`<span class="device-value" style="font-size:12px; opacity:0.6"
                 >${currentState}</span
