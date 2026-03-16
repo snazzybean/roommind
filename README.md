@@ -44,7 +44,7 @@
 | custom\_components/roommind/utils/schedule\_utils.py               |      154 |        7 |     95% |138-139, 144-145, 153-154, 223 |
 | custom\_components/roommind/utils/sensor\_utils.py                 |       15 |        0 |    100% |           |
 | custom\_components/roommind/utils/temp\_utils.py                   |       26 |        0 |    100% |           |
-| custom\_components/roommind/websocket\_api.py                      |      231 |        2 |     99% |   602-607 |
+| custom\_components/roommind/websocket\_api.py                      |      231 |        2 |     99% |   604-609 |
 | **TOTAL**                                                          | **4514** |  **201** | **96%** |           |
 
 

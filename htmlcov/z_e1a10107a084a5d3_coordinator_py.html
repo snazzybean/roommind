@@ -65,7 +65,7 @@
             <a id="nextFileLink" class="nav" href="z_e1a10107a084a5d3_diagnostics_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.13.1">coverage.py v7.13.1</a>,
-            created at 2026-03-16 16:08 +0000
+            created at 2026-03-16 16:11 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -482,7 +482,7 @@
     <p class="pln"><span class="n"><a id="t400" href="#t400">400</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t401" href="#t401">401</a></span><span class="t">        <span class="nam">schedule_entity_id</span> <span class="op">=</span> <span class="nam">get_active_schedule_entity</span><span class="op">(</span><span class="nam">self</span><span class="op">.</span><span class="nam">hass</span><span class="op">,</span> <span class="nam">room</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t402" href="#t402">402</a></span><span class="t">        <span class="nam">schedule_blocks</span> <span class="op">=</span> <span class="key">await</span> <span class="nam">read_schedule_blocks</span><span class="op">(</span><span class="nam">self</span><span class="op">.</span><span class="nam">hass</span><span class="op">,</span> <span class="nam">schedule_entity_id</span><span class="op">)</span> <span class="key">if</span> <span class="nam">schedule_entity_id</span> <span class="key">else</span> <span class="key">None</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t403" href="#t403">403</a></span><span class="t">        <span class="nam">presence_away</span> <span class="op">=</span> <span class="nam">self</span><span class="op">.</span><span class="nam">_is_presence_away</span><span class="op">(</span><span class="nam">room</span><span class="op">,</span> <span class="nam">settings</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t403" href="#t403">403</a></span><span class="t">        <span class="nam">presence_away</span> <span class="op">=</span> <span class="key">not</span> <span class="nam">room</span><span class="op">.</span><span class="nam">get</span><span class="op">(</span><span class="str">"ignore_presence"</span><span class="op">,</span> <span class="key">False</span><span class="op">)</span> <span class="key">and</span> <span class="nam">self</span><span class="op">.</span><span class="nam">_is_presence_away</span><span class="op">(</span><span class="nam">room</span><span class="op">,</span> <span class="nam">settings</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t404" href="#t404">404</a></span><span class="t">        <span class="nam">target_resolver</span> <span class="op">=</span> <span class="nam">make_target_resolver</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t405" href="#t405">405</a></span><span class="t">            <span class="nam">schedule_blocks</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t406" href="#t406">406</a></span><span class="t">            <span class="nam">room</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
@@ -1112,8 +1112,8 @@
     <p class="run run2"><span class="n"><a id="t1030" href="#t1030">1030</a></span><span class="t">                    <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t1031" href="#t1031">1031</a></span><span class="t">                <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t1032" href="#t1032">1032</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t1033" href="#t1033">1033</a></span><span class="t">        <span class="com"># 2.5 Presence-based eco or off</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t1034" href="#t1034">1034</a></span><span class="t">        <span class="key">if</span> <span class="nam">self</span><span class="op">.</span><span class="nam">_is_presence_away</span><span class="op">(</span><span class="nam">room</span><span class="op">,</span> <span class="nam">settings</span><span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t1033" href="#t1033">1033</a></span><span class="t">        <span class="com"># 2.5 Presence-based eco or off (skip if room ignores presence)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t1034" href="#t1034">1034</a></span><span class="t">        <span class="key">if</span> <span class="key">not</span> <span class="nam">room</span><span class="op">.</span><span class="nam">get</span><span class="op">(</span><span class="str">"ignore_presence"</span><span class="op">,</span> <span class="key">False</span><span class="op">)</span> <span class="key">and</span> <span class="nam">self</span><span class="op">.</span><span class="nam">_is_presence_away</span><span class="op">(</span><span class="nam">room</span><span class="op">,</span> <span class="nam">settings</span><span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t1035" href="#t1035">1035</a></span><span class="t">            <span class="key">if</span> <span class="nam">settings</span><span class="op">.</span><span class="nam">get</span><span class="op">(</span><span class="str">"presence_away_action"</span><span class="op">,</span> <span class="str">"eco"</span><span class="op">)</span> <span class="op">==</span> <span class="str">"off"</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t1036" href="#t1036">1036</a></span><span class="t">                <span class="key">return</span> <span class="nam">TargetTemps</span><span class="op">(</span><span class="nam">heat</span><span class="op">=</span><span class="key">None</span><span class="op">,</span> <span class="nam">cool</span><span class="op">=</span><span class="key">None</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t1037" href="#t1037">1037</a></span><span class="t">            <span class="key">return</span> <span class="nam">TargetTemps</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
@@ -1318,7 +1318,7 @@
             <a class="nav" href="z_e1a10107a084a5d3_diagnostics_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.13.1">coverage.py v7.13.1</a>,
-            created at 2026-03-16 16:08 +0000
+            created at 2026-03-16 16:11 +0000
         </p>
     </div>
 </footer>

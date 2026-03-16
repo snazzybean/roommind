@@ -65,7 +65,7 @@
             <a id="nextFileLink" class="nav" href="z_e1a10107a084a5d3_store_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.13.1">coverage.py v7.13.1</a>,
-            created at 2026-03-16 16:08 +0000
+            created at 2026-03-16 16:11 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -185,7 +185,7 @@
     <p class="run"><span class="n"><a id="t103" href="#t103">103</a></span><span class="t">    <span class="nam">vacation_temp</span> <span class="op">=</span> <span class="nam">settings</span><span class="op">.</span><span class="nam">get</span><span class="op">(</span><span class="str">"vacation_temp"</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t104" href="#t104">104</a></span><span class="t">    <span class="nam">climate_mode</span> <span class="op">=</span> <span class="nam">room</span><span class="op">.</span><span class="nam">get</span><span class="op">(</span><span class="str">"climate_mode"</span><span class="op">,</span> <span class="str">"auto"</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t105" href="#t105">105</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t106" href="#t106">106</a></span><span class="t">    <span class="nam">presence_away</span> <span class="op">=</span> <span class="nam">is_presence_away</span><span class="op">(</span><span class="nam">hass</span><span class="op">,</span> <span class="nam">room</span><span class="op">,</span> <span class="nam">settings</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t106" href="#t106">106</a></span><span class="t">    <span class="nam">presence_away</span> <span class="op">=</span> <span class="key">not</span> <span class="nam">room</span><span class="op">.</span><span class="nam">get</span><span class="op">(</span><span class="str">"ignore_presence"</span><span class="op">,</span> <span class="key">False</span><span class="op">)</span> <span class="key">and</span> <span class="nam">is_presence_away</span><span class="op">(</span><span class="nam">hass</span><span class="op">,</span> <span class="nam">room</span><span class="op">,</span> <span class="nam">settings</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t107" href="#t107">107</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t108" href="#t108">108</a></span><span class="t">    <span class="nam">entity_id</span> <span class="op">=</span> <span class="nam">get_active_schedule_entity</span><span class="op">(</span><span class="nam">hass</span><span class="op">,</span> <span class="nam">room</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t109" href="#t109">109</a></span><span class="t">    <span class="nam">schedule_blocks</span> <span class="op">=</span> <span class="key">await</span> <span class="nam">read_schedule_blocks</span><span class="op">(</span><span class="nam">hass</span><span class="op">,</span> <span class="nam">entity_id</span><span class="op">)</span> <span class="key">if</span> <span class="nam">entity_id</span> <span class="key">else</span> <span class="key">None</span>&nbsp;</span><span class="r"></span></p>
@@ -455,7 +455,7 @@
             <a class="nav" href="z_e1a10107a084a5d3_store_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.13.1">coverage.py v7.13.1</a>,
-            created at 2026-03-16 16:08 +0000
+            created at 2026-03-16 16:11 +0000
         </p>
     </div>
 </footer>
