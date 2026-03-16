@@ -368,7 +368,7 @@
   "presence.state_away": "Away",
   "presence.room_none_assigned": "Global rule — eco when nobody is home",
   "presence.ignore_toggle": "Ignore presence",
-  "presence.ignore_hint": "Skip presence detection for this room. Schedules and comfort temperatures apply regardless of who is home.",
+  "presence.ignore_hint": "Controls how this room reacts to presence. You can assign specific persons below. The room switches to eco when none of the assigned persons are home. Use the toggle above to skip detection entirely and always follow the schedule.",
   "presence.away_action_label": "Action when nobody is home",
   "presence.away_action_eco": "Use eco temperature",
   "presence.away_action_off": "Turn off devices",

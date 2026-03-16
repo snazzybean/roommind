@@ -124,6 +124,11 @@ export class RsPresenceSection extends LitElement {
       color: var(--secondary-text-color);
     }
 
+    .section-divider {
+      border-top: 1px solid var(--divider-color, #e0e0e0);
+      margin: 8px 0;
+    }
+
     .field-hint {
       color: var(--secondary-text-color);
       font-size: 12px;
@@ -144,18 +149,20 @@ export class RsPresenceSection extends LitElement {
       <rs-section-card
         icon="mdi:home-account"
         .heading=${localize("room.section.presence", this.language)}
+        hasInfo
         editable
         .editing=${this.editing}
         .doneLabel=${localize("schedule.done", this.language)}
         @edit-click=${this._onEditClick}
         @done-click=${this._onDoneClick}
       >
+        <div slot="info">${localize("presence.ignore_hint", this.language)}</div>
         <rs-toggle-row
           .label=${localize("presence.ignore_toggle", this.language)}
-          .hint=${localize("presence.ignore_hint", this.language)}
           .checked=${this.ignorePresence}
           @toggle-changed=${this._onIgnoreToggle}
         ></rs-toggle-row>
+        ${!this.ignorePresence ? html`<div class="section-divider"></div>` : nothing}
         ${this.ignorePresence
           ? nothing
           : this.editing
@@ -167,7 +174,7 @@ export class RsPresenceSection extends LitElement {
 
   private _renderEditMode() {
     return html`
-      <div style="padding: 0 16px 16px">
+      <div style="padding: 8px 16px 16px">
         <div class="presence-chips">
           ${this.presencePersons.map((pid) => {
             const active = this.selectedPresencePersons.includes(pid);
@@ -202,7 +209,7 @@ export class RsPresenceSection extends LitElement {
 
   private _renderViewMode() {
     return html`
-      <div style="padding: 0 16px 16px">
+      <div style="padding: 8px 16px 16px">
         ${this.selectedPresencePersons.length > 0
           ? html`
               <div class="presence-list">

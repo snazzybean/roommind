@@ -368,7 +368,7 @@
   "presence.state_away": "Abwesend",
   "presence.room_none_assigned": "Globale Regel — Eco wenn niemand zu Hause ist",
   "presence.ignore_toggle": "Anwesenheit ignorieren",
-  "presence.ignore_hint": "Anwesenheitserkennung für diesen Raum überspringen. Zeitpläne und Komforttemperaturen gelten unabhängig davon, wer zu Hause ist.",
+  "presence.ignore_hint": "Hier wird festgelegt, wie dieser Raum auf Anwesenheit reagiert. Unten kannst du einzelne Personen zuweisen. Der Raum wechselt auf Eco, wenn keine der zugewiesenen Personen zu Hause ist. Mit dem Toggle oben wird die Erkennung komplett übersprungen und der Raum heizt immer nach Zeitplan.",
   "presence.away_action_label": "Aktion wenn niemand zuhause",
   "presence.away_action_eco": "Eco-Temperatur verwenden",
   "presence.away_action_off": "Geräte ausschalten",
