@@ -160,6 +160,7 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, config_entry: 
                 "mpc_active": live.get("mpc_active", False),
                 "confidence": live.get("confidence"),
                 "presence_away": live.get("presence_away", False),
+                "ignore_presence": config.get("ignore_presence", False),
             },
         }
 

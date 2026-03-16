@@ -237,6 +237,68 @@ class TestPresenceDetection:
         assert room["presence_away"] is False
 
     @pytest.mark.asyncio
+    async def test_ignore_presence_uses_comfort(self, hass, mock_config_entry):
+        """Room with ignore_presence=True stays at comfort even when all persons are away."""
+        room_ignore = {**SAMPLE_ROOM, "ignore_presence": True}
+        store = _make_store_mock({"living_room_abc12345": room_ignore})
+        store.get_settings.return_value = {
+            "presence_enabled": True,
+            "presence_persons": ["person.kevin", "person.anna"],
+        }
+        hass.data = {"roommind": {"store": store}}
+        hass.states.get = MagicMock(side_effect=_presence_states_get())
+        hass.services.async_call = AsyncMock()
+
+        coordinator = _create_coordinator(hass, mock_config_entry)
+        data = await coordinator._async_update_data()
+
+        room = data["rooms"]["living_room_abc12345"]
+        assert room["target_temp"] == 21.0  # comfort, not eco
+        assert room["presence_away"] is False
+
+    @pytest.mark.asyncio
+    async def test_ignore_presence_prevents_force_off(self, hass, mock_config_entry):
+        """Room with ignore_presence=True is not forced off even with presence_away_action=off."""
+        room_ignore = {**SAMPLE_ROOM, "ignore_presence": True}
+        store = _make_store_mock({"living_room_abc12345": room_ignore})
+        store.get_settings.return_value = {
+            "presence_enabled": True,
+            "presence_persons": ["person.kevin"],
+            "presence_away_action": "off",
+        }
+        hass.data = {"roommind": {"store": store}}
+        hass.states.get = MagicMock(side_effect=_presence_states_get())
+        hass.services.async_call = AsyncMock()
+
+        coordinator = _create_coordinator(hass, mock_config_entry)
+        data = await coordinator._async_update_data()
+
+        room = data["rooms"]["living_room_abc12345"]
+        assert room["target_temp"] == 21.0  # comfort, not None
+        assert room["force_off"] is False
+        assert room["presence_away"] is False
+
+    @pytest.mark.asyncio
+    async def test_ignore_presence_false_still_uses_eco(self, hass, mock_config_entry):
+        """Room with ignore_presence=False behaves normally (eco when away)."""
+        room_no_ignore = {**SAMPLE_ROOM, "ignore_presence": False}
+        store = _make_store_mock({"living_room_abc12345": room_no_ignore})
+        store.get_settings.return_value = {
+            "presence_enabled": True,
+            "presence_persons": ["person.kevin"],
+        }
+        hass.data = {"roommind": {"store": store}}
+        hass.states.get = MagicMock(side_effect=_presence_states_get())
+        hass.services.async_call = AsyncMock()
+
+        coordinator = _create_coordinator(hass, mock_config_entry)
+        data = await coordinator._async_update_data()
+
+        room = data["rooms"]["living_room_abc12345"]
+        assert room["target_temp"] == 17.0  # eco_temp
+        assert room["presence_away"] is True
+
+    @pytest.mark.asyncio
     async def test_presence_away_action_off_forces_idle(self, hass, mock_config_entry):
         """When presence_away_action is 'off', devices are turned off (target=None, force_off=True)."""
         store = _make_store_mock({"living_room_abc12345": SAMPLE_ROOM})

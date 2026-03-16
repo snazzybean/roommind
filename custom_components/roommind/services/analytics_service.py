@@ -103,7 +103,7 @@ async def _compute_target_forecast(
     vacation_temp = settings.get("vacation_temp")
     climate_mode = room.get("climate_mode", "auto")
 
-    presence_away = is_presence_away(hass, room, settings)
+    presence_away = not room.get("ignore_presence", False) and is_presence_away(hass, room, settings)
 
     entity_id = get_active_schedule_entity(hass, room)
     schedule_blocks = await read_schedule_blocks(hass, entity_id) if entity_id else None
