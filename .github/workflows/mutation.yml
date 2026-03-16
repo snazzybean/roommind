@@ -43,14 +43,41 @@ jobs:
       - name: Post summary
         if: always()
         run: |
-          echo "## Mutation Testing Results" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          if [ "$(mutmut results 2>&1 | wc -c)" -gt 500000 ]; then
-            echo "... (truncated, full report in artifact)" >> $GITHUB_STEP_SUMMARY
-            mutmut results 2>&1 | tail -c 500000 >> $GITHUB_STEP_SUMMARY
+          # Parse the last progress line from the run log for overall stats
+          # Format: ⠴ 12408/12408  🎉 8107 🫥 26  ⏰ 1754  🤔 0  🙁 2521  🔇 0  🧙 0
+          mutmut results --all > /tmp/mutmut-all.txt 2>&1 || true
+          mutmut results > /tmp/mutmut-survived.txt 2>&1 || true
+
+          TOTAL=$(wc -l < /tmp/mutmut-all.txt | tr -d ' ')
+          SURVIVED=$(grep -c "survived" /tmp/mutmut-survived.txt 2>/dev/null || echo "0")
+          TIMEOUT=$(grep -c "timeout" /tmp/mutmut-all.txt 2>/dev/null || echo "0")
+          NO_TESTS=$(grep -c "no tests" /tmp/mutmut-all.txt 2>/dev/null || echo "0")
+          KILLED=$((TOTAL - SURVIVED - TIMEOUT - NO_TESTS))
+          if [ "$TOTAL" -gt 0 ]; then
+            KILL_RATE=$((KILLED * 100 / TOTAL))
           else
-            mutmut results >> $GITHUB_STEP_SUMMARY 2>&1 || true
+            KILL_RATE=0
           fi
+
+          echo "## Mutation Testing Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Status | Count | % |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|------:|--:|" >> $GITHUB_STEP_SUMMARY
+          echo "| Killed | $KILLED | ${KILL_RATE}% |" >> $GITHUB_STEP_SUMMARY
+          echo "| Survived | $SURVIVED | |" >> $GITHUB_STEP_SUMMARY
+          echo "| Timeout | $TIMEOUT | |" >> $GITHUB_STEP_SUMMARY
+          echo "| No tests | $NO_TESTS | |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Total** | **$TOTAL** | |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Survived mutants grouped by file
+          echo "### Survived by file" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          grep "survived" /tmp/mutmut-survived.txt 2>/dev/null \
+            | sed 's/:.*//' \
+            | sed 's/\.x[ǁ_].*//; s/\.x__.*//; s/\.x_/\./' \
+            | sort | uniq -c | sort -rn >> $GITHUB_STEP_SUMMARY || echo "  (none)" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
 
       - name: Generate artifact
