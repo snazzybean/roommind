@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from unittest.mock import AsyncMock, MagicMock, call
+from unittest.mock import ANY, AsyncMock, MagicMock, call
 
 import pytest
 
@@ -102,6 +102,7 @@ class TestValveProtection:
                 "set_hvac_mode",
                 {"entity_id": "climate.living_room", "hvac_mode": "off"},
                 blocking=True,
+                context=ANY,
             )
         ]
         assert len(off_calls) >= 1
@@ -154,6 +155,7 @@ class TestValveProtection:
                 "set_hvac_mode",
                 {"entity_id": "climate.living_room", "hvac_mode": "off"},
                 blocking=True,
+                context=ANY,
             )
         ]
         assert len(climate_off_calls) == 0

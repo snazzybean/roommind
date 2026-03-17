@@ -11,6 +11,7 @@ from ..const import (
     DEFAULT_VALVE_PROTECTION_INTERVAL,
     HEATING_BOOST_TARGET,
     VALVE_PROTECTION_CYCLE_DURATION,
+    make_roommind_context,
 )
 from ..control.mpc_controller import async_turn_off_climate, resolve_hvac_mode
 from ..utils.device_utils import get_trv_eids
@@ -124,6 +125,7 @@ class ValveManager:
                         "set_hvac_mode",
                         {"entity_id": eid, "hvac_mode": vp_resolved},
                         blocking=True,
+                        context=make_roommind_context(),
                     )
                     boost_temp = celsius_to_ha_temp(self.hass, HEATING_BOOST_TARGET)
                     if eid_state:
@@ -142,6 +144,7 @@ class ValveManager:
                                 "target_temp_high": max(boost_temp, cur_high),
                             },
                             blocking=True,
+                            context=make_roommind_context(),
                         )
                     else:
                         await self.hass.services.async_call(
@@ -149,6 +152,7 @@ class ValveManager:
                             "set_temperature",
                             {"entity_id": eid, "temperature": boost_temp},
                             blocking=True,
+                            context=make_roommind_context(),
                         )
                     self._cycling[eid] = now
                     idle_days = int((now - last) / 86400) if last else 0

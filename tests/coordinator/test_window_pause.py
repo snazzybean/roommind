@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from unittest.mock import AsyncMock, MagicMock, call, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, call, patch
 
 import pytest
 
@@ -55,6 +55,7 @@ class TestRoomMindCoordinator:
                 "set_hvac_mode",
                 {"entity_id": "climate.living_room", "hvac_mode": "off"},
                 blocking=True,
+                context=ANY,
             )
         ]
         assert len(hvac_off_calls) >= 1

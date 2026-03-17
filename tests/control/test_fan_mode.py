@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from unittest.mock import ANY, MagicMock
 
 import pytest
 
@@ -40,6 +40,7 @@ async def test_async_idle_device_off():
         "set_hvac_mode",
         {"entity_id": "climate.ac1", "hvac_mode": "off"},
         blocking=True,
+        context=ANY,
     )
 
 
@@ -85,6 +86,7 @@ async def test_async_idle_device_fan_only_unsupported():
         "set_hvac_mode",
         {"entity_id": "climate.ac1", "hvac_mode": "off"},
         blocking=True,
+        context=ANY,
     )
 
 
@@ -151,6 +153,7 @@ async def test_async_idle_device_no_device_config():
         "set_hvac_mode",
         {"entity_id": "climate.unknown", "hvac_mode": "off"},
         blocking=True,
+        context=ANY,
     )
 
 
@@ -464,6 +467,7 @@ async def test_async_idle_device_setback_no_state():
         "set_hvac_mode",
         {"entity_id": "climate.ac1", "hvac_mode": "off"},
         blocking=True,
+        context=ANY,
     )
 
 
@@ -488,6 +492,7 @@ async def test_async_idle_device_setback_auto_mode_fallback():
         "set_hvac_mode",
         {"entity_id": "climate.ac1", "hvac_mode": "off"},
         blocking=True,
+        context=ANY,
     )
 
 
@@ -511,6 +516,7 @@ async def test_async_idle_device_setback_no_targets():
         "set_hvac_mode",
         {"entity_id": "climate.ac1", "hvac_mode": "off"},
         blocking=True,
+        context=ANY,
     )
 
 
@@ -536,6 +542,7 @@ async def test_async_idle_device_setback_heat_mode_no_heat_target():
         "set_hvac_mode",
         {"entity_id": "climate.ac1", "hvac_mode": "off"},
         blocking=True,
+        context=ANY,
     )
 
 

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import ANY, AsyncMock, MagicMock
 
 import pytest
 
@@ -261,6 +261,7 @@ async def test_turn_off_climate_normal_device():
         "set_hvac_mode",
         {"entity_id": "climate.trv", "hvac_mode": "off"},
         blocking=True,
+        context=ANY,
     )
 
 
@@ -279,6 +280,7 @@ async def test_turn_off_climate_heat_only_uses_min_temp():
         "set_temperature",
         {"entity_id": "climate.trv", "temperature": 5.0},
         blocking=True,
+        context=ANY,
     )
 
 
@@ -297,6 +299,7 @@ async def test_turn_off_climate_cool_only_uses_max_temp():
         "set_temperature",
         {"entity_id": "climate.ac", "temperature": 30.0},
         blocking=True,
+        context=ANY,
     )
 
 
@@ -328,6 +331,7 @@ async def test_turn_off_climate_empty_modes_uses_off():
         "set_hvac_mode",
         {"entity_id": "climate.trv", "hvac_mode": "off"},
         blocking=True,
+        context=ANY,
     )
 
 
@@ -346,6 +350,7 @@ async def test_turn_off_climate_no_modes_attr_uses_off():
         "set_hvac_mode",
         {"entity_id": "climate.trv", "hvac_mode": "off"},
         blocking=True,
+        context=ANY,
     )
 
 

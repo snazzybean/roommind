@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from unittest.mock import AsyncMock, MagicMock, call, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, call, patch
 
 import pytest
 
@@ -69,12 +69,14 @@ class TestRoomMindCoordinator:
             "set_hvac_mode",
             {"entity_id": "climate.living_room", "hvac_mode": "heat"},
             blocking=True,
+            context=ANY,
         )
         assert climate_calls[1] == call(
             "climate",
             "set_temperature",
             {"entity_id": "climate.living_room", "temperature": 30},
             blocking=True,
+            context=ANY,
         )
 
     @pytest.mark.asyncio

@@ -4,6 +4,7 @@ import time
 from typing import NamedTuple
 
 from homeassistant.const import Platform
+from homeassistant.core import Context
 
 DOMAIN = "roommind"
 VERSION = "1.5.2-beta.1"
@@ -40,6 +41,16 @@ DEFAULT_COMFORT_HEAT = 21.0
 DEFAULT_COMFORT_COOL = 24.0
 DEFAULT_ECO_HEAT = 17.0
 DEFAULT_ECO_COOL = 27.0
+
+
+# Context identifier for RoomMind-initiated service calls.
+# Automations can check: trigger.context.parent_id == "roommind"
+ROOMMIND_CONTEXT_ID = "roommind"
+
+
+def make_roommind_context() -> Context:
+    """Create a HA Context tagged as originating from RoomMind."""
+    return Context(parent_id=ROOMMIND_CONTEXT_ID)
 
 
 class TargetTemps(NamedTuple):

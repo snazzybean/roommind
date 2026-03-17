@@ -24,6 +24,7 @@ from ..const import (
     MODE_HEATING,
     MODE_IDLE,
     TargetTemps,
+    make_roommind_context,
 )
 from ..utils.device_utils import (
     DEFAULT_IDLE_SETBACK_OFFSET,
@@ -104,6 +105,7 @@ async def async_turn_off_climate(
                 "set_hvac_mode",
                 {"entity_id": entity_id, "hvac_mode": "off"},
                 blocking=True,
+                context=make_roommind_context(),
             )
             _last_commands[entity_id] = _cache_entry("set_hvac_mode", {"hvac_mode": "off"})
         except Exception:  # noqa: BLE001
@@ -177,6 +179,7 @@ async def async_turn_off_climate(
             "set_temperature",
             svc_data,
             blocking=True,
+            context=make_roommind_context(),
         )
         _last_commands[entity_id] = _cache_entry("set_temperature", svc_data)
     except Exception:  # noqa: BLE001
@@ -271,6 +274,7 @@ async def async_idle_device(
                 "set_temperature",
                 {"entity_id": entity_id, "temperature": ha_t},
                 blocking=True,
+                context=make_roommind_context(),
             )
             _last_commands[entity_id] = _cache_entry("set_temperature", {"temperature": ha_t})
         except Exception:  # noqa: BLE001
@@ -319,6 +323,7 @@ async def async_idle_device(
             "set_hvac_mode",
             {"entity_id": entity_id, "hvac_mode": "fan_only"},
             blocking=True,
+            context=make_roommind_context(),
         )
         _last_commands[entity_id] = _cache_entry("set_hvac_mode", {"hvac_mode": "fan_only"})
     except Exception:  # noqa: BLE001
@@ -339,6 +344,7 @@ async def async_idle_device(
                     "set_fan_mode",
                     {"entity_id": entity_id, "fan_mode": idle_fan_mode},
                     blocking=True,
+                    context=make_roommind_context(),
                 )
             except Exception:  # noqa: BLE001
                 _LOGGER.warning(
@@ -1421,7 +1427,13 @@ class MPCController:
             return
 
         try:
-            await self.hass.services.async_call("climate", service, data, blocking=True)
+            await self.hass.services.async_call(
+                "climate",
+                service,
+                data,
+                blocking=True,
+                context=make_roommind_context(),
+            )
             if eid:
                 _last_commands[eid] = _cache_entry(service, data)
         except Exception:  # noqa: BLE001
