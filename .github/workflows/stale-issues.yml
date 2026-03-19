@@ -1,0 +1,99 @@
+name: Stale Issues
+
+on:
+  schedule:
+    - cron: '0 8 * * *'
+  issue_comment:
+    types: [created]
+
+jobs:
+  check-stale:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Process stale issues
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const STALE_DAYS = 5;
+            const now = new Date();
+
+            const waitingIssues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'waiting for feedback',
+              per_page: 100
+            });
+
+            for (const issue of waitingIssues.data) {
+              const labels = issue.labels.map(l => l.name);
+              const hasStale = labels.includes('stale');
+
+              const comments = await github.rest.issues.listComments({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                per_page: 1,
+                direction: 'desc'
+              });
+
+              const lastActivity = comments.data.length > 0
+                ? new Date(comments.data[0].created_at)
+                : new Date(issue.updated_at);
+
+              const daysSince = (now - lastActivity) / (1000 * 60 * 60 * 24);
+
+              if (hasStale && daysSince >= STALE_DAYS) {
+                await github.rest.issues.update({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issue.number,
+                  state: 'closed',
+                  state_reason: 'not_planned'
+                });
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issue.number,
+                  body: `Closed due to inactivity. If this is still relevant, feel free to use \`/reopen\`.`
+                });
+              } else if (!hasStale && daysSince >= STALE_DAYS) {
+                await github.rest.issues.addLabels({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issue.number,
+                  labels: ['stale']
+                });
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issue.number,
+                  body: `This issue has been marked as \`stale\` due to 5 days of inactivity. It will be closed in 5 days if there is no further activity.`
+                });
+              }
+            }
+
+  remove-stale:
+    if: github.event_name == 'issue_comment'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Remove stale label on comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = context.payload.issue;
+            const labels = issue.labels.map(l => l.name);
+
+            if (!labels.includes('stale')) return;
+
+            await github.rest.issues.removeLabel({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              name: 'stale'
+            });

@@ -1,0 +1,84 @@
+name: Issue Reopen
+
+on:
+  issues:
+    types: [closed]
+  issue_comment:
+    types: [created]
+
+jobs:
+  post-reopen-hint:
+    if: github.event_name == 'issues' && github.event.action == 'closed'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Comment reopen hint
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = context.payload.issue;
+            const closer = context.payload.sender.login;
+            const author = issue.user.login;
+            const labels = issue.labels.map(l => l.name);
+
+            if (closer === author) return;
+            if (labels.includes('no-reopen')) return;
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              body: `@${author} This issue was closed. If you believe it should be reopened, just include \`/reopen\` in a comment and it will be reopened automatically.`
+            });
+
+  reopen-issue:
+    if: github.event_name == 'issue_comment' && contains(github.event.comment.body, '/reopen')
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Reopen if requested by author
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = context.payload.issue;
+            const commenter = context.payload.sender.login;
+            const author = issue.user.login;
+            const labels = issue.labels.map(l => l.name);
+
+            if (labels.includes('no-reopen')) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                body: `This issue has been marked as \`no-reopen\` by a maintainer and cannot be reopened via \`/reopen\`.`
+              });
+              return;
+            }
+
+            if (commenter !== author) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                body: `@${commenter} Only the issue author can use \`/reopen\`.`
+              });
+              return;
+            }
+
+            if (issue.state === 'open') return;
+
+            await github.rest.issues.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              state: 'open'
+            });
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              body: `Reopened by issue author @${commenter}.`
+            });
