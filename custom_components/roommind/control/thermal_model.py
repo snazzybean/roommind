@@ -345,7 +345,7 @@ class ThermalEKF:
         data_factor = 0.5 * idle_frac + 0.5 * active_frac
 
         # --- Accuracy factor (0..1) ---
-        # Map worst prediction std from [noise_floor, mpc_threshold] to [1.0, 0.0]
+        # Map weighted prediction std from [noise_floor, mpc_threshold] to [1.0, 0.0]
         # Realistic noise floor: the minimum achievable prediction std
         # accounts for process noise (Q_T), sensor noise (R → P[0][0]),
         # and parameter cross-coupling.  Simulations show ~0.20-0.21°C
@@ -353,19 +353,26 @@ class ThermalEKF:
         noise_floor = 0.20
         mpc_threshold = 0.5  # MPC activation threshold
 
-        stds = [self.prediction_std(0.0, 20.0, 15.0, 5.0)]  # idle always
+        # Frequency-weighted prediction std: each mode's contribution is
+        # proportional to its sample count.  This prevents a rarely-used mode
+        # (e.g. cooling in a heating-dominant climate) from capping the entire
+        # accuracy metric via an unlearned parameter with wide covariance.
+        std_weights: list[tuple[int, float]] = [
+            (max(self._n_idle, 1), self.prediction_std(0.0, 20.0, 15.0, 5.0)),
+        ]
         if self._n_heating >= 2:
-            stds.append(self.prediction_std(self._x[2], 20.0, 10.0, 5.0))
+            std_weights.append((self._n_heating, self.prediction_std(self._x[2], 20.0, 10.0, 5.0)))
         if self._n_cooling >= 2:
-            stds.append(self.prediction_std(-self._x[3], 20.0, 25.0, 5.0))
-        worst_std = max(stds)
+            std_weights.append((self._n_cooling, self.prediction_std(-self._x[3], 20.0, 25.0, 5.0)))
+        total_w = sum(w for w, _ in std_weights)
+        weighted_std = sum(w / total_w * s for w, s in std_weights)
 
-        if worst_std <= noise_floor:
+        if weighted_std <= noise_floor:
             accuracy_factor = 1.0
-        elif worst_std >= mpc_threshold:
+        elif weighted_std >= mpc_threshold:
             accuracy_factor = 0.0
         else:
-            accuracy_factor = 1.0 - (worst_std - noise_floor) / (mpc_threshold - noise_floor)
+            accuracy_factor = 1.0 - (weighted_std - noise_floor) / (mpc_threshold - noise_floor)
 
         # Data alone contributes up to 30%, accuracy adds remaining 70%
         return data_factor * (0.3 + 0.7 * accuracy_factor)
