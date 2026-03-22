@@ -149,19 +149,71 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, config_entry: 
     rooms_diag: dict[str, dict] = {}
     for area_id, config in rooms_config.items():
         live = live_states.get(area_id, {})
+        # Expose all room state fields with sensible defaults
+        live_diag: dict[str, Any] = {
+            "current_temp": None,
+            "current_humidity": None,
+            "target_temp": None,
+            "heat_target": None,
+            "cool_target": None,
+            "mode": "idle",
+            "heating_power": 0,
+            "device_setpoint": None,
+            "window_open": False,
+            "override_active": False,
+            "mpc_active": False,
+            "confidence": None,
+            "presence_away": False,
+            "force_off": False,
+            "n_observations": 0,
+        }
+        live_diag.update({k: v for k, v in live.items() if k not in ("area_id", "current_temp_raw")})
+        live_diag["ignore_presence"] = config.get("ignore_presence", False)
+
+        # Sensor entity availability
+        temp_sensor_id = config.get("temperature_sensor", "")
+        if temp_sensor_id:
+            ts = hass.states.get(temp_sensor_id)
+            live_diag["sensor_state"] = ts.state if ts else "not_found"
+        else:
+            live_diag["sensor_state"] = "no_sensor"
+
+        # Coordinator internal state for this room
+        if coordinator:
+            live_diag["previous_mode"] = coordinator._previous_modes.get(area_id, "idle")
+            on_since = coordinator._mode_on_since.get(area_id)
+            if on_since is not None:
+                live_diag["mode_active_for_s"] = round(time.time() - on_since)
+            cached = coordinator._last_valid_temps.get(area_id)
+            if cached is not None:
+                live_diag["cached_temp"] = cached[0]
+                live_diag["cached_temp_age_s"] = round(time.monotonic() - cached[1])
+
+        # Residual heat state
+        if coordinator:
+            live_diag["q_residual"] = round(
+                coordinator._residual_tracker.get_q_residual(
+                    area_id,
+                    config.get("heating_system_type", ""),
+                    coordinator._previous_modes.get(area_id, "idle"),
+                ),
+                4,
+            )
+
+        # Schedule entity state
+        schedules = config.get("schedules", [])
+        if schedules:
+            active_idx = live.get("active_schedule_index", -1)
+            if 0 <= active_idx < len(schedules):
+                sched_eid = schedules[active_idx].get("entity_id", "")
+                if sched_eid:
+                    ss = hass.states.get(sched_eid)
+                    live_diag["schedule_entity"] = sched_eid
+                    live_diag["schedule_state"] = ss.state if ss else "not_found"
+
         room_diag: dict[str, Any] = {
             "config": dict(config),
-            "live": {
-                "current_temp": live.get("current_temp"),
-                "current_humidity": live.get("current_humidity"),
-                "target_temp": live.get("target_temp"),
-                "mode": live.get("mode", "idle"),
-                "window_open": live.get("window_open", False),
-                "mpc_active": live.get("mpc_active", False),
-                "confidence": live.get("confidence"),
-                "presence_away": live.get("presence_away", False),
-                "ignore_presence": config.get("ignore_presence", False),
-            },
+            "live": live_diag,
         }
 
         # Device entity states
@@ -235,6 +287,7 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, config_entry: 
         "integration": {
             "version": VERSION,
             "domain": DOMAIN,
+            "ha_temp_unit": hass.config.units.temperature_unit,
         },
         "settings": dict(settings),
         "rooms": rooms_diag,
