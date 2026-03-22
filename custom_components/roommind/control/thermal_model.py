@@ -458,11 +458,14 @@ class ThermalEKF:
         T_measured: float,
         T_outdoor: float,
         dt_minutes: float,
+        *,
+        learn_k_window: bool = True,
     ) -> None:
-        """Learn k_window from a window-open observation WITHOUT updating EKF parameters.
+        """Track temperature state and optionally learn k_window during window-open.
 
-        Computes the observed heat loss rate and compares it to the model's
-        normal alpha to derive k_window = alpha_observed / alpha_learned.
+        Always updates _x[0] so the EKF resumes with current temperature.
+        When *learn_k_window* is True, also computes the observed heat loss
+        rate and updates the k_window multiplier.
         """
         if dt_minutes < self._K_WINDOW_MIN_DT:
             return
@@ -474,7 +477,7 @@ class ThermalEKF:
         T_prev = self._x[0]
         delta_T = T_prev - T_outdoor
 
-        if abs(delta_T) < self._K_WINDOW_MIN_DELTA_T:
+        if not learn_k_window or abs(delta_T) < self._K_WINDOW_MIN_DELTA_T:
             self._x[0] = T_measured
             return
 
@@ -1026,10 +1029,12 @@ class RoomModelManager:
         T_new: float,
         T_outdoor: float,
         dt_minutes: float,
+        *,
+        learn_k_window: bool = True,
     ) -> None:
-        """Feed a window-open observation to learn k_window without EKF corruption."""
+        """Track temperature state and optionally learn k_window during window-open."""
         est = self.get_estimator(area_id)
-        est.update_window_open(T_new, T_outdoor, dt_minutes)
+        est.update_window_open(T_new, T_outdoor, dt_minutes, learn_k_window=learn_k_window)
 
     def predict_window_open(
         self,
