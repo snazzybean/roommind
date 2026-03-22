@@ -65,7 +65,7 @@
             <a id="nextFileLink" class="nav" href="z_4db10c526d707b88_mpc_optimizer_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.13.1">coverage.py v7.13.1</a>,
-            created at 2026-03-21 20:22 +0000
+            created at 2026-03-22 19:01 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -469,8 +469,8 @@
     <p class="run"><span class="n"><a id="t387" href="#t387">387</a></span><span class="t"><span class="key">def</span> <span class="nam">_effective_ac_modes</span><span class="op">(</span><span class="nam">state</span><span class="op">:</span> <span class="nam">Any</span><span class="op">)</span> <span class="op">-></span> <span class="nam">list</span><span class="op">[</span><span class="nam">str</span><span class="op">]</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t388" href="#t388">388</a></span><span class="t">    <span class="str">"""Return hvac_modes, assuming full capability when modes appear unreliable.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t389" href="#t389">389</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t390" href="#t390">390</a></span><span class="t"><span class="str">    When a device is off and reports no active modes (heat/cool/heat_cool/auto),</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t391" href="#t391">391</a></span><span class="t"><span class="str">    the integration likely hides modes while off or is misconfigured.  Return a</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t390" href="#t390">390</a></span><span class="t"><span class="str">    When a device reports no active modes (heat/cool/heat_cool/auto),</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t391" href="#t391">391</a></span><span class="t"><span class="str">    the integration likely hides modes or is misconfigured.  Return a</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t392" href="#t392">392</a></span><span class="t"><span class="str">    generous assumed set so the command cascade picks the right mode.  The actual</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t393" href="#t393">393</a></span><span class="t"><span class="str">    service call may still fail &#8212; the caller's try/except handles that safely.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t394" href="#t394">394</a></span><span class="t"><span class="str">    """</span>&nbsp;</span><span class="r"></span></p>
@@ -1357,12 +1357,12 @@
     <p class="run"><span class="n"><a id="t1275" href="#t1275">1275</a></span><span class="t">            <span class="nam">resolved</span> <span class="op">=</span> <span class="nam">resolve_hvac_mode</span><span class="op">(</span><span class="nam">data</span><span class="op">[</span><span class="str">"hvac_mode"</span><span class="op">]</span><span class="op">,</span> <span class="nam">hvac_modes</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t1276" href="#t1276">1276</a></span><span class="t">            <span class="key">if</span> <span class="nam">resolved</span> <span class="key">is</span> <span class="key">None</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t1277" href="#t1277">1277</a></span><span class="t">                <span class="key">if</span> <span class="key">not</span> <span class="nam">has_reliable_hvac_modes</span><span class="op">(</span><span class="nam">state</span><span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t1278" href="#t1278">1278</a></span><span class="t">                    <span class="com"># Modes unreliable (device off with incomplete modes).</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t1279" href="#t1279">1279</a></span><span class="t">                    <span class="com"># Send the desired mode directly; turning the device on</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t1280" href="#t1280">1280</a></span><span class="t">                    <span class="com"># should reveal the full mode list.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t1278" href="#t1278">1278</a></span><span class="t">                    <span class="com"># Modes unreliable (device with incomplete modes).</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t1279" href="#t1279">1279</a></span><span class="t">                    <span class="com"># Send the desired mode directly; the device may reveal</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t1280" href="#t1280">1280</a></span><span class="t">                    <span class="com"># its full mode list once active.</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t1281" href="#t1281">1281</a></span><span class="t">                    <span class="nam">resolved</span> <span class="op">=</span> <span class="nam">data</span><span class="op">[</span><span class="str">"hvac_mode"</span><span class="op">]</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t1282" href="#t1282">1282</a></span><span class="t">                    <span class="nam">_LOGGER</span><span class="op">.</span><span class="nam">debug</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t1283" href="#t1283">1283</a></span><span class="t">                        <span class="str">"Area '%s': device '%s' off with incomplete modes, sending '%s' directly"</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t1283" href="#t1283">1283</a></span><span class="t">                        <span class="str">"Area '%s': device '%s' has incomplete modes, sending '%s' directly"</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t1284" href="#t1284">1284</a></span><span class="t">                        <span class="nam">self</span><span class="op">.</span><span class="nam">_area_id</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t1285" href="#t1285">1285</a></span><span class="t">                        <span class="nam">eid</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t1286" href="#t1286">1286</a></span><span class="t">                        <span class="nam">resolved</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
@@ -1539,7 +1539,7 @@
             <a class="nav" href="z_4db10c526d707b88_mpc_optimizer_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.13.1">coverage.py v7.13.1</a>,
-            created at 2026-03-21 20:22 +0000
+            created at 2026-03-22 19:01 +0000
         </p>
     </div>
 </footer>
