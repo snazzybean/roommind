@@ -73,6 +73,10 @@ MIN_POWER_FRACTION = 0.15  # Minimum non-zero power fraction (prevents TRV dead 
 # Update interval in seconds
 UPDATE_INTERVAL = 30
 
+# Sensor dropout: keep using cached temperature for this many seconds
+# before falling back to idle (~10 coordinator cycles at 30s).
+MAX_SENSOR_STALENESS = 300
+
 # Coordinator throttle intervals (in cycles of UPDATE_INTERVAL)
 HISTORY_WRITE_CYCLES = 6  # ~3 min at 30s cycle
 THERMAL_SAVE_CYCLES = 30  # ~15 min
