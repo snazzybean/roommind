@@ -444,8 +444,9 @@ export class RsDeviceSection extends LitElement {
       const ct = attrs.current_temperature as number | undefined;
       if (ct != null) displayValue = `${ct.toFixed(1)}${tempUnit(this.hass)}`;
     } else if (type === "temp") {
-      if (state && state !== "unknown" && state !== "unavailable")
-        displayValue = `${Number(state).toFixed(1)}${tempUnit(this.hass)}`;
+      const tempVal = entityId.startsWith("climate.") ? attrs.current_temperature : state;
+      if (tempVal != null && tempVal !== "" && tempVal !== "unknown" && tempVal !== "unavailable")
+        displayValue = `${Number(tempVal).toFixed(1)}${tempUnit(this.hass)}`;
     } else {
       if (state && state !== "unknown" && state !== "unavailable")
         displayValue = `${Math.round(Number(state))}%`;
@@ -530,8 +531,10 @@ export class RsDeviceSection extends LitElement {
     const areaTempSensors = this.hass?.states
       ? allAreaEntities.filter(
           (e) =>
-            e.entity_id.startsWith("sensor.") &&
-            this.hass.states[e.entity_id]?.attributes?.device_class === "temperature",
+            (e.entity_id.startsWith("sensor.") &&
+              this.hass.states[e.entity_id]?.attributes?.device_class === "temperature") ||
+            (e.entity_id.startsWith("climate.") &&
+              this.hass.states[e.entity_id]?.attributes?.current_temperature != null),
         )
       : [];
 
@@ -940,7 +943,9 @@ export class RsDeviceSection extends LitElement {
   private _renderSensorRow(entityId: string, type: "temp" | "humidity", external: boolean) {
     const entityState = this.hass.states[entityId];
     const friendlyName = (entityState?.attributes?.friendly_name as string) || entityId;
-    const currentValue = entityState?.state;
+    const currentValue = entityId.startsWith("climate.")
+      ? entityState?.attributes?.current_temperature
+      : entityState?.state;
     const selected = type === "temp" ? this.selectedTempSensor : this.selectedHumiditySensor;
     const isSelected = selected === entityId;
     const unit = type === "temp" ? tempUnit(this.hass) : "%";
@@ -965,7 +970,9 @@ export class RsDeviceSection extends LitElement {
         </div>
         ${hasValue
           ? html`<span class="device-value"
-              >${type === "humidity" ? Math.round(Number(currentValue)) : currentValue}${unit}</span
+              >${type === "humidity"
+                ? Math.round(Number(currentValue))
+                : Number(currentValue).toFixed(1)}${unit}</span
             >`
           : nothing}
       </div>

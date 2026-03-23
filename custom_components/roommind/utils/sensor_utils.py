@@ -3,12 +3,32 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _read_climate_attribute(state: Any, value_name: str) -> float | None:
+    """Extract a numeric value from a climate entity's attributes.
+
+    Climate entities use ``state.state`` for the HVAC mode (heat/cool/off),
+    not for sensor readings.  Temperature and humidity live in attributes.
+    """
+    if "temperature" in value_name:
+        raw = state.attributes.get("current_temperature")
+    elif "humidity" in value_name:
+        raw = state.attributes.get("current_humidity")
+    else:
+        return None
+    if raw is None:
+        return None
+    try:
+        return float(raw)
+    except (ValueError, TypeError):
+        return None
 
 
 def read_sensor_value(
@@ -38,6 +58,10 @@ def read_sensor_value(
     state = hass.states.get(entity_id)
     if state is None or state.state in ("unavailable", "unknown"):
         return None
+
+    # Climate entities store values in attributes, not state
+    if entity_id.startswith("climate."):
+        return _read_climate_attribute(state, value_name)
 
     try:
         return float(state.state)
