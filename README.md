@@ -20,7 +20,7 @@
 | custom\_components/roommind/diagnostics.py                         |      153 |       11 |     93% |80, 118, 176-177, 206-212 |
 | custom\_components/roommind/managers/\_\_init\_\_.py               |        0 |        0 |    100% |           |
 | custom\_components/roommind/managers/compressor\_group\_manager.py |       84 |        1 |     99% |       106 |
-| custom\_components/roommind/managers/cover\_manager.py             |      109 |        0 |    100% |           |
+| custom\_components/roommind/managers/cover\_manager.py             |      112 |        1 |     99% |       171 |
 | custom\_components/roommind/managers/cover\_orchestrator.py        |      115 |        0 |    100% |           |
 | custom\_components/roommind/managers/ekf\_training\_manager.py     |       55 |        0 |    100% |           |
 | custom\_components/roommind/managers/heat\_source\_orchestrator.py |      122 |        4 |     97% |60, 68, 199, 205 |
@@ -45,7 +45,7 @@
 | custom\_components/roommind/utils/sensor\_utils.py                 |       29 |        1 |     97% |        25 |
 | custom\_components/roommind/utils/temp\_utils.py                   |       26 |        0 |    100% |           |
 | custom\_components/roommind/websocket\_api.py                      |      231 |        2 |     99% |   609-614 |
-| **TOTAL**                                                          | **4703** |  **224** | **95%** |           |
+| **TOTAL**                                                          | **4706** |  **225** | **95%** |           |
 
 
 ## Setup coverage badge
