@@ -423,3 +423,75 @@ class TestCoverIntegration:
         # Old behavior would have blocked this (outdoor 5 < gate 10)
         cover_calls = [c for c in coordinator.hass.services.async_call.call_args_list if c[0][0] == "cover"]
         assert len(cover_calls) > 0, "Covers should deploy despite cold outdoor temp when solar causes overheating"
+
+    @pytest.mark.asyncio
+    async def test_sunrise_holds_covers_when_peak_predicted(self, coordinator, real_store):
+        """At sunrise (low q_solar), covers stay closed if forecast predicts overheating."""
+        room = {
+            **ROOM_WITH_COVERS_AUTO,
+            "covers_night_close": True,
+            "covers_night_position": 0,
+        }
+        await setup_room(real_store, room)
+
+        # Cycle 1: Night — elevation <= 0, forced night_close to position 0
+        coordinator.hass.states.get = MagicMock(
+            side_effect=make_hass_states(
+                temp="21.0",
+                outdoor_temp="4.0",
+                extra={
+                    "cover.lr_blind": ("closed", {"current_position": 0, "supported_features": 4}),
+                },
+            )
+        )
+        with (
+            patch(
+                "custom_components.roommind.coordinator.compute_q_solar_norm",
+                return_value=0.0,
+            ),
+            patch(
+                "custom_components.roommind.managers.cover_orchestrator.solar_elevation",
+                return_value=-5.0,
+            ),
+        ):
+            await coordinator._async_update_data()
+
+        coordinator.hass.services.async_call.reset_mock()
+
+        # Cycle 2: Sunrise — elevation > 0 (night_close ends), q_solar still very low
+        # Predicted peak via linear fallback: 21 + 3.0*0.05*1.0 = 21.15 (below threshold)
+        # BUT with higher solar, MPC/RC would predict higher peak.
+        # We mock q_solar=0.05 (below COVER_SOLAR_MIN=0.15) and use a high solar for
+        # the linear fallback by mocking _estimate_solar_peak_temp to return a hot peak.
+        coordinator.hass.states.get = MagicMock(
+            side_effect=make_hass_states(
+                temp="21.0",
+                outdoor_temp="4.0",
+                extra={
+                    "cover.lr_blind": ("closed", {"current_position": 0, "supported_features": 4}),
+                },
+            )
+        )
+        with (
+            patch(
+                "custom_components.roommind.coordinator.compute_q_solar_norm",
+                return_value=0.05,
+            ),
+            patch(
+                "custom_components.roommind.managers.cover_orchestrator.solar_elevation",
+                return_value=3.0,
+            ),
+            patch.object(
+                coordinator._cover_orchestrator,
+                "_estimate_solar_peak_temp",
+                return_value=26.0,
+            ),
+        ):
+            await coordinator._async_update_data()
+
+        # Covers should NOT open — solar_threat detected (peak 26 > target+1.5 AND > current 21)
+        cover_calls = [c for c in coordinator.hass.services.async_call.call_args_list if c[0][0] == "cover"]
+        assert len(cover_calls) == 0, (
+            "Covers should stay closed at sunrise when forecast predicts overheating, "
+            f"but got cover calls: {cover_calls}"
+        )

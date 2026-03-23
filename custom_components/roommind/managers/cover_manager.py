@@ -116,6 +116,7 @@ class CoverManager:
         has_active_override: bool,
         forced_position: int | None = None,
         forced_reason: str = "",
+        current_temp: float | None = None,
     ) -> CoverDecision:
         """Evaluate whether to change cover positions this cycle.
 
@@ -156,8 +157,13 @@ class CoverManager:
         was_forced = state.last_was_forced
         state.last_was_forced = False
 
-        # Gate 4: Not actually sunny
+        # Gate 4: Low solar — only retract if prediction also says no solar threat ahead
         if q_solar < COVER_SOLAR_MIN:
+            solar_threat = predicted_peak_temp > target_temp + covers_deploy_threshold and (
+                current_temp is None or predicted_peak_temp > current_temp
+            )
+            if solar_threat:
+                return CoverDecision(target_position=current, changed=False, reason="low_solar_but_peak_predicted")
             if current < 100:
                 if not was_forced and (time.time() - state.last_change_ts) < COVER_MIN_HOLD_SECONDS:
                     return CoverDecision(target_position=current, changed=False, reason="min_hold_time")

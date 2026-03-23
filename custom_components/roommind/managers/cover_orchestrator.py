@@ -200,6 +200,7 @@ class CoverOrchestrator:
             has_active_override=has_override,
             forced_position=_forced_position,
             forced_reason=_forced_reason,
+            current_temp=current_temp,
         )
 
         if cover_decision.changed:

@@ -131,7 +131,7 @@ RESIDUAL_HEAT_CUTOFF = 0.02  # below this q_residual is treated as zero
 COVER_SOLAR_MIN: float = 0.15
 COVER_HYSTERESIS: float = 1.0
 COVER_MIN_HOLD_SECONDS: int = 900
-COVER_POS_SCALE: float = 25.0
+COVER_POS_SCALE: float = 50.0
 COVER_MAX_EFFECTIVENESS: float = 0.85
 COVER_USER_CONFLICT_THRESHOLD: int = 15
 COVER_USER_OVERRIDE_MINUTES: int = 60
@@ -142,7 +142,7 @@ COVER_PREDICTION_DT_MINUTES: float = 5.0  # time step for RC trajectory simulati
 COVER_MAX_PREDICTION_STD: float = 0.5  # max idle+solar prediction_std to activate RC tier
 COVER_CONFIDENCE_REFERENCE_SOLAR: float = 0.5  # reference q_solar for confidence check
 COVER_MIN_IDLE_FOR_LEARNED: int = 30  # Min idle observations before trusting EKF's beta_s
-COVER_POS_DEADBAND: int = 5  # min position change (%) to trigger motor movement
+COVER_POS_DEADBAND: int = 10  # min position change (%) to trigger motor movement
 
 # Heat source orchestration — smart routing for rooms with multiple heating device types
 DEFAULT_HEAT_SOURCE_PRIMARY_DELTA = 1.5  # °C gap to engage primary (boiler/radiator)

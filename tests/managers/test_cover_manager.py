@@ -31,11 +31,11 @@ def test_cover_constants_exist():
     assert COVER_SOLAR_MIN == 0.15
     assert COVER_HYSTERESIS == 1.0
     assert COVER_MIN_HOLD_SECONDS == 900
-    assert COVER_POS_SCALE == 25.0
+    assert COVER_POS_SCALE == 50.0
     assert COVER_MAX_EFFECTIVENESS == 0.85
     assert COVER_USER_CONFLICT_THRESHOLD == 15
     assert COVER_USER_OVERRIDE_MINUTES == 60
-    assert COVER_POS_DEADBAND == 5
+    assert COVER_POS_DEADBAND == 10
     assert COVER_PREDICTION_DT_MINUTES == 5.0
     assert COVER_RC_LOOKAHEAD_H == 2.0
     assert COVER_LINEAR_LOOKAHEAD_H == 1.0
@@ -109,15 +109,16 @@ _BASE_KWARGS = dict(
     forced_position=None,
     forced_reason="",
     q_solar=0.5,
+    current_temp=20.0,
 )
 
 
 def test_deploy_when_predicted_hot():
     mgr = CoverManager()
     d = mgr.evaluate("lr", predicted_peak_temp=25.0, target_temp=22.0, **_BASE_KWARGS)
-    # excess=3.0 > threshold=1.5 → raw_close=int((3.0-1.5)*25)=37 → pos=63
+    # excess=3.0 > threshold=1.5 → raw_close=int((3.0-1.5)*50)=75 → pos=25
     assert d.changed is True
-    assert d.target_position == 63
+    assert d.target_position == 25
 
 
 def test_no_deploy_exact_threshold():
@@ -134,12 +135,14 @@ def test_no_deploy_in_hysteresis_band():
     assert "hysteresis" in d.reason
 
 
-def test_no_deploy_low_solar():
+def test_low_solar_holds_when_peak_predicted():
+    """Low solar but predicted peak exceeds threshold → hold covers (don't retract)."""
     mgr = CoverManager()
+    mgr._get_state("lr").current_position = 0  # e.g. from night close
     kwargs = {k: v for k, v in _BASE_KWARGS.items() if k != "q_solar"}
     d = mgr.evaluate("lr", predicted_peak_temp=26.0, target_temp=22.0, q_solar=0.05, **kwargs)
     assert d.changed is False
-    assert "solar" in d.reason
+    assert "peak_predicted" in d.reason
 
 
 def test_min_hold_time_prevents_rapid_cycling():
@@ -163,6 +166,7 @@ def test_position_changes_after_hold_time():
 
         mock_t.time.return_value = 10000.0 + COVER_MIN_HOLD_SECONDS + 1
         kwargs = {k: v for k, v in _BASE_KWARGS.items() if k != "q_solar"}
+        # peak=22.3 < target+threshold=23.5 → no solar_threat → retract after hold time
         d = mgr.evaluate("lr", predicted_peak_temp=22.3, target_temp=22.0, q_solar=0.05, **kwargs)
         assert d.changed is True
         assert d.target_position == 100
@@ -251,10 +255,10 @@ def test_user_override_triggered_when_closing_significantly():
     with patch("custom_components.roommind.managers.cover_manager.time") as mock_t:
         mock_t.time.return_value = 1000.0
         d = mgr.evaluate("lr", predicted_peak_temp=25.0, target_temp=22.0, **_BASE_KWARGS)
-        assert d.changed is True  # Confirm position was commanded
-        # User closes further (e.g. position 20, delta from ~63 > threshold=15)
+        assert d.changed is True  # Confirm position was commanded (pos=25)
+        # User opens fully (position 100, delta from 25 = 75 > threshold=15)
         mock_t.time.return_value = 1100.0
-        mgr.update_position("lr", 20)
+        mgr.update_position("lr", 100)
         state = mgr._get_state("lr")
         assert state.user_override_until > 0.0
 
@@ -299,17 +303,17 @@ def test_override_duration_zero_means_no_pause():
 
 
 def test_low_solar_retract_respects_hold_time():
-    """Retract on low solar must also respect minimum hold time."""
+    """Retract on low solar (no solar threat) must also respect minimum hold time."""
     mgr = CoverManager()
     with patch("custom_components.roommind.managers.cover_manager.time") as mock_t:
         mock_t.time.return_value = 10000.0
         d1 = mgr.evaluate("lr", predicted_peak_temp=25.0, target_temp=22.0, **_BASE_KWARGS)
         assert d1.changed is True
 
-        # 30s later: clouds appear → low solar → retract blocked by hold time
+        # 30s later: low solar, no solar threat (peak below threshold) → retract blocked by hold time
         mock_t.time.return_value = 10030.0
         kwargs = {k: v for k, v in _BASE_KWARGS.items() if k != "q_solar"}
-        d2 = mgr.evaluate("lr", predicted_peak_temp=25.0, target_temp=22.0, q_solar=0.05, **kwargs)
+        d2 = mgr.evaluate("lr", predicted_peak_temp=21.0, target_temp=22.0, q_solar=0.05, **kwargs)
         assert d2.changed is False
         assert "hold_time" in d2.reason
 
@@ -674,11 +678,12 @@ def test_solar_boundary_at_exact_min():
 
 
 def test_solar_just_below_min_retracts():
-    """q_solar just below COVER_SOLAR_MIN retracts covers."""
+    """q_solar just below COVER_SOLAR_MIN retracts covers when no solar threat."""
     mgr = CoverManager()
     mgr._get_state("lr").current_position = 50
     kwargs = {k: v for k, v in _BASE_KWARGS.items() if k != "q_solar"}
-    d = mgr.evaluate("lr", predicted_peak_temp=25.0, target_temp=22.0, q_solar=0.14, **kwargs)
+    # peak=21 < target+threshold=23.5 → no solar threat → retract
+    d = mgr.evaluate("lr", predicted_peak_temp=21.0, target_temp=22.0, q_solar=0.14, **kwargs)
     assert d.changed is True
     assert d.target_position == 100
     assert "low_solar" in d.reason
@@ -698,42 +703,42 @@ def test_min_position_100_prevents_closing():
 
 
 def test_deadband_prevents_small_changes():
-    """Cover at 63%, desired would be 62% → no change (within 5% deadband)."""
+    """Cover at 25%, desired would be 20% → no change (within 10% deadband)."""
     mgr = CoverManager()
-    mgr.update_position("r", 63)
-    # excess = 25.04 - 22 = 3.04, raw_close = int((3.04-1.5)*25) = 38, desired = max(0, 100-38) = 62
-    d = mgr.evaluate("r", **{**_BASE_KWARGS, "predicted_peak_temp": 25.04, "target_temp": 22.0})
+    mgr.update_position("r", 25)
+    # excess = 25.1 - 22 = 3.1, raw_close = int((3.1-1.5)*50) = 80, desired = max(0, 100-80) = 20
+    d = mgr.evaluate("r", **{**_BASE_KWARGS, "predicted_peak_temp": 25.1, "target_temp": 22.0})
     assert not d.changed
     assert d.reason == "deadband"
-    assert d.target_position == 63  # stays at current
+    assert d.target_position == 25  # stays at current
 
 
 def test_deadband_allows_large_changes():
-    """Cover at 63%, desired would be 50% → change (>5% deadband)."""
+    """Cover at 25%, desired would be 0% → change (>10% deadband)."""
     mgr = CoverManager()
-    mgr.update_position("r", 63)
-    # excess = 25.52 - 22 = 3.52, raw_close = int((3.52-1.5)*25) = 50, desired = max(0, 100-50) = 50
-    d = mgr.evaluate("r", **{**_BASE_KWARGS, "predicted_peak_temp": 25.52, "target_temp": 22.0})
+    mgr.update_position("r", 25)
+    # excess = 26.0 - 22 = 4.0, raw_close = int((4.0-1.5)*50) = 125 → 100, desired = 0
+    d = mgr.evaluate("r", **{**_BASE_KWARGS, "predicted_peak_temp": 26.0, "target_temp": 22.0})
     assert d.changed
-    assert d.target_position == 50
+    assert d.target_position == 0
 
 
 def test_deadband_boundary_exact_threshold():
-    """At exactly 5% difference → no change; at 6% → change."""
+    """At exactly 10% difference → no change; at 11% → change."""
     mgr = CoverManager()
-    mgr.update_position("r", 75)
-    # desired=70 → diff=5 → deadband
+    mgr.update_position("r", 40)
+    # excess = 24.9 - 22 = 2.9, raw_close = int((2.9-1.5)*50) = 70, desired = 30 → diff=10 → deadband
     d = mgr.evaluate(
-        "r", **{**_BASE_KWARGS, "predicted_peak_temp": 24.7, "target_temp": 22.0, "covers_deploy_threshold": 1.5}
+        "r", **{**_BASE_KWARGS, "predicted_peak_temp": 24.9, "target_temp": 22.0, "covers_deploy_threshold": 1.5}
     )
     assert not d.changed
     assert d.reason == "deadband"
-    # desired=69 → diff=6 → change
+    # excess = 24.92 - 22 = 2.92, raw_close = int((2.92-1.5)*50) = 71, desired = 29 → diff=11 → change
     d2 = mgr.evaluate(
-        "r", **{**_BASE_KWARGS, "predicted_peak_temp": 24.75, "target_temp": 22.0, "covers_deploy_threshold": 1.5}
+        "r", **{**_BASE_KWARGS, "predicted_peak_temp": 24.92, "target_temp": 22.0, "covers_deploy_threshold": 1.5}
     )
     assert d2.changed
-    assert d2.target_position == 69
+    assert d2.target_position == 29
 
 
 @patch("custom_components.roommind.managers.cover_manager.time")
@@ -823,3 +828,51 @@ async def test_async_apply_mixed_availability(mock_t):
     for call in call_args:
         eids = call[0][2].get("entity_id", [])
         assert "cover.gone" not in (eids if isinstance(eids, list) else [eids])
+
+
+# ── Prediction-aware Gate 4 tests ────────────────────────────────────
+
+
+def test_low_solar_retracts_when_no_solar_threat():
+    """Low solar + predicted peak below threshold → retract covers."""
+    mgr = CoverManager()
+    mgr._get_state("lr").current_position = 50
+    kwargs = {k: v for k, v in _BASE_KWARGS.items() if k != "q_solar"}
+    d = mgr.evaluate("lr", predicted_peak_temp=21.0, target_temp=22.0, q_solar=0.05, **kwargs)
+    assert d.changed is True
+    assert d.target_position == 100
+    assert "low_solar_retract" in d.reason
+
+
+def test_low_solar_retracts_evening():
+    """Evening: low solar, peak predicted below current temp → retract (room cooling)."""
+    mgr = CoverManager()
+    mgr._get_state("lr").current_position = 0
+    kwargs = {k: v for k, v in _BASE_KWARGS.items() if k not in ("q_solar", "current_temp")}
+    d = mgr.evaluate("lr", predicted_peak_temp=23.8, target_temp=22.0, q_solar=0.05, current_temp=24.0, **kwargs)
+    # peak=23.8 > 23.5 BUT peak=23.8 < current=24.0 → no solar threat → retract
+    assert d.changed is True
+    assert d.target_position == 100
+    assert "low_solar_retract" in d.reason
+
+
+def test_low_solar_holds_when_current_temp_none():
+    """Low solar + high predicted peak + current_temp=None → conservative hold."""
+    mgr = CoverManager()
+    mgr._get_state("lr").current_position = 0
+    kwargs = {k: v for k, v in _BASE_KWARGS.items() if k not in ("q_solar", "current_temp")}
+    d = mgr.evaluate("lr", predicted_peak_temp=26.0, target_temp=22.0, q_solar=0.05, current_temp=None, **kwargs)
+    assert d.changed is False
+    assert "peak_predicted" in d.reason
+
+
+def test_low_solar_holds_open_covers_when_peak_predicted():
+    """Covers open (100) + low solar + solar threat → hold at 100 (don't retract further)."""
+    mgr = CoverManager()
+    mgr._get_state("lr").current_position = 100
+    kwargs = {k: v for k, v in _BASE_KWARGS.items() if k != "q_solar"}
+    d = mgr.evaluate("lr", predicted_peak_temp=26.0, target_temp=22.0, q_solar=0.05, **kwargs)
+    # Covers are already open, solar_threat holds → stays at 100 (no retract beyond 100 anyway)
+    assert d.changed is False
+    assert "peak_predicted" in d.reason
+    assert d.target_position == 100
