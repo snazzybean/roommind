@@ -267,7 +267,7 @@ def test_evaluate_mpc_safety_guard_heating_above_target(monkeypatch):
         hass,
         room,
         model_manager=mgr,
-        outdoor_temp=5.0,
+        outdoor_temp=19.0,
         settings={},
         has_external_sensor=True,
     )
@@ -355,7 +355,7 @@ def test_evaluate_mpc_safety_guard_fires_after_min_run_heating(monkeypatch):
         hass,
         room,
         model_manager=mgr,
-        outdoor_temp=5.0,
+        outdoor_temp=19.0,
         settings={},
         has_external_sensor=True,
         previous_mode=MODE_HEATING,
@@ -385,7 +385,7 @@ def test_evaluate_mpc_safety_guard_fires_after_default_min_run_heating(monkeypat
         hass,
         room,
         model_manager=mgr,
-        outdoor_temp=5.0,
+        outdoor_temp=19.0,
         settings={},
         has_external_sensor=True,
         previous_mode=MODE_HEATING,
@@ -402,6 +402,233 @@ def test_evaluate_mpc_safety_guard_fires_after_default_min_run_heating(monkeypat
         lambda *a, **kw: fake_plan,
     )
     mode, pf = ctrl._evaluate_mpc(22.0, TargetTemps(heat=21.0, cool=24.0))
+    assert mode == MODE_IDLE
+    assert pf == 0.0
+
+
+# ---------------------------------------------------------------------------
+# _predict_idle_drift
+# ---------------------------------------------------------------------------
+
+
+def test_predict_idle_drift_returns_model_prediction():
+    """_predict_idle_drift predicts temperature with Q_active=0."""
+    hass = build_hass()
+    room = make_room()
+    mgr = RoomModelManager()
+    ctrl = MPCController(
+        hass,
+        room,
+        model_manager=mgr,
+        outdoor_temp=5.0,
+        settings={},
+        has_external_sensor=True,
+        q_solar=0.3,
+        q_residual=0.1,
+        shading_factor=0.8,
+        q_occupancy=0.5,
+    )
+
+    model = mgr.get_model("living_room")
+    predicted = ctrl._predict_idle_drift(21.0, 30.0)
+    expected = model.predict(
+        21.0,
+        5.0,
+        Q_active=0.0,
+        dt_minutes=30.0,
+        q_solar=0.3 * 0.8,
+        q_residual=0.1,
+        q_occupancy=0.5,
+    )
+    assert predicted == pytest.approx(expected, abs=0.01)
+
+
+def test_predict_idle_drift_uses_fallback_outdoor_temp():
+    """When outdoor_temp is None, uses DEFAULT_OUTDOOR_TEMP_FALLBACK."""
+    from custom_components.roommind.control.mpc_controller import (
+        DEFAULT_OUTDOOR_TEMP_FALLBACK,
+    )
+
+    hass = build_hass()
+    room = make_room()
+    mgr = RoomModelManager()
+    ctrl = MPCController(
+        hass,
+        room,
+        model_manager=mgr,
+        outdoor_temp=None,
+        settings={},
+        has_external_sensor=True,
+    )
+
+    model = mgr.get_model("living_room")
+    predicted = ctrl._predict_idle_drift(21.0, 30.0)
+    expected = model.predict(21.0, DEFAULT_OUTDOOR_TEMP_FALLBACK, Q_active=0.0, dt_minutes=30.0)
+    assert predicted == pytest.approx(expected, abs=0.01)
+
+
+# ---------------------------------------------------------------------------
+# Prediction-aware safety guard
+# ---------------------------------------------------------------------------
+
+
+def test_safety_guard_allows_heating_when_prediction_dips(monkeypatch):
+    """Safety guard allows HEATING when idle-drift predicts temp below target."""
+    hass = build_hass()
+    room = make_room()
+    mgr = RoomModelManager()
+    ctrl = MPCController(
+        hass,
+        room,
+        model_manager=mgr,
+        outdoor_temp=5.0,
+        settings={},
+        has_external_sensor=True,
+    )
+
+    fake_plan = MPCPlan(
+        actions=[MODE_HEATING] * 24,
+        temperatures=[21.0] * 25,
+        power_fractions=[0.8] * 24,
+    )
+    monkeypatch.setattr(
+        "custom_components.roommind.control.mpc_controller.MPCOptimizer.optimize",
+        lambda *a, **kw: fake_plan,
+    )
+
+    # current_temp=21.0 >= target=21.0 → guard entry triggers
+    # With outdoor=5, 30-min idle prediction from 21°C dips well below 21 - 0.2
+    # → guard should allow heating
+    mode, pf = ctrl._evaluate_mpc(21.0, TargetTemps(heat=21.0, cool=25.0))
+    assert mode == MODE_HEATING
+    assert pf > 0.0
+
+
+def test_safety_guard_suppresses_when_prediction_stays_warm(monkeypatch):
+    """Safety guard suppresses HEATING when prediction stays above target."""
+    hass = build_hass()
+    room = make_room()
+    mgr = RoomModelManager()
+    ctrl = MPCController(
+        hass,
+        room,
+        model_manager=mgr,
+        outdoor_temp=20.0,
+        settings={},
+        has_external_sensor=True,
+    )
+
+    fake_plan = MPCPlan(
+        actions=[MODE_HEATING] * 24,
+        temperatures=[22.0] * 25,
+        power_fractions=[0.8] * 24,
+    )
+    monkeypatch.setattr(
+        "custom_components.roommind.control.mpc_controller.MPCOptimizer.optimize",
+        lambda *a, **kw: fake_plan,
+    )
+
+    # current_temp=22 >= target=21, outdoor=20 → prediction stays warm → suppress
+    mode, pf = ctrl._evaluate_mpc(22.0, TargetTemps(heat=21.0, cool=25.0))
+    assert mode == MODE_IDLE
+    assert pf == 0.0
+
+
+def test_safety_guard_adaptive_horizon_underfloor(monkeypatch):
+    """Underfloor heating uses guard horizon derived from min_run_blocks.
+
+    On upstream (min_run_minutes=30): max(6, 6) = 6 blocks = 30 min.
+    On dev (min_run_minutes=60): max(6, 12) = 12 blocks = 60 min.
+    Either way, the prediction-aware guard still allows heating when
+    the model predicts a dip.
+    """
+    hass = build_hass()
+    room = make_room(heating_system_type="underfloor")
+    mgr = RoomModelManager()
+    ctrl = MPCController(
+        hass,
+        room,
+        model_manager=mgr,
+        outdoor_temp=5.0,
+        settings={},
+        has_external_sensor=True,
+        heating_system_type="underfloor",
+    )
+
+    fake_plan = MPCPlan(
+        actions=[MODE_HEATING] * 24,
+        temperatures=[21.0] * 25,
+        power_fractions=[0.8] * 24,
+    )
+    monkeypatch.setattr(
+        "custom_components.roommind.control.mpc_controller.MPCOptimizer.optimize",
+        lambda *a, **kw: fake_plan,
+    )
+
+    # At outdoor=5, idle drift from 21°C drops below 21 - 0.2 = 20.8
+    # → guard allows heating regardless of horizon length
+    mode, pf = ctrl._evaluate_mpc(21.0, TargetTemps(heat=21.0, cool=25.0))
+    assert mode == MODE_HEATING
+
+
+def test_safety_guard_allows_cooling_when_prediction_rises(monkeypatch):
+    """Safety guard allows COOLING when idle-drift predicts temp above target."""
+    hass = build_hass()
+    room = make_room(acs=["climate.ac1"], thermostats=[], climate_mode="cool_only")
+    mgr = RoomModelManager()
+    ctrl = MPCController(
+        hass,
+        room,
+        model_manager=mgr,
+        outdoor_temp=35.0,
+        settings={},
+        has_external_sensor=True,
+        q_solar=0.5,
+    )
+
+    fake_plan = MPCPlan(
+        actions=[MODE_COOLING] * 24,
+        temperatures=[24.0] * 25,
+        power_fractions=[0.8] * 24,
+    )
+    monkeypatch.setattr(
+        "custom_components.roommind.control.mpc_controller.MPCOptimizer.optimize",
+        lambda *a, **kw: fake_plan,
+    )
+
+    # current_temp=24 <= cool_target=24 → guard entry triggers
+    # With outdoor=35 and solar=0.5, prediction rises above 24 + 0.2 → allow cooling
+    mode, pf = ctrl._evaluate_mpc(24.0, TargetTemps(heat=21.0, cool=24.0))
+    assert mode == MODE_COOLING
+    assert pf > 0.0
+
+
+def test_safety_guard_suppresses_cooling_when_prediction_stays_cool(monkeypatch):
+    """Safety guard suppresses COOLING when prediction stays below target."""
+    hass = build_hass()
+    room = make_room(acs=["climate.ac1"], thermostats=[], climate_mode="cool_only")
+    mgr = RoomModelManager()
+    ctrl = MPCController(
+        hass,
+        room,
+        model_manager=mgr,
+        outdoor_temp=23.0,
+        settings={},
+        has_external_sensor=True,
+    )
+
+    fake_plan = MPCPlan(
+        actions=[MODE_COOLING] * 24,
+        temperatures=[23.0] * 25,
+        power_fractions=[0.8] * 24,
+    )
+    monkeypatch.setattr(
+        "custom_components.roommind.control.mpc_controller.MPCOptimizer.optimize",
+        lambda *a, **kw: fake_plan,
+    )
+
+    # current_temp=23 <= cool_target=23, outdoor=23 → prediction stays stable → suppress
+    mode, pf = ctrl._evaluate_mpc(23.0, TargetTemps(heat=21.0, cool=23.0))
     assert mode == MODE_IDLE
     assert pf == 0.0
 

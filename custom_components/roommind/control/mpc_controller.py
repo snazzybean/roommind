@@ -409,6 +409,8 @@ PLAN_DT_MINUTES = 5
 MIN_HORIZON_HOURS = 2
 HORIZON_MULTIPLIER = 2.5
 DEFAULT_OUTDOOR_TEMP_FALLBACK = 10.0
+SAFETY_GUARD_MIN_BLOCKS = 6  # Minimum guard horizon (30 min floor)
+GUARD_PREDICTION_MARGIN = 0.2  # °C margin for prediction-based guard bypass
 
 # Minimum sample counts before MPC is allowed.
 # Each EKF update covers ~3 min (EKF_UPDATE_MIN_DT), so these correspond
@@ -624,6 +626,24 @@ class MPCController:
         min_run_seconds = get_min_run_blocks(self._heating_system_type, PLAN_DT_MINUTES) * PLAN_DT_MINUTES * 60
         return (time.time() - self._mode_on_since) < min_run_seconds
 
+    def _predict_idle_drift(self, current_temp: float, dt_minutes: float) -> float:
+        """Predict room temperature assuming no active HVAC over *dt_minutes*.
+
+        Used by the safety guard to check whether temperature will drift below
+        (or above) target before suppressing optimizer recommendations.
+        """
+        model = self._model_manager.get_model(self._area_id)
+        T_out = self.outdoor_temp if self.outdoor_temp is not None else DEFAULT_OUTDOOR_TEMP_FALLBACK
+        return model.predict(
+            current_temp,
+            T_out,
+            Q_active=0.0,
+            dt_minutes=dt_minutes,
+            q_solar=self.q_solar * self._shading_factor,
+            q_residual=self.q_residual,
+            q_occupancy=self.q_occupancy,
+        )
+
     def _evaluate_mpc(
         self,
         current_temp: float | None,
@@ -707,15 +727,24 @@ class MPCController:
 
         # Safety guard: don't heat above the maximum upcoming target,
         # don't cool below the minimum upcoming target, while preserving
-        # pre-heating/pre-cooling when a schedule change justifies it.
-        near_heat = heat_target_series[:6]
-        near_cool = cool_target_series[:6]
+        # pre-heating/pre-cooling when the model predicts a drift past target.
+        # The guard horizon scales with heating system response time.
+        guard_blocks = max(SAFETY_GUARD_MIN_BLOCKS, min_run)
+        guard_horizon_minutes = guard_blocks * PLAN_DT_MINUTES
+        near_heat = heat_target_series[:guard_blocks]
+        near_cool = cool_target_series[:guard_blocks]
         if near_heat and action == MODE_HEATING and current_temp >= max(near_heat):
-            if not self._within_min_run(MODE_HEATING):
+            predicted = self._predict_idle_drift(current_temp, guard_horizon_minutes)
+            if predicted < min(near_heat) - GUARD_PREDICTION_MARGIN:
+                pass  # model predicts dip — allow optimizer's HEAT decision
+            elif not self._within_min_run(MODE_HEATING):
                 action = MODE_IDLE
                 power_fraction = 0.0
         elif near_cool and action == MODE_COOLING and current_temp <= min(near_cool):
-            if not self._within_min_run(MODE_COOLING):
+            predicted = self._predict_idle_drift(current_temp, guard_horizon_minutes)
+            if predicted > max(near_cool) + GUARD_PREDICTION_MARGIN:
+                pass  # model predicts rise — allow optimizer's COOL decision
+            elif not self._within_min_run(MODE_COOLING):
                 action = MODE_IDLE
                 power_fraction = 0.0
 
