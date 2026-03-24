@@ -126,22 +126,16 @@ class CoverManager:
         state = self._get_state(area_id)
         current = state.current_position
 
-        # Gate 1: Feature disabled or no covers configured
-        if not covers_auto_enabled or not cover_entity_ids:
+        # Gate 0: No covers configured — nothing to do
+        if not cover_entity_ids:
             return CoverDecision(target_position=current, changed=False, reason="disabled")
 
-        # Gate 2: Manual override — never fight the user
-        if has_active_override:
-            return CoverDecision(target_position=current, changed=False, reason="manual_override_active")
-
-        # Gate 2b: User manually moved cover (e.g. opened for balcony)
-        if state.user_override_until > time.time():
-            return CoverDecision(target_position=current, changed=False, reason="user_override_active")
-
-        # Gate 2c: Forced position (schedule or night close) — immediate, no rate limit
-        # User-defined schedules and night close should always apply instantly.
-        # Rate limiting only applies to thermal/solar MPC-based decisions below.
+        # Gate 1: Forced position (schedule or night close) — immediate, no rate limit.
+        # Schedules and night close work independently of covers_auto_enabled.
+        # Only user manual override (Gate 1b) can block them.
         if forced_position is not None:
+            if state.user_override_until > time.time():
+                return CoverDecision(target_position=current, changed=False, reason="user_override_active")
             state.last_was_forced = True
             if abs(forced_position - current) <= 2:
                 return CoverDecision(
@@ -149,7 +143,19 @@ class CoverManager:
                 )
             return self._apply_change(state, forced_position, f"forced({forced_reason})")
 
-        # Gate 3: Safety check — predicted_peak_temp must be available
+        # Gate 2: Auto control disabled — no solar/thermal decisions
+        if not covers_auto_enabled:
+            return CoverDecision(target_position=current, changed=False, reason="disabled")
+
+        # Gate 3: Manual override — never fight the user
+        if has_active_override:
+            return CoverDecision(target_position=current, changed=False, reason="manual_override_active")
+
+        # Gate 3b: User manually moved cover (e.g. opened for balcony)
+        if state.user_override_until > time.time():
+            return CoverDecision(target_position=current, changed=False, reason="user_override_active")
+
+        # Gate 4: Safety check — predicted_peak_temp must be available
         if predicted_peak_temp is None:
             return CoverDecision(target_position=current, changed=False, reason="no_prediction")
 

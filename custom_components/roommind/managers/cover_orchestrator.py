@@ -178,6 +178,11 @@ class CoverOrchestrator:
             if _elev <= 0:
                 _forced_position = room.get("covers_night_position", 0)
                 _forced_reason = "night_close"
+            elif not room.get("covers_auto_enabled", False):
+                # Sun is up but auto control is off → force open so covers
+                # don't stay closed after night close (no solar logic to reopen).
+                _forced_position = 100
+                _forced_reason = "night_end"
 
         # Block D: Tiered prediction
         _cover_predicted_peak = predicted_peak_temp

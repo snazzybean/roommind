@@ -636,16 +636,48 @@ def test_forced_position_works_without_prediction():
     assert "forced" in d.reason
 
 
-def test_manual_override_blocks_forced_position():
+def test_temp_override_does_not_block_forced_position():
+    """Temperature override (boost/eco) must not block night close or schedules."""
     mgr = CoverManager()
+    mgr.update_position("lr", 100)
     d = mgr.evaluate(
         "lr",
         predicted_peak_temp=22.0,
         target_temp=22.0,
         **{**_BASE_KWARGS, "has_active_override": True, "forced_position": 0, "forced_reason": "night_close"},
     )
+    assert d.changed is True
+    assert "night_close" in d.reason
+
+
+def test_user_cover_override_blocks_forced_position():
+    """User manually moving cover pauses forced positions (night close)."""
+    mgr = CoverManager()
+    mgr.update_position("lr", 100)
+    mgr._get_state("lr").last_commanded_position = 50  # simulate prior command
+    mgr.update_position("lr", 100)  # triggers drift detection → user override
+    d = mgr.evaluate(
+        "lr",
+        predicted_peak_temp=22.0,
+        target_temp=22.0,
+        **{**_BASE_KWARGS, "forced_position": 0, "forced_reason": "night_close"},
+    )
     assert d.changed is False
-    assert "manual_override" in d.reason
+    assert "user_override" in d.reason
+
+
+def test_forced_position_works_when_auto_disabled():
+    """Night close and schedules work even with covers_auto_enabled=False."""
+    mgr = CoverManager()
+    mgr.update_position("lr", 100)
+    d = mgr.evaluate(
+        "lr",
+        predicted_peak_temp=None,
+        target_temp=22.0,
+        **{**_BASE_KWARGS, "covers_auto_enabled": False, "forced_position": 0, "forced_reason": "night_close"},
+    )
+    assert d.changed is True
+    assert "night_close" in d.reason
 
 
 def test_no_forced_position_uses_thermal():
@@ -786,6 +818,23 @@ def test_no_night_close_when_no_forced_position(mock_t):
     mgr = CoverManager()
     d = mgr.evaluate("lr", predicted_peak_temp=20.0, target_temp=22.0, **_BASE_KWARGS)
     assert "night_close" not in d.reason
+
+
+@patch("custom_components.roommind.managers.cover_manager.time")
+def test_night_end_opens_covers_when_auto_disabled(mock_t):
+    """Night end forced open works even with covers_auto_enabled=False."""
+    mock_t.time.return_value = 1000.0
+    mgr = CoverManager()
+    mgr.update_position("lr", 0)  # covers closed from night close
+    d = mgr.evaluate(
+        "lr",
+        predicted_peak_temp=None,
+        target_temp=22.0,
+        **{**_BASE_KWARGS, "covers_auto_enabled": False, "forced_position": 100, "forced_reason": "night_end"},
+    )
+    assert d.changed is True
+    assert d.target_position == 100
+    assert "night_end" in d.reason
 
 
 # ── Mixed availability tests ──────────────────────────────────────────
