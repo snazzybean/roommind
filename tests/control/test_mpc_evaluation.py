@@ -325,7 +325,7 @@ def test_evaluate_mpc_safety_guard_respects_min_run_heating(monkeypatch):
         hass,
         room,
         model_manager=mgr,
-        outdoor_temp=5.0,
+        outdoor_temp=21.0,  # near room temp so predicted idle temp won't drop below target-margin
         settings={},
         has_external_sensor=True,
         previous_mode=MODE_HEATING,
