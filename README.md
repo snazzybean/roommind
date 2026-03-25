@@ -20,7 +20,7 @@
 | custom\_components/roommind/diagnostics.py                         |      153 |       11 |     93% |80, 118, 176-177, 206-212 |
 | custom\_components/roommind/managers/\_\_init\_\_.py               |        0 |        0 |    100% |           |
 | custom\_components/roommind/managers/compressor\_group\_manager.py |       84 |        1 |     99% |       106 |
-| custom\_components/roommind/managers/cover\_manager.py             |      116 |        1 |     99% |       177 |
+| custom\_components/roommind/managers/cover\_manager.py             |      116 |        1 |     99% |       181 |
 | custom\_components/roommind/managers/cover\_orchestrator.py        |      118 |        2 |     98% |   184-185 |
 | custom\_components/roommind/managers/ekf\_training\_manager.py     |       55 |        0 |    100% |           |
 | custom\_components/roommind/managers/heat\_source\_orchestrator.py |      122 |        4 |     97% |60, 68, 199, 205 |
