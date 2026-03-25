@@ -653,9 +653,9 @@ def test_temp_override_does_not_block_forced_position():
 def test_user_cover_override_blocks_forced_position():
     """User manually moving cover pauses forced positions (night close)."""
     mgr = CoverManager()
-    mgr.update_position("lr", 100)
+    mgr.update_position("lr", 50)  # cover at commanded position
     mgr._get_state("lr").last_commanded_position = 50  # simulate prior command
-    mgr.update_position("lr", 100)  # triggers drift detection → user override
+    mgr.update_position("lr", 100)  # user opens → drift detection → user override
     d = mgr.evaluate(
         "lr",
         predicted_peak_temp=22.0,
@@ -664,6 +664,109 @@ def test_user_cover_override_blocks_forced_position():
     )
     assert d.changed is False
     assert "user_override" in d.reason
+
+
+@patch("custom_components.roommind.managers.cover_manager.time")
+def test_repeated_position_reads_do_not_refresh_override(mock_t):
+    """Repeated reads of the same position must not refresh the override timer.
+
+    Regression test: update_position() was resetting user_override_until on every
+    coordinator cycle (30s) because the drift check ran on every call, even when
+    the position hadn't changed. This made the override permanent.
+    """
+    mgr = CoverManager()
+    mock_t.time.return_value = 1000.0
+
+    # RoomMind commands shading position
+    d = mgr.evaluate("lr", predicted_peak_temp=25.0, target_temp=22.0, **_BASE_KWARGS)
+    assert d.changed is True  # covers deployed
+
+    # User opens covers → override set at T=1100
+    mock_t.time.return_value = 1100.0
+    mgr.update_position("lr", 100)
+    state = mgr._get_state("lr")
+    assert state.user_override_until == 1100.0 + COVER_USER_OVERRIDE_MINUTES * 60
+
+    # 30 minutes later: same position reported again (simulates coordinator cycle)
+    mock_t.time.return_value = 2900.0  # 1100 + 1800 (30 min)
+    mgr.update_position("lr", 100)  # same position → must NOT refresh timer
+
+    # Timer must still expire at original time, not be pushed forward
+    assert state.user_override_until == 1100.0 + COVER_USER_OVERRIDE_MINUTES * 60
+
+
+@patch("custom_components.roommind.managers.cover_manager.time")
+def test_night_close_works_after_user_override_expires(mock_t):
+    """Night close must succeed after user override timer expires.
+
+    End-to-end scenario: RoomMind shades → user opens → override blocks night_close
+    → override expires → night_close succeeds.
+    """
+    mgr = CoverManager()
+    mock_t.time.return_value = 1000.0
+
+    # RoomMind commands shading position
+    d1 = mgr.evaluate("lr", predicted_peak_temp=25.0, target_temp=22.0, **_BASE_KWARGS)
+    assert d1.changed is True
+
+    # User opens covers → override set
+    mock_t.time.return_value = 1100.0
+    mgr.update_position("lr", 100)
+
+    # During override: night_close is blocked
+    mock_t.time.return_value = 1200.0
+    d2 = mgr.evaluate(
+        "lr",
+        predicted_peak_temp=22.0,
+        target_temp=22.0,
+        **{**_BASE_KWARGS, "forced_position": 0, "forced_reason": "night_close"},
+    )
+    assert d2.changed is False
+    assert "user_override" in d2.reason
+
+    # Simulate repeated position reads during override (must not refresh)
+    for t in range(1200, 4700, 30):
+        mock_t.time.return_value = float(t)
+        mgr.update_position("lr", 100)
+
+    # After override expires (61 minutes after set): night_close succeeds
+    mock_t.time.return_value = 1100.0 + COVER_USER_OVERRIDE_MINUTES * 60 + 60
+    d3 = mgr.evaluate(
+        "lr",
+        predicted_peak_temp=22.0,
+        target_temp=22.0,
+        **{**_BASE_KWARGS, "forced_position": 0, "forced_reason": "night_close"},
+    )
+    assert d3.changed is True
+    assert "night_close" in d3.reason
+
+
+@patch("custom_components.roommind.managers.cover_manager.time")
+def test_user_moving_cover_again_during_override_extends_timer(mock_t):
+    """User moving cover to a new position during active override extends the timer."""
+    mgr = CoverManager()
+    mock_t.time.return_value = 1000.0
+
+    # RoomMind commands shading position
+    d = mgr.evaluate("lr", predicted_peak_temp=25.0, target_temp=22.0, **_BASE_KWARGS)
+    assert d.changed is True
+    commanded = mgr._get_state("lr").last_commanded_position
+
+    # User opens covers → override set at T=1100
+    mock_t.time.return_value = 1100.0
+    mgr.update_position("lr", 100)
+    state = mgr._get_state("lr")
+    original_expiry = state.user_override_until
+    assert original_expiry == 1100.0 + COVER_USER_OVERRIDE_MINUTES * 60
+
+    # 20 minutes later: user moves cover again (e.g. partially closes to 80)
+    mock_t.time.return_value = 2300.0  # 1100 + 1200
+    mgr.update_position("lr", 80)  # 80 != 100 → position changed
+    # |80 - commanded| should still exceed threshold
+    assert abs(80 - commanded) > COVER_USER_CONFLICT_THRESHOLD
+    # Timer must be extended from new time
+    assert state.user_override_until == 2300.0 + COVER_USER_OVERRIDE_MINUTES * 60
+    assert state.user_override_until > original_expiry
 
 
 def test_forced_position_works_when_auto_disabled():

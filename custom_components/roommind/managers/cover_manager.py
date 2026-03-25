@@ -77,11 +77,15 @@ class CoverManager:
         from the last position RoomMind commanded (in either direction), the user
         moved it manually. In that case, auto control pauses for
         COVER_USER_OVERRIDE_MINUTES.
+
+        Only triggers on actual position changes (not repeated reads of the same
+        position) to avoid perpetually refreshing the override timer.
         """
         state = self._get_state(area_id)
-        # Drift detection: only if we previously commanded a position
+        # Drift detection: only on actual position change when we previously commanded a position
         if (
-            state.last_commanded_position is not None
+            position != state.current_position
+            and state.last_commanded_position is not None
             and abs(position - state.last_commanded_position) > COVER_USER_CONFLICT_THRESHOLD
         ):
             state.user_override_until = time.time() + override_minutes * 60
