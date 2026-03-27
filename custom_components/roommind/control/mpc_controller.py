@@ -66,6 +66,20 @@ def _cache_entry(service: str, data: dict) -> dict[str, Any]:
     }
 
 
+def _should_use_cache(state: Any) -> bool:
+    """Return True when the sent-command cache should be trusted.
+
+    The cache exists for IR-controlled devices that never report state changes.
+    When a device has a real HVAC state (not unavailable/unknown), the device's
+    actual reported state is authoritative and the cache must not suppress
+    retries — a cached "off" must not prevent re-sending when the device
+    clearly reports it is still heating.
+    """
+    if state is None:
+        return True
+    return state.state in ("unavailable", "unknown")
+
+
 def _snap_to_step(value: float, step: float | None) -> float:
     if step is None or step <= 0:
         return value
@@ -96,10 +110,11 @@ async def async_turn_off_climate(
     if not hvac_modes or "off" in hvac_modes:
         if state and state.state == "off":
             return  # already off
-        # Cache fallback for IR devices
-        cached = _last_commands.get(entity_id)
-        if cached and cached.get("service") == "set_hvac_mode" and cached.get("hvac_mode") == "off":
-            return
+        # Cache fallback for IR devices (only when device has no reliable state)
+        if _should_use_cache(state):
+            cached = _last_commands.get(entity_id)
+            if cached and cached.get("service") == "set_hvac_mode" and cached.get("hvac_mode") == "off":
+                return
         try:
             await hass.services.async_call(
                 "climate",
@@ -140,7 +155,7 @@ async def async_turn_off_climate(
         )
         if cur_check is not None and round(cur_check, 1) == round(fallback_temp, 1):
             return
-        if cur_check is None:
+        if cur_check is None and _should_use_cache(state):
             cached = _last_commands.get(entity_id)
             if cached and cached.get("service") == "set_temperature":
                 c_low = cached.get("target_temp_low")
@@ -157,7 +172,7 @@ async def async_turn_off_climate(
         current_temp_setting = state.attributes.get("temperature")
         if current_temp_setting is not None and round(current_temp_setting, 1) == round(fallback_temp, 1):
             return
-        if current_temp_setting is None:
+        if current_temp_setting is None and _should_use_cache(state):
             cached = _last_commands.get(entity_id)
             if (
                 cached
@@ -257,10 +272,11 @@ async def async_idle_device(
         if current_temp_attr is not None and abs(float(current_temp_attr) - ha_t) < 0.1:
             return
 
-        # Cache check
-        cached = _last_commands.get(entity_id)
-        if cached and cached.get("service") == "set_temperature" and cached.get("temperature") == ha_t:
-            return
+        # Cache check (only for devices without reliable state feedback)
+        if _should_use_cache(state):
+            cached = _last_commands.get(entity_id)
+            if cached and cached.get("service") == "set_temperature" and cached.get("temperature") == ha_t:
+                return
 
         _LOGGER.debug(
             "Area '%s': setback on '%s' — target %.1f → %.1f",
@@ -311,12 +327,12 @@ async def async_idle_device(
         if not idle_fan_mode or current_fan == idle_fan_mode:
             return
 
-    # Cache fallback for IR devices
-    cached = _last_commands.get(entity_id)
-    if cached and cached.get("service") == "set_hvac_mode" and cached.get("hvac_mode") == "fan_only":
-        # Already sent fan_only; check fan_mode cache too
-        if not idle_fan_mode:
-            return
+    # Cache fallback for IR devices (only when device has no reliable state)
+    if _should_use_cache(state):
+        cached = _last_commands.get(entity_id)
+        if cached and cached.get("service") == "set_hvac_mode" and cached.get("hvac_mode") == "fan_only":
+            if not idle_fan_mode:
+                return
 
     try:
         await hass.services.async_call(
@@ -1436,7 +1452,7 @@ class MPCController:
                         skip = True
 
         # Fallback: check sent-command cache (for IR devices without state feedback)
-        if not skip and eid:
+        if not skip and eid and _should_use_cache(state):
             cached = _last_commands.get(eid)
             if cached is not None and cached.get("service") == service:
                 if service == "set_hvac_mode":
