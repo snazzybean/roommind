@@ -6,12 +6,7 @@ import { customElement, property, state } from "lit/decorators.js";
 import type { HomeAssistant, RoomConfig, AnalyticsData } from "../../types";
 import { localize } from "../../utils/localize";
 import { getSelectValue } from "../../utils/events";
-import {
-  buildCsvString,
-  buildDiagnosticsString,
-  downloadString,
-  buildExportFilename,
-} from "../../utils/analytics-export";
+import { buildCsvString, downloadString, buildExportFilename } from "../../utils/analytics-export";
 import { copyToClipboard } from "../../utils/clipboard";
 
 @customElement("rs-analytics-toolbar")
@@ -23,10 +18,10 @@ export class RsAnalyticsToolbar extends LitElement {
   @property({ type: Number }) public rangeEnd = 0;
   @property({ type: String }) public activeQuick: string | null = "24h";
   @property({ attribute: false }) public data: AnalyticsData | null = null;
-  @property({ type: String }) public controlMode: "mpc" | "bangbang" = "bangbang";
   @property({ type: String }) public language = "en";
 
   @state() private _openDropdown: "csv" | "diag" | null = null;
+  @state() private _diagLoading = false;
 
   private _boundCloseDropdowns = this._closeDropdowns.bind(this);
 
@@ -168,13 +163,13 @@ export class RsAnalyticsToolbar extends LitElement {
           <div class="export-split">
             <button
               class="export-btn"
-              ?disabled=${!this.selectedRoom || !this.data}
+              ?disabled=${this._diagLoading}
               @click=${(e: Event) => {
                 e.stopPropagation();
                 this._toggleDropdown("diag");
               }}
             >
-              <ha-icon icon="mdi:bug-outline"></ha-icon>
+              <ha-icon icon=${this._diagLoading ? "mdi:loading" : "mdi:bug-outline"}></ha-icon>
               ${localize("analytics.copy_diagnostics", l)}
               <ha-icon class="arrow-icon" icon="mdi:chevron-down"></ha-icon>
             </button>
@@ -262,26 +257,22 @@ export class RsAnalyticsToolbar extends LitElement {
     this._openDropdown = null;
   }
 
-  private _exportDiagnostics() {
-    if (!this.data) return;
-    const json = buildDiagnosticsString(
-      this.selectedRoom,
-      this.data,
-      this.rooms[this.selectedRoom],
-      this.controlMode,
-    );
-    if (!json) return;
-    const filename = buildExportFilename(
-      this.hass,
-      this.rooms,
-      this.selectedRoom,
-      this.rangeStart,
-      this.rangeEnd,
-      "diagnostics",
-      "json",
-    );
-    downloadString(json, filename, "application/json");
+  private async _exportDiagnostics() {
+    if (this._diagLoading) return;
+    this._diagLoading = true;
     this._openDropdown = null;
+    try {
+      const result = await this.hass.callWS<Record<string, unknown>>({
+        type: "roommind/diagnostics/get",
+      });
+      const json = JSON.stringify(result, null, 2);
+      downloadString(json, "roommind_diagnostics.json", "application/json");
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn("[RoomMind] diagnostics export failed:", err);
+    } finally {
+      this._diagLoading = false;
+    }
   }
 
   private _copyCsvToClipboard() {
@@ -292,17 +283,22 @@ export class RsAnalyticsToolbar extends LitElement {
     this._openDropdown = null;
   }
 
-  private _copyDiagnosticsToClipboard() {
-    if (!this.data) return;
-    const json = buildDiagnosticsString(
-      this.selectedRoom,
-      this.data,
-      this.rooms[this.selectedRoom],
-      this.controlMode,
-    );
-    if (!json) return;
-    copyToClipboard(json);
+  private async _copyDiagnosticsToClipboard() {
+    if (this._diagLoading) return;
+    this._diagLoading = true;
     this._openDropdown = null;
+    try {
+      const result = await this.hass.callWS<Record<string, unknown>>({
+        type: "roommind/diagnostics/get",
+      });
+      const json = JSON.stringify(result, null, 2);
+      copyToClipboard(json);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn("[RoomMind] diagnostics clipboard failed:", err);
+    } finally {
+      this._diagLoading = false;
+    }
   }
 
   private _toggleDropdown(id: "csv" | "diag") {

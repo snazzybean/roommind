@@ -12,6 +12,7 @@ from custom_components.roommind.websocket_api import (
     _safe_float,
     websocket_delete_room,
     websocket_get_analytics,
+    websocket_get_diagnostics,
     websocket_get_settings,
     websocket_list_rooms,
     websocket_override_clear,
@@ -36,6 +37,7 @@ _save_settings = websocket_save_settings.__wrapped__
 _thermal_reset = websocket_thermal_reset.__wrapped__
 _thermal_reset_all = websocket_thermal_reset_all.__wrapped__
 _get_analytics = websocket_get_analytics.__wrapped__
+_get_diagnostics = websocket_get_diagnostics.__wrapped__
 
 
 @pytest.fixture
@@ -1376,7 +1378,7 @@ def test_register_websocket_commands(hass):
 
     with patch("custom_components.roommind.websocket_api.websocket_api.async_register_command") as mock_reg:
         async_register_websocket_commands(hass)
-        assert mock_reg.call_count == 11
+        assert mock_reg.call_count == 12
 
 
 # ---------------------------------------------------------------------------
@@ -1990,3 +1992,73 @@ async def test_save_room_with_legacy_only_syncs_devices(ws_hass, store, connecti
     assert trv_devices[0]["entity_id"] == "climate.trv1"
     assert len(ac_devices) == 1
     assert ac_devices[0]["entity_id"] == "climate.ac1"
+
+
+# ---------------------------------------------------------------------------
+# Diagnostics WS endpoint
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_get_diagnostics_returns_full_structure(ws_hass, store, connection):
+    """roommind/diagnostics/get returns full integration diagnostics."""
+    await store.async_load()
+
+    # Mock config_entries.async_entries to return a fake config entry
+    mock_entry = MagicMock()
+    mock_entry.entry_id = "test_entry_id"
+    ws_hass.config_entries = MagicMock()
+    ws_hass.config_entries.async_entries = MagicMock(return_value=[mock_entry])
+
+    # Wire up coordinator
+    coordinator = MagicMock()
+    coordinator.rooms = {}
+    coordinator.outdoor_temp = 10.0
+    coordinator.outdoor_humidity = 60.0
+    coordinator._previous_modes = {}
+    coordinator._mode_on_since = {}
+    coordinator._last_valid_temps = {}
+    coordinator._residual_tracker = MagicMock()
+    coordinator._model_manager = MagicMock()
+    coordinator._model_manager._estimators = {}
+    coordinator._window_manager = MagicMock()
+    coordinator._window_manager._states = {}
+    coordinator._cover_orchestrator = MagicMock()
+    coordinator._cover_orchestrator._cover_managers = {}
+    coordinator._heat_source_states = {}
+    coordinator._weather_manager = MagicMock()
+    coordinator._weather_manager._outdoor_forecast = []
+    coordinator._history_store = None
+    coordinator._compressor_manager = MagicMock()
+    coordinator._compressor_manager._groups = {}
+    coordinator._compressor_manager._member_states = {}
+    coordinator._valve_manager = MagicMock()
+    coordinator._valve_manager._cycling = {}
+    coordinator._valve_manager._last_actuation = {}
+    ws_hass.data[DOMAIN]["coordinator"] = coordinator
+    ws_hass.config = MagicMock()
+    ws_hass.config.units = MagicMock()
+    ws_hass.config.units.temperature_unit = "°C"
+
+    await _get_diagnostics(ws_hass, connection, {"id": 1, "type": "roommind/diagnostics/get"})
+
+    connection.send_result.assert_called_once()
+    result = connection.send_result.call_args[0][1]
+    assert "integration" in result
+    assert "settings" in result
+    assert "rooms" in result
+    assert "outdoor" in result
+    assert "presence" in result
+    assert result["integration"]["domain"] == "roommind"
+
+
+@pytest.mark.asyncio
+async def test_get_diagnostics_no_config_entry(ws_hass, store, connection):
+    """roommind/diagnostics/get returns error when no config entry exists."""
+    ws_hass.config_entries = MagicMock()
+    ws_hass.config_entries.async_entries = MagicMock(return_value=[])
+
+    await _get_diagnostics(ws_hass, connection, {"id": 1, "type": "roommind/diagnostics/get"})
+
+    connection.send_error.assert_called_once()
+    assert connection.send_error.call_args[0][1] == "not_found"

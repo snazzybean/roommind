@@ -356,7 +356,7 @@
   "analytics.window_open_period": "Window open",
   "analytics.chart_info_title": "How to read this chart",
   "analytics.exported": "Exported!",
-  "analytics.copy_diagnostics": "Model diagnostics",
+  "analytics.copy_diagnostics": "Diagnostics",
   "analytics.export_download": "Download file",
   "analytics.export_clipboard": "Copy to clipboard",
   "analytics.copied_to_clipboard": "Copied!",

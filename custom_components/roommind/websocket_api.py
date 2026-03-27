@@ -782,6 +782,29 @@ async def websocket_boost_learning(
 
 
 # ---------------------------------------------------------------------------
+# Diagnostics
+# ---------------------------------------------------------------------------
+
+
+@websocket_api.websocket_command({vol.Required("type"): "roommind/diagnostics/get"})
+@websocket_api.async_response
+async def websocket_get_diagnostics(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict,
+) -> None:
+    """Return full integration diagnostics via WebSocket."""
+    from .diagnostics import async_get_config_entry_diagnostics
+
+    entries = hass.config_entries.async_entries(DOMAIN)
+    if not entries:
+        connection.send_error(msg["id"], "not_found", "No config entry found")
+        return
+    result = await async_get_config_entry_diagnostics(hass, entries[0])
+    connection.send_result(msg["id"], result)
+
+
+# ---------------------------------------------------------------------------
 # Registration
 # ---------------------------------------------------------------------------
 
@@ -800,3 +823,4 @@ def async_register_websocket_commands(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, websocket_thermal_reset)
     websocket_api.async_register_command(hass, websocket_thermal_reset_all)
     websocket_api.async_register_command(hass, websocket_boost_learning)
+    websocket_api.async_register_command(hass, websocket_get_diagnostics)

@@ -83,7 +83,6 @@ export class RsAnalytics extends LitElement {
         .rangeEnd=${this._rangeEnd}
         .activeQuick=${this._activeQuick}
         .data=${this._data}
-        .controlMode=${this.controlMode}
         .language=${l}
         @room-selected=${this._onRoomSelected}
         @range-changed=${this._onRangeChanged}

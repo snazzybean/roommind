@@ -1,5 +1,5 @@
 /**
- * Analytics data export utilities (CSV and diagnostics).
+ * Analytics data export utilities (CSV).
  */
 import type { AnalyticsData } from "../types";
 import type { RoomConfig, HomeAssistant } from "../types";
@@ -24,42 +24,6 @@ export function buildCsvString(data: AnalyticsData): string | null {
   });
 
   return [header, ...rows].join("\n");
-}
-
-export function buildDiagnosticsString(
-  areaId: string,
-  data: AnalyticsData,
-  room: RoomConfig | undefined,
-  controlMode: string,
-): string | null {
-  if (!areaId || !data) return null;
-
-  const points = [...(data.history ?? []), ...(data.detail ?? [])];
-  const lastPoint = points.length > 0 ? points[points.length - 1] : null;
-
-  const payload = {
-    version: "0.2.0",
-    area_id: areaId,
-    room_config: {
-      climate_mode: room?.climate_mode,
-      has_thermostats:
-        room?.devices?.some((d) => d.type === "trv") ?? (room?.thermostats?.length ?? 0) > 0,
-      has_cooling_devices:
-        room?.devices?.some((d) => d.type === "ac") ?? (room?.acs?.length ?? 0) > 0,
-      has_temp_sensor: !!room?.temperature_sensor,
-      has_window_sensors: (room?.window_sensors?.length || 0) > 0,
-    },
-    live: room?.live || {},
-    model: data.model || {},
-    settings: {
-      control_mode: controlMode,
-    },
-    outdoor: {
-      temp: lastPoint?.outdoor_temp ?? null,
-    },
-  };
-
-  return JSON.stringify(payload, null, 2);
 }
 
 export function downloadString(content: string, filename: string, mimeType: string) {
