@@ -131,6 +131,27 @@ async def async_turn_off_climate(
                 entity_id,
                 exc_info=True,
             )
+
+        # Defense-in-depth: also lower setpoint to min_temp.
+        # Some devices (e.g. Wavin AHC9000) claim "off" support but only
+        # respond to temperature changes.  Lowering the setpoint ensures
+        # the valve closes even if set_hvac_mode(off) was silently ignored.
+        if state:
+            min_temp = state.attributes.get("min_temp")
+            if min_temp is not None:
+                current_setpoint = state.attributes.get("temperature")
+                if current_setpoint is None or round(current_setpoint, 1) != round(min_temp, 1):
+                    try:
+                        await hass.services.async_call(
+                            "climate",
+                            "set_temperature",
+                            {"entity_id": entity_id, "temperature": min_temp},
+                            blocking=True,
+                            context=make_roommind_context(),
+                        )
+                        _last_commands[entity_id] = _cache_entry("set_temperature", {"temperature": min_temp})
+                    except Exception:  # noqa: BLE001
+                        pass  # Best-effort, off command was already sent/attempted
         return
 
     # Fallback: device does not support "off" → set to min_temp / max_temp

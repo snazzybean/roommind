@@ -248,18 +248,26 @@ async def test_apply_clamps_to_device_min_temp():
 
 @pytest.mark.asyncio
 async def test_turn_off_climate_normal_device():
-    """Device with 'off' in hvac_modes uses standard set_hvac_mode off."""
+    """Device with 'off' in hvac_modes uses set_hvac_mode off + defense-in-depth set_temperature(min_temp)."""
     hass = build_hass()
     state = MagicMock()
     state.state = "heat"
-    state.attributes = {"hvac_modes": ["heat", "off"], "min_temp": 5.0}
+    state.attributes = {"hvac_modes": ["heat", "off"], "min_temp": 5.0, "temperature": 30.0}
     hass.states.get = MagicMock(return_value=state)
 
     await async_turn_off_climate(hass, "climate.trv")
-    hass.services.async_call.assert_called_once_with(
+    assert hass.services.async_call.call_count == 2
+    hass.services.async_call.assert_any_call(
         "climate",
         "set_hvac_mode",
         {"entity_id": "climate.trv", "hvac_mode": "off"},
+        blocking=True,
+        context=ANY,
+    )
+    hass.services.async_call.assert_any_call(
+        "climate",
+        "set_temperature",
+        {"entity_id": "climate.trv", "temperature": 5.0},
         blocking=True,
         context=ANY,
     )
@@ -337,18 +345,26 @@ async def test_turn_off_climate_empty_modes_uses_off():
 
 @pytest.mark.asyncio
 async def test_turn_off_climate_no_modes_attr_uses_off():
-    """No hvac_modes attribute at all: assume 'off' is supported (backward compat)."""
+    """No hvac_modes attribute at all: assume 'off' is supported + defense-in-depth set_temperature."""
     hass = build_hass()
     state = MagicMock()
     state.state = "heat"
-    state.attributes = {"min_temp": 5.0}
+    state.attributes = {"min_temp": 5.0, "temperature": 25.0}
     hass.states.get = MagicMock(return_value=state)
 
     await async_turn_off_climate(hass, "climate.trv")
-    hass.services.async_call.assert_called_once_with(
+    assert hass.services.async_call.call_count == 2
+    hass.services.async_call.assert_any_call(
         "climate",
         "set_hvac_mode",
         {"entity_id": "climate.trv", "hvac_mode": "off"},
+        blocking=True,
+        context=ANY,
+    )
+    hass.services.async_call.assert_any_call(
+        "climate",
+        "set_temperature",
+        {"entity_id": "climate.trv", "temperature": 5.0},
         blocking=True,
         context=ANY,
     )
@@ -1725,17 +1741,18 @@ async def test_turn_off_cache_fallback():
 
 @pytest.mark.asyncio
 async def test_turn_off_cache_updated():
-    """async_turn_off_climate updates the cache after successful call."""
+    """async_turn_off_climate updates cache; last command is set_temperature(min_temp) due to defense-in-depth."""
     hass = build_hass()
     state = MagicMock()
     state.state = "heat"
-    state.attributes = {"hvac_modes": ["heat", "off"]}
+    state.attributes = {"hvac_modes": ["heat", "off"], "min_temp": 5.0, "temperature": 25.0}
     hass.states.get = MagicMock(return_value=state)
 
     await async_turn_off_climate(hass, "climate.ac")
     assert "climate.ac" in _last_commands
-    assert _last_commands["climate.ac"]["service"] == "set_hvac_mode"
-    assert _last_commands["climate.ac"]["hvac_mode"] == "off"
+    # Last command is set_temperature (defense-in-depth overwrites the set_hvac_mode cache entry)
+    assert _last_commands["climate.ac"]["service"] == "set_temperature"
+    assert _last_commands["climate.ac"]["temperature"] == 5.0
 
 
 @pytest.mark.asyncio
@@ -1979,8 +1996,9 @@ async def test_turn_off_cache_invalidated_by_heat_command():
     assert hass.services.async_call.call_count == 1
 
     # Turn off again → goes through (state is "heat", no cache for off)
+    # Sends set_hvac_mode(off) + defense-in-depth set_temperature(min_temp)
     await async_turn_off_climate(hass, "climate.trv")
-    assert hass.services.async_call.call_count == 2
+    assert hass.services.async_call.call_count == 3
 
 
 @pytest.mark.asyncio
@@ -2046,7 +2064,7 @@ async def test_turn_off_retries_when_device_still_active():
     hass = build_hass()
     state = MagicMock()
     state.state = "heat"
-    state.attributes = {"hvac_modes": ["heat", "off"]}
+    state.attributes = {"hvac_modes": ["heat", "off"], "min_temp": 5.0, "temperature": 35.0}
     hass.states.get = MagicMock(return_value=state)
 
     # Prepopulate cache with off command (simulating a previous failed delivery)
@@ -2060,7 +2078,8 @@ async def test_turn_off_retries_when_device_still_active():
 
     await async_turn_off_climate(hass, "climate.trv")
     # Command MUST be re-sent because device is clearly still in "heat"
-    hass.services.async_call.assert_called_once()
+    # Both off + defense-in-depth set_temperature(min_temp)
+    assert hass.services.async_call.call_count == 2
 
 
 @pytest.mark.asyncio
@@ -2165,6 +2184,76 @@ async def test_call_cache_retries_when_device_contradicts():
     # Same command again: device reports state (not unavailable), so cache is NOT consulted
     await ctrl._call("set_temperature", {"entity_id": "climate.living_trv", "temperature": 21.0})
     assert hass.services.async_call.call_count == 2
+
+
+# ---------------------------------------------------------------------------
+# Defense-in-depth setpoint reset — Issue #134 follow-up
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_turn_off_skips_temperature_when_no_min_temp():
+    """Device with 'off' but no min_temp attribute: only set_hvac_mode, no set_temperature."""
+    hass = build_hass()
+    state = MagicMock()
+    state.state = "heat"
+    state.attributes = {"hvac_modes": ["heat", "off"]}
+    hass.states.get = MagicMock(return_value=state)
+
+    await async_turn_off_climate(hass, "climate.trv")
+    hass.services.async_call.assert_called_once_with(
+        "climate",
+        "set_hvac_mode",
+        {"entity_id": "climate.trv", "hvac_mode": "off"},
+        blocking=True,
+        context=ANY,
+    )
+
+
+@pytest.mark.asyncio
+async def test_turn_off_skips_temperature_when_already_at_min():
+    """Device already at min_temp: only set_hvac_mode, skip redundant set_temperature."""
+    hass = build_hass()
+    state = MagicMock()
+    state.state = "heat"
+    state.attributes = {"hvac_modes": ["heat", "off"], "min_temp": 5.0, "temperature": 5.0}
+    hass.states.get = MagicMock(return_value=state)
+
+    await async_turn_off_climate(hass, "climate.trv")
+    hass.services.async_call.assert_called_once_with(
+        "climate",
+        "set_hvac_mode",
+        {"entity_id": "climate.trv", "hvac_mode": "off"},
+        blocking=True,
+        context=ANY,
+    )
+
+
+@pytest.mark.asyncio
+async def test_turn_off_sends_temperature_when_device_ignores_off():
+    """Device ignores off (Wavin scenario): both set_hvac_mode(off) + set_temperature(min_temp) sent."""
+    hass = build_hass()
+    state = MagicMock()
+    state.state = "heat"
+    state.attributes = {"hvac_modes": ["off"], "min_temp": 5.0, "max_temp": 40.0, "temperature": 40.0}
+    hass.states.get = MagicMock(return_value=state)
+
+    await async_turn_off_climate(hass, "climate.wavin", area_id="bathroom")
+    assert hass.services.async_call.call_count == 2
+    hass.services.async_call.assert_any_call(
+        "climate",
+        "set_hvac_mode",
+        {"entity_id": "climate.wavin", "hvac_mode": "off"},
+        blocking=True,
+        context=ANY,
+    )
+    hass.services.async_call.assert_any_call(
+        "climate",
+        "set_temperature",
+        {"entity_id": "climate.wavin", "temperature": 5.0},
+        blocking=True,
+        context=ANY,
+    )
 
 
 # ---------------------------------------------------------------------------

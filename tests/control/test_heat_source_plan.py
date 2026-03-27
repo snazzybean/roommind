@@ -402,9 +402,10 @@ async def test_heat_source_plan_ac_cool_only_gets_off():
     assert len(ac_mode) == 1
     assert ac_mode[0][0][2]["hvac_mode"] == "off"
 
-    # No temperature call for AC turned off
+    # Defense-in-depth: AC also gets set_temperature(min_temp) when turned off
     ac_temp = [c for c in calls if c[0][1] == "set_temperature" and c[0][2].get("entity_id") == "climate.ac1"]
-    assert len(ac_temp) == 0
+    assert len(ac_temp) == 1
+    assert ac_temp[0][0][2]["temperature"] == 5.0
 
 
 @pytest.mark.asyncio
