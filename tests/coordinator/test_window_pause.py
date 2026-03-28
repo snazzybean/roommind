@@ -305,10 +305,11 @@ class TestRoomMindCoordinator:
         assert "living_room_abc12345" not in coordinator._ekf_training._accumulated_mode
         assert "living_room_abc12345" not in coordinator._ekf_training._accumulated_pf
 
-        # update_window_open must be called to track temperature state
+        # update_window_open must be called to track temperature state,
+        # but k_window must NOT learn during delay (heating still active)
         mock_win_update.assert_called_once()
         _, kwargs = mock_win_update.call_args
-        assert kwargs.get("learn_k_window") is True
+        assert kwargs.get("learn_k_window") is False
 
     @pytest.mark.asyncio
     async def test_window_open_skips_k_window_with_residual_heat(self, hass, mock_config_entry):

@@ -99,7 +99,7 @@ class EkfTrainingManager:
                 current_temp,
                 T_outdoor,
                 dt_minutes,
-                learn_k_window=(q_residual == 0.0),
+                learn_k_window=(window_open and q_residual == 0.0),
             )
         elif ekf_mode is None:
             self.flush(
