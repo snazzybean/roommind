@@ -321,10 +321,15 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         self.rooms = room_states
         return {"rooms": room_states}
 
-    async def _async_process_room(self, room: dict, settings: dict, outdoor_forecast: list[dict]) -> dict:
-        """Process a single room: read sensor, evaluate schedule, apply control."""
-        area_id = room.get("area_id", "unknown")
+    def _read_room_sensors(
+        self,
+        room: dict,
+        area_id: str,
+    ) -> tuple[float | None, float | None, float | None, bool]:
+        """Read temperature and humidity sensors for a room.
 
+        Returns (current_temp, current_temp_raw, current_humidity, has_external_sensor).
+        """
         temp_sensor_id = room.get("temperature_sensor")
         has_external_sensor = bool(temp_sensor_id)
 
@@ -357,6 +362,14 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 del self._last_valid_temps[area_id]
 
         current_humidity = read_sensor_value(self.hass, room.get("humidity_sensor"), area_id, "humidity")
+
+        return current_temp, current_temp_raw, current_humidity, has_external_sensor
+
+    async def _async_process_room(self, room: dict, settings: dict, outdoor_forecast: list[dict]) -> dict:
+        """Process a single room: read sensor, evaluate schedule, apply control."""
+        area_id = room.get("area_id", "unknown")
+
+        current_temp, current_temp_raw, current_humidity, has_external_sensor = self._read_room_sensors(room, area_id)
 
         # --- Outdoor room: skip all control logic ---
         if room.get("is_outdoor", False):
