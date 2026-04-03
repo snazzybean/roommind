@@ -561,10 +561,6 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             mode = MODE_IDLE
             power_fraction = 0.0
 
-        # observed_mode/observed_pf: only populated when climate control is off
-        observed_mode: str | None = None
-        observed_pf = 0.0
-
         climate_active = settings.get("climate_control_active", True) and room.get("climate_control_enabled", True)
 
         # Read device temperature limits for dynamic boost targets
@@ -701,38 +697,9 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 else:
                     self._compressor_manager.update_member(eid, False)
         else:
-            # Climate control disabled (learn-only) — do NOT send commands,
-            # do NOT touch mode/power_fraction (used for internal tracking).
-            observed_mode, observed_pf = self._observe_device_action(room)
-            if observed_mode is None and self._devices_lack_hvac_action(room):
-                # No hvac_action on any device — fall back to temp-vs-setpoint
-                # inference for approximate training (better than skipping).
-                # Don't infer for other None reasons (conflicts, unavailable).
-                inferred = self._infer_device_mode(room)
-                observed_mode = inferred
-                observed_pf = 1.0 if inferred != MODE_IDLE else 0.0
-            if observed_mode is not None and observed_mode != MODE_IDLE:
-                _LOGGER.debug(
-                    "Room '%s': device self-regulating (%s), using for training",
-                    area_id,
-                    observed_mode,
-                )
+            # Climate control disabled — do NOT send commands.
             mode = MODE_IDLE
             power_fraction = 0.0
-
-        # For Managed Mode rooms, observe actual device state for display + training.
-        # The controller's mode is "intent" (device told to heat), but the device
-        # self-regulates and may be idle at setpoint.  See #69.
-        managed_display_mode: str | None = None
-        managed_display_pf = 0.0
-        if climate_active and not has_external_sensor:
-            obs_mode, obs_pf = self._observe_device_action(room)
-            if obs_mode is not None:
-                managed_display_mode = obs_mode
-                managed_display_pf = obs_pf
-            else:
-                managed_display_mode = self._infer_device_mode(room)
-                managed_display_pf = 1.0 if managed_display_mode != MODE_IDLE else 0.0
 
         # --- Cover/blind automatic control ---
         has_override = room.get("override_temp") is not None and (
@@ -755,6 +722,111 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             excluded = set(room.get("valve_protection_exclude", []))
             heating_eids = [eid for eid in get_trv_eids(room.get("devices", [])) if eid not in excluded]
             self._valve_manager.record_heating(heating_eids)
+
+        display_mode, display_pf = await self._observe_and_train(
+            area_id=area_id,
+            room=room,
+            settings=settings,
+            current_temp_raw=current_temp_raw,
+            mode=mode,
+            power_fraction=power_fraction,
+            window_open=window_open,
+            raw_open=raw_open,
+            q_residual=q_residual,
+            shading_factor=shading_factor,
+            q_occupancy=q_occupancy,
+            has_external_sensor=has_external_sensor,
+            heat_source_plan=heat_source_plan,
+            climate_active=climate_active,
+        )
+
+        return self._build_room_state_dict(
+            area_id=area_id,
+            room=room,
+            current_temp=current_temp,
+            current_temp_raw=current_temp_raw,
+            current_humidity=current_humidity,
+            target_temp=target_temp,
+            targets=targets,
+            display_mode=display_mode,
+            display_pf=display_pf,
+            heat_source_plan=heat_source_plan,
+            device_max_temp=device_max_temp,
+            ac_device_max_temp=ac_device_max_temp,
+            device_min_temp=device_min_temp,
+            has_external_sensor=has_external_sensor,
+            window_open=window_open,
+            presence_away=presence_away,
+            force_off=force_off,
+            mode=mode,
+            power_fraction=power_fraction,
+            mold_risk_level=mold_risk_level,
+            mold_surface_rh=mold_surface_rh,
+            mold_prevention_active_room=mold_prevention_active_room,
+            mold_prevention_temp_delta=mold_prevention_temp_delta,
+            shading_factor=shading_factor,
+            q_occupancy=q_occupancy,
+            cover_eids=cover_eids,
+            cover_result=cover_result,
+        )
+
+    async def _observe_and_train(
+        self,
+        *,
+        area_id: str,
+        room: dict,
+        settings: dict,
+        current_temp_raw: float | None,
+        mode: str,
+        power_fraction: float,
+        window_open: bool,
+        raw_open: bool,
+        q_residual: float,
+        shading_factor: float | None,
+        q_occupancy: float,
+        has_external_sensor: bool,
+        heat_source_plan: Any | None,
+        climate_active: bool,
+    ) -> tuple[str, float]:
+        """Observe device state, train EKF, compute display mode.
+
+        Returns (display_mode, display_pf).
+        """
+        # observed_mode/observed_pf: only populated when climate control is off
+        observed_mode: str | None = None
+        observed_pf = 0.0
+
+        if not climate_active:
+            # Climate control disabled (learn-only) — observe device state
+            # for training and display.
+            observed_mode, observed_pf = self._observe_device_action(room)
+            if observed_mode is None and self._devices_lack_hvac_action(room):
+                # No hvac_action on any device — fall back to temp-vs-setpoint
+                # inference for approximate training (better than skipping).
+                # Don't infer for other None reasons (conflicts, unavailable).
+                inferred = self._infer_device_mode(room)
+                observed_mode = inferred
+                observed_pf = 1.0 if inferred != MODE_IDLE else 0.0
+            if observed_mode is not None and observed_mode != MODE_IDLE:
+                _LOGGER.debug(
+                    "Room '%s': device self-regulating (%s), using for training",
+                    area_id,
+                    observed_mode,
+                )
+
+        # For Managed Mode rooms, observe actual device state for display + training.
+        # The controller's mode is "intent" (device told to heat), but the device
+        # self-regulates and may be idle at setpoint.  See #69.
+        managed_display_mode: str | None = None
+        managed_display_pf = 0.0
+        if climate_active and not has_external_sensor:
+            obs_mode, obs_pf = self._observe_device_action(room)
+            if obs_mode is not None:
+                managed_display_mode = obs_mode
+                managed_display_pf = obs_pf
+            else:
+                managed_display_mode = self._infer_device_mode(room)
+                managed_display_pf = 1.0 if managed_display_mode != MODE_IDLE else 0.0
 
         # Determine mode for EKF training: use observed device state when
         # RoomMind doesn't directly control the device (see #36, #69).
@@ -793,7 +865,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 window_open=window_open,
                 raw_open=raw_open,
                 q_residual=q_residual,
-                shading_factor=shading_factor,
+                shading_factor=shading_factor if shading_factor is not None else 0.0,
                 q_solar=self._current_q_solar,
                 can_heat=can_heat,
                 can_cool=can_cool,
@@ -834,35 +906,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 display_mode = MODE_IDLE
                 display_pf = 0.0
 
-        return self._build_room_state_dict(
-            area_id=area_id,
-            room=room,
-            current_temp=current_temp,
-            current_temp_raw=current_temp_raw,
-            current_humidity=current_humidity,
-            target_temp=target_temp,
-            targets=targets,
-            display_mode=display_mode,
-            display_pf=display_pf,
-            heat_source_plan=heat_source_plan,
-            device_max_temp=device_max_temp,
-            ac_device_max_temp=ac_device_max_temp,
-            device_min_temp=device_min_temp,
-            has_external_sensor=has_external_sensor,
-            window_open=window_open,
-            presence_away=presence_away,
-            force_off=force_off,
-            mode=mode,
-            power_fraction=power_fraction,
-            mold_risk_level=mold_risk_level,
-            mold_surface_rh=mold_surface_rh,
-            mold_prevention_active_room=mold_prevention_active_room,
-            mold_prevention_temp_delta=mold_prevention_temp_delta,
-            shading_factor=shading_factor,
-            q_occupancy=q_occupancy,
-            cover_eids=cover_eids,
-            cover_result=cover_result,
-        )
+        return display_mode, display_pf
 
     def _build_room_state_dict(
         self,
