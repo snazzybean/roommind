@@ -34,7 +34,6 @@ from .const import (
     SCHEDULE_STATE_ON,
     THERMAL_SAVE_CYCLES,
     UPDATE_INTERVAL,
-    VALVE_PROTECTION_CHECK_CYCLES,
     TargetTemps,
     build_override_live,
     make_roommind_context,
@@ -311,14 +310,12 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         await self._valve_manager.async_finish_cycles()
 
         # Valve protection: check for stale valves (throttled)
-        self._valve_manager._check_count += 1
-        if self._valve_manager._check_count >= VALVE_PROTECTION_CHECK_CYCLES:
-            self._valve_manager._check_count = 0
+        if self._valve_manager.should_run_cycle_check():
             await self._valve_manager.async_check_and_cycle(rooms, settings)
 
         # Persist valve actuation timestamps (piggyback on thermal save cycle)
         if self._valve_manager.actuation_dirty and self._thermal_save_count == 0:
-            await store.async_save_settings({"valve_last_actuation": self._valve_manager._last_actuation})
+            await store.async_save_settings({"valve_last_actuation": self._valve_manager.get_actuation_data()})
             self._valve_manager.actuation_dirty = False
 
         self.rooms = room_states
@@ -563,7 +560,9 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         ac_device_max_temp = min(ac_max_temps) if ac_max_temps else None
 
         # Exclude TRVs currently being valve-protection-cycled from normal control
-        cycling_eids = {eid for eid in get_trv_eids(room.get("devices", [])) if eid in self._valve_manager._cycling}
+        cycling_eids = {
+            eid for eid in get_trv_eids(room.get("devices", [])) if self._valve_manager.is_entity_cycling(eid)
+        }
 
         # Heat source orchestration: smart routing for rooms with both TRVs and ACs
         heat_source_plan = None
@@ -1311,6 +1310,35 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         for eid in to_remove:
             _LOGGER.info("Removing orphaned entity: %s", eid)
             registry.async_remove(eid)
+
+    # ------------------------------------------------------------------
+    # Public thermal API
+    # ------------------------------------------------------------------
+
+    def reset_thermal_room(self, area_id: str) -> None:
+        """Reset thermal model, EKF state, and residual tracking for one room."""
+        self._model_manager.remove_room(area_id)
+        self._ekf_training.last_temps.pop(area_id, None)
+        self._residual_tracker.clear_room(area_id)
+
+    def reset_thermal_all(self) -> list[str]:
+        """Reset all thermal models. Returns list of affected room IDs."""
+        room_ids = list(self._model_manager._estimators.keys())
+        self._model_manager = RoomModelManager()
+        self._ekf_training._model_manager = self._model_manager
+        self._cover_orchestrator._model_manager = self._model_manager
+        self._ekf_training.last_temps.clear()
+        self._residual_tracker.clear_all()
+        return room_ids
+
+    def boost_learning(self, area_id: str) -> int:
+        """Boost EKF covariance for a room. Returns n_observations."""
+        return self._model_manager.boost_learning(area_id)
+
+    @property
+    def history_store(self) -> HistoryStore | None:
+        """Access to history store for cleanup operations."""
+        return self._history_store
 
     # ------------------------------------------------------------------
     # Master device control

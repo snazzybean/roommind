@@ -434,3 +434,22 @@ async def test_stale_entry_cleanup(vm):
     # Valid entry should remain
     assert "climate.trv1" in vm._last_actuation
     assert vm.actuation_dirty is True
+
+
+# --- public API: should_run_cycle_check / is_entity_cycling ---
+
+
+class TestPublicAPI:
+    def test_should_run_cycle_check_throttle(self, vm):
+        from custom_components.roommind.const import VALVE_PROTECTION_CHECK_CYCLES
+
+        for _i in range(VALVE_PROTECTION_CHECK_CYCLES - 1):
+            assert vm.should_run_cycle_check() is False
+        assert vm.should_run_cycle_check() is True
+        # Counter should have reset
+        assert vm.should_run_cycle_check() is False
+
+    def test_is_entity_cycling(self, vm):
+        assert vm.is_entity_cycling("climate.test") is False
+        vm._cycling["climate.test"] = 123.0
+        assert vm.is_entity_cycling("climate.test") is True

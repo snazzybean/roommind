@@ -10,6 +10,7 @@ from homeassistant.core import HomeAssistant
 from ..const import (
     DEFAULT_VALVE_PROTECTION_INTERVAL,
     HEATING_BOOST_TARGET,
+    VALVE_PROTECTION_CHECK_CYCLES,
     VALVE_PROTECTION_CYCLE_DURATION,
     make_roommind_context,
 )
@@ -29,6 +30,18 @@ class ValveManager:
         self._last_actuation: dict[str, float] = {}
         self._actuation_dirty: bool = False
         self._check_count: int = 0
+
+    def should_run_cycle_check(self) -> bool:
+        """Increment throttle counter and return True if cycle check is due."""
+        self._check_count += 1
+        if self._check_count >= VALVE_PROTECTION_CHECK_CYCLES:
+            self._check_count = 0
+            return True
+        return False
+
+    def is_entity_cycling(self, entity_id: str) -> bool:
+        """Check if a specific entity is currently being valve-cycled."""
+        return entity_id in self._cycling
 
     @property
     def cycling_eids(self) -> set[str]:
