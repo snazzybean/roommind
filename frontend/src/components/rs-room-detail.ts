@@ -1,4 +1,5 @@
 import { LitElement, html, css, nothing } from "lit";
+import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { customElement, property, state } from "lit/decorators.js";
 import type {
   HomeAssistant,
@@ -498,13 +499,16 @@ export class RsRoomDetail extends LitElement {
                   <b>${localize("covers.info.schedule_title", this.hass.language)}</b><br />
                   ${localize("covers.info.schedule_body", this.hass.language)}
                   <div class="yaml-block">
-                    <span class="yaml-key">schedule</span>:
-                    <span class="yaml-key">cover_evening</span>: <span class="yaml-key">name</span>:
-                    <span class="yaml-value">Cover Evening</span>
-                    <span class="yaml-key">monday</span>: - <span class="yaml-key">from</span>:
-                    <span class="yaml-value">"20:00:00"</span> <span class="yaml-key">to</span>:
-                    <span class="yaml-value">"06:00:00"</span> <span class="yaml-key">data</span>:
-                    <span class="yaml-key">position</span>: <span class="yaml-value">10</span>
+                    ${unsafeHTML(
+                      '<span class="yaml-key">schedule</span>:\n' +
+                        '  <span class="yaml-key">cover_evening</span>:\n' +
+                        '    <span class="yaml-key">name</span>: <span class="yaml-value">Cover Evening</span>\n' +
+                        '    <span class="yaml-key">monday</span>:\n' +
+                        '      - <span class="yaml-key">from</span>: <span class="yaml-value">"20:00:00"</span>\n' +
+                        '        <span class="yaml-key">to</span>: <span class="yaml-value">"06:00:00"</span>\n' +
+                        '        <span class="yaml-key">data</span>:\n' +
+                        '          <span class="yaml-key">position</span>: <span class="yaml-value">10</span>',
+                    )}
                   </div>
                   <b>${localize("covers.info.solar_title", this.hass.language)}</b><br />
                   ${localize("covers.info.solar_body", this.hass.language)}
