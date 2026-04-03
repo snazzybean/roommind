@@ -1,28 +1,19 @@
 /**
  * rs-settings-presence – Presence detection settings.
  */
-import { LitElement, html, css, nothing } from "lit";
+import { html, css, nothing } from "lit";
+import { RsSettingsBase } from "./rs-settings-base";
 import { customElement, property } from "lit/decorators.js";
 import type { HomeAssistant } from "../../types";
 import { localize } from "../../utils/localize";
 import { getSelectValue } from "../../utils/events";
 
 @customElement("rs-settings-presence")
-export class RsSettingsPresence extends LitElement {
+export class RsSettingsPresence extends RsSettingsBase {
   @property({ attribute: false }) public hass!: HomeAssistant;
   @property({ type: Boolean }) public presenceEnabled = false;
   @property({ type: Array }) public presencePersons: string[] = [];
   @property({ type: String }) public presenceAwayAction: "eco" | "off" = "eco";
-
-  private _fire(key: string, value: unknown) {
-    this.dispatchEvent(
-      new CustomEvent("setting-changed", {
-        detail: { key, value },
-        bubbles: true,
-        composed: true,
-      }),
-    );
-  }
 
   render() {
     const l = this.hass.language;
@@ -111,64 +102,36 @@ export class RsSettingsPresence extends LitElement {
     `;
   }
 
-  static styles = css`
-    :host {
-      display: block;
-    }
+  static styles = [
+    RsSettingsBase.settingsBaseStyles,
+    css`
+      .detail-section {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        margin-top: 12px;
+      }
 
-    .toggle-row {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      gap: 16px;
-    }
-    .toggle-text {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-      flex: 1;
-    }
-    .toggle-label {
-      font-size: 14px;
-      font-weight: 500;
-      color: var(--primary-text-color);
-    }
-    .toggle-hint {
-      font-size: 13px;
-      color: var(--secondary-text-color);
-      line-height: 1.4;
-    }
-
-    .detail-section {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      margin-top: 12px;
-    }
-    .field-hint {
-      color: var(--secondary-text-color);
-      font-size: 12px;
-    }
-
-    .person-list {
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
-    }
-    .person-row {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 4px 8px 4px 12px;
-      border-radius: 8px;
-      background: rgba(0, 0, 0, 0.04);
-    }
-    .person-name {
-      flex: 1;
-      font-size: 14px;
-      font-weight: 500;
-    }
-  `;
+      .person-list {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .person-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 4px 8px 4px 12px;
+        border-radius: 8px;
+        background: rgba(0, 0, 0, 0.04);
+      }
+      .person-name {
+        flex: 1;
+        font-size: 14px;
+        font-weight: 500;
+      }
+    `,
+  ];
 }
 
 declare global {

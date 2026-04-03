@@ -1,15 +1,16 @@
 /**
  * rs-settings-mold – Mold risk detection & prevention settings.
  */
-import { LitElement, html, css, nothing } from "lit";
+import { html, nothing } from "lit";
 import { customElement, property } from "lit/decorators.js";
+import { RsSettingsBase } from "./rs-settings-base";
 import type { HomeAssistant } from "../../types";
 import { localize } from "../../utils/localize";
 import { getSelectValue } from "../../utils/events";
 import { tempUnit, toDisplayDelta } from "../../utils/temperature";
 
 @customElement("rs-settings-mold")
-export class RsSettingsMold extends LitElement {
+export class RsSettingsMold extends RsSettingsBase {
   @property({ attribute: false }) public hass!: HomeAssistant;
   @property({ type: Boolean }) public moldDetectionEnabled = false;
   @property({ type: Number }) public moldHumidityThreshold = 70;
@@ -17,16 +18,6 @@ export class RsSettingsMold extends LitElement {
   @property({ type: Boolean }) public moldPreventionEnabled = false;
   @property({ type: String }) public moldPreventionIntensity: "light" | "medium" | "strong" =
     "medium";
-
-  private _fire(key: string, value: unknown) {
-    this.dispatchEvent(
-      new CustomEvent("setting-changed", {
-        detail: { key, value },
-        bubbles: true,
-        composed: true,
-      }),
-    );
-  }
 
   render() {
     const l = this.hass.language;
@@ -175,68 +166,7 @@ export class RsSettingsMold extends LitElement {
     `;
   }
 
-  static styles = css`
-    :host {
-      display: block;
-    }
-
-    .settings-section {
-      padding: 16px 0;
-      border-top: 1px solid var(--divider-color);
-    }
-    .settings-section:first-child,
-    .settings-section.first {
-      border-top: none;
-      padding-top: 0;
-    }
-
-    .toggle-row {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      gap: 16px;
-    }
-    .toggle-text {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-      flex: 1;
-    }
-    .toggle-label {
-      font-size: 14px;
-      font-weight: 500;
-      color: var(--primary-text-color);
-    }
-    .toggle-hint {
-      font-size: 13px;
-      color: var(--secondary-text-color);
-      line-height: 1.4;
-    }
-
-    .threshold-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 16px;
-    }
-    .threshold-field {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-    }
-    .threshold-field ha-textfield {
-      width: 100%;
-    }
-    .field-hint {
-      color: var(--secondary-text-color);
-      font-size: 12px;
-    }
-
-    @media (max-width: 600px) {
-      .threshold-grid {
-        grid-template-columns: 1fr;
-      }
-    }
-  `;
+  static styles = [RsSettingsBase.settingsBaseStyles];
 }
 
 declare global {

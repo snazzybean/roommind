@@ -1,7 +1,8 @@
 /**
  * rs-settings-control – Control settings: mode, comfort weight, thresholds, prediction.
  */
-import { LitElement, html, css } from "lit";
+import { html, css } from "lit";
+import { RsSettingsBase } from "./rs-settings-base";
 import { customElement, property } from "lit/decorators.js";
 import type { HomeAssistant } from "../../types";
 import { localize } from "../../utils/localize";
@@ -9,7 +10,7 @@ import { getSelectValue } from "../../utils/events";
 import { toDisplay, toCelsius, tempUnit, tempStep, tempRange } from "../../utils/temperature";
 
 @customElement("rs-settings-control")
-export class RsSettingsControl extends LitElement {
+export class RsSettingsControl extends RsSettingsBase {
   @property({ attribute: false }) public hass!: HomeAssistant;
   @property({ type: String }) public controlMode: "mpc" | "bangbang" = "mpc";
   @property({ type: Number }) public comfortWeight = 70;
@@ -17,16 +18,6 @@ export class RsSettingsControl extends LitElement {
   @property({ type: Number }) public outdoorHeatingMax = 22;
   @property({ type: Boolean }) public predictionEnabled = true;
   @property({ type: String }) public scheduleOffAction: "eco" | "off" = "eco";
-
-  private _fire(key: string, value: unknown) {
-    this.dispatchEvent(
-      new CustomEvent("setting-changed", {
-        detail: { key, value },
-        bubbles: true,
-        composed: true,
-      }),
-    );
-  }
 
   render() {
     const l = this.hass.language;
@@ -144,107 +135,49 @@ export class RsSettingsControl extends LitElement {
     this._fire("controlMode", mode);
   }
 
-  static styles = css`
-    :host {
-      display: block;
-    }
-
-    .settings-section {
-      padding: 16px 0;
-      border-top: 1px solid var(--divider-color);
-    }
-    .settings-section:first-child,
-    .settings-section.first {
-      border-top: none;
-      padding-top: 0;
-    }
-
-    .hint {
-      color: var(--secondary-text-color);
-      font-size: 13px;
-      margin: 0 0 12px;
-    }
-    .section-label {
-      display: block;
-      margin-bottom: 8px;
-      font-size: 14px;
-      color: var(--primary-text-color);
-    }
-
-    .toggle-row {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      gap: 16px;
-    }
-    .toggle-text {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-      flex: 1;
-    }
-    .toggle-label {
-      font-size: 14px;
-      font-weight: 500;
-      color: var(--primary-text-color);
-    }
-    .toggle-hint {
-      font-size: 13px;
-      color: var(--secondary-text-color);
-      line-height: 1.4;
-    }
-
-    .radio-group {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-    }
-    .radio-option {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      cursor: pointer;
-    }
-
-    .slider-row {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .slider-row input[type="range"] {
-      flex: 1;
-      accent-color: var(--primary-color);
-    }
-    .slider-label {
-      font-size: 12px;
-      color: var(--secondary-text-color);
-      white-space: nowrap;
-    }
-
-    .threshold-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 16px;
-    }
-    .threshold-field {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-    }
-    .threshold-field ha-textfield {
-      width: 100%;
-    }
-    .field-hint {
-      color: var(--secondary-text-color);
-      font-size: 12px;
-    }
-
-    @media (max-width: 600px) {
-      .threshold-grid {
-        grid-template-columns: 1fr;
+  static styles = [
+    RsSettingsBase.settingsBaseStyles,
+    css`
+      .hint {
+        color: var(--secondary-text-color);
+        font-size: 13px;
+        margin: 0 0 12px;
       }
-    }
-  `;
+      .section-label {
+        display: block;
+        margin-bottom: 8px;
+        font-size: 14px;
+        color: var(--primary-text-color);
+      }
+
+      .radio-group {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .radio-option {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        cursor: pointer;
+      }
+
+      .slider-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .slider-row input[type="range"] {
+        flex: 1;
+        accent-color: var(--primary-color);
+      }
+      .slider-label {
+        font-size: 12px;
+        color: var(--secondary-text-color);
+        white-space: nowrap;
+      }
+    `,
+  ];
 }
 
 declare global {

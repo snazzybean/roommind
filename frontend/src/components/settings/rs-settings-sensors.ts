@@ -1,28 +1,19 @@
 /**
  * rs-settings-sensors – Sensors & data sources settings.
  */
-import { LitElement, html, css, nothing } from "lit";
+import { html, css, nothing } from "lit";
+import { RsSettingsBase } from "./rs-settings-base";
 import { customElement, property } from "lit/decorators.js";
 import type { HomeAssistant, HassEntity } from "../../types";
 import { localize } from "../../utils/localize";
 import { tempUnit } from "../../utils/temperature";
 
 @customElement("rs-settings-sensors")
-export class RsSettingsSensors extends LitElement {
+export class RsSettingsSensors extends RsSettingsBase {
   @property({ attribute: false }) public hass!: HomeAssistant;
   @property({ type: String }) public outdoorTempSensor = "";
   @property({ type: String }) public outdoorHumiditySensor = "";
   @property({ type: String }) public weatherEntity = "";
-
-  private _fire(key: string, value: unknown) {
-    this.dispatchEvent(
-      new CustomEvent("setting-changed", {
-        detail: { key, value },
-        bubbles: true,
-        composed: true,
-      }),
-    );
-  }
 
   private _filterTemperature = (entity: HassEntity): boolean => {
     return entity.attributes?.device_class === "temperature";
@@ -122,45 +113,30 @@ export class RsSettingsSensors extends LitElement {
     `;
   }
 
-  static styles = css`
-    :host {
-      display: block;
-    }
-
-    .settings-section {
-      padding: 16px 0;
-      border-top: 1px solid var(--divider-color);
-    }
-    .settings-section:first-child,
-    .settings-section.first {
-      border-top: none;
-      padding-top: 0;
-    }
-
-    .sensor-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 16px;
-    }
-    .current-value {
-      margin-top: 8px;
-      font-size: 14px;
-      color: var(--primary-text-color);
-    }
-    .current-value.muted {
-      color: var(--secondary-text-color);
-    }
-    .field-hint {
-      color: var(--secondary-text-color);
-      font-size: 12px;
-    }
-
-    @media (max-width: 600px) {
+  static styles = [
+    RsSettingsBase.settingsBaseStyles,
+    css`
       .sensor-grid {
-        grid-template-columns: 1fr;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
       }
-    }
-  `;
+      .current-value {
+        margin-top: 8px;
+        font-size: 14px;
+        color: var(--primary-text-color);
+      }
+      .current-value.muted {
+        color: var(--secondary-text-color);
+      }
+
+      @media (max-width: 600px) {
+        .sensor-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    `,
+  ];
 }
 
 declare global {

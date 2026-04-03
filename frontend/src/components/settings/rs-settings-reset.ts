@@ -1,14 +1,15 @@
 /**
  * rs-settings-reset – Reset thermal data.
  */
-import { LitElement, html, css, nothing } from "lit";
+import { html, css, nothing } from "lit";
+import { RsSettingsBase } from "./rs-settings-base";
 import { customElement, property, state } from "lit/decorators.js";
 import type { HomeAssistant, RoomConfig } from "../../types";
 import { localize } from "../../utils/localize";
 import { fireSaveStatus, getSelectValue } from "../../utils/events";
 
 @customElement("rs-settings-reset")
-export class RsSettingsReset extends LitElement {
+export class RsSettingsReset extends RsSettingsBase {
   @property({ attribute: false }) public hass!: HomeAssistant;
   @property({ attribute: false }) public rooms: Record<string, RoomConfig> = {};
 
@@ -110,95 +111,73 @@ export class RsSettingsReset extends LitElement {
     }
   }
 
-  static styles = css`
-    :host {
-      display: block;
-    }
+  static styles = [
+    RsSettingsBase.settingsBaseStyles,
+    css`
+      .hint {
+        color: var(--secondary-text-color);
+        font-size: 13px;
+        margin: 0;
+      }
 
-    .hint {
-      color: var(--secondary-text-color);
-      font-size: 13px;
-      margin: 0;
-    }
-
-    .settings-section {
-      padding: 16px 0;
-      border-top: 1px solid var(--divider-color);
-    }
-    .settings-section:first-child,
-    .settings-section.first {
-      border-top: none;
-      padding-top: 0;
-    }
-
-    .toggle-label {
-      font-size: 14px;
-      font-weight: 500;
-      color: var(--primary-text-color);
-    }
-    .toggle-hint {
-      font-size: 13px;
-      color: var(--secondary-text-color);
-      line-height: 1.4;
-    }
-
-    .reset-row {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 16px;
-    }
-    .reset-text {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-      flex: 1;
-    }
-
-    .reset-btn {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      padding: 8px 14px;
-      border: 1px solid var(--error-color, #d32f2f);
-      border-radius: 8px;
-      background: transparent;
-      color: var(--error-color, #d32f2f);
-      font-size: 13px;
-      font-family: inherit;
-      cursor: pointer;
-      transition: background 0.15s;
-      --mdc-icon-size: 16px;
-      white-space: nowrap;
-    }
-    .reset-btn:hover {
-      background: rgba(211, 47, 47, 0.08);
-    }
-    .reset-btn:disabled {
-      opacity: 0.4;
-      cursor: not-allowed;
-    }
-    .reset-btn:disabled:hover {
-      background: transparent;
-    }
-
-    .reset-room-row {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
-    .reset-room-row ha-select {
-      flex: 1;
-    }
-
-    @media (max-width: 600px) {
       .reset-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 16px;
+      }
+      .reset-text {
+        display: flex;
         flex-direction: column;
-        align-items: flex-start;
+        gap: 4px;
+        flex: 1;
+      }
+
+      .reset-btn {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 8px 14px;
+        border: 1px solid var(--error-color, #d32f2f);
+        border-radius: 8px;
+        background: transparent;
+        color: var(--error-color, #d32f2f);
+        font-size: 13px;
+        font-family: inherit;
+        cursor: pointer;
+        transition: background 0.15s;
+        --mdc-icon-size: 16px;
+        white-space: nowrap;
+      }
+      .reset-btn:hover {
+        background: rgba(211, 47, 47, 0.08);
+      }
+      .reset-btn:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+      }
+      .reset-btn:disabled:hover {
+        background: transparent;
+      }
+
+      .reset-room-row {
+        display: flex;
+        align-items: center;
         gap: 12px;
       }
-    }
-  `;
+      .reset-room-row ha-select {
+        flex: 1;
+      }
+
+      @media (max-width: 600px) {
+        .reset-row {
+          flex-direction: column;
+          align-items: flex-start;
+          gap: 12px;
+        }
+      }
+    `,
+  ];
 }
 
 declare global {

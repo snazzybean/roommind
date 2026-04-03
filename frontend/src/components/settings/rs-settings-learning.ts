@@ -1,7 +1,8 @@
 /**
  * rs-settings-learning – Model training + boost learning (combined).
  */
-import { LitElement, html, css, nothing } from "lit";
+import { html, css, nothing } from "lit";
+import { RsSettingsBase } from "./rs-settings-base";
 import { customElement, property, state } from "lit/decorators.js";
 import type { HomeAssistant, RoomConfig } from "../../types";
 import { localize } from "../../utils/localize";
@@ -10,7 +11,7 @@ import { fireSaveStatus, getSelectValue } from "../../utils/events";
 const BOOST_COOLDOWN = 250;
 
 @customElement("rs-settings-learning")
-export class RsSettingsLearning extends LitElement {
+export class RsSettingsLearning extends RsSettingsBase {
   @property({ attribute: false }) public hass!: HomeAssistant;
   @property({ attribute: false }) public rooms: Record<string, RoomConfig> = {};
   @property({ type: Array }) public learningDisabledRooms: string[] = [];
@@ -20,16 +21,6 @@ export class RsSettingsLearning extends LitElement {
 
   @state() private _showLearningExceptions = false;
   @state() private _boostSelectedRoom = "";
-
-  private _fire(key: string, value: unknown) {
-    this.dispatchEvent(
-      new CustomEvent("setting-changed", {
-        detail: { key, value },
-        bubbles: true,
-        composed: true,
-      }),
-    );
-  }
 
   render() {
     const l = this.hass.language;
@@ -188,130 +179,97 @@ export class RsSettingsLearning extends LitElement {
     }
   }
 
-  static styles = css`
-    :host {
-      display: block;
-    }
+  static styles = [
+    RsSettingsBase.settingsBaseStyles,
+    css`
+      .hint {
+        color: var(--secondary-text-color);
+        font-size: 13px;
+        margin: 4px 0 12px;
+        line-height: 1.4;
+      }
 
-    .settings-section {
-      padding: 16px 0;
-      border-top: 1px solid var(--divider-color);
-    }
-    .settings-section.first {
-      border-top: none;
-      padding-top: 0;
-    }
+      .exceptions-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        background: none;
+        border: none;
+        padding: 8px 0 0;
+        margin: 0;
+        cursor: pointer;
+        font-size: 13px;
+        color: var(--primary-color);
+        font-family: inherit;
+      }
+      .exceptions-link:hover {
+        text-decoration: underline;
+      }
 
-    .hint {
-      color: var(--secondary-text-color);
-      font-size: 13px;
-      margin: 4px 0 12px;
-      line-height: 1.4;
-    }
+      .room-toggles {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        margin-top: 12px;
+      }
+      .room-toggle-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 4px 0;
+      }
+      .room-toggle-name {
+        font-size: 14px;
+        color: var(--primary-text-color);
+      }
 
-    .toggle-row {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      gap: 16px;
-    }
-    .toggle-text {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-      flex: 1;
-    }
-    .toggle-label {
-      font-size: 14px;
-      font-weight: 500;
-      color: var(--primary-text-color);
-    }
-    .toggle-hint {
-      font-size: 13px;
-      color: var(--secondary-text-color);
-      line-height: 1.4;
-    }
+      .room-select-row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .room-select-row ha-select {
+        flex: 1;
+      }
 
-    .exceptions-link {
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-      background: none;
-      border: none;
-      padding: 8px 0 0;
-      margin: 0;
-      cursor: pointer;
-      font-size: 13px;
-      color: var(--primary-color);
-      font-family: inherit;
-    }
-    .exceptions-link:hover {
-      text-decoration: underline;
-    }
+      .boost-btn {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 8px 14px;
+        border: 1px solid var(--primary-color);
+        border-radius: 8px;
+        background: transparent;
+        color: var(--primary-color);
+        font-size: 13px;
+        font-family: inherit;
+        cursor: pointer;
+        transition: background 0.15s;
+        --mdc-icon-size: 16px;
+        white-space: nowrap;
+      }
+      .boost-btn:hover {
+        background: rgba(var(--rgb-primary-color), 0.08);
+      }
+      .boost-btn:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+      }
+      .boost-btn:disabled:hover {
+        background: transparent;
+      }
 
-    .room-toggles {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-      margin-top: 12px;
-    }
-    .room-toggle-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 4px 0;
-    }
-    .room-toggle-name {
-      font-size: 14px;
-      color: var(--primary-text-color);
-    }
-
-    .room-select-row {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
-    .room-select-row ha-select {
-      flex: 1;
-    }
-
-    .boost-btn {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      padding: 8px 14px;
-      border: 1px solid var(--primary-color);
-      border-radius: 8px;
-      background: transparent;
-      color: var(--primary-color);
-      font-size: 13px;
-      font-family: inherit;
-      cursor: pointer;
-      transition: background 0.15s;
-      --mdc-icon-size: 16px;
-      white-space: nowrap;
-    }
-    .boost-btn:hover {
-      background: rgba(var(--rgb-primary-color), 0.08);
-    }
-    .boost-btn:disabled {
-      opacity: 0.4;
-      cursor: not-allowed;
-    }
-    .boost-btn:disabled:hover {
-      background: transparent;
-    }
-
-    .boost-status {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      color: var(--success-color, #4caf50);
-      font-size: 13px;
-      --mdc-icon-size: 16px;
-      white-space: nowrap;
-    }
-  `;
+      .boost-status {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        color: var(--success-color, #4caf50);
+        font-size: 13px;
+        --mdc-icon-size: 16px;
+        white-space: nowrap;
+      }
+    `,
+  ];
 }
 
 declare global {

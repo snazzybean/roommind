@@ -2,30 +2,21 @@
  * rs-settings-notifications – Feature-agnostic notification settings.
  * Fires setting-changed events with mold-prefixed keys for backend compatibility.
  */
-import { LitElement, html, css, nothing } from "lit";
+import { html, css, nothing } from "lit";
+import { RsSettingsBase } from "./rs-settings-base";
 import { customElement, property } from "lit/decorators.js";
 import type { HomeAssistant, NotificationTarget } from "../../types";
 import { localize } from "../../utils/localize";
 import { getSelectValue } from "../../utils/events";
 
 @customElement("rs-settings-notifications")
-export class RsSettingsNotifications extends LitElement {
+export class RsSettingsNotifications extends RsSettingsBase {
   @property({ attribute: false }) public hass!: HomeAssistant;
   @property({ type: Boolean }) public notificationsEnabled = true;
   @property({ type: Array }) public notificationTargets: NotificationTarget[] = [];
   @property({ type: Number }) public notificationCooldown = 60;
   @property({ type: Boolean }) public moldPreventionEnabled = false;
   @property({ type: Boolean }) public moldPreventionNotify = false;
-
-  private _fire(key: string, value: unknown) {
-    this.dispatchEvent(
-      new CustomEvent("setting-changed", {
-        detail: { key, value },
-        bubbles: true,
-        composed: true,
-      }),
-    );
-  }
 
   render() {
     const l = this.hass.language;
@@ -192,108 +183,67 @@ export class RsSettingsNotifications extends LitElement {
     `;
   }
 
-  static styles = css`
-    :host {
-      display: block;
-    }
+  static styles = [
+    RsSettingsBase.settingsBaseStyles,
+    css`
+      .hint {
+        color: var(--secondary-text-color);
+        font-size: 13px;
+        margin: 12px 0;
+        line-height: 1.4;
+      }
+      .detail-section {
+        margin-top: 4px;
+      }
+      .field-hint {
+        color: var(--secondary-text-color);
+        font-size: 12px;
+      }
 
-    .toggle-row {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      gap: 16px;
-    }
-    .toggle-text {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-      flex: 1;
-    }
-    .toggle-label {
-      font-size: 14px;
-      font-weight: 500;
-      color: var(--primary-text-color);
-    }
-    .toggle-hint {
-      font-size: 13px;
-      color: var(--secondary-text-color);
-      line-height: 1.4;
-    }
-
-    .hint {
-      color: var(--secondary-text-color);
-      font-size: 13px;
-      margin: 12px 0;
-      line-height: 1.4;
-    }
-    .detail-section {
-      margin-top: 4px;
-    }
-    .field-hint {
-      color: var(--secondary-text-color);
-      font-size: 12px;
-    }
-
-    .target-list {
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
-    }
-    .target-card {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-      padding: 8px 8px 8px 12px;
-      border-radius: 8px;
-      background: rgba(0, 0, 0, 0.04);
-    }
-    .target-header {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .target-header span {
-      flex: 1;
-      font-size: 14px;
-      font-weight: 500;
-    }
-    .target-detail {
-      display: flex;
-      gap: 8px;
-      align-items: center;
-      padding-left: 26px;
-    }
-    .target-detail ha-entity-picker {
-      flex: 1;
-    }
-    .target-detail ha-select {
-      min-width: 120px;
-    }
-
-    .threshold-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 16px;
-    }
-    .threshold-field {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-    }
-    .threshold-field ha-textfield {
-      width: 100%;
-    }
-
-    @media (max-width: 600px) {
-      .threshold-grid {
-        grid-template-columns: 1fr;
+      .target-list {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .target-card {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        padding: 8px 8px 8px 12px;
+        border-radius: 8px;
+        background: rgba(0, 0, 0, 0.04);
+      }
+      .target-header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .target-header span {
+        flex: 1;
+        font-size: 14px;
+        font-weight: 500;
       }
       .target-detail {
-        flex-direction: column;
-        padding-left: 0;
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        padding-left: 26px;
       }
-    }
-  `;
+      .target-detail ha-entity-picker {
+        flex: 1;
+      }
+      .target-detail ha-select {
+        min-width: 120px;
+      }
+
+      @media (max-width: 600px) {
+        .target-detail {
+          flex-direction: column;
+          padding-left: 0;
+        }
+      }
+    `,
+  ];
 }
 
 declare global {
