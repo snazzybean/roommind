@@ -811,19 +811,14 @@ async def test_save_settings_vacation_clear(ws_hass, store, connection):
 
 
 def _make_coordinator_with_model(ws_hass):
-    """Create a coordinator mock with thermal model data."""
-    from custom_components.roommind.control.thermal_model import RoomModelManager
-
+    """Create a coordinator mock with public thermal API methods."""
     mock_coordinator = MagicMock()
-    mgr = RoomModelManager()
-    mgr.update("room_a", 20.5, 5.0, "heating", 5)
-    mgr.update("room_b", 24.5, 30.0, "cooling", 5)
-    mock_coordinator._model_manager = mgr
-    mock_coordinator._ekf_training = MagicMock()
-    mock_coordinator._ekf_training.last_temps = {"room_a": 20.5, "room_b": 24.5}
-    mock_coordinator._cover_orchestrator = MagicMock()
-    mock_coordinator._history_store = MagicMock()
-    mock_coordinator._history_store.remove_room = MagicMock()
+    mock_coordinator.reset_thermal_room = MagicMock()
+    mock_coordinator.reset_thermal_all = MagicMock(return_value=["room_a", "room_b"])
+    mock_coordinator.boost_learning = MagicMock(return_value=42)
+    mock_history = MagicMock()
+    mock_history.remove_room = MagicMock()
+    mock_coordinator.history_store = mock_history
     ws_hass.data[DOMAIN]["coordinator"] = mock_coordinator
     return mock_coordinator
 
@@ -841,12 +836,10 @@ async def test_thermal_reset_room(ws_hass, store, connection):
 
     connection.send_result.assert_called_once_with(20, {"success": True})
 
-    # room_a cleared from model manager
-    assert "room_a" not in coordinator._model_manager._estimators
-    # room_b still present
-    assert "room_b" in coordinator._model_manager._estimators
+    # Public API called for room_a
+    coordinator.reset_thermal_room.assert_called_once_with("room_a")
     # History cleared for room_a
-    coordinator._history_store.remove_room.assert_called_once_with("room_a")
+    coordinator.history_store.remove_room.assert_called_once_with("room_a")
     # Persisted thermal data cleared for room_a
     assert "room_a" not in store.get_thermal_data()
     assert "room_b" in store.get_thermal_data()
@@ -865,14 +858,12 @@ async def test_thermal_reset_all(ws_hass, store, connection):
 
     connection.send_result.assert_called_once_with(21, {"success": True})
 
-    # All estimators cleared
-    assert len(coordinator._model_manager._estimators) == 0
-    # History cleared for all rooms
-    assert coordinator._history_store.remove_room.call_count == 2
+    # Public API called
+    coordinator.reset_thermal_all.assert_called_once()
+    # History cleared for all rooms returned by reset_thermal_all
+    assert coordinator.history_store.remove_room.call_count == 2
     # Persisted thermal data empty
     assert store.get_thermal_data() == {}
-    # last_temps cleared
-    assert len(coordinator._ekf_training.last_temps) == 0
 
 
 @pytest.mark.asyncio
@@ -1593,14 +1584,13 @@ async def test_boost_learning_success(ws_hass, store, connection):
     await store.async_load()
 
     mock_coordinator = MagicMock()
-    mock_coordinator._model_manager = MagicMock()
-    mock_coordinator._model_manager.boost_learning = MagicMock(return_value=42)
+    mock_coordinator.boost_learning = MagicMock(return_value=42)
     ws_hass.data[DOMAIN]["coordinator"] = mock_coordinator
 
     msg = {"id": 1, "type": "roommind/model/boost_learning", "area_id": "living_room"}
     await _boost_learning(ws_hass, connection, msg)
 
-    mock_coordinator._model_manager.boost_learning.assert_called_once_with("living_room")
+    mock_coordinator.boost_learning.assert_called_once_with("living_room")
     connection.send_result.assert_called_once_with(1, {"success": True, "n_observations": 42})
 
 

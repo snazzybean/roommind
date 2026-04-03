@@ -24,7 +24,6 @@ from .const import (
     OVERRIDE_TYPES,
     build_override_live,
 )
-from .control.thermal_model import RoomModelManager
 from .services.analytics_service import (
     _compute_target_forecast,  # noqa: F401 - re-exported for tests
     _csv_to_points,  # noqa: F401 - re-exported for tests
@@ -744,16 +743,14 @@ async def websocket_thermal_reset(
 
     # Clear learned model and residual heat tracking
     if coordinator:
-        coordinator._model_manager.remove_room(area_id)
-        coordinator._ekf_training.last_temps.pop(area_id, None)
-        coordinator._residual_tracker.clear_room(area_id)
+        coordinator.reset_thermal_room(area_id)
 
     # Clear persisted thermal data
     await store.async_clear_thermal_data_room(area_id)
 
     # Clear history CSV files
-    if coordinator and coordinator._history_store:
-        await hass.async_add_executor_job(coordinator._history_store.remove_room, area_id)
+    if coordinator and coordinator.history_store:
+        await hass.async_add_executor_job(coordinator.history_store.remove_room, area_id)
 
     connection.send_result(msg["id"], {"success": True})
 
@@ -777,20 +774,15 @@ async def websocket_thermal_reset_all(
     # Clear all learned models — replace entire manager for clean state
     room_ids: list[str] = []
     if coordinator:
-        room_ids = list(coordinator._model_manager._estimators.keys())
-        coordinator._model_manager = RoomModelManager()
-        coordinator._ekf_training._model_manager = coordinator._model_manager
-        coordinator._cover_orchestrator._model_manager = coordinator._model_manager
-        coordinator._ekf_training.last_temps.clear()
-        coordinator._residual_tracker.clear_all()
+        room_ids = coordinator.reset_thermal_all()
 
     # Clear persisted thermal data
     await store.async_clear_all_thermal_data()
 
     # Clear history CSV files for all rooms
-    if coordinator and coordinator._history_store:
+    if coordinator and coordinator.history_store:
         for area_id in room_ids:
-            await hass.async_add_executor_job(coordinator._history_store.remove_room, area_id)
+            await hass.async_add_executor_job(coordinator.history_store.remove_room, area_id)
 
     connection.send_result(msg["id"], {"success": True})
 
@@ -816,7 +808,7 @@ async def websocket_boost_learning(
         connection.send_error(msg["id"], "no_coordinator", "Coordinator not ready")
         return
 
-    n_obs = coordinator._model_manager.boost_learning(area_id)
+    n_obs = coordinator.boost_learning(area_id)
 
     # Persist cooldown anchor in settings
     settings = store.get_settings()
