@@ -49,18 +49,22 @@ jobs:
               const daysSince = (now - lastActivity) / (1000 * 60 * 60 * 24);
 
               if (hasStale && daysSince >= STALE_DAYS) {
+                const hasFixReleased = labels.includes('fix-released');
                 await github.rest.issues.update({
                   owner: context.repo.owner,
                   repo: context.repo.repo,
                   issue_number: issue.number,
                   state: 'closed',
-                  state_reason: 'not_planned'
+                  state_reason: hasFixReleased ? 'completed' : 'not_planned'
                 });
+                const closeMsg = hasFixReleased
+                  ? 'Fix was shipped in the referenced release. Closing as resolved. If the issue persists, feel free to use `/reopen`.'
+                  : 'Closed due to inactivity. If this is still relevant, feel free to use `/reopen`.';
                 await github.rest.issues.createComment({
                   owner: context.repo.owner,
                   repo: context.repo.repo,
                   issue_number: issue.number,
-                  body: `Closed due to inactivity. If this is still relevant, feel free to use \`/reopen\`.`
+                  body: closeMsg
                 });
               } else if (!hasStale && daysSince >= STALE_DAYS) {
                 await github.rest.issues.addLabels({
