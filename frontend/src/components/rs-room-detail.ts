@@ -16,6 +16,8 @@ import "./rs-hero-status";
 import "./rs-climate-mode-selector";
 import "./rs-schedule-settings";
 import "./rs-device-section";
+import "./rs-sensor-section";
+import "./rs-window-section";
 import "./rs-section-card";
 import "./rs-override-section";
 import "./rs-presence-section";
@@ -24,6 +26,7 @@ import "./rs-heat-source-section";
 import "../components/shared/rs-toggle-row";
 import { localize } from "../utils/localize";
 import { fireSaveStatus } from "../utils/events";
+import { resolveHeatingSystemType } from "../utils/device-utils";
 import type { RsOverrideSection } from "./rs-override-section";
 
 @customElement("rs-room-detail")
@@ -55,6 +58,8 @@ export class RsRoomDetail extends LitElement {
   @state() private _dirty = false;
   @state() private _editingSchedule = false;
   @state() private _editingDevices = false;
+  @state() private _editingSensors = false;
+  @state() private _editingWindows = false;
   @state() private _editingPresence = false;
   @state() private _selectedPresencePersons: string[] = [];
   @state() private _displayName = "";
@@ -294,6 +299,8 @@ export class RsRoomDetail extends LitElement {
     const isConfigured = this._devices.length > 0;
     this._editingSchedule = !isConfigured;
     this._editingDevices = !isConfigured;
+    this._editingSensors = !isConfigured;
+    this._editingWindows = !isConfigured;
     this._editingCovers = !isConfigured;
   }
 
@@ -446,19 +453,63 @@ export class RsRoomDetail extends LitElement {
                     .selectedHumiditySensor=${this._selectedHumiditySensor}
                     .selectedOccupancySensors=${this._selectedOccupancySensors}
                     .selectedWindowSensors=${this._selectedWindowSensors}
-                    .windowOpenDelay=${this._windowOpenDelay}
-                    .windowCloseDelay=${this._windowCloseDelay}
                     .valveProtectionExclude=${this._valveProtectionExclude}
                     .valveProtectionEnabled=${this.valveProtectionEnabled}
                     @device-changed=${this._onDeviceChanged}
-                    @sensor-selected=${this._onSensorSelected}
-                    @occupancy-sensor-toggle=${this._onOccupancySensorToggle}
-                    @window-sensor-toggle=${this._onWindowSensorToggle}
-                    @window-open-delay-changed=${this._onWindowOpenDelayChanged}
-                    @window-close-delay-changed=${this._onWindowCloseDelayChanged}
                     @external-entity-added=${this._onExternalEntityAdded}
                     @valve-protection-exclude-toggle=${this._onValveProtectionExcludeToggle}
                   ></rs-device-section>
+                </rs-section-card>
+
+                <rs-section-card
+                  icon="mdi:thermometer"
+                  .heading=${localize("room.section.sensors", this.hass.language)}
+                  editable
+                  .editing=${this._editingSensors}
+                  .doneLabel=${localize("devices.done", this.hass.language)}
+                  @edit-click=${() => {
+                    this._editingSensors = true;
+                  }}
+                  @done-click=${() => {
+                    this._editingSensors = false;
+                  }}
+                >
+                  <rs-sensor-section
+                    .hass=${this.hass}
+                    .area=${this.area}
+                    .editing=${this._editingSensors}
+                    .temperatureSensor=${this._selectedTempSensor}
+                    .humiditySensor=${this._selectedHumiditySensor}
+                    .occupancySensors=${this._selectedOccupancySensors}
+                    .language=${this.hass.language}
+                    @sensor-changed=${this._onSensorChanged}
+                  ></rs-sensor-section>
+                </rs-section-card>
+
+                <rs-section-card
+                  icon="mdi:window-open-variant"
+                  .heading=${localize("room.section.windows", this.hass.language)}
+                  editable
+                  .editing=${this._editingWindows}
+                  .doneLabel=${localize("devices.done", this.hass.language)}
+                  @edit-click=${() => {
+                    this._editingWindows = true;
+                  }}
+                  @done-click=${() => {
+                    this._editingWindows = false;
+                  }}
+                >
+                  <rs-window-section
+                    .hass=${this.hass}
+                    .area=${this.area}
+                    .editing=${this._editingWindows}
+                    .windowSensors=${this._selectedWindowSensors}
+                    .windowOpenDelay=${this._windowOpenDelay}
+                    .windowCloseDelay=${this._windowCloseDelay}
+                    .heatingSystemType=${resolveHeatingSystemType(this._devices)}
+                    .language=${this.hass.language}
+                    @window-config-changed=${this._onWindowConfigChanged}
+                  ></rs-window-section>
                 </rs-section-card>
 
                 <rs-presence-section
@@ -645,46 +696,27 @@ export class RsRoomDetail extends LitElement {
     this._autoSave();
   }
 
-  private _onSensorSelected(e: CustomEvent<{ entityId: string; type: "temp" | "humidity" }>) {
-    if (e.detail.type === "temp") {
-      this._selectedTempSensor = e.detail.entityId;
-    } else {
-      this._selectedHumiditySensor = e.detail.entityId;
+  private _onSensorChanged(e: CustomEvent<{ key: string; value: string | string[] }>) {
+    const { key, value } = e.detail;
+    if (key === "temperature_sensor") {
+      this._selectedTempSensor = value as string;
+    } else if (key === "humidity_sensor") {
+      this._selectedHumiditySensor = value as string;
+    } else if (key === "occupancy_sensors") {
+      this._selectedOccupancySensors = new Set(value as string[]);
     }
     this._autoSave();
   }
 
-  private _onOccupancySensorToggle(e: CustomEvent<{ entityId: string; checked: boolean }>) {
-    const { entityId, checked } = e.detail;
-    const next = new Set(this._selectedOccupancySensors);
-    if (checked) {
-      next.add(entityId);
-    } else {
-      next.delete(entityId);
+  private _onWindowConfigChanged(e: CustomEvent<{ key: string; value: string[] | number }>) {
+    const { key, value } = e.detail;
+    if (key === "window_sensors") {
+      this._selectedWindowSensors = new Set(value as string[]);
+    } else if (key === "window_open_delay") {
+      this._windowOpenDelay = value as number;
+    } else if (key === "window_close_delay") {
+      this._windowCloseDelay = value as number;
     }
-    this._selectedOccupancySensors = next;
-    this._autoSave();
-  }
-
-  private _onWindowSensorToggle(e: CustomEvent<{ entityId: string; checked: boolean }>) {
-    const { entityId, checked } = e.detail;
-    const next = new Set(this._selectedWindowSensors);
-    if (checked) {
-      next.add(entityId);
-    } else {
-      next.delete(entityId);
-    }
-    this._selectedWindowSensors = next;
-    this._autoSave();
-  }
-
-  private _onWindowOpenDelayChanged(e: CustomEvent<{ value: number }>) {
-    this._windowOpenDelay = e.detail.value;
-    this._autoSave();
-  }
-
-  private _onWindowCloseDelayChanged(e: CustomEvent<{ value: number }>) {
-    this._windowCloseDelay = e.detail.value;
     this._autoSave();
   }
 
@@ -703,7 +735,7 @@ export class RsRoomDetail extends LitElement {
   private _onExternalEntityAdded(
     e: CustomEvent<{
       entityId: string;
-      category: "temp" | "humidity" | "window";
+      category: "temp" | "humidity" | "window" | "occupancy";
     }>,
   ) {
     const { entityId, category } = e.detail;
@@ -713,6 +745,10 @@ export class RsRoomDetail extends LitElement {
       const next = new Set(this._selectedWindowSensors);
       next.add(entityId);
       this._selectedWindowSensors = next;
+    } else if (category === "occupancy") {
+      const next = new Set(this._selectedOccupancySensors);
+      next.add(entityId);
+      this._selectedOccupancySensors = next;
     } else {
       this._selectedHumiditySensor = entityId;
     }

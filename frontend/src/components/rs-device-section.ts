@@ -16,8 +16,6 @@ export class RsDeviceSection extends LitElement {
   @property({ type: String }) public selectedHumiditySensor = "";
   @property({ attribute: false }) public selectedOccupancySensors: Set<string> = new Set();
   @property({ attribute: false }) public selectedWindowSensors: Set<string> = new Set();
-  @property({ type: Number }) public windowOpenDelay = 0;
-  @property({ type: Number }) public windowCloseDelay = 0;
   @property({ attribute: false }) public valveProtectionExclude: Set<string> = new Set();
   @property({ type: Boolean }) public valveProtectionEnabled = false;
 
@@ -309,39 +307,6 @@ export class RsDeviceSection extends LitElement {
       font-weight: 500;
       flex-shrink: 0;
     }
-
-    .delay-fields {
-      display: flex;
-      gap: 12px;
-      margin-top: 8px;
-      padding: 0 14px;
-    }
-
-    .delay-fields ha-textfield {
-      flex: 1;
-    }
-
-    .delay-view {
-      font-size: 12px;
-      color: var(--secondary-text-color);
-      padding: 4px 14px 0;
-    }
-
-    .delay-hint {
-      display: flex;
-      align-items: flex-start;
-      gap: 6px;
-      font-size: 12px;
-      line-height: 1.5;
-      color: var(--warning-color, #ff9800);
-      padding: 8px 14px 0;
-    }
-
-    .delay-hint ha-icon {
-      --mdc-icon-size: 16px;
-      flex-shrink: 0;
-      margin-top: 1px;
-    }
   `;
 
   render() {
@@ -353,9 +318,6 @@ export class RsDeviceSection extends LitElement {
 
   private _renderViewMode() {
     const hasClimate = this._selectedThermostats.size > 0 || this._selectedCoolingDevices.size > 0;
-    const hasTempSensor = !!this.selectedTempSensor;
-    const hasHumiditySensor = !!this.selectedHumiditySensor;
-    const hasOccupancySensors = this.selectedOccupancySensors.size > 0;
 
     return html`
       ${hasClimate
@@ -366,61 +328,6 @@ export class RsDeviceSection extends LitElement {
               </div>
               ${[...this._selectedThermostats].map((id) => this._renderViewRow(id, "climate"))}
               ${[...this._selectedCoolingDevices].map((id) => this._renderViewRow(id, "climate"))}
-            </div>
-          `
-        : nothing}
-      ${hasTempSensor
-        ? html`
-            <div class="device-group">
-              <div class="section-subtitle">
-                ${localize("devices.temp_sensors", this.hass.language)}
-              </div>
-              ${this._renderViewRow(this.selectedTempSensor, "temp")}
-            </div>
-          `
-        : nothing}
-      ${hasHumiditySensor
-        ? html`
-            <div class="device-group">
-              <div class="section-subtitle">
-                ${localize("devices.humidity_sensors", this.hass.language)}
-              </div>
-              ${this._renderViewRow(this.selectedHumiditySensor, "humidity")}
-            </div>
-          `
-        : nothing}
-      ${hasOccupancySensors
-        ? html`
-            <div class="device-group">
-              <div class="section-subtitle">
-                ${localize("devices.occupancy_sensors", this.hass.language)}
-              </div>
-              ${[...this.selectedOccupancySensors].map((id) => this._renderOccupancyViewRow(id))}
-            </div>
-          `
-        : nothing}
-      ${this.selectedWindowSensors.size > 0
-        ? html`
-            <div class="device-group">
-              <div class="section-subtitle">
-                ${localize("devices.window_sensors", this.hass.language)}
-              </div>
-              ${[...this.selectedWindowSensors].map((id) => this._renderWindowViewRow(id))}
-              ${this.windowOpenDelay || this.windowCloseDelay
-                ? html`
-                    <div class="delay-view">
-                      ${this.windowOpenDelay
-                        ? html`${localize("devices.window_open_delay", this.hass.language)}:
-                          ${this.windowOpenDelay}s`
-                        : nothing}
-                      ${this.windowOpenDelay && this.windowCloseDelay ? " · " : nothing}
-                      ${this.windowCloseDelay
-                        ? html`${localize("devices.window_close_delay", this.hass.language)}:
-                          ${this.windowCloseDelay}s`
-                        : nothing}
-                    </div>
-                  `
-                : nothing}
             </div>
           `
         : nothing}
@@ -506,46 +413,6 @@ export class RsDeviceSection extends LitElement {
     `;
   }
 
-  private _renderWindowViewRow(entityId: string) {
-    const entityState = this.hass.states[entityId];
-    const friendlyName = (entityState?.attributes?.friendly_name as string) || entityId;
-    const isOpen = entityState?.state === "on";
-
-    return html`
-      <div class="view-row">
-        <span class="view-name entity-link" @click=${() => openEntityInfo(this, entityId)}
-          >${friendlyName}</span
-        >
-        <span
-          class="view-value"
-          style="color: ${isOpen ? "var(--warning-color, #ff9800)" : "var(--secondary-text-color)"}"
-        >
-          ${isOpen ? "\u25CF" : "\u25CB"}
-        </span>
-      </div>
-    `;
-  }
-
-  private _renderOccupancyViewRow(entityId: string) {
-    const entityState = this.hass.states[entityId];
-    const friendlyName = (entityState?.attributes?.friendly_name as string) || entityId;
-    const isOn = entityState?.state === "on";
-
-    return html`
-      <div class="view-row">
-        <span class="view-name entity-link" @click=${() => openEntityInfo(this, entityId)}
-          >${friendlyName}</span
-        >
-        <span
-          class="view-value"
-          style="color: ${isOn ? "var(--primary-color)" : "var(--secondary-text-color)"}"
-        >
-          ${isOn ? "\u25CF" : "\u25CB"}
-        </span>
-      </div>
-    `;
-  }
-
   private _renderEditMode() {
     // Fetch all area entities once, then filter by category
     // Exclude RoomMind's own entities to prevent self-assignment (#86)
@@ -560,71 +427,10 @@ export class RsDeviceSection extends LitElement {
 
     const areaClimateEntities = allAreaEntities.filter((e) => e.entity_id.startsWith("climate."));
 
-    const areaTempSensors = this.hass?.states
-      ? allAreaEntities.filter(
-          (e) =>
-            (e.entity_id.startsWith("sensor.") &&
-              this.hass.states[e.entity_id]?.attributes?.device_class === "temperature") ||
-            (e.entity_id.startsWith("climate.") &&
-              this.hass.states[e.entity_id]?.attributes?.current_temperature != null),
-        )
-      : [];
-
-    const areaHumiditySensors = this.hass?.states
-      ? allAreaEntities.filter(
-          (e) =>
-            e.entity_id.startsWith("sensor.") &&
-            this.hass.states[e.entity_id]?.attributes?.device_class === "humidity",
-        )
-      : [];
-
-    const areaWindowSensors = this.hass?.states
-      ? allAreaEntities.filter(
-          (e) =>
-            e.entity_id.startsWith("binary_sensor.") &&
-            ["window", "door", "opening"].includes(
-              this.hass.states[e.entity_id]?.attributes?.device_class as string,
-            ),
-        )
-      : [];
-
-    const areaOccupancySensors = this.hass?.states
-      ? allAreaEntities.filter(
-          (e) =>
-            (e.entity_id.startsWith("binary_sensor.") &&
-              ["occupancy", "motion", "presence"].includes(
-                this.hass.states[e.entity_id]?.attributes?.device_class as string,
-              )) ||
-            e.entity_id.startsWith("input_boolean."),
-        )
-      : [];
-
     // Find selected entities not in this area (manually added)
     const areaClimateIds = new Set(areaClimateEntities.map((e) => e.entity_id));
     const allSelectedClimate = new Set(this.devices.map((d) => d.entity_id));
     const externalClimateIds = [...allSelectedClimate].filter((id) => !areaClimateIds.has(id));
-
-    const areaTempIds = new Set(areaTempSensors.map((e) => e.entity_id));
-    const externalTempSensor =
-      this.selectedTempSensor && !areaTempIds.has(this.selectedTempSensor)
-        ? this.selectedTempSensor
-        : null;
-
-    const areaHumidityIds = new Set(areaHumiditySensors.map((e) => e.entity_id));
-    const externalHumiditySensor =
-      this.selectedHumiditySensor && !areaHumidityIds.has(this.selectedHumiditySensor)
-        ? this.selectedHumiditySensor
-        : null;
-
-    const areaWindowIds = new Set(areaWindowSensors.map((e) => e.entity_id));
-    const externalWindowSensors = [...this.selectedWindowSensors].filter(
-      (id) => !areaWindowIds.has(id),
-    );
-
-    const areaOccupancyIds = new Set(areaOccupancySensors.map((e) => e.entity_id));
-    const externalOccupancySensors = [...this.selectedOccupancySensors].filter(
-      (id) => !areaOccupancyIds.has(id),
-    );
 
     return html`
       <div class="device-group">
@@ -638,98 +444,6 @@ export class RsDeviceSection extends LitElement {
                 ${localize("devices.no_climate", this.hass.language)}
               </div>`}
           ${externalClimateIds.map((id) => this._renderClimateRow(id, true))}
-        </div>
-      </div>
-
-      <div class="device-group">
-        <div class="section-subtitle">${localize("devices.temp_sensors", this.hass.language)}</div>
-        <div class="device-list-scroll">
-          ${areaTempSensors.length > 0
-            ? areaTempSensors.map((entity) =>
-                this._renderSensorRow(entity.entity_id, "temp", false),
-              )
-            : html`<div class="no-devices">
-                ${localize("devices.no_temp_sensors", this.hass.language)}
-              </div>`}
-          ${externalTempSensor ? this._renderSensorRow(externalTempSensor, "temp", true) : nothing}
-        </div>
-      </div>
-
-      <div class="device-group">
-        <div class="section-subtitle">
-          ${localize("devices.humidity_sensors", this.hass.language)}
-        </div>
-        <div class="device-list-scroll">
-          ${areaHumiditySensors.length > 0
-            ? areaHumiditySensors.map((entity) =>
-                this._renderSensorRow(entity.entity_id, "humidity", false),
-              )
-            : html`<div class="no-devices">
-                ${localize("devices.no_humidity_sensors", this.hass.language)}
-              </div>`}
-          ${externalHumiditySensor
-            ? this._renderSensorRow(externalHumiditySensor, "humidity", true)
-            : nothing}
-        </div>
-      </div>
-
-      <div class="device-group">
-        <div class="section-subtitle">
-          ${localize("devices.window_sensors", this.hass.language)}
-        </div>
-        <div class="device-list-scroll">
-          ${areaWindowSensors.length > 0
-            ? areaWindowSensors.map((entity) => this._renderWindowRow(entity.entity_id, false))
-            : html`<div class="no-devices">
-                ${localize("devices.no_window_sensors", this.hass.language)}
-              </div>`}
-          ${externalWindowSensors.map((id) => this._renderWindowRow(id, true))}
-        </div>
-        ${this.selectedWindowSensors.size > 0
-          ? html`
-              <div class="delay-fields">
-                <ha-textfield
-                  type="number"
-                  min="0"
-                  suffix="s"
-                  .label=${localize("devices.window_open_delay", this.hass.language)}
-                  .value=${String(this.windowOpenDelay)}
-                  @change=${this._onWindowOpenDelayChange}
-                ></ha-textfield>
-                <ha-textfield
-                  type="number"
-                  min="0"
-                  suffix="s"
-                  .label=${localize("devices.window_close_delay", this.hass.language)}
-                  .value=${String(this.windowCloseDelay)}
-                  @change=${this._onWindowCloseDelayChange}
-                ></ha-textfield>
-              </div>
-              ${this._heatingSystemType === "underfloor" && this.windowOpenDelay < 300
-                ? html`
-                    <div class="delay-hint">
-                      <ha-icon icon="mdi:information-outline"></ha-icon>
-                      ${localize("devices.underfloor_delay_hint", this.hass.language)}
-                    </div>
-                  `
-                : nothing}
-            `
-          : nothing}
-      </div>
-
-      <div class="device-group">
-        <div class="section-subtitle">
-          ${localize("devices.occupancy_sensors", this.hass.language)}
-        </div>
-        <div class="device-list-scroll">
-          ${areaOccupancySensors.length > 0
-            ? areaOccupancySensors.map((entity) =>
-                this._renderOccupancyRow(entity.entity_id, false),
-              )
-            : html`<div class="no-devices">
-                ${localize("devices.no_occupancy_sensors", this.hass.language)}
-              </div>`}
-          ${externalOccupancySensors.map((id) => this._renderOccupancyRow(id, true))}
         </div>
       </div>
 
@@ -1004,117 +718,6 @@ export class RsDeviceSection extends LitElement {
     `;
   }
 
-  private _renderSensorRow(entityId: string, type: "temp" | "humidity", external: boolean) {
-    const entityState = this.hass.states[entityId];
-    const friendlyName = (entityState?.attributes?.friendly_name as string) || entityId;
-    const currentValue = entityId.startsWith("climate.")
-      ? entityState?.attributes?.current_temperature
-      : entityState?.state;
-    const selected = type === "temp" ? this.selectedTempSensor : this.selectedHumiditySensor;
-    const isSelected = selected === entityId;
-    const unit = type === "temp" ? tempUnit(this.hass) : "%";
-    const hasValue = currentValue && currentValue !== "unknown" && currentValue !== "unavailable";
-
-    return html`
-      <div
-        class="device-row ${isSelected ? "selected" : ""}"
-        @click=${() => this._onSensorSelected(isSelected ? "" : entityId, type)}
-      >
-        <ha-radio .checked=${isSelected} name="${type}-sensor"></ha-radio>
-        <div class="device-info">
-          <div class="device-name-row">
-            <span class="device-name">${friendlyName}</span>
-            ${external
-              ? html`<span class="external-badge"
-                  >${localize("devices.other_area", this.hass.language)}</span
-                >`
-              : nothing}
-          </div>
-          <div class="device-entity">${entityId}</div>
-        </div>
-        ${hasValue
-          ? html`<span class="device-value"
-              >${type === "humidity"
-                ? Math.round(Number(currentValue))
-                : Number(currentValue).toFixed(1)}${unit}</span
-            >`
-          : nothing}
-      </div>
-    `;
-  }
-
-  private _renderWindowRow(entityId: string, external: boolean) {
-    const isSelected = this.selectedWindowSensors.has(entityId);
-    const entityState = this.hass.states[entityId];
-    const friendlyName = (entityState?.attributes?.friendly_name as string) || entityId;
-    const isOpen = entityState?.state === "on";
-
-    return html`
-      <div class="device-row ${isSelected ? "selected" : ""}">
-        <ha-checkbox
-          .checked=${isSelected}
-          @change=${(e: Event) => {
-            const target = e.target as HTMLElement & { checked: boolean };
-            this._onWindowSensorToggle(entityId, target.checked);
-          }}
-        ></ha-checkbox>
-        <div class="device-info">
-          <div class="device-name-row">
-            <span class="device-name">${friendlyName}</span>
-            ${external
-              ? html`<span class="external-badge"
-                  >${localize("devices.other_area", this.hass.language)}</span
-                >`
-              : nothing}
-          </div>
-          <div class="device-entity">${entityId}</div>
-        </div>
-        <span
-          class="device-value"
-          style="color: ${isOpen ? "var(--warning-color, #ff9800)" : "var(--secondary-text-color)"}"
-        >
-          ${isOpen ? "\u25CF" : "\u25CB"}
-        </span>
-      </div>
-    `;
-  }
-
-  private _renderOccupancyRow(entityId: string, external: boolean) {
-    const isSelected = this.selectedOccupancySensors.has(entityId);
-    const entityState = this.hass.states[entityId];
-    const friendlyName = (entityState?.attributes?.friendly_name as string) || entityId;
-    const isOn = entityState?.state === "on";
-
-    return html`
-      <div class="device-row ${isSelected ? "selected" : ""}">
-        <ha-checkbox
-          .checked=${isSelected}
-          @change=${(e: Event) => {
-            const target = e.target as HTMLElement & { checked: boolean };
-            this._onOccupancySensorToggle(entityId, target.checked);
-          }}
-        ></ha-checkbox>
-        <div class="device-info">
-          <div class="device-name-row">
-            <span class="device-name">${friendlyName}</span>
-            ${external
-              ? html`<span class="external-badge"
-                  >${localize("devices.other_area", this.hass.language)}</span
-                >`
-              : nothing}
-          </div>
-          <div class="device-entity">${entityId}</div>
-        </div>
-        <span
-          class="device-value"
-          style="color: ${isOn ? "var(--primary-color)" : "var(--secondary-text-color)"}"
-        >
-          ${isOn ? "\u25CF" : "\u25CB"}
-        </span>
-      </div>
-    `;
-  }
-
   // ---- Event handlers ----
 
   private _detectClimateType(entityId: string): "thermostat" | "ac" {
@@ -1152,58 +755,6 @@ export class RsDeviceSection extends LitElement {
       d.entity_id === entityId ? { ...d, type: deviceType } : d,
     );
     this._fireDeviceChanged(newDevices);
-  }
-
-  private _onSensorSelected(entityId: string, type: "temp" | "humidity") {
-    this.dispatchEvent(
-      new CustomEvent("sensor-selected", {
-        detail: { entityId, type },
-        bubbles: true,
-        composed: true,
-      }),
-    );
-  }
-
-  private _onOccupancySensorToggle(entityId: string, checked: boolean) {
-    this.dispatchEvent(
-      new CustomEvent("occupancy-sensor-toggle", {
-        detail: { entityId, checked },
-        bubbles: true,
-        composed: true,
-      }),
-    );
-  }
-
-  private _onWindowSensorToggle(entityId: string, checked: boolean) {
-    this.dispatchEvent(
-      new CustomEvent("window-sensor-toggle", {
-        detail: { entityId, checked },
-        bubbles: true,
-        composed: true,
-      }),
-    );
-  }
-
-  private _onWindowOpenDelayChange(e: Event) {
-    const value = Math.max(0, parseInt((e.target as HTMLInputElement).value) || 0);
-    this.dispatchEvent(
-      new CustomEvent("window-open-delay-changed", {
-        detail: { value },
-        bubbles: true,
-        composed: true,
-      }),
-    );
-  }
-
-  private _onWindowCloseDelayChange(e: Event) {
-    const value = Math.max(0, parseInt((e.target as HTMLInputElement).value) || 0);
-    this.dispatchEvent(
-      new CustomEvent("window-close-delay-changed", {
-        detail: { value },
-        bubbles: true,
-        composed: true,
-      }),
-    );
   }
 
   private _onValveProtectionExcludeToggle(entityId: string, excluded: boolean) {
@@ -1330,9 +881,15 @@ export class RsDeviceSection extends LitElement {
       return;
     }
 
-    // For occupancy sensors, dispatch via toggle event (add)
+    // For occupancy sensors, dispatch via dedicated event
     if (category === "occupancy") {
-      this._onOccupancySensorToggle(entityId, true);
+      this.dispatchEvent(
+        new CustomEvent("external-entity-added", {
+          detail: { entityId, category },
+          bubbles: true,
+          composed: true,
+        }),
+      );
       const picker = e.target as HTMLElement & { value: string };
       picker.value = "";
       return;

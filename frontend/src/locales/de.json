@@ -28,6 +28,8 @@
   "room.section.schedule": "Zeitplan & Temperaturen",
   "room.section.control_mode": "Steuerungsmodus",
   "room.section.devices": "Geräte",
+  "room.section.sensors": "Sensoren",
+  "room.section.windows": "Fenstersensoren",
   "room.control_mode.full_control": "Full Control",
   "room.control_mode.managed": "Managed",
   "room.control_mode.external_sensor": "Externer Sensor: {sensor}",
