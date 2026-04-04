@@ -8,6 +8,7 @@ import pytest
 
 from custom_components.roommind.coordinator import RoomMindCoordinator
 from custom_components.roommind.store import RoomMindStore
+from tests.conftest import make_mock_states_get
 
 ROOM_LIVING = {
     "area_id": "living_room",
@@ -40,40 +41,22 @@ def make_hass_states(
 ):
     if climate_hvac_modes is None:
         climate_hvac_modes = ["off", "heat"]
-    if extra is None:
-        extra = {}
-
-    def _get(entity_id):
-        entities = {
-            "sensor.living_room_temp": ("state", temp, {}),
-            "sensor.living_room_humidity": ("state", humidity, {}),
-            "schedule.living_room": ("state", schedule_state, {}),
-            "sensor.outdoor_temp": ("state", outdoor_temp, {}),
-            "climate.living_room": (
-                "state",
-                climate_state,
-                {"hvac_modes": climate_hvac_modes, "hvac_action": "idle"},
-            ),
-        }
-        if entity_id in extra:
-            val = extra[entity_id]
-            s = MagicMock()
-            if isinstance(val, tuple):
-                s.state = val[0]
-                s.attributes = val[1] if len(val) > 1 else {}
-            else:
-                s.state = val
-                s.attributes = {}
-            return s
-        if entity_id in entities:
-            _, state, attrs = entities[entity_id]
-            s = MagicMock()
-            s.state = state
-            s.attributes = attrs
-            return s
-        return None
-
-    return _get
+    base_extra = {
+        "schedule.living_room": (schedule_state, {}),
+        "climate.living_room": (
+            climate_state,
+            {"hvac_modes": climate_hvac_modes, "hvac_action": "idle"},
+        ),
+    }
+    if extra:
+        base_extra.update(extra)
+    return make_mock_states_get(
+        temp=temp,
+        humidity=humidity,
+        schedule_state=schedule_state,
+        outdoor_temp=outdoor_temp,
+        extra=base_extra,
+    )
 
 
 DEFAULT_SETTINGS = {"outdoor_temp_sensor": "sensor.outdoor_temp"}
