@@ -139,19 +139,29 @@ async def async_turn_off_climate(
         if state:
             min_temp = state.attributes.get("min_temp")
             if min_temp is not None:
-                current_setpoint = state.attributes.get("temperature")
-                if current_setpoint is None or round(current_setpoint, 1) != round(min_temp, 1):
-                    try:
-                        await hass.services.async_call(
-                            "climate",
-                            "set_temperature",
-                            {"entity_id": entity_id, "temperature": min_temp},
-                            blocking=True,
-                            context=make_roommind_context(),
-                        )
-                        _last_commands[entity_id] = _cache_entry("set_temperature", {"temperature": min_temp})
-                    except Exception:  # noqa: BLE001
-                        pass  # Best-effort, off command was already sent/attempted
+                if float(min_temp) <= 0:
+                    _LOGGER.warning(
+                        "Area '%s': device '%s' reports min_temp=%s (<= 0), "
+                        "skipping defense-in-depth setpoint lowering (Z2M/firmware bug?)",
+                        area_id,
+                        entity_id,
+                        min_temp,
+                    )
+                else:
+                    min_temp_f = float(min_temp)
+                    current_setpoint = state.attributes.get("temperature")
+                    if current_setpoint is None or round(current_setpoint, 1) != round(min_temp_f, 1):
+                        try:
+                            await hass.services.async_call(
+                                "climate",
+                                "set_temperature",
+                                {"entity_id": entity_id, "temperature": min_temp_f},
+                                blocking=True,
+                                context=make_roommind_context(),
+                            )
+                            _last_commands[entity_id] = _cache_entry("set_temperature", {"temperature": min_temp_f})
+                        except Exception:  # noqa: BLE001
+                            pass  # Best-effort, off command was already sent/attempted
         return
 
     # Fallback: device does not support "off" → set to min_temp / max_temp
@@ -165,6 +175,18 @@ async def async_turn_off_climate(
             area_id,
             entity_id,
             "max_temp" if is_cooling else "min_temp",
+        )
+        return
+
+    # Same guard as defense-in-depth path above: max_temp <= 0 for cooling devices
+    # is equally implausible and indicates a Z2M/firmware bug.
+    if float(fallback_temp) <= 0:
+        _LOGGER.warning(
+            "Area '%s': device '%s' reports %s=%s (<= 0), cannot use as fallback setpoint (Z2M/firmware bug?)",
+            area_id,
+            entity_id,
+            "max_temp" if is_cooling else "min_temp",
+            fallback_temp,
         )
         return
 

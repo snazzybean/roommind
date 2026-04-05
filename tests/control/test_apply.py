@@ -396,6 +396,112 @@ async def test_turn_off_climate_heat_only_already_at_min_temp():
     hass.services.async_call.assert_not_called()
 
 
+@pytest.mark.asyncio
+async def test_turn_off_climate_zero_min_temp_skips_defense_in_depth():
+    """min_temp=0: only set_hvac_mode(off) is sent, no set_temperature (defense-in-depth skipped)."""
+    hass = build_hass()
+    state = MagicMock()
+    state.state = "heat"
+    state.attributes = {"hvac_modes": ["heat", "off"], "min_temp": 0, "temperature": 20.0}
+    hass.states.get = MagicMock(return_value=state)
+
+    await async_turn_off_climate(hass, "climate.trv")
+    assert hass.services.async_call.call_count == 1
+    hass.services.async_call.assert_called_once_with(
+        "climate",
+        "set_hvac_mode",
+        {"entity_id": "climate.trv", "hvac_mode": "off"},
+        blocking=True,
+        context=ANY,
+    )
+
+
+@pytest.mark.asyncio
+async def test_turn_off_climate_negative_min_temp_skips_defense_in_depth():
+    """min_temp<0: only set_hvac_mode(off) is sent, no set_temperature."""
+    hass = build_hass()
+    state = MagicMock()
+    state.state = "heat"
+    state.attributes = {"hvac_modes": ["heat", "off"], "min_temp": -5.0, "temperature": 20.0}
+    hass.states.get = MagicMock(return_value=state)
+
+    await async_turn_off_climate(hass, "climate.trv")
+    assert hass.services.async_call.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_turn_off_climate_min_temp_4_defense_in_depth_fires():
+    """min_temp=4.0 (TRVZB valid minimum): both set_hvac_mode(off) and set_temperature(4.0) sent."""
+    hass = build_hass()
+    state = MagicMock()
+    state.state = "heat"
+    state.attributes = {"hvac_modes": ["heat", "off"], "min_temp": 4.0, "temperature": 20.0}
+    hass.states.get = MagicMock(return_value=state)
+
+    await async_turn_off_climate(hass, "climate.trv")
+    assert hass.services.async_call.call_count == 2
+    hass.services.async_call.assert_any_call(
+        "climate",
+        "set_temperature",
+        {"entity_id": "climate.trv", "temperature": 4.0},
+        blocking=True,
+        context=ANY,
+    )
+
+
+@pytest.mark.asyncio
+async def test_turn_off_climate_heat_only_zero_min_temp_no_call():
+    """Heat-only device (no 'off') with min_temp=0: no service call, fallback guard prevents invalid setpoint."""
+    hass = build_hass()
+    state = MagicMock()
+    state.state = "heat"
+    state.attributes = {"hvac_modes": ["heat"], "min_temp": 0, "temperature": 20.0}
+    hass.states.get = MagicMock(return_value=state)
+
+    await async_turn_off_climate(hass, "climate.trv")
+    hass.services.async_call.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_turn_off_climate_fahrenheit_32_fires_defense_in_depth():
+    """min_temp=32 (=0°C in Fahrenheit): guard allows it (32 > 0), set_temperature(32) sent."""
+    hass = build_hass()
+    state = MagicMock()
+    state.state = "heat"
+    state.attributes = {"hvac_modes": ["heat", "off"], "min_temp": 32.0, "temperature": 80.0}
+    hass.states.get = MagicMock(return_value=state)
+
+    await async_turn_off_climate(hass, "climate.trv")
+    assert hass.services.async_call.call_count == 2
+    hass.services.async_call.assert_any_call(
+        "climate",
+        "set_temperature",
+        {"entity_id": "climate.trv", "temperature": 32.0},
+        blocking=True,
+        context=ANY,
+    )
+
+
+@pytest.mark.asyncio
+async def test_turn_off_climate_current_setpoint_zero_with_valid_min_temp():
+    """current_setpoint=0 and min_temp=4.0: guard passes (4.0 > 0), set_temperature(4.0) still fires."""
+    hass = build_hass()
+    state = MagicMock()
+    state.state = "heat"
+    state.attributes = {"hvac_modes": ["heat", "off"], "min_temp": 4.0, "temperature": 0.0}
+    hass.states.get = MagicMock(return_value=state)
+
+    await async_turn_off_climate(hass, "climate.trv")
+    assert hass.services.async_call.call_count == 2
+    hass.services.async_call.assert_any_call(
+        "climate",
+        "set_temperature",
+        {"entity_id": "climate.trv", "temperature": 4.0},
+        blocking=True,
+        context=ANY,
+    )
+
+
 # ---------------------------------------------------------------------------
 # async_apply integration tests for heat-only TRV fallback
 # ---------------------------------------------------------------------------
