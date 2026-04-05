@@ -1,0 +1,46 @@
+# Home Assistant Development Configuration for RoomMind
+
+# Use individual components instead of default_config to avoid pulling in
+# go2rtc, stream, bluetooth, usb, and other integrations that require
+# system binaries or hardware not available in the devcontainer.
+config:
+frontend:
+person:
+sun:
+system_health:
+logbook:
+history:
+my:
+energy:
+map:
+media_source:
+webhook:
+tag:
+
+# Enhanced logging for development
+logger:
+  default: info
+  logs:
+    custom_components.roommind: debug
+    homeassistant.components.roommind: debug
+
+# HTTP configuration for development
+http:
+  use_x_forwarded_for: true
+  trusted_proxies:
+    - 127.0.0.1
+    - ::1
+
+# File editor for easy configuration changes
+file_editor:
+
+automation: !include automations.yaml
+script: !include scripts.yaml
+scene: !include scenes.yaml
+
+# Development helpers
+# Uncomment the line below for Python debugging support
+# debugpy:
+#   start: true
+#   wait: false
+#   port: 5678
