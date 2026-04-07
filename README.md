@@ -8,20 +8,20 @@
 | custom\_components/roommind/binary\_sensor.py                      |       37 |        0 |    100% |           |
 | custom\_components/roommind/climate.py                             |       87 |        0 |    100% |           |
 | custom\_components/roommind/config\_flow.py                        |       11 |       11 |      0% |      3-23 |
-| custom\_components/roommind/const.py                               |       97 |        0 |    100% |           |
+| custom\_components/roommind/const.py                               |       99 |        0 |    100% |           |
 | custom\_components/roommind/control/\_\_init\_\_.py                |        0 |        0 |    100% |           |
 | custom\_components/roommind/control/analytics\_simulator.py        |      191 |        1 |     99% |        58 |
 | custom\_components/roommind/control/mpc\_controller.py             |      768 |       50 |     93% |321-323, 341-342, 376-379, 390-397, 410-411, 456, 750-752, 920, 984-996, 1080-1081, 1087, 1168-1179, 1239-1240, 1340-1341, 1373-1374, 1471, 1473, 1487, 1492, 1497 |
 | custom\_components/roommind/control/mpc\_optimizer.py              |      166 |       10 |     94% |82, 115, 285, 290, 295, 303, 309, 312-315 |
 | custom\_components/roommind/control/residual\_heat.py              |       24 |        0 |    100% |           |
-| custom\_components/roommind/control/solar.py                       |       54 |        1 |     98% |        70 |
+| custom\_components/roommind/control/solar.py                       |       81 |        2 |     98% |    72, 91 |
 | custom\_components/roommind/control/thermal\_model.py              |      423 |       18 |     96% |396, 670, 861-876, 935, 1058, 1065-1069 |
 | custom\_components/roommind/coordinator.py                         |      746 |       46 |     94% |306-307, 499-502, 538, 677-678, 688, 690, 1019, 1060, 1118, 1336-1339, 1473-1475, 1479-1485, 1489, 1494, 1509, 1514, 1516, 1528, 1533-1538, 1542, 1631, 1646-1654, 1672-1673, 1688-1693, 1710-1711 |
 | custom\_components/roommind/diagnostics.py                         |      162 |       11 |     93% |80, 118, 185-186, 215-221 |
 | custom\_components/roommind/managers/\_\_init\_\_.py               |        0 |        0 |    100% |           |
 | custom\_components/roommind/managers/compressor\_group\_manager.py |      157 |        2 |     99% |  121, 184 |
-| custom\_components/roommind/managers/cover\_manager.py             |      116 |        1 |     99% |       181 |
-| custom\_components/roommind/managers/cover\_orchestrator.py        |      120 |        1 |     99% |        73 |
+| custom\_components/roommind/managers/cover\_manager.py             |      123 |        1 |     99% |       195 |
+| custom\_components/roommind/managers/cover\_orchestrator.py        |      143 |        2 |     99% |   74, 201 |
 | custom\_components/roommind/managers/ekf\_training\_manager.py     |       54 |        1 |     98% |        28 |
 | custom\_components/roommind/managers/heat\_source\_orchestrator.py |      122 |        4 |     97% |60, 68, 199, 205 |
 | custom\_components/roommind/managers/mold\_manager.py              |       69 |        0 |    100% |           |
@@ -44,8 +44,8 @@
 | custom\_components/roommind/utils/schedule\_utils.py               |      149 |        7 |     95% |139-140, 145-146, 154-155, 224 |
 | custom\_components/roommind/utils/sensor\_utils.py                 |       29 |        1 |     97% |        25 |
 | custom\_components/roommind/utils/temp\_utils.py                   |       26 |        0 |    100% |           |
-| custom\_components/roommind/websocket\_api.py                      |      263 |        2 |     99% |   611-616 |
-| **TOTAL**                                                          | **5008** |  **261** | **95%** |           |
+| custom\_components/roommind/websocket\_api.py                      |      263 |        2 |     99% |   614-619 |
+| **TOTAL**                                                          | **5067** |  **263** | **95%** |           |
 
 
 ## Setup coverage badge
