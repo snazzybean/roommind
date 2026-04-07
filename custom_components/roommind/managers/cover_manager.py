@@ -140,8 +140,9 @@ class CoverManager:
             return CoverDecision(target_position=current, changed=False, reason="disabled")
 
         # Gate 1: Forced position (schedule or night close) — immediate, no rate limit.
-        # Schedules and night close work independently of covers_auto_enabled.
-        # Only user manual override (Gate 1b) can block them.
+        # Note: the orchestrator returns early when covers_auto_enabled=False, so this gate
+        # is only reached when auto control is on (or when evaluate() is called directly).
+        # Only user manual override (Gate 1b) can block a forced position.
         if forced_position is not None:
             if state.user_override_until > time.time():
                 return CoverDecision(target_position=current, changed=False, reason="user_override_active")

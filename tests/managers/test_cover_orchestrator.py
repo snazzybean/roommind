@@ -966,6 +966,40 @@ class TestScheduleGateMode:
         call_kwargs = cm.evaluate.call_args
         assert call_kwargs[1].get("forced_position") == 0 or call_kwargs.kwargs.get("forced_position") == 0
 
+    @pytest.mark.asyncio
+    async def test_gate_entity_unavailable_keeps_solar_protection(self):
+        """Gate schedule entity unavailable → solar_gated stays True (fail-safe)."""
+        hass = _make_hass()
+        cm = _make_cover_manager()
+        orch = CoverOrchestrator(hass, cm, _make_model_manager())
+
+        hass.states.get = MagicMock(return_value=None)
+
+        room = _make_room(
+            covers=["cover.blind1"],
+            cover_schedules=[{"entity_id": "schedule.cover_time", "mode": "gate"}],
+        )
+
+        with patch(
+            "custom_components.roommind.managers.cover_orchestrator.resolve_schedule_index",
+            return_value=0,
+        ):
+            await orch.async_process(
+                area_id="living_room",
+                room=room,
+                targets=TargetTemps(heat=21.0, cool=24.0),
+                mode=MODE_HEATING,
+                current_temp=20.0,
+                outdoor_temp=15.0,
+                q_solar=0.3,
+                predicted_peak_temp=22.0,
+                has_override=False,
+            )
+
+        call_kwargs = cm.evaluate.call_args
+        solar_gated = call_kwargs.kwargs.get("solar_gated", call_kwargs[1].get("solar_gated"))
+        assert solar_gated is True
+
 
 # ── Orientation ─────────────────────────────────────────────────────────
 

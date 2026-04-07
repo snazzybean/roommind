@@ -42,10 +42,6 @@ export class RsCoverSchedule extends RsScheduleBase {
         cursor: pointer;
         color: var(--primary-text-color);
       }
-      .mode-option input[type="radio"] {
-        cursor: pointer;
-        accent-color: var(--primary-color);
-      }
     `,
   ];
 
@@ -119,23 +115,17 @@ export class RsCoverSchedule extends RsScheduleBase {
                   </div>
                   <div class="mode-row">
                     <label class="mode-option">
-                      <input
-                        type="radio"
-                        name="mode-${index}"
-                        value="force"
+                      <ha-radio
                         .checked=${(entry.mode ?? "force") === "force"}
                         @change=${() => this._updateMode(index, "force")}
-                      />
+                      ></ha-radio>
                       ${localize("covers.schedule_mode_force", l)}
                     </label>
                     <label class="mode-option">
-                      <input
-                        type="radio"
-                        name="mode-${index}"
-                        value="gate"
+                      <ha-radio
                         .checked=${entry.mode === "gate"}
                         @change=${() => this._updateMode(index, "gate")}
-                      />
+                      ></ha-radio>
                       ${localize("covers.schedule_mode_gate", l)}
                     </label>
                   </div>

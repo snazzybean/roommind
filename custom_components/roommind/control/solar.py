@@ -247,15 +247,15 @@ def build_oriented_solar_series(
         surface_azimuths: list of surface azimuths in degrees (0=N, 90=E …).
             Must not be empty.
     """
+    ts = start_ts if start_ts is not None else time.time()
     base = build_solar_series(
         latitude,
         longitude,
         n_blocks,
         dt_minutes,
-        start_ts=start_ts,
+        start_ts=ts,
         cloud_series=cloud_series,
     )
-    ts = start_ts if start_ts is not None else time.time()
     dt_sec = dt_minutes * 60.0
     result: list[float] = []
     for i, q in enumerate(base):

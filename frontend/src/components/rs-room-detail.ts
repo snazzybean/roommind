@@ -782,6 +782,11 @@ export class RsRoomDetail extends LitElement {
       next.add(entityId);
     } else {
       next.delete(entityId);
+      if (entityId in this._coverOrientations) {
+        const nextOrientations = { ...this._coverOrientations };
+        delete nextOrientations[entityId];
+        this._coverOrientations = nextOrientations;
+      }
     }
     this._selectedCovers = next;
     this._autoSave();

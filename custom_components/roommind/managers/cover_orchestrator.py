@@ -179,16 +179,29 @@ class CoverOrchestrator:
             if 0 <= _active_cover_sched_idx < len(cover_schedules):
                 entry = cover_schedules[_active_cover_sched_idx]
                 eid = entry.get("entity_id", "")
-                mode = entry.get("mode", "force")
+                sched_mode = entry.get("mode", "force")
                 if eid:
                     _sched_st = self.hass.states.get(eid)
-                    if mode == "gate":
+                    if sched_mode == "gate":
                         # Gate mode: schedule controls when solar protection is allowed.
                         # No forced position — RoomMind's thermal logic decides the actual position.
-                        _solar_gated = _sched_st is not None and _sched_st.state == "on"
+                        # Fail-safe: if entity is unavailable, keep solar protection active
+                        # to prevent thermal overshoot during temporary HA restarts.
+                        if _sched_st is None:
+                            _LOGGER.warning(
+                                "Cover gate schedule entity %s unavailable; keeping solar protection active",
+                                eid,
+                            )
+                        else:
+                            _solar_gated = _sched_st.state == "on"
                     elif _sched_st is not None and _sched_st.state == "on":
                         # Force mode (default): read position attribute and force covers.
                         _block_pos = _sched_st.attributes.get("position")
+                        if _block_pos is None:
+                            _LOGGER.warning(
+                                "Cover schedule entity %s has no 'position' attribute; defaulting to 0%% (closed)",
+                                eid,
+                            )
                         try:
                             _forced_position = max(0, min(100, int(_block_pos))) if _block_pos is not None else 0
                         except (ValueError, TypeError):
