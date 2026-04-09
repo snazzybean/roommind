@@ -149,6 +149,7 @@
   "schedule.eco_label": "Eco-Temperatur",
   "schedule.comfort_hint": "Wird verwendet wenn der Zeitplan \"an\" ist, aber keine Temperatur im Block gesetzt ist",
   "schedule.from_schedule": "{temp}{unit} vom Zeitplan",
+  "schedule.from_schedule_split": "{heat}{unit} / {cool}{unit} vom Zeitplan",
   "schedule.fallback": "{temp}{unit} (Fallback)",
   "schedule.eco_detail": "{temp}{unit} (Eco)",
 

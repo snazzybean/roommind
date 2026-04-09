@@ -485,10 +485,20 @@ export class RsScheduleSettings extends RsScheduleBase {
 
     const isOn = entityState.state === "on";
     if (isOn) {
-      const blockTemp = entityState.attributes?.temperature as number | undefined;
+      const attrs = entityState.attributes ?? {};
+      const blockTemp = attrs.temperature as number | undefined;
       if (blockTemp != null) {
         return localize("schedule.from_schedule", l, {
           temp: String(blockTemp),
+          unit: tempUnit(this.hass),
+        });
+      }
+      const heatTemp = attrs.heat_temperature as number | undefined;
+      const coolTemp = attrs.cool_temperature as number | undefined;
+      if (heatTemp != null || coolTemp != null) {
+        return localize("schedule.from_schedule_split", l, {
+          heat: String(heatTemp ?? this.comfortHeat),
+          cool: String(coolTemp ?? this.comfortCool),
           unit: tempUnit(this.hass),
         });
       }
