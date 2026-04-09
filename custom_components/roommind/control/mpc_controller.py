@@ -109,6 +109,26 @@ async def async_turn_off_climate(
     # Normal path: "off" is supported (or modes unknown → assume supported)
     if not hvac_modes or "off" in hvac_modes:
         if state and state.state == "off":
+            # Safety net: device may report "off" while retaining a high setpoint
+            # (e.g. Wavin Sentio with hvac_modes=["off"] — set_hvac_mode("heat") is
+            # ignored, so state is permanently "off" and heating is controlled purely
+            # by the temperature setpoint).  Lower the setpoint to min_temp on every
+            # IDLE cycle until it is confirmed low.
+            min_temp_val = state.attributes.get("min_temp")
+            if min_temp_val is not None and float(min_temp_val) > 0:
+                min_temp_f = float(min_temp_val)
+                current_setpoint = state.attributes.get("temperature")
+                if current_setpoint is None or round(float(current_setpoint), 1) != round(min_temp_f, 1):
+                    try:
+                        await hass.services.async_call(
+                            "climate",
+                            "set_temperature",
+                            {"entity_id": entity_id, "temperature": min_temp_f},
+                            blocking=True,
+                            context=make_roommind_context(),
+                        )
+                    except Exception:  # noqa: BLE001
+                        pass  # Best-effort
             return  # already off
         # Cache fallback for IR devices (only when device has no reliable state)
         if _should_use_cache(state):

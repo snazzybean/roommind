@@ -325,6 +325,102 @@ async def test_turn_off_climate_already_off_skipped():
 
 
 @pytest.mark.asyncio
+async def test_turn_off_already_off_high_setpoint_lowers_to_min_temp():
+    """Device permanently 'off' (e.g. Wavin Sentio) with high setpoint: lower to min_temp."""
+    hass = build_hass()
+    state = MagicMock()
+    state.state = "off"
+    state.attributes = {"hvac_modes": ["off"], "temperature": 22.5, "min_temp": 5.0, "max_temp": 30.0}
+    hass.states.get = MagicMock(return_value=state)
+
+    await async_turn_off_climate(hass, "climate.trv")
+    hass.services.async_call.assert_called_once_with(
+        "climate",
+        "set_temperature",
+        {"entity_id": "climate.trv", "temperature": 5.0},
+        blocking=True,
+        context=ANY,
+    )
+
+
+@pytest.mark.asyncio
+async def test_turn_off_already_off_setpoint_at_min_temp_no_command():
+    """Device 'off' with setpoint already at min_temp: no redundant command."""
+    hass = build_hass()
+    state = MagicMock()
+    state.state = "off"
+    state.attributes = {"hvac_modes": ["off"], "temperature": 5.0, "min_temp": 5.0, "max_temp": 30.0}
+    hass.states.get = MagicMock(return_value=state)
+
+    await async_turn_off_climate(hass, "climate.trv")
+    hass.services.async_call.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_turn_off_already_off_no_min_temp_attribute_no_command():
+    """Device 'off' without min_temp attribute: no command (safe guard)."""
+    hass = build_hass()
+    state = MagicMock()
+    state.state = "off"
+    state.attributes = {"hvac_modes": ["off"], "temperature": 22.5}
+    hass.states.get = MagicMock(return_value=state)
+
+    await async_turn_off_climate(hass, "climate.trv")
+    hass.services.async_call.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_turn_off_already_off_min_temp_zero_no_command():
+    """Device 'off' with min_temp=0 (Z2M/firmware bug): no command."""
+    hass = build_hass()
+    state = MagicMock()
+    state.state = "off"
+    state.attributes = {"hvac_modes": ["off"], "temperature": 22.5, "min_temp": 0, "max_temp": 30.0}
+    hass.states.get = MagicMock(return_value=state)
+
+    await async_turn_off_climate(hass, "climate.trv")
+    hass.services.async_call.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_turn_off_already_off_setpoint_none_sends_min_temp():
+    """Device 'off' with unknown setpoint (None): send min_temp as safety net."""
+    hass = build_hass()
+    state = MagicMock()
+    state.state = "off"
+    state.attributes = {"hvac_modes": ["off"], "temperature": None, "min_temp": 5.0, "max_temp": 30.0}
+    hass.states.get = MagicMock(return_value=state)
+
+    await async_turn_off_climate(hass, "climate.trv")
+    hass.services.async_call.assert_called_once_with(
+        "climate",
+        "set_temperature",
+        {"entity_id": "climate.trv", "temperature": 5.0},
+        blocking=True,
+        context=ANY,
+    )
+
+
+@pytest.mark.asyncio
+async def test_turn_off_already_off_wavin_sentio_realistic():
+    """Realistic Wavin Sentio: hvac_modes=['off'], state='off', setpoint at comfort_temp."""
+    hass = build_hass()
+    state = MagicMock()
+    state.state = "off"
+    state.attributes = {"hvac_modes": ["off"], "temperature": 22.5, "min_temp": 12.0, "max_temp": 30.0}
+    hass.states.get = MagicMock(return_value=state)
+
+    await async_turn_off_climate(hass, "climate.trv")
+    hass.services.async_call.assert_called_once_with(
+        "climate",
+        "set_temperature",
+        {"entity_id": "climate.trv", "temperature": 12.0},
+        blocking=True,
+        context=ANY,
+    )
+
+
+@pytest.mark.asyncio
 async def test_turn_off_climate_empty_modes_uses_off():
     """Empty hvac_modes list: assume 'off' is supported (backward compat)."""
     hass = build_hass()
@@ -2199,9 +2295,15 @@ async def test_turn_off_cache_invalidated_by_heat_command():
     state.attributes = {"hvac_modes": ["heat", "off"], "temperature": None, "min_temp": 5, "max_temp": 30}
     hass.states.get = MagicMock(return_value=state)
 
-    # Turn off → skipped by state check (already off), but cache gets nothing
+    # Turn off → state is "off", temperature=None, min_temp=5 → safety net sends set_temperature(5.0)
     await async_turn_off_climate(hass, "climate.trv")
-    hass.services.async_call.assert_not_called()
+    hass.services.async_call.assert_called_once_with(
+        "climate",
+        "set_temperature",
+        {"entity_id": "climate.trv", "temperature": 5.0},
+        blocking=True,
+        context=ANY,
+    )
 
     # Now device comes on: state changes to "heat"
     state.state = "heat"
@@ -2212,12 +2314,12 @@ async def test_turn_off_cache_invalidated_by_heat_command():
     )
     # Heat command goes through (cache is empty or has different service)
     await ctrl._call("set_temperature", {"entity_id": "climate.trv", "temperature": 25.0})
-    assert hass.services.async_call.call_count == 1
+    assert hass.services.async_call.call_count == 2
 
     # Turn off again → goes through (state is "heat", no cache for off)
     # Sends set_hvac_mode(off) + defense-in-depth set_temperature(min_temp)
     await async_turn_off_climate(hass, "climate.trv")
-    assert hass.services.async_call.call_count == 3
+    assert hass.services.async_call.call_count == 4
 
 
 @pytest.mark.asyncio
