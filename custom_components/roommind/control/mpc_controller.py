@@ -91,11 +91,71 @@ def clear_command_cache() -> None:
     _last_commands.clear()
 
 
+def _resolve_idle_setpoint(
+    state: Any,
+    fallback_setpoint: float | None,
+    *,
+    area_id: str = "unknown",
+    entity_id: str = "unknown",
+) -> float | None:
+    """Pick the best setpoint to idle a device.
+
+    Returns min(min_temp, fallback_setpoint) when both are usable,
+    or whichever one is available, or None if neither works.
+    """
+    min_temp: float | None = None
+    if state:
+        raw = state.attributes.get("min_temp")
+        if raw is not None:
+            try:
+                val = float(raw)
+            except (ValueError, TypeError):
+                val = -1.0
+            if val > 0:
+                min_temp = val
+            elif fallback_setpoint is None:
+                _LOGGER.warning(
+                    "Area '%s': device '%s' reports min_temp=%s (<= 0), "
+                    "no fallback available — cannot lower setpoint (Z2M/firmware bug?)",
+                    area_id,
+                    entity_id,
+                    raw,
+                )
+
+    if min_temp is not None and fallback_setpoint is not None:
+        return min(min_temp, fallback_setpoint)
+    return min_temp if min_temp is not None else fallback_setpoint
+
+
+async def _send_idle_setpoint(
+    hass: HomeAssistant,
+    entity_id: str,
+    state: Any,
+    setpoint: float,
+) -> None:
+    """Lower a device's temperature setpoint during idle. Best-effort."""
+    current = state.attributes.get("temperature")
+    if current is not None and round(float(current), 1) == round(setpoint, 1):
+        return
+    try:
+        await hass.services.async_call(
+            "climate",
+            "set_temperature",
+            {"entity_id": entity_id, "temperature": setpoint},
+            blocking=True,
+            context=make_roommind_context(),
+        )
+        _last_commands[entity_id] = _cache_entry("set_temperature", {"temperature": setpoint})
+    except Exception:  # noqa: BLE001
+        pass  # Best-effort
+
+
 async def async_turn_off_climate(
     hass: HomeAssistant,
     entity_id: str,
     *,
     area_id: str = "unknown",
+    fallback_setpoint: float | None = None,
 ) -> None:
     """Turn off a climate entity, falling back to min_temp for heat-only devices.
 
@@ -108,28 +168,30 @@ async def async_turn_off_climate(
 
     # Normal path: "off" is supported (or modes unknown → assume supported)
     if not hvac_modes or "off" in hvac_modes:
+        # Permanently-off devices (e.g. Wavin Sentio): hvac_modes only contains
+        # "off", meaning there is no real mode transition.  Heating is controlled
+        # purely via the temperature setpoint.  Sending set_hvac_mode("off") to
+        # these devices can reset the setpoint, undoing the lowering.  Only lower
+        # the setpoint for these devices, never send set_hvac_mode.
+        permanently_off = bool(hvac_modes) and set(hvac_modes) == {"off"}
+
+        effective_setpoint = _resolve_idle_setpoint(
+            state,
+            fallback_setpoint,
+            area_id=area_id,
+            entity_id=entity_id,
+        )
+
         if state and state.state == "off":
-            # Safety net: device may report "off" while retaining a high setpoint
-            # (e.g. Wavin Sentio with hvac_modes=["off"] — set_hvac_mode("heat") is
-            # ignored, so state is permanently "off" and heating is controlled purely
-            # by the temperature setpoint).  Lower the setpoint to min_temp on every
-            # IDLE cycle until it is confirmed low.
-            min_temp_val = state.attributes.get("min_temp")
-            if min_temp_val is not None and float(min_temp_val) > 0:
-                min_temp_f = float(min_temp_val)
-                current_setpoint = state.attributes.get("temperature")
-                if current_setpoint is None or round(float(current_setpoint), 1) != round(min_temp_f, 1):
-                    try:
-                        await hass.services.async_call(
-                            "climate",
-                            "set_temperature",
-                            {"entity_id": entity_id, "temperature": min_temp_f},
-                            blocking=True,
-                            context=make_roommind_context(),
-                        )
-                    except Exception:  # noqa: BLE001
-                        pass  # Best-effort
+            if effective_setpoint is not None:
+                await _send_idle_setpoint(hass, entity_id, state, effective_setpoint)
             return  # already off
+
+        if permanently_off:
+            if state and effective_setpoint is not None:
+                await _send_idle_setpoint(hass, entity_id, state, effective_setpoint)
+            return
+
         # Cache fallback for IR devices (only when device has no reliable state)
         if _should_use_cache(state):
             cached = _last_commands.get(entity_id)
@@ -140,32 +202,8 @@ async def async_turn_off_climate(
         # process temperature changes when in "heat" mode.  Sending the setpoint
         # first (while the device is still active) ensures the valve closes even
         # if set_hvac_mode(off) is later ignored.
-        if state:
-            min_temp = state.attributes.get("min_temp")
-            if min_temp is not None:
-                if float(min_temp) <= 0:
-                    _LOGGER.warning(
-                        "Area '%s': device '%s' reports min_temp=%s (<= 0), "
-                        "skipping defense-in-depth setpoint lowering (Z2M/firmware bug?)",
-                        area_id,
-                        entity_id,
-                        min_temp,
-                    )
-                else:
-                    min_temp_f = float(min_temp)
-                    current_setpoint = state.attributes.get("temperature")
-                    if current_setpoint is None or round(current_setpoint, 1) != round(min_temp_f, 1):
-                        try:
-                            await hass.services.async_call(
-                                "climate",
-                                "set_temperature",
-                                {"entity_id": entity_id, "temperature": min_temp_f},
-                                blocking=True,
-                                context=make_roommind_context(),
-                            )
-                            _last_commands[entity_id] = _cache_entry("set_temperature", {"temperature": min_temp_f})
-                        except Exception:  # noqa: BLE001
-                            pass  # Best-effort; set_hvac_mode(off) will follow
+        if state and effective_setpoint is not None:
+            await _send_idle_setpoint(hass, entity_id, state, effective_setpoint)
 
         try:
             await hass.services.async_call(
@@ -289,6 +327,12 @@ async def async_idle_device(
     """
     idle_action, idle_fan_mode = get_idle_action(devices, entity_id)
 
+    # Fallback low setpoint (in HA display units) for devices where min_temp
+    # is not effective (e.g. Wavin Sentio with min_temp=0 or high min_temp).
+    fallback_temp: float | None = None
+    if targets is not None and targets.heat is not None:
+        fallback_temp = celsius_to_ha_temp(hass, targets.heat - DEFAULT_IDLE_SETBACK_OFFSET)
+
     # --- SETBACK branch ---
     if idle_action == IDLE_ACTION_SETBACK:
         state = hass.states.get(entity_id)
@@ -302,7 +346,7 @@ async def async_idle_device(
                 current_hvac,
                 targets,
             )
-            await async_turn_off_climate(hass, entity_id, area_id=area_id)
+            await async_turn_off_climate(hass, entity_id, area_id=area_id, fallback_setpoint=fallback_temp)
             return
 
         # Compute setback temperature
@@ -311,7 +355,7 @@ async def async_idle_device(
         elif current_hvac == "cool" and targets.cool is not None:
             setback_temp = targets.cool + DEFAULT_IDLE_SETBACK_OFFSET
         else:
-            await async_turn_off_climate(hass, entity_id, area_id=area_id)
+            await async_turn_off_climate(hass, entity_id, area_id=area_id, fallback_setpoint=fallback_temp)
             return
 
         # Convert to HA units FIRST, then clamp to device min/max
@@ -370,7 +414,7 @@ async def async_idle_device(
 
     # --- OFF branch ---
     if idle_action != IDLE_ACTION_FAN_ONLY:
-        await async_turn_off_climate(hass, entity_id, area_id=area_id)
+        await async_turn_off_climate(hass, entity_id, area_id=area_id, fallback_setpoint=fallback_temp)
         return
 
     state = hass.states.get(entity_id)
@@ -382,7 +426,7 @@ async def async_idle_device(
             area_id,
             entity_id,
         )
-        await async_turn_off_climate(hass, entity_id, area_id=area_id)
+        await async_turn_off_climate(hass, entity_id, area_id=area_id, fallback_setpoint=fallback_temp)
         return
 
     # Redundancy check: already in fan_only with correct fan_mode

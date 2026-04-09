@@ -52,6 +52,8 @@ def _build_device_states(hass: HomeAssistant, devices: list[dict]) -> list[dict[
             entry["hvac_modes"] = attrs.get("hvac_modes", [])
             entry["current_temperature"] = attrs.get("current_temperature")
             entry["temperature"] = attrs.get("temperature")
+            entry["min_temp"] = attrs.get("min_temp")
+            entry["max_temp"] = attrs.get("max_temp")
             entry["target_temp_low"] = attrs.get("target_temp_low")
             entry["target_temp_high"] = attrs.get("target_temp_high")
             entry["fan_mode"] = attrs.get("fan_mode")
