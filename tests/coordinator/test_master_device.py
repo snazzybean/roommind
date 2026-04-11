@@ -9,6 +9,7 @@ import pytest
 from custom_components.roommind.const import MODE_IDLE
 
 from .conftest import (
+    MANAGED_ROOM,
     SAMPLE_ROOM,
     _create_coordinator,
     _make_store_mock,
@@ -1087,3 +1088,682 @@ class TestEnforceUniformMode:
             and c.args[2].get("entity_id") not in ("climate.living_trv",)
         ]
         assert len(master_calls) == 0
+
+
+# ---------------------------------------------------------------------------
+# Helpers for ducted multi-zone (AirTouch) wake tests
+# ---------------------------------------------------------------------------
+
+
+def _make_ac_zone_state(hvac_mode="off", hvac_modes=None, current_temperature=20.0):
+    """Mock state for a ducted AC zone with limited modes."""
+    if hvac_modes is None:
+        hvac_modes = ["off", "fan_only"]
+    state = MagicMock()
+    state.state = hvac_mode
+    state.attributes = {
+        "hvac_modes": hvac_modes,
+        "min_temp": 16,
+        "max_temp": 30,
+        "temperature": 22.0,
+        "current_temperature": current_temperature,
+    }
+    return state
+
+
+def _ac_room(area_id, entity_id, **overrides):
+    """Create an AC-only room dict for ducted zone testing.
+
+    Keeps SAMPLE_ROOM's sensor names so make_mock_states_get works.
+    """
+    room = {
+        **SAMPLE_ROOM,
+        "area_id": area_id,
+        "thermostats": [],
+        "acs": [entity_id],
+        "devices": [
+            {
+                "entity_id": entity_id,
+                "type": "ac",
+                "role": "auto",
+                "heating_system_type": "",
+            }
+        ],
+    }
+    room.update(overrides)
+    return room
+
+
+class TestMasterZoneWake:
+    """Tests for ducted multi-zone pre-activation (zone wake) logic."""
+
+    @pytest.mark.asyncio
+    async def test_wake_zone_when_all_off_heating(self, hass, mock_config_entry):
+        """fan_only sent to a zone before master heat when all zones are off."""
+        room = _ac_room("room_a", "climate.zone_a")
+        store = _make_store_mock({"room_a": room})
+        store.get_settings.return_value = {
+            "climate_control_active": True,
+            "compressor_groups": [
+                {
+                    "id": "g1",
+                    "name": "G1",
+                    "members": ["climate.zone_a"],
+                    "master_entity": "climate.outdoor",
+                }
+            ],
+        }
+
+        master_state = _make_master_state("off")
+        zone_state = _make_ac_zone_state("off")
+
+        base_get = make_mock_states_get(temp="18.0")
+
+        def states_get(eid):
+            if eid == "climate.outdoor":
+                return master_state
+            if eid == "climate.zone_a":
+                return zone_state
+            return base_get(eid)
+
+        hass.states.get = MagicMock(side_effect=states_get)
+        hass.services.async_call = AsyncMock()
+        hass.data = {"roommind": {"store": store}}
+
+        coordinator = _create_coordinator(hass, mock_config_entry)
+        await coordinator._async_update_data()
+
+        calls = hass.services.async_call.call_args_list
+        fan_only_calls = [
+            c
+            for c in calls
+            if len(c.args) >= 3
+            and c.args[0] == "climate"
+            and c.args[1] == "set_hvac_mode"
+            and c.args[2].get("hvac_mode") == "fan_only"
+            and c.args[2].get("entity_id") == "climate.zone_a"
+        ]
+        master_heat_calls = [
+            c
+            for c in calls
+            if len(c.args) >= 3
+            and c.args[0] == "climate"
+            and c.args[1] == "set_hvac_mode"
+            and c.args[2].get("entity_id") == "climate.outdoor"
+            and c.args[2].get("hvac_mode") == "heat"
+        ]
+        assert len(fan_only_calls) >= 1, "Zone should be woken with fan_only"
+        assert len(master_heat_calls) >= 1, "Master should be set to heat"
+
+        fan_idx = calls.index(fan_only_calls[0])
+        master_idx = calls.index(master_heat_calls[0])
+        assert fan_idx < master_idx, "fan_only must come before master heat"
+
+    @pytest.mark.asyncio
+    async def test_wake_zone_when_all_off_cooling(self, hass, mock_config_entry):
+        """fan_only sent to zone before master cool when all zones off."""
+        room = _ac_room("room_a", "climate.zone_a", climate_mode="cool_only", comfort_cool=24.0, eco_cool=27.0)
+        store = _make_store_mock({"room_a": room})
+        store.get_settings.return_value = {
+            "climate_control_active": True,
+            "compressor_groups": [
+                {
+                    "id": "g1",
+                    "name": "G1",
+                    "members": ["climate.zone_a"],
+                    "master_entity": "climate.outdoor",
+                }
+            ],
+        }
+
+        master_state = _make_master_state("off")
+        zone_state = _make_ac_zone_state("off")
+
+        base_get = make_mock_states_get(temp="28.0")
+
+        def states_get(eid):
+            if eid == "climate.outdoor":
+                return master_state
+            if eid == "climate.zone_a":
+                return zone_state
+            return base_get(eid)
+
+        hass.states.get = MagicMock(side_effect=states_get)
+        hass.services.async_call = AsyncMock()
+        hass.data = {"roommind": {"store": store}}
+
+        coordinator = _create_coordinator(hass, mock_config_entry)
+        await coordinator._async_update_data()
+
+        calls = hass.services.async_call.call_args_list
+        fan_only_calls = [
+            c
+            for c in calls
+            if len(c.args) >= 3
+            and c.args[0] == "climate"
+            and c.args[1] == "set_hvac_mode"
+            and c.args[2].get("hvac_mode") == "fan_only"
+            and c.args[2].get("entity_id") == "climate.zone_a"
+        ]
+        master_cool_calls = [
+            c
+            for c in calls
+            if len(c.args) >= 3
+            and c.args[0] == "climate"
+            and c.args[1] == "set_hvac_mode"
+            and c.args[2].get("entity_id") == "climate.outdoor"
+            and c.args[2].get("hvac_mode") == "cool"
+        ]
+        assert len(fan_only_calls) >= 1
+        assert len(master_cool_calls) >= 1
+
+    @pytest.mark.asyncio
+    async def test_no_wake_when_zone_already_active(self, hass, mock_config_entry):
+        """No wake when one zone is already in fan_only."""
+        room = _ac_room("room_a", "climate.zone_a")
+        store = _make_store_mock({"room_a": room})
+        store.get_settings.return_value = {
+            "climate_control_active": True,
+            "compressor_groups": [
+                {
+                    "id": "g1",
+                    "name": "G1",
+                    "members": ["climate.zone_a"],
+                    "master_entity": "climate.outdoor",
+                }
+            ],
+        }
+
+        master_state = _make_master_state("off")
+        zone_state = _make_ac_zone_state("fan_only", hvac_modes=["off", "fan_only"])
+
+        base_get = make_mock_states_get(temp="18.0")
+
+        def states_get(eid):
+            if eid == "climate.outdoor":
+                return master_state
+            if eid == "climate.zone_a":
+                return zone_state
+            return base_get(eid)
+
+        hass.states.get = MagicMock(side_effect=states_get)
+        hass.services.async_call = AsyncMock()
+        hass.data = {"roommind": {"store": store}}
+
+        coordinator = _create_coordinator(hass, mock_config_entry)
+        await coordinator._async_update_data()
+
+        wake_calls = [
+            c
+            for c in hass.services.async_call.call_args_list
+            if len(c.args) >= 3
+            and c.args[0] == "climate"
+            and c.args[1] == "set_hvac_mode"
+            and c.args[2].get("hvac_mode") == "fan_only"
+            and c.args[2].get("entity_id") == "climate.zone_a"
+        ]
+        assert len(wake_calls) == 0, "No wake expected when zone already active"
+
+    @pytest.mark.asyncio
+    async def test_no_wake_when_master_already_correct(self, hass, mock_config_entry):
+        """No wake when master is already in correct mode (redundancy)."""
+        room = _ac_room("room_a", "climate.zone_a")
+        store = _make_store_mock({"room_a": room})
+        store.get_settings.return_value = {
+            "climate_control_active": True,
+            "compressor_groups": [
+                {
+                    "id": "g1",
+                    "name": "G1",
+                    "members": ["climate.zone_a"],
+                    "master_entity": "climate.outdoor",
+                }
+            ],
+        }
+
+        master_state = _make_master_state("heat")
+        zone_state = _make_ac_zone_state("off")
+
+        base_get = make_mock_states_get(temp="18.0")
+
+        def states_get(eid):
+            if eid == "climate.outdoor":
+                return master_state
+            if eid == "climate.zone_a":
+                return zone_state
+            return base_get(eid)
+
+        hass.states.get = MagicMock(side_effect=states_get)
+        hass.services.async_call = AsyncMock()
+        hass.data = {"roommind": {"store": store}}
+
+        coordinator = _create_coordinator(hass, mock_config_entry)
+        await coordinator._async_update_data()
+
+        wake_calls = [
+            c
+            for c in hass.services.async_call.call_args_list
+            if len(c.args) >= 3
+            and c.args[0] == "climate"
+            and c.args[1] == "set_hvac_mode"
+            and c.args[2].get("hvac_mode") == "fan_only"
+        ]
+        assert len(wake_calls) == 0, "No wake when master is already in correct mode"
+
+    @pytest.mark.asyncio
+    async def test_no_wake_on_heat_to_cool_transition(self, hass, mock_config_entry):
+        """No wake on heat->cool switch (zones already active)."""
+        room = _ac_room("room_a", "climate.zone_a", climate_mode="cool_only", comfort_cool=24.0, eco_cool=27.0)
+        store = _make_store_mock({"room_a": room})
+        store.get_settings.return_value = {
+            "climate_control_active": True,
+            "compressor_groups": [
+                {
+                    "id": "g1",
+                    "name": "G1",
+                    "members": ["climate.zone_a"],
+                    "master_entity": "climate.outdoor",
+                }
+            ],
+        }
+
+        master_state = _make_master_state("heat")
+        zone_state = _make_ac_zone_state("heat", hvac_modes=["off", "heat", "cool", "fan_only"])
+
+        base_get = make_mock_states_get(temp="28.0")
+
+        def states_get(eid):
+            if eid == "climate.outdoor":
+                return master_state
+            if eid == "climate.zone_a":
+                return zone_state
+            return base_get(eid)
+
+        hass.states.get = MagicMock(side_effect=states_get)
+        hass.services.async_call = AsyncMock()
+        hass.data = {"roommind": {"store": store}}
+
+        coordinator = _create_coordinator(hass, mock_config_entry)
+        coordinator._compressor_manager.load_groups(store.get_settings.return_value["compressor_groups"])
+        coordinator._compressor_manager.set_master_action("g1", "heat")
+
+        await coordinator._async_update_data()
+
+        wake_calls = [
+            c
+            for c in hass.services.async_call.call_args_list
+            if len(c.args) >= 3
+            and c.args[0] == "climate"
+            and c.args[1] == "set_hvac_mode"
+            and c.args[2].get("hvac_mode") == "fan_only"
+        ]
+        assert len(wake_calls) == 0, "No wake on heat->cool (zones already active)"
+
+    @pytest.mark.asyncio
+    async def test_no_wake_on_idle_transition(self, hass, mock_config_entry):
+        """No wake when transitioning to idle."""
+        room = _ac_room("room_a", "climate.zone_a", comfort_temp=18.0, comfort_heat=18.0, eco_temp=15.0)
+        store = _make_store_mock({"room_a": room})
+        store.get_settings.return_value = {
+            "climate_control_active": True,
+            "compressor_groups": [
+                {
+                    "id": "g1",
+                    "name": "G1",
+                    "members": ["climate.zone_a"],
+                    "master_entity": "climate.outdoor",
+                }
+            ],
+        }
+
+        master_state = _make_master_state("heat")
+        zone_state = _make_ac_zone_state("heat", hvac_modes=["off", "heat", "cool", "fan_only"])
+
+        base_get = make_mock_states_get(temp="21.0")
+
+        def states_get(eid):
+            if eid == "climate.outdoor":
+                return master_state
+            if eid == "climate.zone_a":
+                return zone_state
+            return base_get(eid)
+
+        hass.states.get = MagicMock(side_effect=states_get)
+        hass.services.async_call = AsyncMock()
+        hass.data = {"roommind": {"store": store}}
+
+        coordinator = _create_coordinator(hass, mock_config_entry)
+        coordinator._compressor_manager.load_groups(store.get_settings.return_value["compressor_groups"])
+        coordinator._compressor_manager.set_master_action("g1", "heat")
+
+        await coordinator._async_update_data()
+
+        wake_calls = [
+            c
+            for c in hass.services.async_call.call_args_list
+            if len(c.args) >= 3
+            and c.args[0] == "climate"
+            and c.args[1] == "set_hvac_mode"
+            and c.args[2].get("hvac_mode") == "fan_only"
+        ]
+        assert len(wake_calls) == 0, "No wake on idle transition"
+
+    @pytest.mark.asyncio
+    async def test_wake_prefers_zone_with_demand(self, hass, mock_config_entry):
+        """Wake selects zone from a room with heating demand."""
+        room_a = _ac_room("room_a", "climate.zone_a")
+        room_b = _ac_room("room_b", "climate.zone_b", comfort_temp=15.0, comfort_heat=15.0, eco_temp=12.0)
+        store = _make_store_mock({"room_a": room_a, "room_b": room_b})
+        store.get_settings.return_value = {
+            "climate_control_active": True,
+            "compressor_groups": [
+                {
+                    "id": "g1",
+                    "name": "G1",
+                    "members": ["climate.zone_a", "climate.zone_b"],
+                    "master_entity": "climate.outdoor",
+                }
+            ],
+        }
+
+        master_state = _make_master_state("off")
+        zone_a_state = _make_ac_zone_state("off")
+        zone_b_state = _make_ac_zone_state("off")
+
+        base_get = make_mock_states_get(temp="18.0")
+
+        def states_get(eid):
+            if eid == "climate.outdoor":
+                return master_state
+            if eid == "climate.zone_a":
+                return zone_a_state
+            if eid == "climate.zone_b":
+                return zone_b_state
+            return base_get(eid)
+
+        hass.states.get = MagicMock(side_effect=states_get)
+        hass.services.async_call = AsyncMock()
+        hass.data = {"roommind": {"store": store}}
+
+        coordinator = _create_coordinator(hass, mock_config_entry)
+        await coordinator._async_update_data()
+
+        wake_calls = [
+            c
+            for c in hass.services.async_call.call_args_list
+            if len(c.args) >= 3
+            and c.args[0] == "climate"
+            and c.args[1] == "set_hvac_mode"
+            and c.args[2].get("hvac_mode") == "fan_only"
+        ]
+        assert len(wake_calls) >= 1
+        assert wake_calls[0].args[2]["entity_id"] == "climate.zone_a", (
+            "Should pick zone_a (room has demand) not zone_b (room is idle at target)"
+        )
+
+    @pytest.mark.asyncio
+    async def test_no_wake_when_no_fan_only(self, hass, mock_config_entry):
+        """No wake when no zone supports fan_only; master command still sent."""
+        room = _ac_room("room_a", "climate.zone_a")
+        store = _make_store_mock({"room_a": room})
+        store.get_settings.return_value = {
+            "climate_control_active": True,
+            "compressor_groups": [
+                {
+                    "id": "g1",
+                    "name": "G1",
+                    "members": ["climate.zone_a"],
+                    "master_entity": "climate.outdoor",
+                }
+            ],
+        }
+
+        master_state = _make_master_state("off")
+        zone_state = _make_ac_zone_state("off", hvac_modes=["off"])
+
+        base_get = make_mock_states_get(temp="18.0")
+
+        def states_get(eid):
+            if eid == "climate.outdoor":
+                return master_state
+            if eid == "climate.zone_a":
+                return zone_state
+            return base_get(eid)
+
+        hass.states.get = MagicMock(side_effect=states_get)
+        hass.services.async_call = AsyncMock()
+        hass.data = {"roommind": {"store": store}}
+
+        coordinator = _create_coordinator(hass, mock_config_entry)
+        await coordinator._async_update_data()
+
+        wake_calls = [
+            c
+            for c in hass.services.async_call.call_args_list
+            if len(c.args) >= 3
+            and c.args[0] == "climate"
+            and c.args[1] == "set_hvac_mode"
+            and c.args[2].get("hvac_mode") == "fan_only"
+        ]
+        assert len(wake_calls) == 0, "No fan_only available"
+
+        master_calls = [
+            c
+            for c in hass.services.async_call.call_args_list
+            if len(c.args) >= 3
+            and c.args[0] == "climate"
+            and c.args[1] == "set_hvac_mode"
+            and c.args[2].get("entity_id") == "climate.outdoor"
+            and c.args[2].get("hvac_mode") == "heat"
+        ]
+        assert len(master_calls) >= 1, "Master command still attempted"
+
+    @pytest.mark.asyncio
+    async def test_wake_failure_does_not_block_master(self, hass, mock_config_entry):
+        """Master command proceeds even when wake raises an exception."""
+        room = _ac_room("room_a", "climate.zone_a")
+        store = _make_store_mock({"room_a": room})
+        store.get_settings.return_value = {
+            "climate_control_active": True,
+            "compressor_groups": [
+                {
+                    "id": "g1",
+                    "name": "G1",
+                    "members": ["climate.zone_a"],
+                    "master_entity": "climate.outdoor",
+                }
+            ],
+        }
+
+        master_state = _make_master_state("off")
+        zone_state = _make_ac_zone_state("off")
+
+        base_get = make_mock_states_get(temp="18.0")
+
+        def states_get(eid):
+            if eid == "climate.outdoor":
+                return master_state
+            if eid == "climate.zone_a":
+                return zone_state
+            return base_get(eid)
+
+        hass.states.get = MagicMock(side_effect=states_get)
+
+        original_calls = []
+
+        async def selective_fail(*args, **kwargs):
+            original_calls.append((args, kwargs))
+            if (
+                len(args) >= 3
+                and args[0] == "climate"
+                and args[1] == "set_hvac_mode"
+                and args[2].get("hvac_mode") == "fan_only"
+            ):
+                raise RuntimeError("AirTouch rejected fan_only")
+
+        hass.services.async_call = AsyncMock(side_effect=selective_fail)
+        hass.data = {"roommind": {"store": store}}
+
+        coordinator = _create_coordinator(hass, mock_config_entry)
+        await coordinator._async_update_data()
+
+        master_calls = [
+            (a, k)
+            for a, k in original_calls
+            if len(a) >= 3
+            and a[0] == "climate"
+            and a[1] == "set_hvac_mode"
+            and a[2].get("entity_id") == "climate.outdoor"
+            and a[2].get("hvac_mode") == "heat"
+        ]
+        assert len(master_calls) >= 1, "Master heat command should still be sent"
+
+    @pytest.mark.asyncio
+    async def test_wake_updates_compressor_state(self, hass, mock_config_entry):
+        """Wake updates compressor manager active_members."""
+        room = _ac_room("room_a", "climate.zone_a")
+        store = _make_store_mock({"room_a": room})
+        store.get_settings.return_value = {
+            "climate_control_active": True,
+            "compressor_groups": [
+                {
+                    "id": "g1",
+                    "name": "G1",
+                    "members": ["climate.zone_a"],
+                    "master_entity": "climate.outdoor",
+                }
+            ],
+        }
+
+        master_state = _make_master_state("off")
+        zone_state = _make_ac_zone_state("off")
+
+        base_get = make_mock_states_get(temp="18.0")
+
+        def states_get(eid):
+            if eid == "climate.outdoor":
+                return master_state
+            if eid == "climate.zone_a":
+                return zone_state
+            return base_get(eid)
+
+        hass.states.get = MagicMock(side_effect=states_get)
+        hass.services.async_call = AsyncMock()
+        hass.data = {"roommind": {"store": store}}
+
+        coordinator = _create_coordinator(hass, mock_config_entry)
+        await coordinator._async_update_data()
+
+        state = coordinator._compressor_manager.get_state("g1")
+        assert "climate.zone_a" in state.active_members
+
+    @pytest.mark.asyncio
+    async def test_no_wake_for_script_only_group(self, hass, mock_config_entry):
+        """No wake for groups with action_script but no master_entity."""
+        room = _ac_room("room_a", "climate.zone_a")
+        store = _make_store_mock({"room_a": room})
+        store.get_settings.return_value = {
+            "climate_control_active": True,
+            "compressor_groups": [
+                {
+                    "id": "g1",
+                    "name": "G1",
+                    "members": ["climate.zone_a"],
+                    "action_script": "script.ac_control",
+                }
+            ],
+        }
+
+        zone_state = _make_ac_zone_state("off")
+        base_get = make_mock_states_get(temp="18.0")
+
+        def states_get(eid):
+            if eid == "climate.zone_a":
+                return zone_state
+            if eid == "script.ac_control":
+                s = MagicMock()
+                s.state = "off"
+                return s
+            return base_get(eid)
+
+        hass.states.get = MagicMock(side_effect=states_get)
+        hass.services.async_call = AsyncMock()
+        hass.data = {"roommind": {"store": store}}
+
+        coordinator = _create_coordinator(hass, mock_config_entry)
+        await coordinator._async_update_data()
+
+        wake_calls = [
+            c
+            for c in hass.services.async_call.call_args_list
+            if len(c.args) >= 3
+            and c.args[0] == "climate"
+            and c.args[1] == "set_hvac_mode"
+            and c.args[2].get("hvac_mode") == "fan_only"
+        ]
+        assert len(wake_calls) == 0
+
+    @pytest.mark.asyncio
+    async def test_commanded_mode_drives_master_in_managed_mode(self, hass, mock_config_entry):
+        """In Managed Mode, commanded_mode (not display mode) drives master demand."""
+        room = {
+            **MANAGED_ROOM,
+            "area_id": "room_a",
+            "thermostats": [],
+            "acs": ["climate.zone_a"],
+            "devices": [
+                {
+                    "entity_id": "climate.zone_a",
+                    "type": "ac",
+                    "role": "auto",
+                    "heating_system_type": "",
+                }
+            ],
+            "temperature_sensor": "",
+            "humidity_sensor": "",
+            "schedules": [{"entity_id": "schedule.room_a_heating"}],
+        }
+        store = _make_store_mock({"room_a": room})
+        store.get_settings.return_value = {
+            "climate_control_active": True,
+            "compressor_groups": [
+                {
+                    "id": "g1",
+                    "name": "G1",
+                    "members": ["climate.zone_a"],
+                    "master_entity": "climate.outdoor",
+                }
+            ],
+        }
+
+        master_state = _make_master_state("off")
+        zone_state = _make_ac_zone_state("off")
+
+        base_get = make_mock_states_get(temp="18.0")
+
+        def states_get(eid):
+            if eid == "climate.outdoor":
+                return master_state
+            if eid == "climate.zone_a":
+                return zone_state
+            return base_get(eid)
+
+        hass.states.get = MagicMock(side_effect=states_get)
+        hass.services.async_call = AsyncMock()
+        hass.data = {"roommind": {"store": store}}
+
+        coordinator = _create_coordinator(hass, mock_config_entry)
+        await coordinator._async_update_data()
+
+        master_heat_calls = [
+            c
+            for c in hass.services.async_call.call_args_list
+            if len(c.args) >= 3
+            and c.args[0] == "climate"
+            and c.args[1] == "set_hvac_mode"
+            and c.args[2].get("entity_id") == "climate.outdoor"
+            and c.args[2].get("hvac_mode") == "heat"
+        ]
+        assert len(master_heat_calls) >= 1, (
+            "Master must receive heat even though device shows idle (commanded_mode=heating)"
+        )

@@ -962,6 +962,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             "heat_target": targets.heat,
             "cool_target": targets.cool,
             "mode": display_mode,
+            "commanded_mode": mode,
             "heating_power": round(display_pf * 100) if display_mode != MODE_IDLE else 0,
             "device_setpoint": self._compute_device_setpoint_orchestrated(
                 heat_source_plan,
@@ -1518,7 +1519,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             if device_eids & member_set:
                 rs = room_states.get(area_id)
                 if rs:
-                    modes.append(rs.get("mode", MODE_IDLE))
+                    modes.append(rs.get("commanded_mode", rs.get("mode", MODE_IDLE)))
         return modes
 
     def _resolve_master_hvac_mode(self, master_entity: str, action: str) -> str | None:
@@ -1549,6 +1550,86 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             supported,
         )
         return None
+
+    async def _async_wake_member_zone(
+        self,
+        group: CompressorGroupConfig,
+        room_states: dict[str, dict],
+        rooms_config: dict[str, dict],
+    ) -> None:
+        """Pre-activate a member zone for ducted multi-zone systems.
+
+        Ducted systems (e.g. AirTouch) require at least one active zone
+        before the outdoor unit can start.  When all zones are off, set
+        one to fan_only (always available) to enable outdoor unit startup.
+        """
+        for eid in group.members:
+            state = self.hass.states.get(eid)
+            if state is not None and state.state not in ("off", "unavailable", "unknown"):
+                return
+
+        member_set = set(group.members)
+        wake_eid: str | None = None
+
+        for area_id, room in rooms_config.items():
+            if not room.get("climate_control_enabled", True):
+                continue
+            if room.get("is_outdoor", False):
+                continue
+            rs = room_states.get(area_id)
+            if not rs:
+                continue
+            commanded = rs.get("commanded_mode", rs.get("mode", MODE_IDLE))
+            if commanded == MODE_IDLE:
+                continue
+            for dev in room.get("devices", []):
+                eid = dev.get("entity_id", "")
+                if eid not in member_set:
+                    continue
+                zone_state = self.hass.states.get(eid)
+                if zone_state and "fan_only" in (zone_state.attributes.get("hvac_modes") or []):
+                    wake_eid = eid
+                    break
+            if wake_eid:
+                break
+
+        if not wake_eid:
+            for eid in group.members:
+                zone_state = self.hass.states.get(eid)
+                if zone_state and "fan_only" in (zone_state.attributes.get("hvac_modes") or []):
+                    wake_eid = eid
+                    break
+
+        if not wake_eid:
+            _LOGGER.debug(
+                "Group '%s': no zone supports fan_only for pre-activation",
+                group.name,
+            )
+            return
+
+        try:
+            await self.hass.services.async_call(
+                "climate",
+                "set_hvac_mode",
+                {"entity_id": wake_eid, "hvac_mode": "fan_only"},
+                blocking=True,
+                context=make_roommind_context(),
+            )
+            self._compressor_manager.update_member(wake_eid, True)
+            _LOGGER.debug(
+                "Master '%s' (group '%s'): pre-activated zone '%s' (fan_only)",
+                group.master_entity,
+                group.name,
+                wake_eid,
+            )
+        except Exception:  # noqa: BLE001
+            _LOGGER.warning(
+                "Master '%s' (group '%s'): failed to pre-activate zone '%s'",
+                group.master_entity,
+                group.name,
+                wake_eid,
+                exc_info=True,
+            )
 
     async def _async_control_master_devices(
         self,
@@ -1630,6 +1711,11 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                         if new_action != prev_action and group.action_script:
                             await self._call_action_script(group, state, new_action)
                         continue
+
+                    # Pre-activate a zone for ducted multi-zone systems where
+                    # the outdoor unit requires at least one active zone (#135).
+                    if new_action != "idle" and (prev_action is None or prev_action == "idle"):
+                        await self._async_wake_member_zone(group, room_states, rooms_config)
 
                     # Send climate command
                     try:
