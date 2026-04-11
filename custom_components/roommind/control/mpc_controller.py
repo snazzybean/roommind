@@ -53,6 +53,7 @@ _SENTINEL: object = object()  # default marker for backward-compat keyword detec
 # Persists across MPCController instances (created fresh each 30s cycle),
 # resets on integration reload (module reimport).
 _last_commands: dict[str, dict[str, Any]] = {}
+_setpoint_override_warned: set[str] = set()
 
 
 def _cache_entry(service: str, data: dict) -> dict[str, Any]:
@@ -89,6 +90,7 @@ def _snap_to_step(value: float, step: float | None) -> float:
 def clear_command_cache() -> None:
     """Clear the sent-command cache (for tests)."""
     _last_commands.clear()
+    _setpoint_override_warned.clear()
 
 
 def _resolve_idle_setpoint(
@@ -132,11 +134,35 @@ async def _send_idle_setpoint(
     entity_id: str,
     state: Any,
     setpoint: float,
+    *,
+    area_id: str = "unknown",
 ) -> None:
     """Lower a device's temperature setpoint during idle. Best-effort."""
     current = state.attributes.get("temperature")
     if current is not None and round(float(current), 1) == round(setpoint, 1):
+        _setpoint_override_warned.discard(entity_id)
         return
+
+    cached = _last_commands.get(entity_id)
+    if (
+        cached
+        and cached.get("service") == "set_temperature"
+        and cached.get("temperature") is not None
+        and round(cached["temperature"], 1) == round(setpoint, 1)
+        and current is not None
+    ):
+        if entity_id not in _setpoint_override_warned:
+            _LOGGER.warning(
+                "Area '%s': device '%s' setpoint is %.1f but RoomMind previously sent %.1f — "
+                "an external controller may be overriding the setpoint. "
+                "Check the device's own schedule/minimum temperature settings",
+                area_id,
+                entity_id,
+                float(current),
+                setpoint,
+            )
+            _setpoint_override_warned.add(entity_id)
+
     try:
         await hass.services.async_call(
             "climate",
@@ -147,7 +173,13 @@ async def _send_idle_setpoint(
         )
         _last_commands[entity_id] = _cache_entry("set_temperature", {"temperature": setpoint})
     except Exception:  # noqa: BLE001
-        pass  # Best-effort
+        _LOGGER.warning(
+            "Area '%s': climate.set_temperature(%.1f) failed on '%s'",
+            area_id,
+            setpoint,
+            entity_id,
+            exc_info=True,
+        )
 
 
 async def async_turn_off_climate(
@@ -184,12 +216,12 @@ async def async_turn_off_climate(
 
         if state and state.state == "off":
             if effective_setpoint is not None:
-                await _send_idle_setpoint(hass, entity_id, state, effective_setpoint)
+                await _send_idle_setpoint(hass, entity_id, state, effective_setpoint, area_id=area_id)
             return  # already off
 
         if permanently_off:
             if state and effective_setpoint is not None:
-                await _send_idle_setpoint(hass, entity_id, state, effective_setpoint)
+                await _send_idle_setpoint(hass, entity_id, state, effective_setpoint, area_id=area_id)
             return
 
         # Cache fallback for IR devices (only when device has no reliable state)
@@ -203,7 +235,7 @@ async def async_turn_off_climate(
         # first (while the device is still active) ensures the valve closes even
         # if set_hvac_mode(off) is later ignored.
         if state and effective_setpoint is not None:
-            await _send_idle_setpoint(hass, entity_id, state, effective_setpoint)
+            await _send_idle_setpoint(hass, entity_id, state, effective_setpoint, area_id=area_id)
 
         try:
             await hass.services.async_call(
