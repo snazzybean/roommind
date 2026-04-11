@@ -174,6 +174,8 @@ class TestRoomMindCoordinator:
         hass.services.async_call = AsyncMock()
 
         coordinator = _create_coordinator(hass, mock_config_entry)
+        # Mark room as already known (simulates prior cycle with window closed)
+        coordinator._window_manager._seen.add("living_room_abc12345")
         data = await coordinator._async_update_data()
 
         room_state = data["rooms"]["living_room_abc12345"]
@@ -200,6 +202,7 @@ class TestRoomMindCoordinator:
 
         coordinator = _create_coordinator(hass, mock_config_entry)
         # Pre-set: window has been open for 130s (exceeds 120s delay)
+        coordinator._window_manager._seen.add("living_room_abc12345")
         coordinator._window_manager._open_since["living_room_abc12345"] = time.time() - 130
         data = await coordinator._async_update_data()
 
@@ -287,6 +290,8 @@ class TestRoomMindCoordinator:
         hass.services.async_call = AsyncMock()
 
         coordinator = _create_coordinator(hass, mock_config_entry)
+        # Mark room as already known (simulates prior cycle with window closed)
+        coordinator._window_manager._seen.add("living_room_abc12345")
 
         with patch.object(
             coordinator._model_manager,
@@ -438,6 +443,8 @@ class TestRoomMindCoordinator:
         hass.services.async_call = AsyncMock()
 
         coordinator = _create_coordinator(hass, mock_config_entry)
+        # Mark room as already known (simulates prior cycle with window closed)
+        coordinator._window_manager._seen.add("living_room_abc12345")
 
         # Window opens
         window_state = MagicMock()
@@ -481,3 +488,4 @@ class TestRoomMindCoordinator:
         assert area_id not in coordinator._window_manager._open_since
         assert area_id not in coordinator._window_manager._closed_since
         assert area_id not in coordinator._window_manager._paused
+        assert area_id not in coordinator._window_manager._seen

@@ -60,6 +60,8 @@ class TestWindowPause:
         """With a 60s open delay, window opens but heating continues on first cycle."""
         room = {**ROOM_WITH_WINDOW, "window_open_delay": 60}
         await setup_room(real_store, room)
+        # Mark room as already known (simulates prior cycle with window closed)
+        coordinator._window_manager._seen.add("living_room")
         coordinator.hass.states.get = MagicMock(
             side_effect=make_hass_states(
                 extra={"binary_sensor.window_living": "on"},
