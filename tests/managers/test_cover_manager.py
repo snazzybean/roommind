@@ -74,6 +74,7 @@ async def test_room_config_has_cover_defaults():
     assert room["cover_schedule_selector_entity"] == ""
     assert room["covers_night_close"] is False
     assert room["covers_night_position"] == 0
+    assert room["covers_snap_deploy"] is False
 
 
 # ── Shading factor ─────────────────────────────────────────────────────
@@ -199,6 +200,43 @@ def test_min_position_respected():
     d = mgr.evaluate("lr", predicted_peak_temp=35.0, target_temp=22.0, **kwargs)
     assert d.changed is True
     assert d.target_position >= 30
+
+
+def test_snap_deploy_jumps_to_min_position():
+    mgr = CoverManager()
+    d = mgr.evaluate("lr", predicted_peak_temp=25.0, target_temp=22.0, covers_snap_deploy=True, **_BASE_KWARGS)
+    assert d.changed is True
+    assert d.target_position == 0
+
+
+def test_snap_deploy_respects_custom_min_position():
+    mgr = CoverManager()
+    kwargs = {**_BASE_KWARGS, "covers_min_position": 20}
+    d = mgr.evaluate("lr", predicted_peak_temp=25.0, target_temp=22.0, covers_snap_deploy=True, **kwargs)
+    assert d.changed is True
+    assert d.target_position == 20
+
+
+def test_snap_deploy_retract_unchanged():
+    mgr = CoverManager()
+    mgr._get_state("lr").current_position = 0
+    mgr._get_state("lr").last_change_ts = 0
+    d = mgr.evaluate("lr", predicted_peak_temp=20.0, target_temp=22.0, covers_snap_deploy=True, **_BASE_KWARGS)
+    assert d.target_position == 100
+
+
+def test_snap_deploy_hysteresis_hold():
+    mgr = CoverManager()
+    d = mgr.evaluate("lr", predicted_peak_temp=23.0, target_temp=22.0, covers_snap_deploy=True, **_BASE_KWARGS)
+    assert d.changed is False
+    assert "hysteresis" in d.reason
+
+
+def test_proportional_unchanged_when_snap_false():
+    mgr = CoverManager()
+    d = mgr.evaluate("lr", predicted_peak_temp=25.0, target_temp=22.0, covers_snap_deploy=False, **_BASE_KWARGS)
+    assert d.changed is True
+    assert d.target_position == 25
 
 
 def test_disabled_feature_does_nothing():

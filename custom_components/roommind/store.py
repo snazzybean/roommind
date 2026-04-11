@@ -224,6 +224,7 @@ class RoomMindStore:
             "cover_orientations": config.get("cover_orientations", {}),
             "covers_night_close": config.get("covers_night_close", False),
             "covers_night_position": config.get("covers_night_position", 0),
+            "covers_snap_deploy": config.get("covers_snap_deploy", False),
             "ignore_presence": config.get("ignore_presence", False),
             "is_outdoor": config.get("is_outdoor", False),
             "valve_protection_exclude": config.get("valve_protection_exclude", []),

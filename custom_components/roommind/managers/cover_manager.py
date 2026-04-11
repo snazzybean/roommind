@@ -118,6 +118,7 @@ class CoverManager:
         cover_entity_ids: list[str],
         covers_deploy_threshold: float,
         covers_min_position: int,
+        covers_snap_deploy: bool = False,
         predicted_peak_temp: float | None,
         target_temp: float,
         q_solar: float,
@@ -199,8 +200,11 @@ class CoverManager:
         retract_threshold = covers_deploy_threshold - COVER_HYSTERESIS
 
         if excess > covers_deploy_threshold:
-            raw_close_pct = min(100, int((excess - covers_deploy_threshold) * COVER_POS_SCALE))
-            desired_pos = max(covers_min_position, 100 - raw_close_pct)
+            if covers_snap_deploy:
+                desired_pos = covers_min_position
+            else:
+                raw_close_pct = min(100, int((excess - covers_deploy_threshold) * COVER_POS_SCALE))
+                desired_pos = max(covers_min_position, 100 - raw_close_pct)
         elif excess < retract_threshold:
             desired_pos = 100
         else:

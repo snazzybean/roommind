@@ -232,6 +232,8 @@
   "covers.schedule_create_link": "Zeitplan-Helfer erstellen",
   "covers.night_position": "Nachtposition",
   "covers.night_position_hint": "Rolloposition wenn Nachtschließung aktiv ist (0% = vollständig geschlossen).",
+  "covers.snap_deploy": "Direkt auf Minimalposition",
+  "covers.snap_deploy_hint": "Rolläden direkt auf die Minimalposition schließen statt schrittweise. Empfohlen für Dreifachverglasung, bei der Zwischenpositionen thermische Spannungen verursachen können.",
   "covers.info.selection_title": "Rollo-Auswahl",
   "covers.info.selection_body": "Wähle Rollos/Jalousien aus diesem Bereich oder füge Entitäten aus anderen Bereichen hinzu. RoomMind verfolgt deren Position und kann sie automatisch steuern.",
   "covers.info.schedule_title": "Zeitplan-Steuerung",

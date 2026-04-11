@@ -242,6 +242,7 @@ class CoverOrchestrator:
             cover_entity_ids=cover_eids,
             covers_deploy_threshold=room.get("covers_deploy_threshold", 1.5),
             covers_min_position=room.get("covers_min_position", 0),
+            covers_snap_deploy=room.get("covers_snap_deploy", False),
             predicted_peak_temp=_cover_predicted_peak,
             target_temp=cover_target,
             q_solar=q_solar,

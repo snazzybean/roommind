@@ -23,6 +23,7 @@ export class RsCoverSection extends LitElement {
   @property({ type: Number }) public activeCoverScheduleIndex = -1;
   @property({ type: Boolean }) public nightClose = false;
   @property({ type: Number }) public nightPosition = 0;
+  @property({ type: Boolean }) public snapDeploy = false;
   @property({ type: String }) public forcedReason = "";
   @property({ attribute: false }) public coverOrientations: Record<string, number> = {};
 
@@ -439,6 +440,13 @@ export class RsCoverSection extends LitElement {
                             this._emit("covers_override_minutes", e.detail)}
                         ></rs-threshold-field>
                       </div>
+                      <rs-toggle-row
+                        .label=${localize("covers.snap_deploy", l)}
+                        .hint=${localize("covers.snap_deploy_hint", l)}
+                        .checked=${this.snapDeploy}
+                        @toggle-changed=${(e: CustomEvent) =>
+                          this._emit("covers_snap_deploy", e.detail)}
+                      ></rs-toggle-row>
                     </div>
 
                     ${this._renderOrientationSection(l)}

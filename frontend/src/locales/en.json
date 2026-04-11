@@ -232,6 +232,8 @@
   "covers.schedule_create_link": "Create schedule helper",
   "covers.night_position": "Night position",
   "covers.night_position_hint": "Cover position when night close is active (0% = fully closed).",
+  "covers.snap_deploy": "Snap to minimum position",
+  "covers.snap_deploy_hint": "Close covers directly to the minimum position instead of gradually closing. Recommended for triple-pane windows where intermediate positions can cause thermal stress.",
   "covers.info.selection_title": "Cover selection",
   "covers.info.selection_body": "Select covers/blinds from this area or add entities from other areas. RoomMind tracks their position and can control them automatically.",
   "covers.info.schedule_title": "Schedule control",

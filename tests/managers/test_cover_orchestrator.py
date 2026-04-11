@@ -64,6 +64,7 @@ def _make_room(**overrides) -> dict:
         "cover_schedule_selector_entity": "",
         "covers_night_close": False,
         "covers_night_position": 0,
+        "covers_snap_deploy": False,
     }
     room.update(overrides)
     return room
@@ -332,6 +333,29 @@ class TestAsyncProcess:
 
         assert result.mpc_active is True
         mock_mpc.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_snap_deploy_passed_to_evaluate(self):
+        """covers_snap_deploy=True on room is forwarded to CoverManager.evaluate()."""
+        cm = _make_cover_manager()
+        orch = CoverOrchestrator(_make_hass(), cm, _make_model_manager())
+        room = _make_room(covers=["cover.blind1"], covers_snap_deploy=True)
+
+        await orch.async_process(
+            area_id="living_room",
+            room=room,
+            targets=TargetTemps(heat=21.0, cool=24.0),
+            mode=MODE_HEATING,
+            current_temp=20.0,
+            outdoor_temp=15.0,
+            q_solar=0.3,
+            predicted_peak_temp=22.0,
+            has_override=False,
+        )
+
+        cm.evaluate.assert_called_once()
+        call_kwargs = cm.evaluate.call_args[1]
+        assert call_kwargs["covers_snap_deploy"] is True
 
     @pytest.mark.asyncio
     async def test_cooling_mode_uses_cool_target(self):

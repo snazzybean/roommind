@@ -119,6 +119,7 @@ export interface RoomConfig {
   cover_orientations?: Record<string, number>;
   covers_night_close?: boolean;
   covers_night_position?: number;
+  covers_snap_deploy?: boolean;
   ignore_presence?: boolean;
   is_outdoor?: boolean;
   valve_protection_exclude?: string[];
