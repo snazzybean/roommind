@@ -1306,7 +1306,12 @@ class TestMasterZoneWake:
 
     @pytest.mark.asyncio
     async def test_no_wake_when_master_already_correct(self, hass, mock_config_entry):
-        """No wake when master is already in correct mode (redundancy)."""
+        """No coordinator-level wake when master is already in correct mode.
+
+        The zone still gets pre-activated via fan_only by _call() during
+        normal room processing (#135), but _async_wake_member_zone should
+        not fire separately (master already active → redundancy skip).
+        """
         room = _ac_room("room_a", "climate.zone_a")
         store = _make_store_mock({"room_a": room})
         store.get_settings.return_value = {
@@ -1340,7 +1345,7 @@ class TestMasterZoneWake:
         coordinator = _create_coordinator(hass, mock_config_entry)
         await coordinator._async_update_data()
 
-        wake_calls = [
+        fan_only_calls = [
             c
             for c in hass.services.async_call.call_args_list
             if len(c.args) >= 3
@@ -1348,7 +1353,8 @@ class TestMasterZoneWake:
             and c.args[1] == "set_hvac_mode"
             and c.args[2].get("hvac_mode") == "fan_only"
         ]
-        assert len(wake_calls) == 0, "No wake when master is already in correct mode"
+        assert len(fan_only_calls) >= 1, "Zone should be pre-activated via fan_only by _call() (#135)"
+        assert fan_only_calls[0].args[2]["entity_id"] == "climate.zone_a"
 
     @pytest.mark.asyncio
     async def test_no_wake_on_heat_to_cool_transition(self, hass, mock_config_entry):
@@ -1658,8 +1664,13 @@ class TestMasterZoneWake:
         assert "climate.zone_a" in state.active_members
 
     @pytest.mark.asyncio
-    async def test_no_wake_for_script_only_group(self, hass, mock_config_entry):
-        """No wake for groups with action_script but no master_entity."""
+    async def test_no_coordinator_wake_for_script_only_group(self, hass, mock_config_entry):
+        """Script-only groups don't trigger _async_wake_member_zone.
+
+        The zone still gets pre-activated via fan_only by _call() during
+        normal room processing (#135). This is correct: the zone needs to
+        be activated to heat, and the action_script handles master control.
+        """
         room = _ac_room("room_a", "climate.zone_a")
         store = _make_store_mock({"room_a": room})
         store.get_settings.return_value = {
@@ -1693,7 +1704,7 @@ class TestMasterZoneWake:
         coordinator = _create_coordinator(hass, mock_config_entry)
         await coordinator._async_update_data()
 
-        wake_calls = [
+        fan_only_calls = [
             c
             for c in hass.services.async_call.call_args_list
             if len(c.args) >= 3
@@ -1701,7 +1712,7 @@ class TestMasterZoneWake:
             and c.args[1] == "set_hvac_mode"
             and c.args[2].get("hvac_mode") == "fan_only"
         ]
-        assert len(wake_calls) == 0
+        assert len(fan_only_calls) >= 1, "Zone should be pre-activated via fan_only by _call() (#135)"
 
     @pytest.mark.asyncio
     async def test_commanded_mode_drives_master_in_managed_mode(self, hass, mock_config_entry):
