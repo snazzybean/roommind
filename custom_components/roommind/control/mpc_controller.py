@@ -1495,16 +1495,25 @@ class MPCController:
             resolved = resolve_hvac_mode(data["hvac_mode"], hvac_modes)
             if resolved is None:
                 if not has_reliable_hvac_modes(state):
-                    # Modes unreliable (device with incomplete modes).
-                    # Send the desired mode directly; the device may reveal
-                    # its full mode list once active.
-                    resolved = data["hvac_mode"]
-                    _LOGGER.debug(
-                        "Area '%s': device '%s' has incomplete modes, sending '%s' directly",
-                        self._area_id,
-                        eid,
-                        resolved,
-                    )
+                    if (
+                        state.state == "off"
+                        and data["hvac_mode"] not in ("off", "fan_only")
+                        and "fan_only" in hvac_modes
+                    ):
+                        resolved = "fan_only"
+                        _LOGGER.debug(
+                            "Area '%s': device '%s' is off with incomplete modes, pre-activating via fan_only (#135)",
+                            self._area_id,
+                            eid,
+                        )
+                    else:
+                        resolved = data["hvac_mode"]
+                        _LOGGER.debug(
+                            "Area '%s': device '%s' has incomplete modes, sending '%s' directly",
+                            self._area_id,
+                            eid,
+                            resolved,
+                        )
                 else:
                     _LOGGER.debug(
                         "Area '%s': device '%s' does not support '%s' or any fallback, skipping",
