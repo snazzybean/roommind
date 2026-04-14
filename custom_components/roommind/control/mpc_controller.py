@@ -102,8 +102,8 @@ def _resolve_idle_setpoint(
 ) -> float | None:
     """Pick the best setpoint to idle a device.
 
-    Returns min(min_temp, fallback_setpoint) when both are usable,
-    or whichever one is available, or None if neither works.
+    Returns min_temp when available (authoritative device floor),
+    otherwise fallback_setpoint. Returns None if neither works.
     """
     min_temp: float | None = None
     if state:
@@ -124,8 +124,6 @@ def _resolve_idle_setpoint(
                     raw,
                 )
 
-    if min_temp is not None and fallback_setpoint is not None:
-        return min(min_temp, fallback_setpoint)
     return min_temp if min_temp is not None else fallback_setpoint
 
 
@@ -141,6 +139,25 @@ async def _send_idle_setpoint(
     current = state.attributes.get("temperature")
     if current is not None and round(float(current), 1) == round(setpoint, 1):
         _setpoint_override_warned.discard(entity_id)
+        return
+
+    dev_min = state.attributes.get("min_temp")
+    dev_max = state.attributes.get("max_temp")
+    if dev_min is not None:
+        try:
+            dev_min_f = float(dev_min)
+            if setpoint < dev_min_f:
+                setpoint = dev_min_f
+        except (ValueError, TypeError):
+            pass
+    if dev_max is not None:
+        try:
+            dev_max_f = float(dev_max)
+            if setpoint > dev_max_f:
+                setpoint = dev_max_f
+        except (ValueError, TypeError):
+            pass
+    if current is not None and round(float(current), 1) == round(setpoint, 1):
         return
 
     cached = _last_commands.get(entity_id)
@@ -215,7 +232,7 @@ async def async_turn_off_climate(
         )
 
         if state and state.state == "off":
-            if effective_setpoint is not None:
+            if permanently_off and effective_setpoint is not None:
                 await _send_idle_setpoint(hass, entity_id, state, effective_setpoint, area_id=area_id)
             return  # already off
 
