@@ -39,9 +39,11 @@ from .const import (
     make_roommind_context,
 )
 from .control.mpc_controller import (
+    DEFAULT_OUTDOOR_TEMP_FALLBACK,
     MPCController,
     check_acs_can_heat,
     get_can_heat_cool,
+    is_mpc_active,
 )
 from .control.solar import compute_q_solar_norm
 from .control.thermal_model import RoomModelManager
@@ -729,6 +731,26 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             heating_eids = [eid for eid in get_trv_eids(room.get("devices", [])) if eid not in excluded]
             self._valve_manager.record_heating(heating_eids)
 
+        mpc_active = False
+        if has_external_sensor:
+            try:
+                _ch, _cc = get_can_heat_cool(
+                    room,
+                    self.outdoor_temp,
+                    acs_can_heat=check_acs_can_heat(self.hass, room),
+                )
+                _T_out = self.outdoor_temp if self.outdoor_temp is not None else DEFAULT_OUTDOOR_TEMP_FALLBACK
+                mpc_active = is_mpc_active(
+                    self._model_manager,
+                    area_id,
+                    _ch,
+                    _cc,
+                    current_temp or 20.0,
+                    _T_out,
+                )
+            except Exception:  # noqa: BLE001
+                mpc_active = False
+
         display_mode, display_pf = await self._observe_and_train(
             area_id=area_id,
             room=room,
@@ -774,6 +796,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             q_occupancy=q_occupancy,
             cover_eids=cover_eids,
             cover_result=cover_result,
+            mpc_active=mpc_active,
         )
 
     async def _observe_and_train(
@@ -944,14 +967,13 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         q_occupancy: float,
         cover_eids: list[str],
         cover_result: CoverResult,
+        mpc_active: bool,
     ) -> dict:
         """Build the final room state dictionary."""
         _room_devices = room.get("devices", [])
         _direct_eids = get_direct_setpoint_eids(_room_devices)
         _devs_with_eid = [d for d in _room_devices if d.get("entity_id")]
         _all_direct = bool(_devs_with_eid) and len(_direct_eids) == len(_devs_with_eid)
-
-        mpc_active = cover_result.mpc_active
 
         return {
             "area_id": area_id,

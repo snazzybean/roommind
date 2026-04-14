@@ -260,7 +260,6 @@ class TestAsyncProcess:
         )
 
         assert isinstance(result, CoverResult)
-        assert result.mpc_active is False  # No external sensor
         assert isinstance(result.decision, CoverDecision)
         cm.evaluate.assert_called_once()
 
@@ -289,8 +288,8 @@ class TestAsyncProcess:
         cm.evaluate.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_managed_mode_mpc_inactive(self):
-        """No external sensor (Managed Mode) means mpc_active=False."""
+    async def test_managed_mode_no_external_sensor(self):
+        """No external sensor (Managed Mode) still returns valid CoverResult."""
         cm = _make_cover_manager()
         orch = CoverOrchestrator(_make_hass(), cm, _make_model_manager())
         room = _make_room(temperature_sensor="", covers=["cover.blind1"])
@@ -307,32 +306,7 @@ class TestAsyncProcess:
             has_override=False,
         )
 
-        assert result.mpc_active is False
-
-    @pytest.mark.asyncio
-    @patch("custom_components.roommind.managers.cover_orchestrator.is_mpc_active", return_value=True)
-    @patch("custom_components.roommind.managers.cover_orchestrator.check_acs_can_heat", return_value=False)
-    @patch("custom_components.roommind.managers.cover_orchestrator.get_can_heat_cool", return_value=(True, False))
-    async def test_mpc_active_with_external_sensor(self, mock_ghc, mock_cach, mock_mpc):
-        """With external sensor and is_mpc_active returning True, mpc_active=True."""
-        cm = _make_cover_manager()
-        orch = CoverOrchestrator(_make_hass(), cm, _make_model_manager())
-        room = _make_room(temperature_sensor="sensor.temp", covers=["cover.blind1"])
-
-        result = await orch.async_process(
-            area_id="living_room",
-            room=room,
-            targets=TargetTemps(heat=21.0, cool=24.0),
-            mode=MODE_HEATING,
-            current_temp=20.0,
-            outdoor_temp=15.0,
-            q_solar=0.3,
-            predicted_peak_temp=22.0,
-            has_override=False,
-        )
-
-        assert result.mpc_active is True
-        mock_mpc.assert_called_once()
+        assert isinstance(result, CoverResult)
 
     @pytest.mark.asyncio
     async def test_snap_deploy_passed_to_evaluate(self):
@@ -713,30 +687,6 @@ class TestAsyncProcess:
         )
 
         assert result.active_cover_schedule_index == -1
-
-    @pytest.mark.asyncio
-    @patch("custom_components.roommind.managers.cover_orchestrator.is_mpc_active", side_effect=Exception("boom"))
-    @patch("custom_components.roommind.managers.cover_orchestrator.check_acs_can_heat", return_value=False)
-    @patch("custom_components.roommind.managers.cover_orchestrator.get_can_heat_cool", return_value=(True, False))
-    async def test_mpc_exception_falls_back_to_false(self, mock_ghc, mock_cach, mock_mpc):
-        """If is_mpc_active raises, mpc_active falls back to False."""
-        cm = _make_cover_manager()
-        orch = CoverOrchestrator(_make_hass(), cm, _make_model_manager())
-        room = _make_room(temperature_sensor="sensor.temp", covers=["cover.blind1"])
-
-        result = await orch.async_process(
-            area_id="living_room",
-            room=room,
-            targets=TargetTemps(heat=21.0, cool=24.0),
-            mode=MODE_HEATING,
-            current_temp=20.0,
-            outdoor_temp=15.0,
-            q_solar=0.3,
-            predicted_peak_temp=22.0,
-            has_override=False,
-        )
-
-        assert result.mpc_active is False
 
 
 # ── TestEstimateSolarPeakTemp ─────────────────────────────────────────

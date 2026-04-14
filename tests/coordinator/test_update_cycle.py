@@ -634,6 +634,35 @@ class TestCoverageGaps:
         assert room_state["mpc_active"] is False
 
     @pytest.mark.asyncio
+    async def test_mpc_active_independent_of_covers_auto(self, hass, mock_config_entry):
+        """mpc_active is True when model is trained, regardless of covers_auto_enabled (#189)."""
+        room = {**SAMPLE_ROOM, "area_id": "mpc_room", "covers_auto_enabled": False}
+        store = _make_store_mock({"mpc_room": room})
+        store.get_settings.return_value = {
+            "control_mode": "mpc",
+            "outdoor_temp_sensor": "sensor.outdoor_temp",
+        }
+        hass.data = {"roommind": {"store": store}}
+        hass.states.get = MagicMock(
+            side_effect=make_mock_states_get(
+                temp="18.0",
+                outdoor_temp="5.0",
+            )
+        )
+        hass.services.async_call = AsyncMock()
+
+        coordinator = _create_coordinator(hass, mock_config_entry)
+
+        with patch(
+            "custom_components.roommind.coordinator.is_mpc_active",
+            return_value=True,
+        ):
+            data = await coordinator._async_update_data()
+
+        room_state = data["rooms"]["mpc_room"]
+        assert room_state["mpc_active"] is True
+
+    @pytest.mark.asyncio
     async def test_history_write_computes_prediction(self, hass, mock_config_entry):
         """History write cycle computes predictions for next cycle."""
         from custom_components.roommind.const import HISTORY_WRITE_CYCLES

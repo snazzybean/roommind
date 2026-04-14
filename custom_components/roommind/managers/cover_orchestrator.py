@@ -19,12 +19,6 @@ from ..const import (
     MODE_COOLING,
     TargetTemps,
 )
-from ..control.mpc_controller import (
-    DEFAULT_OUTDOOR_TEMP_FALLBACK,
-    check_acs_can_heat,
-    get_can_heat_cool,
-    is_mpc_active,
-)
 from ..control.solar import build_oriented_solar_series, build_solar_series, solar_elevation
 from ..utils.schedule_utils import resolve_schedule_index
 from .cover_manager import CoverDecision, CoverManager, compute_shading_factor
@@ -49,7 +43,6 @@ class CoverPositionResult:
 class CoverResult:
     """Result of cover processing for a room."""
 
-    mpc_active: bool
     forced_reason: str
     active_cover_schedule_index: int
     decision: CoverDecision
@@ -120,7 +113,6 @@ class CoverOrchestrator:
         # Schedule, night close and MPC are all suppressed — covers stay wherever they are.
         if not room.get("covers_auto_enabled", False):
             return CoverResult(
-                mpc_active=False,
                 forced_reason="",
                 active_cover_schedule_index=-1,
                 decision=CoverDecision(
@@ -129,29 +121,6 @@ class CoverOrchestrator:
                     reason="disabled",
                 ),
             )
-
-        has_external_sensor = bool(room.get("temperature_sensor"))
-
-        # Block A: MPC active check
-        _cover_mpc_active = False
-        if has_external_sensor:
-            try:
-                _ch, _cc = get_can_heat_cool(
-                    room,
-                    outdoor_temp,
-                    acs_can_heat=check_acs_can_heat(self.hass, room),
-                )
-                _T_out = outdoor_temp if outdoor_temp is not None else DEFAULT_OUTDOOR_TEMP_FALLBACK
-                _cover_mpc_active = is_mpc_active(
-                    self._model_manager,
-                    area_id,
-                    _ch,
-                    _cc,
-                    current_temp or 20.0,
-                    _T_out,
-                )
-            except Exception:  # noqa: BLE001
-                _cover_mpc_active = False
 
         # Block B: Cover target
         cover_target = (
@@ -263,7 +232,6 @@ class CoverOrchestrator:
             await CoverManager.async_apply(self.hass, cover_eids, cover_decision.target_position)
 
         return CoverResult(
-            mpc_active=_cover_mpc_active,
             forced_reason=_forced_reason if _forced_position is not None else "",
             active_cover_schedule_index=_active_cover_sched_idx,
             decision=cover_decision,
