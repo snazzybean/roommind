@@ -15,11 +15,17 @@ from ..const import (
     COVER_MAX_PREDICTION_STD,
     COVER_MIN_IDLE_FOR_LEARNED,
     COVER_PREDICTION_DT_MINUTES,
-    COVER_RC_LOOKAHEAD_H,
+    COVER_SOLAR_MIN,
     MODE_COOLING,
     TargetTemps,
 )
-from ..control.solar import build_oriented_solar_series, build_solar_series, solar_elevation
+from ..control.solar import (
+    build_oriented_solar_series,
+    build_solar_series,
+    solar_azimuth,
+    solar_elevation,
+    surface_irradiance_factor,
+)
 from ..utils.schedule_utils import resolve_schedule_index
 from .cover_manager import CoverDecision, CoverManager, compute_shading_factor
 
@@ -178,12 +184,15 @@ class CoverOrchestrator:
                         _forced_reason = "schedule_active"
 
         if _forced_position is None and room.get("covers_night_close", False):
+            _offset = room.get("covers_night_close_offset_minutes", 0)
+            _check_ts = time.time() - _offset * 60
             _elev = solar_elevation(
                 self.hass.config.latitude,
                 self.hass.config.longitude,
-                time.time(),
+                _check_ts,
             )
-            if _elev <= 0:
+            _night_elev_threshold = room.get("covers_night_close_elevation", 0)
+            if _elev <= _night_elev_threshold:
                 _forced_position = room.get("covers_night_position", 0)
                 _forced_reason = "night_close"
 
@@ -197,11 +206,30 @@ class CoverOrchestrator:
             if _az_list:
                 _surface_azimuths = _az_list
 
+        # Orientation gate: if covers have orientation configured and the sun is not
+        # hitting that side, suppress solar deployment. Covers can't help against heat
+        # coming through other windows. Uses the current oriented q_solar, not the
+        # lookahead prediction — if the sun isn't on this side NOW, covers stay open.
+        _oriented_q_solar = q_solar
+        if _surface_azimuths and q_solar > 0:
+            _now = time.time()
+            _sun_az = solar_azimuth(self.hass.config.latitude, self.hass.config.longitude, _now)
+            _sun_el = solar_elevation(self.hass.config.latitude, self.hass.config.longitude, _now)
+            _factors = [surface_irradiance_factor(_sun_az, _sun_el, az) for az in _surface_azimuths]
+            _oriented_q_solar = q_solar * (sum(_factors) / len(_factors))
+
         _cover_predicted_peak = predicted_peak_temp
         if _cover_predicted_peak is None:
             _cover_predicted_peak = self._estimate_solar_peak_temp(
                 area_id, current_temp, cover_target, q_solar, outdoor_temp, _surface_azimuths
             )
+
+        if _oriented_q_solar < COVER_SOLAR_MIN and _surface_azimuths:
+            _cover_predicted_peak = cover_target
+
+        _outdoor_min = room.get("covers_outdoor_min_temp")
+        if _outdoor_min is not None and outdoor_temp is not None and outdoor_temp < _outdoor_min:
+            _cover_predicted_peak = cover_target
 
         # Block E: Evaluate + apply
         cover_eids = room.get("covers", [])
@@ -222,6 +250,7 @@ class CoverOrchestrator:
             solar_gated=_solar_gated,
         )
 
+        _cover_min_positions: dict[str, int] = room.get("cover_min_positions", {})
         if cover_decision.changed:
             _LOGGER.debug(
                 "Cover control [%s]: %s → position %d%%",
@@ -229,7 +258,19 @@ class CoverOrchestrator:
                 cover_decision.reason,
                 cover_decision.target_position,
             )
-            await CoverManager.async_apply(self.hass, cover_eids, cover_decision.target_position)
+            await CoverManager.async_apply(
+                self.hass,
+                cover_eids,
+                cover_decision.target_position,
+                cover_min_positions=_cover_min_positions or None,
+            )
+            if _cover_min_positions:
+                effective_positions = [
+                    max(_cover_min_positions.get(eid, 0), cover_decision.target_position) for eid in cover_eids
+                ]
+                if effective_positions:
+                    avg = int(sum(effective_positions) / len(effective_positions))
+                    self._cover_manager.set_commanded_position(area_id, avg)
 
         return CoverResult(
             forced_reason=_forced_reason if _forced_position is not None else "",
@@ -283,7 +324,7 @@ class CoverOrchestrator:
             ):
                 # Tier 1: RC model trajectory with proper physics
                 model = self._model_manager.get_model(area_id)
-                n_steps = int(COVER_RC_LOOKAHEAD_H * 60 / COVER_PREDICTION_DT_MINUTES)
+                n_steps = int(COVER_DAILY_LOOKAHEAD_H * 60 / COVER_PREDICTION_DT_MINUTES)
                 solar_series = _solar_series(n_steps)
                 trajectory = model.predict_trajectory(
                     base_temp,

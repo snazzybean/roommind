@@ -92,12 +92,15 @@ async def test_create_defaults(store):
     assert room["covers_auto_enabled"] is False
     assert room["covers_deploy_threshold"] == 1.5
     assert room["covers_min_position"] == 0
-    assert room["covers_outdoor_min_temp"] == 10.0
+    assert room["covers_outdoor_min_temp"] is None
     assert room["covers_override_minutes"] == 60
     assert room["cover_schedules"] == []
     assert room["cover_schedule_selector_entity"] == ""
     assert room["covers_night_close"] is False
+    assert room["covers_night_close_elevation"] == 0
+    assert room["covers_night_close_offset_minutes"] == 0
     assert room["covers_night_position"] == 0
+    assert room["cover_min_positions"] == {}
     assert room["ignore_presence"] is False
     assert room["is_outdoor"] is False
     assert room["valve_protection_exclude"] == []

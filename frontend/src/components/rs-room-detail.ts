@@ -74,6 +74,10 @@ export class RsRoomDetail extends LitElement {
   @state() private _coversNightPosition = 0;
   @state() private _coversSnapDeploy = false;
   @state() private _coverOrientations: Record<string, number> = {};
+  @state() private _coversNightCloseElevation = 0;
+  @state() private _coversNightCloseOffsetMinutes = 0;
+  @state() private _coversOutdoorMinTemp: number | null = 10;
+  @state() private _coverMinPositions: Record<string, number> = {};
   @state() private _editingCovers = false;
   @state() private _ignorePresence = false;
   @state() private _isOutdoor = false;
@@ -252,6 +256,10 @@ export class RsRoomDetail extends LitElement {
       this._coversNightPosition = this.config.covers_night_position ?? 0;
       this._coversSnapDeploy = this.config.covers_snap_deploy ?? false;
       this._coverOrientations = this.config.cover_orientations ?? {};
+      this._coversNightCloseElevation = this.config.covers_night_close_elevation ?? 0;
+      this._coversNightCloseOffsetMinutes = this.config.covers_night_close_offset_minutes ?? 0;
+      this._coversOutdoorMinTemp = this.config.covers_outdoor_min_temp ?? 10;
+      this._coverMinPositions = this.config.cover_min_positions ?? {};
       this._ignorePresence = this.config.ignore_presence ?? false;
       this._isOutdoor = this.config.is_outdoor ?? false;
       this._valveProtectionExclude = new Set(this.config.valve_protection_exclude ?? []);
@@ -288,6 +296,10 @@ export class RsRoomDetail extends LitElement {
       this._coversNightPosition = 0;
       this._coversSnapDeploy = false;
       this._coverOrientations = {};
+      this._coversNightCloseElevation = 0;
+      this._coversNightCloseOffsetMinutes = 0;
+      this._coversOutdoorMinTemp = 10;
+      this._coverMinPositions = {};
       this._ignorePresence = false;
       this._isOutdoor = false;
       this._valveProtectionExclude = new Set();
@@ -600,6 +612,10 @@ export class RsRoomDetail extends LitElement {
                   .forcedReason=${this.config?.live?.cover_forced_reason ?? ""}
                   .autoPaused=${this.config?.live?.cover_auto_paused ?? false}
                   .coverOrientations=${this._coverOrientations}
+                  .nightCloseElevation=${this._coversNightCloseElevation}
+                  .nightCloseOffsetMinutes=${this._coversNightCloseOffsetMinutes}
+                  .outdoorMinTemp=${this._coversOutdoorMinTemp}
+                  .coverMinPositions=${this._coverMinPositions}
                   @covers-toggle=${this._onCoversToggle}
                   @setting-changed=${this._onCoverSettingChanged}
                 ></rs-covers-section>
@@ -791,6 +807,11 @@ export class RsRoomDetail extends LitElement {
         delete nextOrientations[entityId];
         this._coverOrientations = nextOrientations;
       }
+      if (entityId in this._coverMinPositions) {
+        const nextMinPositions = { ...this._coverMinPositions };
+        delete nextMinPositions[entityId];
+        this._coverMinPositions = nextMinPositions;
+      }
     }
     this._selectedCovers = next;
     this._autoSave();
@@ -811,6 +832,13 @@ export class RsRoomDetail extends LitElement {
     else if (key === "covers_snap_deploy") this._coversSnapDeploy = value as boolean;
     else if (key === "cover_orientations")
       this._coverOrientations = value as Record<string, number>;
+    else if (key === "covers_night_close_elevation")
+      this._coversNightCloseElevation = value as number;
+    else if (key === "covers_night_close_offset_minutes")
+      this._coversNightCloseOffsetMinutes = value as number;
+    else if (key === "covers_outdoor_min_temp") this._coversOutdoorMinTemp = value as number | null;
+    else if (key === "cover_min_positions")
+      this._coverMinPositions = value as Record<string, number>;
     this._autoSave();
   }
 
@@ -888,6 +916,10 @@ export class RsRoomDetail extends LitElement {
         covers_night_position: this._coversNightPosition,
         covers_snap_deploy: this._coversSnapDeploy,
         cover_orientations: this._coverOrientations,
+        covers_night_close_elevation: this._coversNightCloseElevation,
+        covers_night_close_offset_minutes: this._coversNightCloseOffsetMinutes,
+        covers_outdoor_min_temp: this._coversOutdoorMinTemp,
+        cover_min_positions: this._coverMinPositions,
         ignore_presence: this._ignorePresence,
         is_outdoor: this._isOutdoor,
         valve_protection_exclude: [...this._valveProtectionExclude],

@@ -20,6 +20,7 @@ DETAIL_FIELDS = [
     "heating_power",
     "solar_irradiance",
     "blind_position",
+    "cover_reason",
     "device_setpoint",
     "occupancy",
 ]
@@ -42,16 +43,35 @@ class HistoryStore:
     def _history_path(self, area_id: str) -> str:
         return os.path.join(self._base_dir, f"{area_id}_history.csv")
 
+    @staticmethod
+    def _migrate_header(path: str) -> None:
+        """Rewrite CSV with current DETAIL_FIELDS header if columns changed."""
+        if not os.path.isfile(path):
+            return
+        try:
+            with open(path, newline="") as f:
+                reader = csv.DictReader(f)
+                if reader.fieldnames == DETAIL_FIELDS:
+                    return
+                rows = list(reader)
+            with open(path, "w", newline="") as f:
+                writer = csv.DictWriter(f, fieldnames=DETAIL_FIELDS, extrasaction="ignore")
+                writer.writeheader()
+                for row in rows:
+                    writer.writerow({k: row.get(k, "") for k in DETAIL_FIELDS})
+        except Exception:  # noqa: BLE001
+            pass
+
     def record(self, area_id: str, data: dict, timestamp: float | None = None) -> None:
         """Append a data point to the detail CSV."""
         self._ensure_dir()
         ts = timestamp or time.time()
         path = self._detail_path(area_id)
-        file_exists = os.path.isfile(path)
+        self._migrate_header(path)
 
         with open(path, "a", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=DETAIL_FIELDS)
-            if not file_exists:
+            if os.path.getsize(path) == 0:
                 writer.writeheader()
             writer.writerow(
                 {
@@ -65,6 +85,7 @@ class HistoryStore:
                     "heating_power": data.get("heating_power", ""),
                     "solar_irradiance": data.get("solar_irradiance", ""),
                     "blind_position": data.get("blind_position", ""),
+                    "cover_reason": data.get("cover_reason", ""),
                     "device_setpoint": data.get("device_setpoint", ""),
                     "occupancy": data.get("occupancy", ""),
                 }

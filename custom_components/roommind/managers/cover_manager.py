@@ -78,28 +78,28 @@ class CoverManager:
         Detects user manual override: if the cover position differs significantly
         from the last position RoomMind commanded (in either direction), the user
         moved it manually. In that case, auto control pauses for
-        COVER_USER_OVERRIDE_MINUTES.
+        ``override_minutes``.
 
-        Only triggers on actual position changes (not repeated reads of the same
-        position) to avoid perpetually refreshing the override timer.
+        Compares against ``last_commanded_position`` (stable across cycles) rather
+        than ``current_position`` so that detection survives the 90 s settling
+        window even when the HA-reported position is read repeatedly.
         """
         state = self._get_state(area_id)
-        # Drift detection: only on actual position change when we previously commanded a position
-        # and the transition settling period has elapsed (avoids false positives from in-transit positions).
-        if (
-            position != state.current_position
-            and state.last_commanded_position is not None
+        _drift = (
+            state.last_commanded_position is not None
             and abs(position - state.last_commanded_position) > COVER_USER_CONFLICT_THRESHOLD
             and (time.time() - state.last_command_ts) >= COVER_TRANSITION_SETTLE_S
-        ):
-            state.user_override_until = time.time() + override_minutes * 60
-            _LOGGER.info(
-                "Cover user override detected [%s]: position %d vs commanded %d → pausing %d min",
-                area_id,
-                position,
-                state.last_commanded_position,
-                override_minutes,
-            )
+        )
+        if _drift and override_minutes > 0:
+            if state.user_override_until <= time.time() or position != state.current_position:
+                state.user_override_until = time.time() + override_minutes * 60
+                _LOGGER.info(
+                    "Cover user override detected [%s]: position %d vs commanded %d → pausing %d min",
+                    area_id,
+                    position,
+                    state.last_commanded_position,
+                    override_minutes,
+                )
         state.current_position = position
 
     def get_current_position(self, area_id: str) -> int:
@@ -227,11 +227,17 @@ class CoverManager:
         """Clean up state when a room is deleted."""
         self._states.pop(area_id, None)
 
+    def set_commanded_position(self, area_id: str, position: int) -> None:
+        """Correct last_commanded_position after per-cover clamping."""
+        state = self._get_state(area_id)
+        state.last_commanded_position = position
+
     @staticmethod
     async def async_apply(
         hass: HomeAssistant,
         cover_entity_ids: list[str],
         target_position: int,
+        cover_min_positions: dict[str, int] | None = None,
     ) -> None:
         """Call HA cover service to set position on all configured cover entities."""
         position_eids: list[str] = []
@@ -251,12 +257,26 @@ class CoverManager:
                 binary_close_eids.append(eid)
 
         if position_eids:
-            await hass.services.async_call(
-                "cover",
-                "set_cover_position",
-                {"entity_id": position_eids, "position": target_position},
-                blocking=False,
-            )
+            if cover_min_positions:
+                pos_groups: dict[int, list[str]] = {}
+                for eid in position_eids:
+                    min_pos = cover_min_positions.get(eid, 0)
+                    effective = max(min_pos, target_position)
+                    pos_groups.setdefault(effective, []).append(eid)
+                for pos, eids in pos_groups.items():
+                    await hass.services.async_call(
+                        "cover",
+                        "set_cover_position",
+                        {"entity_id": eids, "position": pos},
+                        blocking=False,
+                    )
+            else:
+                await hass.services.async_call(
+                    "cover",
+                    "set_cover_position",
+                    {"entity_id": position_eids, "position": target_position},
+                    blocking=False,
+                )
         if binary_open_eids:
             await hass.services.async_call(
                 "cover",

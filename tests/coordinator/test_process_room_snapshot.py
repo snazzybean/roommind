@@ -63,6 +63,7 @@ NORMAL_ROOM_KEYS = {
     "blind_position",
     "cover_auto_paused",
     "cover_forced_reason",
+    "cover_reason",
     "active_cover_schedule_index",
     "active_heat_sources",
 }

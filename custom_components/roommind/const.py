@@ -138,7 +138,6 @@ COVER_USER_OVERRIDE_MINUTES: int = 60
 COVER_TRANSITION_SETTLE_S: int = 90  # seconds after commanding before override detection activates
 COVER_DEFAULT_BETA_S: float = 3.0  # °C/h per unit q_solar (default for rooms without learned data)
 COVER_LINEAR_LOOKAHEAD_H: float = 1.0  # linear fallback: 1h (no heat-loss correction → keep short)
-COVER_RC_LOOKAHEAD_H: float = 2.0  # RC trajectory: 2h (physics-corrected → longer horizon is safe)
 COVER_PREDICTION_DT_MINUTES: float = 5.0  # time step for RC trajectory simulation
 COVER_MAX_PREDICTION_STD: float = 0.5  # max idle+solar prediction_std to activate RC tier
 COVER_CONFIDENCE_REFERENCE_SOLAR: float = 0.5  # reference q_solar for confidence check

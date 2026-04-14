@@ -17,7 +17,6 @@ ROOM_WITH_COVERS = {
     "covers_auto_enabled": False,
     "covers_deploy_threshold": 1.5,
     "covers_min_position": 0,
-    "covers_outdoor_min_temp": 10.0,
 }
 
 ROOM_WITH_COVERS_AUTO = {

@@ -117,9 +117,13 @@ export interface RoomConfig {
   cover_schedules?: CoverScheduleEntry[];
   cover_schedule_selector_entity?: string;
   cover_orientations?: Record<string, number>;
+  covers_outdoor_min_temp?: number | null;
   covers_night_close?: boolean;
   covers_night_position?: number;
+  covers_night_close_elevation?: number;
+  covers_night_close_offset_minutes?: number;
   covers_snap_deploy?: boolean;
+  cover_min_positions?: Record<string, number>;
   ignore_presence?: boolean;
   is_outdoor?: boolean;
   valve_protection_exclude?: string[];
@@ -228,6 +232,7 @@ export interface AnalyticsDataPoint {
   heating_power: number | null;
   solar_irradiance: number | null;
   blind_position?: number | null;
+  cover_reason?: string;
   device_setpoint?: number | null;
 }
 

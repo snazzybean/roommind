@@ -14,7 +14,6 @@ from custom_components.roommind.const import (
     COVER_POS_DEADBAND,
     COVER_POS_SCALE,
     COVER_PREDICTION_DT_MINUTES,
-    COVER_RC_LOOKAHEAD_H,
     COVER_SOLAR_MIN,
     COVER_TRANSITION_SETTLE_S,
     COVER_USER_CONFLICT_THRESHOLD,
@@ -38,7 +37,6 @@ def test_cover_constants_exist():
     assert COVER_USER_OVERRIDE_MINUTES == 60
     assert COVER_POS_DEADBAND == 20
     assert COVER_PREDICTION_DT_MINUTES == 5.0
-    assert COVER_RC_LOOKAHEAD_H == 2.0
     assert COVER_LINEAR_LOOKAHEAD_H == 1.0
     assert COVER_MAX_PREDICTION_STD == 0.5
     assert COVER_CONFIDENCE_REFERENCE_SOLAR == 0.5
@@ -68,13 +66,16 @@ async def test_room_config_has_cover_defaults():
     assert room["covers_auto_enabled"] is False
     assert room["covers_deploy_threshold"] == 1.5
     assert room["covers_min_position"] == 0
-    assert room["covers_outdoor_min_temp"] == 10.0
+    assert room["covers_outdoor_min_temp"] is None
     assert room["covers_override_minutes"] == 60
     assert room["cover_schedules"] == []
     assert room["cover_schedule_selector_entity"] == ""
     assert room["covers_night_close"] is False
+    assert room["covers_night_close_elevation"] == 0
+    assert room["covers_night_close_offset_minutes"] == 0
     assert room["covers_night_position"] == 0
     assert room["covers_snap_deploy"] is False
+    assert room["cover_min_positions"] == {}
 
 
 # ── Shading factor ─────────────────────────────────────────────────────
@@ -1149,3 +1150,120 @@ def test_solar_not_gated_already_open_no_action():
     d = mgr.evaluate("lr", predicted_peak_temp=25.0, target_temp=22.0, **{**_BASE_KWARGS, "solar_gated": False})
     assert d.changed is False
     assert d.reason == "gate_inactive"
+
+
+# ── Override detection regression tests ──────────────────────────────
+
+
+@patch("custom_components.roommind.managers.cover_manager.time")
+def test_override_detected_after_settling_even_with_same_position_reads(mock_t):
+    """Regression: override must be detected even if position was read during settling.
+
+    Previously, update_position() compared against current_position which was
+    updated on the first read, making subsequent reads of the same position
+    skip detection forever.
+    """
+    mgr = CoverManager()
+    mock_t.time.return_value = 1000.0
+    d = mgr.evaluate("lr", predicted_peak_temp=25.0, target_temp=22.0, **_BASE_KWARGS)
+    assert d.changed is True
+
+    mock_t.time.return_value = 1020.0
+    mgr.update_position("lr", 80)
+    state = mgr._get_state("lr")
+    assert state.user_override_until == 0.0
+
+    mock_t.time.return_value = 1050.0
+    mgr.update_position("lr", 80)
+    assert state.user_override_until == 0.0
+
+    mock_t.time.return_value = 1000.0 + COVER_TRANSITION_SETTLE_S
+    mgr.update_position("lr", 80)
+    assert state.user_override_until > 0.0
+
+
+@patch("custom_components.roommind.managers.cover_manager.time")
+def test_override_not_perpetually_refreshed_when_drift_persists(mock_t):
+    """Timer must not refresh every cycle when position differs from commanded but is stable."""
+    mgr = CoverManager()
+    mock_t.time.return_value = 1000.0
+    mgr.evaluate("lr", predicted_peak_temp=25.0, target_temp=22.0, **_BASE_KWARGS)
+
+    mock_t.time.return_value = 1100.0
+    mgr.update_position("lr", 100)
+    state = mgr._get_state("lr")
+    first_expiry = state.user_override_until
+    assert first_expiry == 1100.0 + COVER_USER_OVERRIDE_MINUTES * 60
+
+    mock_t.time.return_value = 1200.0
+    mgr.update_position("lr", 100)
+    assert state.user_override_until == first_expiry
+
+    mock_t.time.return_value = 2000.0
+    mgr.update_position("lr", 100)
+    assert state.user_override_until == first_expiry
+
+
+# ── Per-cover min position tests ─────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_async_apply_per_cover_min_positions():
+    """Per-cover min_positions clamp individual covers."""
+    hass = MagicMock()
+    hass.services.async_call = AsyncMock()
+
+    cover_a = MagicMock()
+    cover_a.attributes = {"supported_features": 4}
+    cover_b = MagicMock()
+    cover_b.attributes = {"supported_features": 4}
+
+    def _get(eid):
+        return {"cover.a": cover_a, "cover.b": cover_b}.get(eid)
+
+    hass.states.get = MagicMock(side_effect=_get)
+
+    await CoverManager.async_apply(
+        hass,
+        ["cover.a", "cover.b"],
+        10,
+        cover_min_positions={"cover.a": 30},
+    )
+
+    calls = hass.services.async_call.call_args_list
+    positions_sent = {}
+    for call in calls:
+        if call[0][1] == "set_cover_position":
+            for eid in call[0][2]["entity_id"]:
+                positions_sent[eid] = call[0][2]["position"]
+
+    assert positions_sent["cover.a"] == 30
+    assert positions_sent["cover.b"] == 10
+
+
+@pytest.mark.asyncio
+async def test_async_apply_no_min_positions_unchanged():
+    """Without cover_min_positions, behavior is unchanged."""
+    hass = MagicMock()
+    hass.services.async_call = AsyncMock()
+
+    cover_state = MagicMock()
+    cover_state.attributes = {"supported_features": 4}
+    hass.states.get = MagicMock(return_value=cover_state)
+
+    await CoverManager.async_apply(hass, ["cover.blind1"], 60)
+
+    hass.services.async_call.assert_called_once_with(
+        "cover",
+        "set_cover_position",
+        {"entity_id": ["cover.blind1"], "position": 60},
+        blocking=False,
+    )
+
+
+def test_set_commanded_position():
+    """set_commanded_position updates last_commanded_position."""
+    mgr = CoverManager()
+    mgr._get_state("lr").last_commanded_position = 10
+    mgr.set_commanded_position("lr", 25)
+    assert mgr._get_state("lr").last_commanded_position == 25

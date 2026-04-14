@@ -97,8 +97,11 @@ def _build_cover_state(coordinator: Any, area_id: str) -> dict[str, Any] | None:
     }
     if cs.last_change_ts:
         result["last_change_ago_s"] = round(now - cs.last_change_ts)
+    if cs.last_command_ts:
+        result["last_command_ago_s"] = round(now - cs.last_command_ts)
     if cs.user_override_until > now:
         result["user_override_remaining_s"] = round(cs.user_override_until - now)
+
     return result
 
 
