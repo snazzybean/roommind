@@ -23,6 +23,7 @@ from custom_components.roommind.utils.device_utils import (
     is_trv_type,
     legacy_to_devices,
     migrate_heat_pump_devices,
+    room_contributes_to_group,
 )
 
 # ---------------------------------------------------------------------------
@@ -548,3 +549,76 @@ class TestLegacyToDevicesSetpointMode:
     def test_ac_gets_proportional(self):
         devices = legacy_to_devices([], ["climate.ac1"])
         assert devices[0]["setpoint_mode"] == SETPOINT_MODE_PROPORTIONAL
+
+
+# ---------------------------------------------------------------------------
+# room_contributes_to_group
+# ---------------------------------------------------------------------------
+
+
+class TestRoomContributesToGroup:
+    """Tests for the orchestration-aware master-demand filter (#168)."""
+
+    TRV = {"entity_id": "climate.trv1", "type": "trv"}
+    AC = {"entity_id": "climate.ac1", "type": "ac"}
+
+    def test_none_always_contributes(self):
+        assert room_contributes_to_group([self.TRV], {"climate.trv1"}, None) is True
+
+    def test_none_with_empty_devices(self):
+        assert room_contributes_to_group([], set(), None) is True
+
+    def test_literal_none_string_returns_false(self):
+        assert room_contributes_to_group([self.TRV], {"climate.trv1"}, "none") is False
+
+    def test_both_always_contributes(self):
+        assert room_contributes_to_group([self.TRV], {"climate.trv1"}, "both") is True
+
+    def test_both_even_without_member_match(self):
+        # "both" short-circuits before type-checking.
+        assert room_contributes_to_group([self.TRV], set(), "both") is True
+
+    def test_primary_with_trv_member_in_group(self):
+        assert room_contributes_to_group([self.TRV, self.AC], {"climate.trv1"}, "primary") is True
+
+    def test_primary_with_only_ac_member(self):
+        # Only AC is in the compressor group -> not relevant for "primary".
+        assert room_contributes_to_group([self.TRV, self.AC], {"climate.ac1"}, "primary") is False
+
+    def test_primary_without_any_member(self):
+        assert room_contributes_to_group([self.TRV], set(), "primary") is False
+
+    def test_secondary_with_ac_member_in_group(self):
+        assert room_contributes_to_group([self.TRV, self.AC], {"climate.ac1"}, "secondary") is True
+
+    def test_secondary_with_only_trv_member(self):
+        assert room_contributes_to_group([self.TRV, self.AC], {"climate.trv1"}, "secondary") is False
+
+    def test_mixed_group_primary_trv_matches(self):
+        assert (
+            room_contributes_to_group(
+                [self.TRV, self.AC],
+                {"climate.trv1", "climate.ac1"},
+                "primary",
+            )
+            is True
+        )
+
+    def test_mixed_group_secondary_ac_matches(self):
+        assert (
+            room_contributes_to_group(
+                [self.TRV, self.AC],
+                {"climate.trv1", "climate.ac1"},
+                "secondary",
+            )
+            is True
+        )
+
+    def test_device_without_type_field_primary(self):
+        # Defensive: devices without "type" must not accidentally match.
+        devices = [{"entity_id": "climate.x"}]
+        assert room_contributes_to_group(devices, {"climate.x"}, "primary") is False
+
+    def test_unknown_active_sources_value(self):
+        # Fail-safe: unknown orchestration state -> master stays idle.
+        assert room_contributes_to_group([self.TRV], {"climate.trv1"}, "invalid") is False

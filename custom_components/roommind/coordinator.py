@@ -66,6 +66,7 @@ from .utils.device_utils import (
     get_all_entity_ids,
     get_direct_setpoint_eids,
     get_trv_eids,
+    room_contributes_to_group,
 )
 from .utils.history_store import HistoryStore
 from .utils.schedule_utils import resolve_schedule_index
@@ -618,6 +619,12 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             )
             if heat_source_plan is not None:
                 self._heat_source_states[area_id] = heat_source_plan.active_sources
+            else:
+                # Orchestrator returned None (e.g. missing current/target temp).
+                # The non-orchestrated async_apply path commands all devices,
+                # so clear stale state to prevent the master-demand filter
+                # from acting on a previous orchestration decision.
+                self._heat_source_states.pop(area_id, None)
         else:
             # Orchestration not active for this room — remove stale state
             # so re-enabling starts fresh.
@@ -1529,7 +1536,13 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         rooms_config: dict[str, dict],
         settings: dict,
     ) -> list[str]:
-        """Collect room modes for rooms containing group member devices."""
+        """Collect room modes for rooms containing group member devices.
+
+        When heat-source orchestration is active for a room, the room is
+        only counted if the orchestration decision includes this group's
+        device types.  Prevents a boiler master from activating when only
+        the AC (secondary) is heating, and vice versa. (#168)
+        """
         if not settings.get("climate_control_active", True):
             return []
         member_set = set(members)
@@ -1540,10 +1553,27 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             if room.get("is_outdoor", False):
                 continue
             device_eids = {d.get("entity_id", "") for d in room.get("devices", [])}
-            if device_eids & member_set:
-                rs = room_states.get(area_id)
-                if rs:
-                    modes.append(rs.get("commanded_mode", rs.get("mode", MODE_IDLE)))
+            if not (device_eids & member_set):
+                continue
+            rs = room_states.get(area_id)
+            if not rs:
+                continue
+            commanded = rs.get("commanded_mode", rs.get("mode", MODE_IDLE))
+
+            # Orchestration filter (heating only): skip this room when its
+            # active heat sources don't include this group's device types.
+            if (
+                commanded == MODE_HEATING
+                and room.get("heat_source_orchestration", False)
+                and not room_contributes_to_group(
+                    room.get("devices", []),
+                    member_set,
+                    rs.get("active_heat_sources"),
+                )
+            ):
+                continue
+
+            modes.append(commanded)
         return modes
 
     def _resolve_master_hvac_mode(self, master_entity: str, action: str) -> str | None:

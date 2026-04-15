@@ -158,7 +158,7 @@ async def test_heat_source_plan_active_trv_inactive_ac():
 
 @pytest.mark.asyncio
 async def test_heat_source_plan_active_ac_inactive_trv():
-    """Active AC gets heat + proportional temp, inactive TRV gets heat + current_temp (valve closed)."""
+    """Active AC gets heat + proportional temp, inactive TRV is idled via async_idle_device (#168)."""
     from custom_components.roommind.managers.heat_source_orchestrator import DeviceCommand, HeatSourcePlan
 
     _last_commands.clear()
@@ -166,7 +166,8 @@ async def test_heat_source_plan_active_ac_inactive_trv():
     # AC currently in "off" so setting to "heat" is not redundant
     ac_state = _make_ac_state_for_plan(["heat", "cool", "off"], current_state="off")
     trv_state = MagicMock()
-    trv_state.state = "off"
+    # Previous cycle left the TRV heating -> idle action must turn it off
+    trv_state.state = "heat"
     trv_state.attributes = {"hvac_modes": ["heat", "off"], "min_temp": 5.0, "max_temp": 30.0, "temperature": None}
 
     def _states_get(eid):
@@ -220,14 +221,16 @@ async def test_heat_source_plan_active_ac_inactive_trv():
 
     calls = hass.services.async_call.call_args_list
 
-    # Inactive TRV: heat mode + current_temp (19.0) to keep valve closed
+    # Inactive TRV: idled via async_idle_device (default idle_action=off).
+    # With min_temp=5.0 exposed, async_turn_off_climate lowers the setpoint
+    # defense-in-depth BEFORE sending set_hvac_mode(off).
     trv_mode = [c for c in calls if c[0][1] == "set_hvac_mode" and c[0][2]["entity_id"] == "climate.trv1"]
     assert len(trv_mode) == 1
-    assert trv_mode[0][0][2]["hvac_mode"] == "heat"
+    assert trv_mode[0][0][2]["hvac_mode"] == "off"
 
-    trv_temp = [c for c in calls if c[0][1] == "set_temperature" and c[0][2]["entity_id"] == "climate.trv1"]
+    trv_temp = [c for c in calls if c[0][1] == "set_temperature" and c[0][2].get("entity_id") == "climate.trv1"]
     assert len(trv_temp) == 1
-    assert trv_temp[0][0][2]["temperature"] == 19.0
+    assert trv_temp[0][0][2]["temperature"] == 5.0  # min_temp, not current_temp
 
     # Active AC: heat mode + proportional temp
     ac_mode = [c for c in calls if c[0][1] == "set_hvac_mode" and c[0][2]["entity_id"] == "climate.ac1"]
@@ -237,6 +240,153 @@ async def test_heat_source_plan_active_ac_inactive_trv():
     ac_temp = [c for c in calls if c[0][1] == "set_temperature" and c[0][2]["entity_id"] == "climate.ac1"]
     assert len(ac_temp) == 1
     assert ac_temp[0][0][2]["temperature"] == 27.8
+
+
+@pytest.mark.asyncio
+async def test_heat_source_plan_inactive_trv_already_off_is_noop():
+    """When the TRV is already off, no service calls are issued (redundancy check)."""
+    from custom_components.roommind.managers.heat_source_orchestrator import DeviceCommand, HeatSourcePlan
+
+    _last_commands.clear()
+    hass = build_hass()
+    ac_state = _make_ac_state_for_plan(["heat", "cool", "off"], current_state="off")
+    trv_state = MagicMock()
+    trv_state.state = "off"  # already idled
+    trv_state.attributes = {"hvac_modes": ["heat", "off"], "min_temp": 5.0, "max_temp": 30.0, "temperature": 5.0}
+
+    def _states_get(eid):
+        if eid == "climate.ac1":
+            return ac_state
+        if eid == "climate.trv1":
+            return trv_state
+        return None
+
+    hass.states.get = MagicMock(side_effect=_states_get)
+
+    room = make_room(thermostats=["climate.trv1"], acs=["climate.ac1"])
+    ctrl = MPCController(
+        hass,
+        room,
+        model_manager=RoomModelManager(),
+        outdoor_temp=5.0,
+        settings={},
+        has_external_sensor=True,
+    )
+    plan = HeatSourcePlan(
+        commands=[
+            DeviceCommand(
+                entity_id="climate.trv1",
+                role="primary",
+                device_type="thermostat",
+                active=False,
+                power_fraction=0.0,
+                reason="test",
+            ),
+            DeviceCommand(
+                entity_id="climate.ac1",
+                role="secondary",
+                device_type="ac",
+                active=True,
+                power_fraction=0.8,
+                reason="test",
+            ),
+        ],
+        active_sources="secondary",
+        reason="test",
+    )
+    await ctrl.async_apply(
+        mode=MODE_HEATING,
+        targets=TargetTemps(heat=21.0, cool=None),
+        power_fraction=0.8,
+        current_temp=19.0,
+        heat_source_plan=plan,
+    )
+
+    calls = hass.services.async_call.call_args_list
+    trv_calls = [c for c in calls if c[0][2].get("entity_id") == "climate.trv1"]
+    # TRV already in "off" -> async_turn_off_climate short-circuits.
+    assert len(trv_calls) == 0
+
+
+@pytest.mark.asyncio
+async def test_heat_source_plan_inactive_trv_with_setback():
+    """When idle_action=setback, inactive TRV stays in heat with reduced setpoint."""
+    from custom_components.roommind.managers.heat_source_orchestrator import DeviceCommand, HeatSourcePlan
+
+    _last_commands.clear()
+    hass = build_hass()
+    ac_state = _make_ac_state_for_plan(["heat", "cool", "off"], current_state="off")
+    trv_state = MagicMock()
+    trv_state.state = "heat"
+    trv_state.attributes = {
+        "hvac_modes": ["heat", "off"],
+        "min_temp": 5.0,
+        "max_temp": 30.0,
+        "temperature": 21.0,
+    }
+
+    def _states_get(eid):
+        if eid == "climate.ac1":
+            return ac_state
+        if eid == "climate.trv1":
+            return trv_state
+        return None
+
+    hass.states.get = MagicMock(side_effect=_states_get)
+
+    room = make_room(thermostats=["climate.trv1"], acs=["climate.ac1"])
+    # Override TRV device to use setback idle action
+    for d in room["devices"]:
+        if d["entity_id"] == "climate.trv1":
+            d["idle_action"] = "setback"
+
+    ctrl = MPCController(
+        hass,
+        room,
+        model_manager=RoomModelManager(),
+        outdoor_temp=5.0,
+        settings={},
+        has_external_sensor=True,
+    )
+    plan = HeatSourcePlan(
+        commands=[
+            DeviceCommand(
+                entity_id="climate.trv1",
+                role="primary",
+                device_type="thermostat",
+                active=False,
+                power_fraction=0.0,
+                reason="test",
+            ),
+            DeviceCommand(
+                entity_id="climate.ac1",
+                role="secondary",
+                device_type="ac",
+                active=True,
+                power_fraction=0.8,
+                reason="test",
+            ),
+        ],
+        active_sources="secondary",
+        reason="test",
+    )
+    await ctrl.async_apply(
+        mode=MODE_HEATING,
+        targets=TargetTemps(heat=21.0, cool=None),
+        power_fraction=0.8,
+        current_temp=19.0,
+        heat_source_plan=plan,
+    )
+
+    calls = hass.services.async_call.call_args_list
+
+    # Setback branch: keeps hvac_mode=heat, shifts setpoint by DEFAULT_IDLE_SETBACK_OFFSET (2.0)
+    trv_mode = [c for c in calls if c[0][1] == "set_hvac_mode" and c[0][2]["entity_id"] == "climate.trv1"]
+    assert len(trv_mode) == 0  # no hvac_mode change in setback
+
+    trv_temp = [c for c in calls if c[0][1] == "set_temperature" and c[0][2].get("entity_id") == "climate.trv1"]
+    assert len(trv_temp) == 1
+    assert trv_temp[0][0][2]["temperature"] == 19.0  # 21.0 - 2.0
 
 
 @pytest.mark.asyncio

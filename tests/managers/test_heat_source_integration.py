@@ -175,8 +175,8 @@ class TestHeatSourceIntegration:
     async def test_small_gap_only_ac_receives_commands(self, coordinator, real_store, hass):
         """Small gap (0.5C): only secondary (AC) should actively heat.
 
-        TRV stays in heat mode at current_temp to keep valve closed
-        while AC handles heating.
+        Inactive TRV is idled via async_idle_device (default idle_action=off),
+        not kept in heat mode. (#168)
         """
         await _setup_store(real_store)
 
@@ -188,16 +188,10 @@ class TestHeatSourceIntegration:
         trv_calls = _calls_for_entity(hass, "climate.trv_living")
         ac_calls = _calls_for_entity(hass, "climate.ac_living")
 
-        # TRV: should be in heat mode but at current_temp (valve closed)
-        trv_modes = [svc for svc, _ in trv_calls if svc == "set_hvac_mode"]
-        assert len(trv_modes) > 0, "TRV should receive hvac_mode command"
+        # Inactive TRV: idled to off (not kept in heat mode).
         trv_mode_data = [d for svc, d in trv_calls if svc == "set_hvac_mode"]
-        assert trv_mode_data[0]["hvac_mode"] == "heat"
-
-        # TRV temperature should be current_temp (20.5) to keep valve closed
-        trv_temp_calls = [d for svc, d in trv_calls if svc == "set_temperature"]
-        assert len(trv_temp_calls) > 0
-        assert trv_temp_calls[0]["temperature"] == 20.5
+        assert len(trv_mode_data) == 1, "TRV should be turned off"
+        assert trv_mode_data[0]["hvac_mode"] == "off"
 
         # AC: should receive active heat commands
         ac_modes = [d for svc, d in ac_calls if svc == "set_hvac_mode"]
@@ -468,3 +462,35 @@ class TestHeatSourceIntegration:
         trv_temps_c2 = [d for svc, d in trv_calls_c2 if svc == "set_temperature"]
         assert len(trv_temps_c2) > 0
         assert trv_temps_c2[0]["temperature"] >= 21.0
+
+    @pytest.mark.asyncio
+    async def test_sensor_dropout_clears_stale_orchestration_state(self, coordinator, real_store, hass):
+        """Stale _heat_source_states must be cleared when the orchestrator
+        returns None (e.g. sensor dropout).  Otherwise the master-demand
+        filter would act on the previous decision while the non-orchestrated
+        fallback path is already commanding all devices.
+        """
+        await _setup_store(real_store)
+
+        # Cycle 1: normal conditions -> orchestrator sets state to "secondary".
+        hass.states.get = MagicMock(side_effect=_make_hass_states(temp="20.5", outdoor_temp="10.0"))
+        await coordinator._async_update_data()
+        assert coordinator._heat_source_states.get("living_room") == "secondary"
+
+        # Cycle 2: temperature sensor goes unavailable -> coordinator's
+        # current_temp becomes None -> orchestrator returns None.
+        # Drive the coordinator through this state explicitly via the
+        # evaluate_heat_sources patch to avoid relying on other fallbacks.
+        hass.services.async_call.reset_mock()
+        coordinator._mode_on_since["living_room"] = coordinator._mode_on_since.get("living_room", 0) - 4000
+        hass.states.get = MagicMock(side_effect=_make_hass_states(temp="20.5", outdoor_temp="10.0"))
+        with patch(
+            "custom_components.roommind.coordinator.evaluate_heat_sources",
+            return_value=None,
+        ):
+            await coordinator._async_update_data()
+
+        assert "living_room" not in coordinator._heat_source_states, (
+            "Stale orchestration state must be cleared when the orchestrator "
+            "returns None so the master-demand filter doesn't act on it"
+        )

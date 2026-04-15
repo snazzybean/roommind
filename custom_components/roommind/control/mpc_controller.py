@@ -1360,17 +1360,18 @@ class MPCController:
                 else:
                     # Inactive device
                     if cmd.device_type == "thermostat":
-                        # Keep TRV in heat mode at current temp to keep valve closed
-                        # while the preferred source handles heating.
-                        # current_temp is guaranteed non-None here: the orchestrator
-                        # returns None when current_temp is None (line 100).
-                        assert current_temp is not None
-                        ha_t = celsius_to_ha_temp(self.hass, current_temp)
-                        await self._call("set_hvac_mode", {"entity_id": cmd.entity_id, "hvac_mode": "heat"})
-                        await self._call(
-                            "set_temperature",
-                            {"entity_id": cmd.entity_id, "temperature": ha_t},
-                            temp_intent="heat",
+                        # Idle inactive TRVs via the configured idle_action
+                        # (default "off").  Previously the TRV was kept in
+                        # heat+setpoint=current_temp, but step snapping
+                        # (e.g. 19.3 -> 19.5) could nudge the valve open on
+                        # sensor fluctuation, causing a mechanical twitch
+                        # and unnecessary heat demand. (#168)
+                        await async_idle_device(
+                            self.hass,
+                            cmd.entity_id,
+                            self._devices,
+                            area_id=self._area_id,
+                            targets=targets,
                         )
                     else:
                         # ACs can be turned off without boiler cycling concerns

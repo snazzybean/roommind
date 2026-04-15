@@ -235,3 +235,46 @@ def migrate_heat_pump_devices(devices: list[dict]) -> bool:
             d["type"] = DEVICE_TYPE_AC
             migrated = True
     return migrated
+
+
+def room_contributes_to_group(
+    room_devices: list[dict],
+    member_set: set[str],
+    active_heat_sources: str | None,
+) -> bool:
+    """Whether a room's group members are heating-active per orchestration.
+
+    Used by coordinator._collect_member_room_modes to decide whether a
+    heating room contributes heating demand to a compressor group's
+    master device.
+
+    - ``None``       -> no orchestration data (disabled, missing temp,
+                        no TRV+AC, or popped state). Preserve legacy
+                        behavior: count the room.
+    - ``"none"``     -> orchestration chose nothing (delta_t <= 0) ->
+                        False (all devices idled by orchestrator).
+    - ``"both"``     -> TRV + AC both active -> True.
+    - ``"primary"``  -> only TRVs active -> True iff any group member
+                        in this room is a TRV.
+    - ``"secondary"``-> only ACs active -> True iff any group member
+                        in this room is an AC.
+
+    Unknown string values -> False (fail-safe: master stays idle).
+    """
+    if active_heat_sources is None:
+        return True
+    if active_heat_sources == "none":
+        return False
+    if active_heat_sources == "both":
+        return True
+    if active_heat_sources == "primary":
+        required_type = DEVICE_TYPE_TRV
+    elif active_heat_sources == "secondary":
+        required_type = DEVICE_TYPE_AC
+    else:
+        return False  # defensive: unknown orchestration state
+    for dev in room_devices:
+        eid = dev.get("entity_id", "")
+        if eid and eid in member_set and dev.get("type") == required_type:
+            return True
+    return False

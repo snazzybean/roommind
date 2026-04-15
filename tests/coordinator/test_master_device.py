@@ -1778,3 +1778,676 @@ class TestMasterZoneWake:
         assert len(master_heat_calls) >= 1, (
             "Master must receive heat even though device shows idle (commanded_mode=heating)"
         )
+
+
+def _room_with_trv_and_ac(area_id, trv_eid, ac_eid, **overrides):
+    """Room with both TRV and AC, heat-source orchestration enabled by default."""
+    room = {
+        **SAMPLE_ROOM,
+        "area_id": area_id,
+        "thermostats": [trv_eid],
+        "acs": [ac_eid],
+        "devices": [
+            {"entity_id": trv_eid, "type": "trv", "role": "auto", "heating_system_type": ""},
+            {"entity_id": ac_eid, "type": "ac", "role": "auto", "heating_system_type": ""},
+        ],
+        "heat_source_orchestration": True,
+    }
+    room.update(overrides)
+    return room
+
+
+def _mock_evaluate_heat_sources(active_sources):
+    """Build a patch target that returns a HeatSourcePlan with fixed active_sources.
+
+    ``active_sources=None`` simulates the Orchestrator returning None (fallback).
+    """
+    from custom_components.roommind.managers.heat_source_orchestrator import (
+        HeatSourcePlan,
+    )
+
+    def _fake(**kwargs):
+        if active_sources is None:
+            return None
+        return HeatSourcePlan(commands=[], active_sources=active_sources, reason="test")
+
+    return _fake
+
+
+class TestMasterOrchestrationAware:
+    """Master device control respects heat-source orchestration (#168)."""
+
+    @pytest.mark.asyncio
+    async def test_boiler_master_idle_when_orchestration_secondary(self, hass, mock_config_entry):
+        """Boiler master stays idle when orchestration picks only the AC."""
+        from unittest.mock import patch as _patch
+
+        room = _room_with_trv_and_ac("living_room_abc12345", "climate.living_trv", "climate.living_ac")
+        store = _make_store_mock({"living_room_abc12345": room})
+        store.get_settings.return_value = {
+            "climate_control_active": True,
+            "compressor_groups": [
+                {
+                    "id": "boiler",
+                    "name": "Gas Boiler",
+                    "members": ["climate.living_trv"],
+                    "master_entity": "climate.boiler",
+                }
+            ],
+        }
+
+        master_state = _make_master_state("off")
+        ac_state = MagicMock()
+        ac_state.state = "off"
+        ac_state.attributes = {"hvac_modes": ["heat", "cool", "off"], "min_temp": 16, "max_temp": 30}
+        base_get = make_mock_states_get(temp="18.0")
+
+        def states_get(eid):
+            if eid == "climate.boiler":
+                return master_state
+            if eid == "climate.living_ac":
+                return ac_state
+            return base_get(eid)
+
+        hass.states.get = MagicMock(side_effect=states_get)
+        hass.services.async_call = AsyncMock()
+        hass.data = {"roommind": {"store": store}}
+
+        coordinator = _create_coordinator(hass, mock_config_entry)
+        with _patch(
+            "custom_components.roommind.coordinator.evaluate_heat_sources",
+            side_effect=_mock_evaluate_heat_sources("secondary"),
+        ):
+            await coordinator._async_update_data()
+
+        boiler_heat_calls = [
+            c
+            for c in hass.services.async_call.call_args_list
+            if len(c.args) >= 3
+            and c.args[0] == "climate"
+            and c.args[1] == "set_hvac_mode"
+            and c.args[2].get("entity_id") == "climate.boiler"
+            and c.args[2].get("hvac_mode") == "heat"
+        ]
+        assert len(boiler_heat_calls) == 0, "Boiler must not receive heat when AC is selected"
+
+    @pytest.mark.asyncio
+    async def test_boiler_master_heat_when_orchestration_primary(self, hass, mock_config_entry):
+        """Boiler master gets heat when orchestration picks primary (TRV)."""
+        from unittest.mock import patch as _patch
+
+        room = _room_with_trv_and_ac("living_room_abc12345", "climate.living_trv", "climate.living_ac")
+        store = _make_store_mock({"living_room_abc12345": room})
+        store.get_settings.return_value = {
+            "climate_control_active": True,
+            "compressor_groups": [
+                {
+                    "id": "boiler",
+                    "name": "Gas Boiler",
+                    "members": ["climate.living_trv"],
+                    "master_entity": "climate.boiler",
+                }
+            ],
+        }
+
+        master_state = _make_master_state("off")
+        ac_state = MagicMock()
+        ac_state.state = "off"
+        ac_state.attributes = {"hvac_modes": ["heat", "cool", "off"], "min_temp": 16, "max_temp": 30}
+        base_get = make_mock_states_get(temp="18.0")
+
+        def states_get(eid):
+            if eid == "climate.boiler":
+                return master_state
+            if eid == "climate.living_ac":
+                return ac_state
+            return base_get(eid)
+
+        hass.states.get = MagicMock(side_effect=states_get)
+        hass.services.async_call = AsyncMock()
+        hass.data = {"roommind": {"store": store}}
+
+        coordinator = _create_coordinator(hass, mock_config_entry)
+        with _patch(
+            "custom_components.roommind.coordinator.evaluate_heat_sources",
+            side_effect=_mock_evaluate_heat_sources("primary"),
+        ):
+            await coordinator._async_update_data()
+
+        boiler_calls = [
+            c
+            for c in hass.services.async_call.call_args_list
+            if len(c.args) >= 3
+            and c.args[0] == "climate"
+            and c.args[1] == "set_hvac_mode"
+            and c.args[2].get("entity_id") == "climate.boiler"
+        ]
+        assert len(boiler_calls) >= 1
+        assert boiler_calls[-1].args[2]["hvac_mode"] == "heat"
+
+    @pytest.mark.asyncio
+    async def test_boiler_master_heat_when_orchestration_both(self, hass, mock_config_entry):
+        """Boiler master gets heat when orchestration picks both sources."""
+        from unittest.mock import patch as _patch
+
+        room = _room_with_trv_and_ac("living_room_abc12345", "climate.living_trv", "climate.living_ac")
+        store = _make_store_mock({"living_room_abc12345": room})
+        store.get_settings.return_value = {
+            "climate_control_active": True,
+            "compressor_groups": [
+                {
+                    "id": "boiler",
+                    "name": "Gas Boiler",
+                    "members": ["climate.living_trv"],
+                    "master_entity": "climate.boiler",
+                }
+            ],
+        }
+
+        master_state = _make_master_state("off")
+        ac_state = MagicMock()
+        ac_state.state = "off"
+        ac_state.attributes = {"hvac_modes": ["heat", "cool", "off"], "min_temp": 16, "max_temp": 30}
+        base_get = make_mock_states_get(temp="18.0")
+
+        def states_get(eid):
+            if eid == "climate.boiler":
+                return master_state
+            if eid == "climate.living_ac":
+                return ac_state
+            return base_get(eid)
+
+        hass.states.get = MagicMock(side_effect=states_get)
+        hass.services.async_call = AsyncMock()
+        hass.data = {"roommind": {"store": store}}
+
+        coordinator = _create_coordinator(hass, mock_config_entry)
+        with _patch(
+            "custom_components.roommind.coordinator.evaluate_heat_sources",
+            side_effect=_mock_evaluate_heat_sources("both"),
+        ):
+            await coordinator._async_update_data()
+
+        boiler_calls = [
+            c
+            for c in hass.services.async_call.call_args_list
+            if len(c.args) >= 3
+            and c.args[0] == "climate"
+            and c.args[1] == "set_hvac_mode"
+            and c.args[2].get("entity_id") == "climate.boiler"
+        ]
+        assert len(boiler_calls) >= 1
+        assert boiler_calls[-1].args[2]["hvac_mode"] == "heat"
+
+    @pytest.mark.asyncio
+    async def test_ac_master_idle_when_orchestration_primary(self, hass, mock_config_entry):
+        """AC master stays idle when orchestration picks only the boiler."""
+        from unittest.mock import patch as _patch
+
+        room = _room_with_trv_and_ac("living_room_abc12345", "climate.living_trv", "climate.living_ac")
+        store = _make_store_mock({"living_room_abc12345": room})
+        store.get_settings.return_value = {
+            "climate_control_active": True,
+            "compressor_groups": [
+                {
+                    "id": "ac",
+                    "name": "AC Unit",
+                    "members": ["climate.living_ac"],
+                    "master_entity": "climate.ac_master",
+                }
+            ],
+        }
+
+        ac_master_state = _make_master_state("off")
+        ac_state = MagicMock()
+        ac_state.state = "off"
+        ac_state.attributes = {"hvac_modes": ["heat", "cool", "off"], "min_temp": 16, "max_temp": 30}
+        base_get = make_mock_states_get(temp="18.0")
+
+        def states_get(eid):
+            if eid == "climate.ac_master":
+                return ac_master_state
+            if eid == "climate.living_ac":
+                return ac_state
+            return base_get(eid)
+
+        hass.states.get = MagicMock(side_effect=states_get)
+        hass.services.async_call = AsyncMock()
+        hass.data = {"roommind": {"store": store}}
+
+        coordinator = _create_coordinator(hass, mock_config_entry)
+        with _patch(
+            "custom_components.roommind.coordinator.evaluate_heat_sources",
+            side_effect=_mock_evaluate_heat_sources("primary"),
+        ):
+            await coordinator._async_update_data()
+
+        ac_master_heat_calls = [
+            c
+            for c in hass.services.async_call.call_args_list
+            if len(c.args) >= 3
+            and c.args[0] == "climate"
+            and c.args[1] == "set_hvac_mode"
+            and c.args[2].get("entity_id") == "climate.ac_master"
+            and c.args[2].get("hvac_mode") == "heat"
+        ]
+        assert len(ac_master_heat_calls) == 0
+
+    @pytest.mark.asyncio
+    async def test_ac_master_heat_when_orchestration_secondary(self, hass, mock_config_entry):
+        """AC master gets heat when orchestration picks secondary (AC)."""
+        from unittest.mock import patch as _patch
+
+        room = _room_with_trv_and_ac("living_room_abc12345", "climate.living_trv", "climate.living_ac")
+        store = _make_store_mock({"living_room_abc12345": room})
+        store.get_settings.return_value = {
+            "climate_control_active": True,
+            "compressor_groups": [
+                {
+                    "id": "ac",
+                    "name": "AC Unit",
+                    "members": ["climate.living_ac"],
+                    "master_entity": "climate.ac_master",
+                }
+            ],
+        }
+
+        ac_master_state = _make_master_state("off")
+        ac_state = MagicMock()
+        ac_state.state = "off"
+        ac_state.attributes = {"hvac_modes": ["heat", "cool", "off"], "min_temp": 16, "max_temp": 30}
+        base_get = make_mock_states_get(temp="18.0")
+
+        def states_get(eid):
+            if eid == "climate.ac_master":
+                return ac_master_state
+            if eid == "climate.living_ac":
+                return ac_state
+            return base_get(eid)
+
+        hass.states.get = MagicMock(side_effect=states_get)
+        hass.services.async_call = AsyncMock()
+        hass.data = {"roommind": {"store": store}}
+
+        coordinator = _create_coordinator(hass, mock_config_entry)
+        with _patch(
+            "custom_components.roommind.coordinator.evaluate_heat_sources",
+            side_effect=_mock_evaluate_heat_sources("secondary"),
+        ):
+            await coordinator._async_update_data()
+
+        ac_master_calls = [
+            c
+            for c in hass.services.async_call.call_args_list
+            if len(c.args) >= 3
+            and c.args[0] == "climate"
+            and c.args[1] == "set_hvac_mode"
+            and c.args[2].get("entity_id") == "climate.ac_master"
+        ]
+        assert len(ac_master_calls) >= 1
+        assert ac_master_calls[-1].args[2]["hvac_mode"] == "heat"
+
+    @pytest.mark.asyncio
+    async def test_boiler_idle_when_active_sources_none(self, hass, mock_config_entry):
+        """Boiler stays idle when orchestration reports active_sources='none'."""
+        from unittest.mock import patch as _patch
+
+        room = _room_with_trv_and_ac("living_room_abc12345", "climate.living_trv", "climate.living_ac")
+        store = _make_store_mock({"living_room_abc12345": room})
+        store.get_settings.return_value = {
+            "climate_control_active": True,
+            "compressor_groups": [
+                {
+                    "id": "boiler",
+                    "name": "Gas Boiler",
+                    "members": ["climate.living_trv"],
+                    "master_entity": "climate.boiler",
+                }
+            ],
+        }
+
+        master_state = _make_master_state("off")
+        ac_state = MagicMock()
+        ac_state.state = "off"
+        ac_state.attributes = {"hvac_modes": ["heat", "cool", "off"], "min_temp": 16, "max_temp": 30}
+        base_get = make_mock_states_get(temp="18.0")
+
+        def states_get(eid):
+            if eid == "climate.boiler":
+                return master_state
+            if eid == "climate.living_ac":
+                return ac_state
+            return base_get(eid)
+
+        hass.states.get = MagicMock(side_effect=states_get)
+        hass.services.async_call = AsyncMock()
+        hass.data = {"roommind": {"store": store}}
+
+        coordinator = _create_coordinator(hass, mock_config_entry)
+        with _patch(
+            "custom_components.roommind.coordinator.evaluate_heat_sources",
+            side_effect=_mock_evaluate_heat_sources("none"),
+        ):
+            await coordinator._async_update_data()
+
+        boiler_heat_calls = [
+            c
+            for c in hass.services.async_call.call_args_list
+            if len(c.args) >= 3
+            and c.args[0] == "climate"
+            and c.args[1] == "set_hvac_mode"
+            and c.args[2].get("entity_id") == "climate.boiler"
+            and c.args[2].get("hvac_mode") == "heat"
+        ]
+        assert len(boiler_heat_calls) == 0
+
+    @pytest.mark.asyncio
+    async def test_boiler_heat_when_active_sources_missing_fallback(self, hass, mock_config_entry):
+        """When orchestrator returns None (fallback), master behaves legacy."""
+        from unittest.mock import patch as _patch
+
+        room = _room_with_trv_and_ac("living_room_abc12345", "climate.living_trv", "climate.living_ac")
+        store = _make_store_mock({"living_room_abc12345": room})
+        store.get_settings.return_value = {
+            "climate_control_active": True,
+            "compressor_groups": [
+                {
+                    "id": "boiler",
+                    "name": "Gas Boiler",
+                    "members": ["climate.living_trv"],
+                    "master_entity": "climate.boiler",
+                }
+            ],
+        }
+
+        master_state = _make_master_state("off")
+        ac_state = MagicMock()
+        ac_state.state = "off"
+        ac_state.attributes = {"hvac_modes": ["heat", "cool", "off"], "min_temp": 16, "max_temp": 30}
+        base_get = make_mock_states_get(temp="18.0")
+
+        def states_get(eid):
+            if eid == "climate.boiler":
+                return master_state
+            if eid == "climate.living_ac":
+                return ac_state
+            return base_get(eid)
+
+        hass.states.get = MagicMock(side_effect=states_get)
+        hass.services.async_call = AsyncMock()
+        hass.data = {"roommind": {"store": store}}
+
+        coordinator = _create_coordinator(hass, mock_config_entry)
+        # Orchestrator returns None -> active_heat_sources stays None -> filter
+        # returns True -> master reacts to commanded_mode as before.
+        with _patch(
+            "custom_components.roommind.coordinator.evaluate_heat_sources",
+            side_effect=_mock_evaluate_heat_sources(None),
+        ):
+            await coordinator._async_update_data()
+
+        boiler_calls = [
+            c
+            for c in hass.services.async_call.call_args_list
+            if len(c.args) >= 3
+            and c.args[0] == "climate"
+            and c.args[1] == "set_hvac_mode"
+            and c.args[2].get("entity_id") == "climate.boiler"
+        ]
+        assert len(boiler_calls) >= 1
+        assert boiler_calls[-1].args[2]["hvac_mode"] == "heat"
+
+    @pytest.mark.asyncio
+    async def test_mixed_rooms_orchestrated_secondary_and_plain_heating(self, hass, mock_config_entry):
+        """Room B without orchestration still drives the boiler even if Room A skips it."""
+        from unittest.mock import patch as _patch
+
+        room_a = _room_with_trv_and_ac("living_room_abc12345", "climate.a_trv", "climate.a_ac")
+        # Room B: no orchestration, TRV only, temp_sensor for its area
+        room_b = {
+            **SAMPLE_ROOM,
+            "area_id": "kitchen_xyz",
+            "thermostats": ["climate.b_trv"],
+            "acs": [],
+            "devices": [
+                {"entity_id": "climate.b_trv", "type": "trv", "role": "auto", "heating_system_type": ""},
+            ],
+            "heat_source_orchestration": False,
+            "temperature_sensor": "sensor.kitchen_temp",
+        }
+        store = _make_store_mock({"living_room_abc12345": room_a, "kitchen_xyz": room_b})
+        store.get_settings.return_value = {
+            "climate_control_active": True,
+            "compressor_groups": [
+                {
+                    "id": "boiler",
+                    "name": "Gas Boiler",
+                    "members": ["climate.a_trv", "climate.b_trv"],
+                    "master_entity": "climate.boiler",
+                }
+            ],
+        }
+
+        master_state = _make_master_state("off")
+        ac_state = MagicMock()
+        ac_state.state = "off"
+        ac_state.attributes = {"hvac_modes": ["heat", "cool", "off"], "min_temp": 16, "max_temp": 30}
+        base_get = make_mock_states_get(temp="18.0")
+        kitchen_temp = MagicMock()
+        kitchen_temp.state = "18.0"
+        kitchen_temp.attributes = {}
+
+        def states_get(eid):
+            if eid == "climate.boiler":
+                return master_state
+            if eid == "climate.a_ac":
+                return ac_state
+            if eid == "sensor.kitchen_temp":
+                return kitchen_temp
+            return base_get(eid)
+
+        hass.states.get = MagicMock(side_effect=states_get)
+        hass.services.async_call = AsyncMock()
+        hass.data = {"roommind": {"store": store}}
+
+        coordinator = _create_coordinator(hass, mock_config_entry)
+        with _patch(
+            "custom_components.roommind.coordinator.evaluate_heat_sources",
+            side_effect=_mock_evaluate_heat_sources("secondary"),
+        ):
+            await coordinator._async_update_data()
+
+        boiler_calls = [
+            c
+            for c in hass.services.async_call.call_args_list
+            if len(c.args) >= 3
+            and c.args[0] == "climate"
+            and c.args[1] == "set_hvac_mode"
+            and c.args[2].get("entity_id") == "climate.boiler"
+        ]
+        assert len(boiler_calls) >= 1
+        assert boiler_calls[-1].args[2]["hvac_mode"] == "heat", (
+            "Room B (no orchestration) must still drive the boiler master"
+        )
+
+    @pytest.mark.asyncio
+    async def test_non_orchestrated_unchanged(self, hass, mock_config_entry):
+        """A room without orchestration drives the boiler master as before."""
+        room = _room_with_device("living_room_abc12345", "climate.living_trv")
+        store = _make_store_mock({"living_room_abc12345": room})
+        store.get_settings.return_value = {
+            "climate_control_active": True,
+            "compressor_groups": [
+                {
+                    "id": "boiler",
+                    "name": "Gas Boiler",
+                    "members": ["climate.living_trv"],
+                    "master_entity": "climate.boiler",
+                }
+            ],
+        }
+
+        master_state = _make_master_state("off")
+        base_get = make_mock_states_get(temp="18.0")
+
+        def states_get(eid):
+            if eid == "climate.boiler":
+                return master_state
+            return base_get(eid)
+
+        hass.states.get = MagicMock(side_effect=states_get)
+        hass.services.async_call = AsyncMock()
+        hass.data = {"roommind": {"store": store}}
+
+        coordinator = _create_coordinator(hass, mock_config_entry)
+        await coordinator._async_update_data()
+
+        boiler_calls = [
+            c
+            for c in hass.services.async_call.call_args_list
+            if len(c.args) >= 3
+            and c.args[0] == "climate"
+            and c.args[1] == "set_hvac_mode"
+            and c.args[2].get("entity_id") == "climate.boiler"
+        ]
+        assert len(boiler_calls) >= 1
+        assert boiler_calls[-1].args[2]["hvac_mode"] == "heat"
+
+    @pytest.mark.asyncio
+    async def test_cooling_mode_not_filtered(self, hass, mock_config_entry):
+        """Cooling-mode rooms bypass the heating orchestration filter."""
+        from unittest.mock import patch as _patch
+
+        # Cool-only climate mode so the room commands MODE_COOLING
+        room = _room_with_trv_and_ac(
+            "living_room_abc12345",
+            "climate.living_trv",
+            "climate.living_ac",
+            climate_mode="cool_only",
+            comfort_temp=22.0,
+            eco_temp=26.0,
+            comfort_cool=22.0,
+            eco_cool=26.0,
+        )
+        store = _make_store_mock({"living_room_abc12345": room})
+        store.get_settings.return_value = {
+            "climate_control_active": True,
+            "compressor_groups": [
+                {
+                    "id": "ac",
+                    "name": "AC",
+                    "members": ["climate.living_ac"],
+                    "master_entity": "climate.ac_master",
+                }
+            ],
+        }
+
+        ac_master_state = _make_master_state("off")
+        ac_state = MagicMock()
+        ac_state.state = "off"
+        ac_state.attributes = {"hvac_modes": ["heat", "cool", "off"], "min_temp": 16, "max_temp": 30}
+        base_get = make_mock_states_get(temp="28.0")  # hot -> cooling
+
+        def states_get(eid):
+            if eid == "climate.ac_master":
+                return ac_master_state
+            if eid == "climate.living_ac":
+                return ac_state
+            return base_get(eid)
+
+        hass.states.get = MagicMock(side_effect=states_get)
+        hass.services.async_call = AsyncMock()
+        hass.data = {"roommind": {"store": store}}
+
+        coordinator = _create_coordinator(hass, mock_config_entry)
+        # Orchestrator is short-circuited on non-heating modes anyway,
+        # but explicit patch clarifies intent.
+        with _patch(
+            "custom_components.roommind.coordinator.evaluate_heat_sources",
+            side_effect=_mock_evaluate_heat_sources(None),
+        ):
+            await coordinator._async_update_data()
+
+        ac_master_calls = [
+            c
+            for c in hass.services.async_call.call_args_list
+            if len(c.args) >= 3
+            and c.args[0] == "climate"
+            and c.args[1] == "set_hvac_mode"
+            and c.args[2].get("entity_id") == "climate.ac_master"
+        ]
+        assert len(ac_master_calls) >= 1
+        assert ac_master_calls[-1].args[2]["hvac_mode"] == "cool"
+
+    @pytest.mark.asyncio
+    async def test_two_groups_per_room_filtered_independently(self, hass, mock_config_entry):
+        """Room with TRV in boiler group and AC in AC group -> per-group filter."""
+        from unittest.mock import patch as _patch
+
+        room = _room_with_trv_and_ac("living_room_abc12345", "climate.living_trv", "climate.living_ac")
+        store = _make_store_mock({"living_room_abc12345": room})
+        store.get_settings.return_value = {
+            "climate_control_active": True,
+            "compressor_groups": [
+                {
+                    "id": "boiler",
+                    "name": "Gas Boiler",
+                    "members": ["climate.living_trv"],
+                    "master_entity": "climate.boiler",
+                },
+                {
+                    "id": "ac",
+                    "name": "AC",
+                    "members": ["climate.living_ac"],
+                    "master_entity": "climate.ac_master",
+                },
+            ],
+        }
+
+        boiler_state = _make_master_state("off")
+        ac_master_state = _make_master_state("off")
+        ac_state = MagicMock()
+        ac_state.state = "off"
+        ac_state.attributes = {"hvac_modes": ["heat", "cool", "off"], "min_temp": 16, "max_temp": 30}
+        base_get = make_mock_states_get(temp="18.0")
+
+        def states_get(eid):
+            if eid == "climate.boiler":
+                return boiler_state
+            if eid == "climate.ac_master":
+                return ac_master_state
+            if eid == "climate.living_ac":
+                return ac_state
+            return base_get(eid)
+
+        hass.states.get = MagicMock(side_effect=states_get)
+        hass.services.async_call = AsyncMock()
+        hass.data = {"roommind": {"store": store}}
+
+        coordinator = _create_coordinator(hass, mock_config_entry)
+        with _patch(
+            "custom_components.roommind.coordinator.evaluate_heat_sources",
+            side_effect=_mock_evaluate_heat_sources("secondary"),
+        ):
+            await coordinator._async_update_data()
+
+        boiler_heat = [
+            c
+            for c in hass.services.async_call.call_args_list
+            if len(c.args) >= 3
+            and c.args[0] == "climate"
+            and c.args[1] == "set_hvac_mode"
+            and c.args[2].get("entity_id") == "climate.boiler"
+            and c.args[2].get("hvac_mode") == "heat"
+        ]
+        ac_master_heat = [
+            c
+            for c in hass.services.async_call.call_args_list
+            if len(c.args) >= 3
+            and c.args[0] == "climate"
+            and c.args[1] == "set_hvac_mode"
+            and c.args[2].get("entity_id") == "climate.ac_master"
+            and c.args[2].get("hvac_mode") == "heat"
+        ]
+        assert len(boiler_heat) == 0, "Boiler must stay idle when AC is selected"
+        assert len(ac_master_heat) >= 1, "AC master must activate when AC is selected"
