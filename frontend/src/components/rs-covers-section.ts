@@ -3,6 +3,7 @@ import { customElement, property } from "lit/decorators.js";
 import type { HomeAssistant, HassArea, CoverScheduleEntry } from "../types";
 import { localize, type TranslationKey } from "../utils/localize";
 import { getEntitiesForArea } from "../utils/room-state";
+import { getSelectValue } from "../utils/events";
 import "./shared/rs-toggle-row";
 import "./shared/rs-threshold-field";
 import "./rs-cover-schedule";
@@ -216,10 +217,11 @@ export class RsCoverSection extends LitElement {
           const name = (st?.attributes?.friendly_name as string) ?? eid;
           const pos = st?.attributes?.current_position as number | undefined;
           const orient = this.coverOrientations[eid];
-          const orientLabel =
+          const orientDir =
             orient !== undefined
-              ? RsCoverSection._DIRECTIONS.find((d) => d.deg === orient)?.key
+              ? RsCoverSection._DIRECTIONS.find((d) => d.deg === orient)
               : undefined;
+          const orientLabel = orientDir ? localize(orientDir.shortLabel, l) : undefined;
           const minPos = this.coverMinPositions[eid];
           return html`
             <div class="cover-row">
@@ -312,16 +314,27 @@ export class RsCoverSection extends LitElement {
                         { value: "", label: localize("covers.orientation_none", l) },
                         ...RsCoverSection._DIRECTIONS.map((d) => ({
                           value: String(d.deg),
-                          label: localize(d.label, l),
+                          label: localize(d.longLabel, l),
                         })),
                       ]}
                       fixedMenuPosition
                       @selected=${(e: Event) => {
-                        const val = (e.target as HTMLElement & { value: string }).value;
+                        const val = getSelectValue(e);
                         this._setOrientation(entityId, val === "" ? undefined : Number(val));
                       }}
                       @closed=${(e: Event) => e.stopPropagation()}
-                    ></ha-select>
+                    >
+                      <ha-list-item value=""
+                        >${localize("covers.orientation_none", l)}</ha-list-item
+                      >
+                      ${RsCoverSection._DIRECTIONS.map(
+                        (d) => html`
+                          <ha-list-item value=${String(d.deg)}
+                            >${localize(d.longLabel, l)}</ha-list-item
+                          >
+                        `,
+                      )}
+                    </ha-select>
                     <rs-threshold-field
                       .label=${localize("covers.per_cover_min_position", l)}
                       .value=${currentMin ?? 0}
@@ -532,17 +545,20 @@ export class RsCoverSection extends LitElement {
     `;
   }
 
-  private static readonly _DIRECTIONS: Array<{ label: TranslationKey; key: string; deg: number }> =
-    [
-      { label: "covers.orientation_N", key: "N", deg: 0 },
-      { label: "covers.orientation_NE", key: "NE", deg: 45 },
-      { label: "covers.orientation_E", key: "E", deg: 90 },
-      { label: "covers.orientation_SE", key: "SE", deg: 135 },
-      { label: "covers.orientation_S", key: "S", deg: 180 },
-      { label: "covers.orientation_SW", key: "SW", deg: 225 },
-      { label: "covers.orientation_W", key: "W", deg: 270 },
-      { label: "covers.orientation_NW", key: "NW", deg: 315 },
-    ];
+  private static readonly _DIRECTIONS: Array<{
+    shortLabel: TranslationKey;
+    longLabel: TranslationKey;
+    deg: number;
+  }> = [
+    { shortLabel: "covers.orientation_N", longLabel: "covers.orientation_N_full", deg: 0 },
+    { shortLabel: "covers.orientation_NE", longLabel: "covers.orientation_NE_full", deg: 45 },
+    { shortLabel: "covers.orientation_E", longLabel: "covers.orientation_E_full", deg: 90 },
+    { shortLabel: "covers.orientation_SE", longLabel: "covers.orientation_SE_full", deg: 135 },
+    { shortLabel: "covers.orientation_S", longLabel: "covers.orientation_S_full", deg: 180 },
+    { shortLabel: "covers.orientation_SW", longLabel: "covers.orientation_SW_full", deg: 225 },
+    { shortLabel: "covers.orientation_W", longLabel: "covers.orientation_W_full", deg: 270 },
+    { shortLabel: "covers.orientation_NW", longLabel: "covers.orientation_NW_full", deg: 315 },
+  ];
 
   private _setMinPosition(eid: string, value: number) {
     const next = { ...this.coverMinPositions };
