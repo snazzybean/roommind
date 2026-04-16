@@ -100,8 +100,6 @@ class RCModel:
         Q_total = Q_active + self.Q_solar * q_solar + self.Q_occupancy * q_occupancy + Q_residual
         # Equilibrium temperature: T_out + Q/U
         T_eq = T_outdoor + Q_total / self.U
-        # Physical clamp: no room equilibrates outside [0, 50] degC
-        T_eq = max(0.0, min(50.0, T_eq))
         # Decay constant  (U/C has unit 1/h)
         decay = math.exp(-self.U * dt_hours / self.C)
         result = T_eq + (T_room - T_eq) * decay

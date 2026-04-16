@@ -70,15 +70,20 @@ def test_rc_model_serialization():
     assert restored.Q_cool == pytest.approx(model.Q_cool)
 
 
-def test_rc_model_teq_clamping():
-    """T_eq is clamped to [0, 50] to prevent extreme equilibrium temperatures."""
-    model = RCModel(C=1.0, U=1.0, Q_heat=1000.0, Q_cool=1500.0)
-    # Huge heating: T_eq = T_out + Q/U = 5 + 1000/1 = 1005, should be clamped to 50
-    T_new = model.predict(T_room=20.0, T_outdoor=5.0, Q_active=1000.0, dt_minutes=60)
-    assert T_new <= 50.0
-    # Huge cooling: T_eq = 30 + (-1500)/1 = -1470, should be clamped to 0
-    T_new = model.predict(T_room=20.0, T_outdoor=30.0, Q_active=-1500.0, dt_minutes=60)
+def test_rc_model_high_q_u_ratio_cooling():
+    """Cooling must be effective even with high Q_cool/U ratio (#198)."""
+    model = RCModel(C=1.0, U=0.005, Q_heat=9.0, Q_cool=3.5)
+    T_new = model.predict(T_room=24.1, T_outdoor=18.0, Q_active=-3.5, dt_minutes=5)
+    assert T_new < 23.9, f"Cooling should drop temp significantly, got {T_new}"
     assert T_new >= 0.0
+
+
+def test_rc_model_high_q_u_ratio_heating():
+    """Heating must be effective even with high Q_heat/U ratio (#198)."""
+    model = RCModel(C=1.0, U=0.005, Q_heat=9.0, Q_cool=3.5)
+    T_new = model.predict(T_room=18.0, T_outdoor=5.0, Q_active=9.0, dt_minutes=5)
+    assert T_new > 18.5, f"Heating should raise temp significantly, got {T_new}"
+    assert T_new <= 50.0
 
 
 def test_rc_model_output_clamping():
@@ -569,11 +574,10 @@ def test_manager_update_room():
 def test_manager_predict():
     """predict() for untrained room uses RC model with defaults → temp rises with heating."""
     mgr = RoomModelManager()
-    result = mgr.predict("living_room", T_room=20.0, T_outdoor=5.0, Q_active=1000.0, dt_minutes=10)
+    model = mgr.get_model("living_room")
+    result = mgr.predict("living_room", T_room=20.0, T_outdoor=5.0, Q_active=model.Q_heat, dt_minutes=10)
     assert isinstance(result, float)
-    # With Q_active=1000 (heating), prediction should be above T_room
     assert result > 20.0
-    # And physically reasonable (not above 30 with only 10 min heating from 20)
     assert result < 30.0
 
 

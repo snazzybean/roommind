@@ -46,9 +46,9 @@ async def test_proportional_power_near_target():
     hass = build_hass()
     room = make_room()
     model_mgr = RoomModelManager()
-    # Use a known model with high Q_heat so a small 0.3°C error yields frac < 1.
+    # Use a known model with moderate Q_heat so a small 0.3°C error yields frac < 1.
     # This tests MPC proportional behavior, not EKF learning.
-    model_mgr.get_model = MagicMock(return_value=RCModel(C=1.0, U=0.15, Q_heat=50.0, Q_cool=75.0))
+    model_mgr.get_model = MagicMock(return_value=RCModel(C=1.0, U=0.15, Q_heat=8.0, Q_cool=10.0))
     model_mgr.get_prediction_std = MagicMock(return_value=0.1)
     model_mgr.get_mode_counts = MagicMock(return_value=(100, 40, 0))
     ctrl = MPCController(

@@ -248,7 +248,7 @@ class TestSimulateMPC:
 
     def test_with_solar_series(self):
         """Solar series is accepted without error."""
-        model = RCModel(C=1.0, U=0.5, Q_heat=50.0, Q_cool=50.0, Q_solar=10.0)
+        model = RCModel(C=1.0, U=0.5, Q_heat=5.0, Q_cool=5.0, Q_solar=10.0)
         target_forecast = [{"target_temp": 21.0}] * 5
         outdoor_series = [10.0] * 5
         solar_series = [0.3, 0.4, 0.5, 0.4, 0.3]
@@ -360,7 +360,7 @@ class TestSimulateBangbang:
 
     def test_mode_stickiness_minimum_run(self):
         """Once heating starts, minimum run time enforced (2 blocks)."""
-        model = RCModel(C=1.0, U=0.5, Q_heat=5000.0, Q_cool=50.0, Q_solar=0.0)
+        model = RCModel(C=1.0, U=5.0, Q_heat=120.0, Q_cool=50.0, Q_solar=0.0)
         target_forecast = [{"target_temp": 21.0}] * 5
         outdoor_series = [5.0] * 5
         room_config = {
@@ -380,8 +380,8 @@ class TestSimulateBangbang:
             all_points=all_points,
         )
         assert len(result) == 5
-        # With very high Q_heat (5000), temp exceeds target after 1 block, but
-        # min_run=2 forces at least 2 consecutive heating blocks. Verify first
+        # With strong heating (Q_heat=120, U=5.0), temp exceeds target after 1 block,
+        # but min_run=2 forces at least 2 consecutive heating blocks. Verify first
         # two blocks both show temperature increases (heating active).
         assert result[0] > 18.0, "Block 1 should heat"
         assert result[1] > result[0], "Block 2 should still heat (min_run stickiness)"
@@ -788,7 +788,7 @@ class TestSimulateMPCEdgeCases:
     def test_min_run_stickiness(self):
         """Minimum run time blocks prevent premature mode switch (lines 210-211)."""
         # Use underfloor heating with large min_run
-        model = RCModel(C=1.0, U=0.5, Q_heat=5000.0, Q_cool=50.0, Q_solar=0.0)
+        model = RCModel(C=1.0, U=5.0, Q_heat=120.0, Q_cool=50.0, Q_solar=0.0)
         target_forecast = [{"target_temp": 21.0, "heat_target": 21.0, "cool_target": 24.0}] * 10
         outdoor_series = [5.0] * 10
         room_config = {
@@ -808,7 +808,7 @@ class TestSimulateMPCEdgeCases:
             heating_system_type="underfloor",
         )
         assert len(result) == 10
-        # With Q_heat=5000, temp exceeds target (21) after block 1, but
+        # With Q_heat=120/U=5.0, temp exceeds target (21) after block 1, but
         # underfloor min_run=6 forces continued heating. Verify at least 6
         # consecutive temperature increases from the start.
         consecutive_increases = 0
