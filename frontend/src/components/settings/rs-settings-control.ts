@@ -9,6 +9,9 @@ import { localize } from "../../utils/localize";
 import { getSelectValue } from "../../utils/events";
 import { toDisplay, toCelsius, tempUnit, tempStep, tempRange } from "../../utils/temperature";
 
+const CONTROL_DOCS_URL =
+  "https://github.com/snazzybean/roommind/blob/main/docs/control-and-devices.md";
+
 @customElement("rs-settings-control")
 export class RsSettingsControl extends RsSettingsBase {
   @property({ attribute: false }) public hass!: HomeAssistant;
@@ -54,6 +57,10 @@ export class RsSettingsControl extends RsSettingsBase {
           />
           <span class="slider-label">${localize("settings.comfort_weight_comfort", l)}</span>
         </div>
+        <p class="hint helper-text">${localize("settings.comfort_weight_hint", l)}</p>
+        <a class="helper-link" href=${CONTROL_DOCS_URL} target="_blank" rel="noreferrer">
+          ${localize("common.learn_more", l)}
+        </a>
       </div>
 
       <div class="settings-section">
@@ -143,6 +150,9 @@ export class RsSettingsControl extends RsSettingsBase {
         font-size: 13px;
         margin: 0 0 12px;
       }
+      .helper-text {
+        margin: 10px 0 0;
+      }
       .section-label {
         display: block;
         margin-bottom: 8px;
@@ -175,6 +185,16 @@ export class RsSettingsControl extends RsSettingsBase {
         font-size: 12px;
         color: var(--secondary-text-color);
         white-space: nowrap;
+      }
+      .helper-link {
+        display: inline-block;
+        margin-top: 6px;
+        font-size: 12px;
+        color: var(--primary-color);
+        text-decoration: none;
+      }
+      .helper-link:hover {
+        text-decoration: underline;
       }
     `,
   ];
