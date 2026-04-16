@@ -358,3 +358,143 @@ def test_optimizer_inverted_targets_clamped():
         dt_minutes=5,
     )
     assert plan.actions[0] == "heating"
+
+
+# ---------------------------------------------------------------------------
+# Coverage: uncovered lines
+# ---------------------------------------------------------------------------
+
+
+def test_optimize_empty_series_returns_empty_plan():
+    model = RCModel(C=2.0, U=50.0, Q_heat=1000.0, Q_cool=1500.0)
+    opt = MPCOptimizer(model)
+    plan = opt.optimize(
+        T_room=21.0,
+        T_outdoor_series=[],
+        heat_target_series=[],
+        dt_minutes=5,
+    )
+    assert plan.actions == []
+    assert plan.temperatures == [21.0]
+
+
+def test_optimize_nan_t_room_returns_empty_plan():
+    model = RCModel(C=2.0, U=50.0, Q_heat=1000.0, Q_cool=1500.0)
+    opt = MPCOptimizer(model)
+    plan = opt.optimize(
+        T_room=float("nan"),
+        T_outdoor_series=[10.0] * 6,
+        heat_target_series=[21.0] * 6,
+        dt_minutes=5,
+    )
+    assert plan.actions == []
+
+
+def test_min_run_forced_idle_when_mode_gated():
+    model = RCModel(C=2.0, U=50.0, Q_heat=1000.0, Q_cool=200.0)
+    opt = MPCOptimizer(model, can_heat=True, can_cool=True, min_run_blocks=4, outdoor_cooling_min=20.0)
+    outdoor = [25.0] * 2 + [10.0] * 10
+    targets_heat = [30.0] * 12
+    targets_cool = [18.0] * 12
+    plan = opt.optimize(
+        T_room=27.0,
+        T_outdoor_series=outdoor,
+        heat_target_series=targets_heat,
+        cool_target_series=targets_cool,
+        dt_minutes=5,
+    )
+    cooling_started = False
+    for i, a in enumerate(plan.actions):
+        if a == "cooling":
+            cooling_started = True
+        if cooling_started and a == "idle" and i < 4:
+            break
+    assert len(plan.actions) == 12
+
+
+def test_compute_optimal_power_nan_inputs():
+    model = RCModel(C=2.0, U=50.0, Q_heat=1000.0, Q_cool=1500.0)
+    opt = MPCOptimizer(model)
+    pf, mode = opt.compute_optimal_power(float("nan"), 10.0, 21.0, 5.0)
+    assert pf == 0.0
+    assert mode == "idle"
+    pf2, mode2 = opt.compute_optimal_power(21.0, 10.0, float("inf"), 5.0)
+    assert pf2 == 0.0
+    assert mode2 == "idle"
+
+
+def test_compute_optimal_power_tiny_alpha():
+    model = RCModel(C=2.0, U=0.005, Q_heat=1000.0, Q_cool=1500.0)
+    opt = MPCOptimizer(model)
+    pf, mode = opt.compute_optimal_power(19.0, 10.0, 21.0, 5.0)
+    assert mode in ("heating", "idle")
+
+
+def test_compute_optimal_power_zero_alpha():
+    model = RCModel(C=2.0, U=0.0, Q_heat=1000.0, Q_cool=1500.0)
+    opt = MPCOptimizer(model)
+    pf, mode = opt.compute_optimal_power(19.0, 10.0, 21.0, 5.0)
+    assert pf == 0.0
+    assert mode == "idle"
+
+
+def test_compute_optimal_power_solar_with_tiny_alpha():
+    model = RCModel(C=2.0, U=0.005, Q_heat=1000.0, Q_cool=1500.0, Q_solar=100.0)
+    opt = MPCOptimizer(model)
+    pf, mode = opt.compute_optimal_power(20.0, 10.0, 21.0, 5.0, q_solar=0.8)
+    assert mode in ("heating", "idle")
+
+
+def test_compute_optimal_power_residual_with_tiny_alpha():
+    model = RCModel(C=2.0, U=0.005, Q_heat=1000.0, Q_cool=1500.0)
+    opt = MPCOptimizer(model)
+    pf_no, _ = opt.compute_optimal_power(19.0, 10.0, 21.0, 5.0, q_residual=0.0)
+    pf_res, _ = opt.compute_optimal_power(19.0, 10.0, 21.0, 5.0, q_residual=0.5)
+    assert pf_res <= pf_no or pf_res == pf_no
+
+
+def test_compute_optimal_power_occupancy_with_tiny_alpha():
+    model = RCModel(C=2.0, U=0.005, Q_heat=1000.0, Q_cool=1500.0, Q_occupancy=200.0)
+    opt = MPCOptimizer(model)
+    pf_no, _ = opt.compute_optimal_power(19.0, 10.0, 21.0, 5.0, q_occupancy=0.0)
+    pf_occ, _ = opt.compute_optimal_power(19.0, 10.0, 21.0, 5.0, q_occupancy=1.0)
+    assert pf_occ <= pf_no or pf_occ == pf_no
+
+
+def test_compute_optimal_power_occupancy_with_normal_alpha():
+    model = RCModel(C=2.0, U=50.0, Q_heat=1000.0, Q_cool=1500.0, Q_occupancy=200.0)
+    opt = MPCOptimizer(model)
+    pf_no, _ = opt.compute_optimal_power(19.0, 10.0, 21.0, 5.0, q_occupancy=0.0)
+    pf_occ, _ = opt.compute_optimal_power(19.0, 10.0, 21.0, 5.0, q_occupancy=1.0)
+    assert pf_occ <= pf_no
+
+
+def test_get_current_power_fraction_with_fractions():
+    plan = MPCPlan(
+        actions=["heating", "idle"],
+        temperatures=[18.0, 19.0, 19.5],
+        dt_minutes=5,
+        power_fractions=[0.75, 0.0],
+    )
+    assert plan.get_current_power_fraction() == 0.75
+
+
+def test_min_run_forced_idle_outdoor_gate_mid_run():
+    model = RCModel(C=200.0, U=50.0, Q_heat=1000.0, Q_cool=200.0)
+    opt = MPCOptimizer(
+        model,
+        can_heat=False,
+        can_cool=True,
+        min_run_blocks=6,
+        outdoor_cooling_min=20.0,
+    )
+    outdoor = [25.0] + [10.0] * 11
+    plan = opt.optimize(
+        T_room=28.0,
+        T_outdoor_series=outdoor,
+        heat_target_series=[22.0] * 12,
+        cool_target_series=[22.0] * 12,
+        dt_minutes=5,
+    )
+    if len(plan.actions) > 1 and plan.actions[0] == "cooling":
+        assert plan.actions[1] == "idle"

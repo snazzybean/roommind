@@ -549,3 +549,165 @@ async def test_diagnostics_valve_protection(hass, mock_config_entry):
     valve = result["valve_protection"]
     assert 28 <= valve["currently_cycling"]["climate.trv1"] <= 32
     assert 3598 <= valve["last_actuation"]["climate.trv1"] <= 3602
+
+
+@pytest.mark.asyncio
+async def test_diagnostics_window_closed_since(hass, mock_config_entry):
+    store = MagicMock()
+    store.get_settings.return_value = {}
+    store.get_rooms.return_value = {"room_a": {}}
+
+    now = time.time()
+    coordinator = _make_coordinator(
+        window_closed_since={"room_a": now - 60},
+    )
+    hass.data[DOMAIN] = {"store": store, "coordinator": coordinator}
+
+    result = await async_get_config_entry_diagnostics(hass, mock_config_entry)
+
+    window = result["rooms"]["room_a"]["window"]
+    assert 58 <= window["closed_since"] <= 62
+
+
+@pytest.mark.asyncio
+async def test_diagnostics_compressor_off_since(hass, mock_config_entry):
+    store = MagicMock()
+    store.get_settings.return_value = {}
+    store.get_rooms.return_value = {}
+
+    now = time.time()
+    group_cfg = MagicMock()
+    group_cfg.min_run_seconds = 180
+    group_cfg.min_off_seconds = 300
+    group_cfg.master_entity = ""
+    group_cfg.enforce_uniform_mode = False
+
+    group_state = MagicMock()
+    group_state.active_members = set()
+    group_state.compressor_on_since = None
+    group_state.compressor_off_since = now - 90
+
+    coordinator = _make_coordinator(
+        compressor_groups={"g1": group_cfg},
+        compressor_states={"g1": group_state},
+    )
+    hass.data[DOMAIN] = {"store": store, "coordinator": coordinator}
+
+    result = await async_get_config_entry_diagnostics(hass, mock_config_entry)
+
+    cg = result["compressor_groups"]["g1"]
+    assert 88 <= cg["off_for_s"] <= 92
+    assert "on_for_s" not in cg
+
+
+@pytest.mark.asyncio
+async def test_diagnostics_room_with_temperature_sensor(hass, mock_config_entry):
+    store = MagicMock()
+    store.get_settings.return_value = {}
+    store.get_rooms.return_value = {
+        "room_a": {"temperature_sensor": "sensor.temp_living"},
+    }
+
+    sensor_state = MagicMock()
+    sensor_state.state = "21.3"
+    hass.states.get = MagicMock(return_value=sensor_state)
+
+    coordinator = _make_coordinator()
+    hass.data[DOMAIN] = {"store": store, "coordinator": coordinator}
+
+    result = await async_get_config_entry_diagnostics(hass, mock_config_entry)
+
+    assert result["rooms"]["room_a"]["live"]["sensor_state"] == "21.3"
+
+
+@pytest.mark.asyncio
+async def test_diagnostics_room_with_temperature_sensor_not_found(hass, mock_config_entry):
+    store = MagicMock()
+    store.get_settings.return_value = {}
+    store.get_rooms.return_value = {
+        "room_a": {"temperature_sensor": "sensor.missing"},
+    }
+
+    hass.states.get = MagicMock(return_value=None)
+
+    coordinator = _make_coordinator()
+    hass.data[DOMAIN] = {"store": store, "coordinator": coordinator}
+
+    result = await async_get_config_entry_diagnostics(hass, mock_config_entry)
+
+    assert result["rooms"]["room_a"]["live"]["sensor_state"] == "not_found"
+
+
+@pytest.mark.asyncio
+async def test_diagnostics_room_with_active_schedule(hass, mock_config_entry):
+    store = MagicMock()
+    store.get_settings.return_value = {}
+    store.get_rooms.return_value = {
+        "room_a": {
+            "schedules": [{"entity_id": "schedule.weekday"}],
+        },
+    }
+
+    schedule_state = MagicMock()
+    schedule_state.state = "on"
+    hass.states.get = MagicMock(return_value=schedule_state)
+
+    coordinator = _make_coordinator(
+        rooms={"room_a": {"active_schedule_index": 0}},
+    )
+    hass.data[DOMAIN] = {"store": store, "coordinator": coordinator}
+
+    result = await async_get_config_entry_diagnostics(hass, mock_config_entry)
+
+    live = result["rooms"]["room_a"]["live"]
+    assert live["schedule_entity"] == "schedule.weekday"
+    assert live["schedule_state"] == "on"
+
+
+@pytest.mark.asyncio
+async def test_diagnostics_room_schedule_entity_not_found(hass, mock_config_entry):
+    store = MagicMock()
+    store.get_settings.return_value = {}
+    store.get_rooms.return_value = {
+        "room_a": {
+            "schedules": [{"entity_id": "schedule.missing"}],
+        },
+    }
+
+    hass.states.get = MagicMock(return_value=None)
+
+    coordinator = _make_coordinator(
+        rooms={"room_a": {"active_schedule_index": 0}},
+    )
+    hass.data[DOMAIN] = {"store": store, "coordinator": coordinator}
+
+    result = await async_get_config_entry_diagnostics(hass, mock_config_entry)
+
+    live = result["rooms"]["room_a"]["live"]
+    assert live["schedule_entity"] == "schedule.missing"
+    assert live["schedule_state"] == "not_found"
+
+
+@pytest.mark.asyncio
+async def test_diagnostics_cover_with_last_command_ts(hass, mock_config_entry):
+    store = MagicMock()
+    store.get_settings.return_value = {}
+    store.get_rooms.return_value = {"room_a": {}}
+
+    now = time.time()
+    cover_state = MagicMock()
+    cover_state.current_position = 50
+    cover_state.last_commanded_position = 50
+    cover_state.last_was_forced = True
+    cover_state.last_change_ts = None
+    cover_state.last_command_ts = now - 200
+    cover_state.user_override_until = 0
+
+    coordinator = _make_coordinator(cover_states={"room_a": cover_state})
+    hass.data[DOMAIN] = {"store": store, "coordinator": coordinator}
+
+    result = await async_get_config_entry_diagnostics(hass, mock_config_entry)
+
+    cover = result["rooms"]["room_a"]["cover"]
+    assert 198 <= cover["last_command_ago_s"] <= 202
+    assert "last_change_ago_s" not in cover

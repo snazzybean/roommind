@@ -460,6 +460,102 @@ def test_device_setpoint_missing_defaults_empty(history_dir):
     assert rows[0]["device_setpoint"] == ""
 
 
+def test_migrate_header_rewrites_old_format(history_dir):
+    """CSV with outdated header is rewritten with current DETAIL_FIELDS."""
+    from custom_components.roommind.utils.history_store import DETAIL_FIELDS
+
+    store = HistoryStore(history_dir)
+    os.makedirs(history_dir, exist_ok=True)
+    path = store._detail_path("room_a")
+
+    old_fields = ["timestamp", "room_temp", "outdoor_temp", "target_temp", "mode"]
+    import csv
+
+    with open(path, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=old_fields)
+        writer.writeheader()
+        writer.writerow(
+            {"timestamp": "1000", "room_temp": "20.0", "outdoor_temp": "5.0", "target_temp": "21.0", "mode": "heating"}
+        )
+
+    store.record(
+        "room_a",
+        {"room_temp": 22.0, "outdoor_temp": 6.0, "target_temp": 21.0, "mode": "idle", "predicted_temp": 21.5},
+        timestamp=2000.0,
+    )
+
+    rows = store.read_detail("room_a")
+    assert len(rows) == 2
+    assert rows[0]["room_temp"] == "20.0"
+    assert rows[0].get("predicted_temp") == ""
+    assert rows[1]["room_temp"] == "22.0"
+
+    with open(path, newline="") as f:
+        reader = csv.DictReader(f)
+        assert reader.fieldnames == DETAIL_FIELDS
+
+
+def test_migrate_header_noop_when_current(history_dir):
+    """CSV with current header is not rewritten."""
+    store = HistoryStore(history_dir)
+    store.record(
+        "room_a",
+        {"room_temp": 20.0, "outdoor_temp": 5.0, "target_temp": 21.0, "mode": "idle", "predicted_temp": 20.0},
+        timestamp=1000.0,
+    )
+    store.record(
+        "room_a",
+        {"room_temp": 21.0, "outdoor_temp": 5.0, "target_temp": 21.0, "mode": "idle", "predicted_temp": 21.0},
+        timestamp=2000.0,
+    )
+    rows = store.read_detail("room_a")
+    assert len(rows) == 2
+
+
+def test_migrate_header_handles_corrupt_file(history_dir):
+    """Migration silently handles corrupt CSV files."""
+    store = HistoryStore(history_dir)
+    os.makedirs(history_dir, exist_ok=True)
+    path = store._detail_path("room_a")
+
+    with open(path, "w") as f:
+        f.write("\x00\x00\x00invalid csv content\n")
+
+    store.record(
+        "room_a",
+        {"room_temp": 20.0, "outdoor_temp": 5.0, "target_temp": 21.0, "mode": "idle", "predicted_temp": 20.0},
+        timestamp=1000.0,
+    )
+    rows = store.read_detail("room_a")
+    assert len(rows) >= 1
+
+
+def test_read_detail_with_max_age(history_dir):
+    """max_age filters out rows older than the specified seconds."""
+    store = HistoryStore(history_dir)
+    now = time.time()
+    store.record(
+        "room_a",
+        {"room_temp": 20.0, "outdoor_temp": 5.0, "target_temp": 21.0, "mode": "idle", "predicted_temp": 20.0},
+        timestamp=now - 7200,
+    )
+    store.record(
+        "room_a",
+        {"room_temp": 21.0, "outdoor_temp": 5.0, "target_temp": 21.0, "mode": "idle", "predicted_temp": 21.0},
+        timestamp=now - 1800,
+    )
+    store.record(
+        "room_a",
+        {"room_temp": 22.0, "outdoor_temp": 5.0, "target_temp": 21.0, "mode": "idle", "predicted_temp": 22.0},
+        timestamp=now - 60,
+    )
+
+    rows = store.read_detail("room_a", max_age=3600)
+    assert len(rows) == 2
+    assert rows[0]["room_temp"] == "21.0"
+    assert rows[1]["room_temp"] == "22.0"
+
+
 def test_downsample_takes_first_device_setpoint(history_dir):
     """_downsample takes first device_setpoint value from each bucket (not averaged)."""
     store = HistoryStore(history_dir)

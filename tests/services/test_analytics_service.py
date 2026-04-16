@@ -9,6 +9,7 @@ import pytest
 
 from custom_components.roommind.services.analytics_service import (
     _compute_target_forecast,
+    _safe_int,
     build_analytics_data,
 )
 
@@ -478,3 +479,285 @@ class TestCsvToPointsDeviceSetpoint:
         points = _csv_to_points(rows)
         assert len(points) == 1
         assert points[0]["device_setpoint"] is None
+
+
+# ---------------------------------------------------------------------------
+# _safe_int -- lines 44-47
+# ---------------------------------------------------------------------------
+
+
+class TestSafeInt:
+    def test_valid_integer_string(self):
+        assert _safe_int("42") == 42
+
+    def test_valid_float_string_truncates(self):
+        assert _safe_int("3.7") == 3
+
+    def test_invalid_string_returns_none(self):
+        assert _safe_int("abc") is None
+
+    def test_none_value_returns_none(self):
+        assert _safe_int(None) is None
+
+
+# ---------------------------------------------------------------------------
+# build_analytics_data -- blind_position / shading factor (lines 296-298)
+# ---------------------------------------------------------------------------
+
+
+class TestBuildAnalyticsShadingFactor:
+    @pytest.mark.asyncio
+    async def test_blind_position_triggers_shading_factor(self):
+        hass = MagicMock()
+        hass.config.latitude = 48.0
+        hass.config.longitude = 11.0
+
+        store = MagicMock()
+        store.get_settings.return_value = {"prediction_enabled": True}
+        store.get_room.return_value = {"temperature_sensor": "sensor.temp"}
+
+        from custom_components.roommind.control.thermal_model import ThermalEKF
+
+        est = ThermalEKF()
+        model = est.get_model()
+        mgr = MagicMock()
+        mgr._estimators = {"room1": est}
+        mgr.get_model.return_value = model
+
+        coordinator = MagicMock()
+        coordinator._model_manager = mgr
+        coordinator.outdoor_temp = 10.0
+        coordinator.rooms = {"room1": {"blind_position": 50}}
+        coordinator._weather_manager._outdoor_forecast = []
+        coordinator._residual_tracker._off_since = {}
+        coordinator._window_manager._paused = {}
+
+        now = time.time()
+        detail_rows = [
+            {
+                "timestamp": str(now - 60),
+                "room_temp": "20.0",
+                "outdoor_temp": "10",
+                "target_temp": "21",
+                "mode": "idle",
+                "predicted_temp": "",
+                "window_open": "",
+                "heating_power": "",
+            },
+        ]
+
+        async def mock_executor(fn, *args, **kwargs):
+            return fn(*args, **kwargs)
+
+        hass.async_add_executor_job = mock_executor
+
+        history_store = MagicMock()
+        history_store.read_detail.return_value = detail_rows
+        history_store.read_history.return_value = []
+        coordinator._history_store = history_store
+
+        with (
+            patch(
+                "custom_components.roommind.services.analytics_service._compute_target_forecast",
+                new_callable=AsyncMock,
+                return_value=[{"ts": now, "target_temp": 21.0, "heat_target": 21.0, "cool_target": 24.0}],
+            ),
+            patch(
+                "custom_components.roommind.services.analytics_service.get_can_heat_cool",
+                return_value=(True, False),
+            ),
+            patch(
+                "custom_components.roommind.services.analytics_service.is_mpc_active",
+                return_value=False,
+            ),
+            patch(
+                "custom_components.roommind.services.analytics_service.check_acs_can_heat",
+                return_value=False,
+            ),
+            patch(
+                "custom_components.roommind.managers.cover_manager.compute_shading_factor",
+                return_value=0.5,
+            ) as mock_shading,
+            patch(
+                "custom_components.roommind.control.analytics_simulator.simulate_prediction",
+                return_value=[21.0],
+            ) as mock_sim,
+        ):
+            await build_analytics_data(hass, "room1", "12h", store, coordinator)
+            mock_shading.assert_called_once_with([50])
+            mock_sim.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# build_analytics_data -- occupancy sensors (lines 324-327)
+# ---------------------------------------------------------------------------
+
+
+class TestBuildAnalyticsOccupancy:
+    @pytest.mark.asyncio
+    async def test_occupancy_sensor_on_sets_q_occupancy(self):
+        hass = MagicMock()
+        hass.config.latitude = 48.0
+        hass.config.longitude = 11.0
+
+        occ_state = MagicMock()
+        occ_state.state = "on"
+        hass.states.get = MagicMock(return_value=occ_state)
+
+        store = MagicMock()
+        store.get_settings.return_value = {"prediction_enabled": True}
+        store.get_room.return_value = {
+            "temperature_sensor": "sensor.temp",
+            "occupancy_sensors": ["binary_sensor.occ1"],
+        }
+
+        from custom_components.roommind.control.thermal_model import ThermalEKF
+
+        est = ThermalEKF()
+        model = est.get_model()
+        mgr = MagicMock()
+        mgr._estimators = {"room1": est}
+        mgr.get_model.return_value = model
+
+        coordinator = MagicMock()
+        coordinator._model_manager = mgr
+        coordinator.outdoor_temp = 10.0
+        coordinator.rooms = {"room1": {}}
+        coordinator._weather_manager._outdoor_forecast = []
+        coordinator._residual_tracker._off_since = {}
+        coordinator._window_manager._paused = {}
+
+        now = time.time()
+        detail_rows = [
+            {
+                "timestamp": str(now - 60),
+                "room_temp": "20.0",
+                "outdoor_temp": "10",
+                "target_temp": "21",
+                "mode": "idle",
+                "predicted_temp": "",
+                "window_open": "",
+                "heating_power": "",
+            },
+        ]
+
+        async def mock_executor(fn, *args, **kwargs):
+            return fn(*args, **kwargs)
+
+        hass.async_add_executor_job = mock_executor
+
+        history_store = MagicMock()
+        history_store.read_detail.return_value = detail_rows
+        history_store.read_history.return_value = []
+        coordinator._history_store = history_store
+
+        with (
+            patch(
+                "custom_components.roommind.services.analytics_service._compute_target_forecast",
+                new_callable=AsyncMock,
+                return_value=[{"ts": now, "target_temp": 21.0, "heat_target": 21.0, "cool_target": 24.0}],
+            ),
+            patch(
+                "custom_components.roommind.services.analytics_service.get_can_heat_cool",
+                return_value=(True, False),
+            ),
+            patch(
+                "custom_components.roommind.services.analytics_service.is_mpc_active",
+                return_value=False,
+            ),
+            patch(
+                "custom_components.roommind.services.analytics_service.check_acs_can_heat",
+                return_value=False,
+            ),
+            patch(
+                "custom_components.roommind.control.analytics_simulator.simulate_prediction",
+                return_value=[21.0],
+            ) as mock_sim,
+        ):
+            await build_analytics_data(hass, "room1", "12h", store, coordinator)
+            mock_sim.assert_called_once()
+            assert mock_sim.call_args.kwargs["q_occupancy"] == 1.0
+
+    @pytest.mark.asyncio
+    async def test_occupancy_sensor_off_keeps_q_occupancy_zero(self):
+        hass = MagicMock()
+        hass.config.latitude = 48.0
+        hass.config.longitude = 11.0
+
+        occ_state = MagicMock()
+        occ_state.state = "off"
+        hass.states.get = MagicMock(return_value=occ_state)
+
+        store = MagicMock()
+        store.get_settings.return_value = {"prediction_enabled": True}
+        store.get_room.return_value = {
+            "temperature_sensor": "sensor.temp",
+            "occupancy_sensors": ["binary_sensor.occ1"],
+        }
+
+        from custom_components.roommind.control.thermal_model import ThermalEKF
+
+        est = ThermalEKF()
+        model = est.get_model()
+        mgr = MagicMock()
+        mgr._estimators = {"room1": est}
+        mgr.get_model.return_value = model
+
+        coordinator = MagicMock()
+        coordinator._model_manager = mgr
+        coordinator.outdoor_temp = 10.0
+        coordinator.rooms = {"room1": {}}
+        coordinator._weather_manager._outdoor_forecast = []
+        coordinator._residual_tracker._off_since = {}
+        coordinator._window_manager._paused = {}
+
+        now = time.time()
+        detail_rows = [
+            {
+                "timestamp": str(now - 60),
+                "room_temp": "20.0",
+                "outdoor_temp": "10",
+                "target_temp": "21",
+                "mode": "idle",
+                "predicted_temp": "",
+                "window_open": "",
+                "heating_power": "",
+            },
+        ]
+
+        async def mock_executor(fn, *args, **kwargs):
+            return fn(*args, **kwargs)
+
+        hass.async_add_executor_job = mock_executor
+
+        history_store = MagicMock()
+        history_store.read_detail.return_value = detail_rows
+        history_store.read_history.return_value = []
+        coordinator._history_store = history_store
+
+        with (
+            patch(
+                "custom_components.roommind.services.analytics_service._compute_target_forecast",
+                new_callable=AsyncMock,
+                return_value=[{"ts": now, "target_temp": 21.0, "heat_target": 21.0, "cool_target": 24.0}],
+            ),
+            patch(
+                "custom_components.roommind.services.analytics_service.get_can_heat_cool",
+                return_value=(True, False),
+            ),
+            patch(
+                "custom_components.roommind.services.analytics_service.is_mpc_active",
+                return_value=False,
+            ),
+            patch(
+                "custom_components.roommind.services.analytics_service.check_acs_can_heat",
+                return_value=False,
+            ),
+            patch(
+                "custom_components.roommind.control.analytics_simulator.simulate_prediction",
+                return_value=[21.0],
+            ) as mock_sim,
+        ):
+            await build_analytics_data(hass, "room1", "12h", store, coordinator)
+            mock_sim.assert_called_once()
+            assert mock_sim.call_args.kwargs["q_occupancy"] == 0.0
