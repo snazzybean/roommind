@@ -157,6 +157,39 @@ class TestGetCanHeatCool:
         assert can_heat is False
         assert can_cool is False
 
+    def test_override_bypasses_cooling_gate(self):
+        """Override active → outdoor cooling gate bypassed."""
+        room = make_room(acs=["climate.ac"])
+        can_heat, can_cool = get_can_heat_cool(
+            room,
+            outdoor_temp=10.0,
+            outdoor_cooling_min=16.0,
+            override_active=True,
+        )
+        assert can_cool is True
+
+    def test_override_bypasses_heating_gate(self):
+        """Override active → outdoor heating gate bypassed."""
+        room = make_room(acs=["climate.ac"])
+        can_heat, can_cool = get_can_heat_cool(
+            room,
+            outdoor_temp=25.0,
+            outdoor_heating_max=22.0,
+            override_active=True,
+        )
+        assert can_heat is True
+
+    def test_override_false_still_gates(self):
+        """Override not active → outdoor gate still applies."""
+        room = make_room(acs=["climate.ac"])
+        can_heat, can_cool = get_can_heat_cool(
+            room,
+            outdoor_temp=10.0,
+            outdoor_cooling_min=16.0,
+            override_active=False,
+        )
+        assert can_cool is False
+
 
 # ---------------------------------------------------------------------------
 # check_acs_can_heat unit tests

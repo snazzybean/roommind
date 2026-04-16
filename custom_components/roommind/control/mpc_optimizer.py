@@ -49,6 +49,7 @@ class MPCOptimizer:
     outdoor_heating_max: float = 22.0
     temp_min: float = 5.0  # frost protection
     temp_max: float = 30.0  # overheat protection
+    override_active: bool = False
 
     def optimize(
         self,
@@ -260,6 +261,8 @@ class MPCOptimizer:
         return 0.0
 
     def _is_outdoor_gated(self, mode: str, T_outdoor: float) -> bool:
+        if self.override_active:
+            return False
         if mode == MODE_COOLING and T_outdoor < self.outdoor_cooling_min:
             return True
         if mode == MODE_HEATING and T_outdoor > self.outdoor_heating_max:

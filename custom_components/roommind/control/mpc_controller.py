@@ -24,6 +24,7 @@ from ..const import (
     MODE_HEATING,
     MODE_IDLE,
     TargetTemps,
+    is_override_active,
     make_roommind_context,
 )
 from ..utils.device_utils import (
@@ -611,6 +612,8 @@ def get_can_heat_cool(
     outdoor_cooling_min: float = DEFAULT_OUTDOOR_COOLING_MIN,
     outdoor_heating_max: float = DEFAULT_OUTDOOR_HEATING_MAX,
     acs_can_heat: bool = False,
+    *,
+    override_active: bool = False,
 ) -> tuple[bool, bool]:
     """Determine whether heating/cooling are allowed for a room.
 
@@ -620,6 +623,9 @@ def get_can_heat_cool(
 
     When *acs_can_heat* is True, ACs that support heating (heat pumps)
     contribute to the heating capability of the room.
+
+    When *override_active* is True, outdoor temperature gating is bypassed
+    because the user has explicitly requested a specific target temperature.
     """
     climate_mode = room_config.get("climate_mode", "auto")
     can_heat = climate_mode != CLIMATE_MODE_COOL_ONLY and (
@@ -627,7 +633,7 @@ def get_can_heat_cool(
     )
     can_cool = climate_mode != CLIMATE_MODE_HEAT_ONLY and bool(get_ac_eids(room_config.get("devices", [])))
 
-    if outdoor_temp is not None:
+    if outdoor_temp is not None and not override_active:
         if outdoor_temp > outdoor_heating_max:
             can_heat = False
         if outdoor_temp < outdoor_cooling_min:
@@ -882,6 +888,7 @@ class MPCController:
             outdoor_cooling_min=self.outdoor_cooling_min,
             outdoor_heating_max=self.outdoor_heating_max,
             min_run_blocks=min_run,
+            override_active=is_override_active(self.room_config),
         )
 
         plan = optimizer.optimize(
@@ -1016,13 +1023,44 @@ class MPCController:
 
     def _get_can_heat_cool(self) -> tuple[bool, bool]:
         """Determine whether heating/cooling are allowed based on climate mode."""
-        return get_can_heat_cool(
+        _override = is_override_active(self.room_config)
+        can_heat, can_cool = get_can_heat_cool(
             self.room_config,
             self.outdoor_temp,
             self.outdoor_cooling_min,
             self.outdoor_heating_max,
             acs_can_heat=check_acs_can_heat(self.hass, self.room_config),
+            override_active=_override,
         )
+
+        if self.outdoor_temp is not None:
+            if _override and (
+                self.outdoor_temp < self.outdoor_cooling_min or self.outdoor_temp > self.outdoor_heating_max
+            ):
+                _LOGGER.debug(
+                    "%s: override active, outdoor gate bypassed (outdoor=%.1f, cooling_min=%.1f, heating_max=%.1f)",
+                    self._area_id,
+                    self.outdoor_temp,
+                    self.outdoor_cooling_min,
+                    self.outdoor_heating_max,
+                )
+            elif not _override:
+                if self.outdoor_temp < self.outdoor_cooling_min:
+                    _LOGGER.debug(
+                        "%s: outdoor gate blocking cooling (outdoor=%.1f < cooling_min=%.1f)",
+                        self._area_id,
+                        self.outdoor_temp,
+                        self.outdoor_cooling_min,
+                    )
+                if self.outdoor_temp > self.outdoor_heating_max:
+                    _LOGGER.debug(
+                        "%s: outdoor gate blocking heating (outdoor=%.1f > heating_max=%.1f)",
+                        self._area_id,
+                        self.outdoor_temp,
+                        self.outdoor_heating_max,
+                    )
+
+        return can_heat, can_cool
 
     def _compute_horizon_blocks(self, model: Any, current_temp: float, target_temp: float | None) -> int:
         """Compute adaptive horizon in blocks.

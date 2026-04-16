@@ -120,6 +120,19 @@ def test_optimizer_outdoor_gating():
     assert all(a == "idle" for a in plan.actions)
 
 
+def test_optimizer_outdoor_gating_bypassed_by_override():
+    """Cooling allowed when outdoor below threshold but override active."""
+    model = RCModel(C=1.0, U=0.1, Q_heat=5.0, Q_cool=5.0)
+    opt = MPCOptimizer(model, can_heat=False, can_cool=True, outdoor_cooling_min=16.0, override_active=True)
+    plan = opt.optimize(
+        T_room=25.0,
+        T_outdoor_series=[10.0] * 12,
+        heat_target_series=[22.0] * 12,
+        dt_minutes=5,
+    )
+    assert any(a == "cooling" for a in plan.actions)
+
+
 def test_plan_get_current_action():
     """MPCPlan returns correct action for current time."""
     plan = MPCPlan(
