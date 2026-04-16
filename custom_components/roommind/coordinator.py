@@ -36,6 +36,7 @@ from .const import (
     UPDATE_INTERVAL,
     TargetTemps,
     build_override_live,
+    is_override_active,
     make_roommind_context,
 )
 from .control.mpc_controller import (
@@ -718,9 +719,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             power_fraction = 0.0
 
         # --- Cover/blind automatic control ---
-        has_override = room.get("override_temp") is not None and (
-            room.get("override_until") is None or room.get("override_until", 0) > time.time()
-        )
+        has_override = is_override_active(room)
         cover_result = await self._cover_orchestrator.async_process(
             area_id=area_id,
             room=room,
@@ -746,6 +745,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                     room,
                     self.outdoor_temp,
                     acs_can_heat=check_acs_can_heat(self.hass, room),
+                    override_active=is_override_active(room),
                 )
                 _T_out = self.outdoor_temp if self.outdoor_temp is not None else DEFAULT_OUTDOOR_TEMP_FALLBACK
                 mpc_active = is_mpc_active(

@@ -175,11 +175,20 @@ DEFAULT_CONFLICT_RESOLUTION = CONFLICT_RESOLUTION_HEATING_PRIORITY
 VACATION_SENTINEL_UNTIL = 32503680000.0
 
 
+def is_override_active(room: dict) -> bool:
+    """Return True when a manual override is currently active."""
+    override_temp = room.get("override_temp")
+    if override_temp is None:
+        return False
+    override_until = room.get("override_until")
+    return override_until is None or time.time() < override_until
+
+
 def build_override_live(room: dict) -> dict:
     """Build override fields for live data from a room config dict."""
+    active = is_override_active(room)
     override_temp = room.get("override_temp")
     override_until = room.get("override_until")
-    active = bool(override_temp is not None and (override_until is None or time.time() < override_until))
     return {
         "override_active": active,
         "override_type": room.get("override_type") if active else None,

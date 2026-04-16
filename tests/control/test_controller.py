@@ -91,6 +91,24 @@ async def test_mpc_outdoor_gating():
 
 
 @pytest.mark.asyncio
+async def test_mpc_outdoor_gating_bypassed_by_override():
+    """Override active → outdoor cooling gate bypassed, cooling proceeds."""
+    hass = build_hass()
+    room = make_room(thermostats=[], acs=["climate.ac"], override_temp=22.0, override_until=None)
+    model_mgr = RoomModelManager()
+    ctrl = MPCController(
+        hass,
+        room,
+        model_manager=model_mgr,
+        outdoor_temp=10.0,
+        settings={"outdoor_cooling_min": 16.0},
+        has_external_sensor=True,
+    )
+    mode, pf = await ctrl.async_evaluate(current_temp=25.0, target_temp=22.0)
+    assert mode == "cooling"
+
+
+@pytest.mark.asyncio
 async def test_mpc_path_when_confident():
     """When model confidence is high, MPC optimizer is used instead of bang-bang."""
     hass = build_hass()
