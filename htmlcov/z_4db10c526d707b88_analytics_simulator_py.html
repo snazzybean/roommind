@@ -55,8 +55,8 @@
         </aside>
         <h2>
             <span class="text">191 statements &nbsp;</span>
-            <button type="button" class="run button_toggle_run" value="run" data-shortcut="r" title="Toggle lines run">190<span class="text"> run</span></button>
-            <button type="button" class="mis show_mis button_toggle_mis" value="mis" data-shortcut="m" title="Toggle lines missing">1<span class="text"> missing</span></button>
+            <button type="button" class="run button_toggle_run" value="run" data-shortcut="r" title="Toggle lines run">189<span class="text"> run</span></button>
+            <button type="button" class="mis show_mis button_toggle_mis" value="mis" data-shortcut="m" title="Toggle lines missing">2<span class="text"> missing</span></button>
             <button type="button" class="exc show_exc button_toggle_exc" value="exc" data-shortcut="x" title="Toggle lines excluded">0<span class="text"> excluded</span></button>
         </h2>
         <p class="text">
@@ -65,7 +65,7 @@
             <a id="nextFileLink" class="nav" href="z_4db10c526d707b88_mpc_controller_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.13.5">coverage.py v7.13.5</a>,
-            created at 2026-04-11 21:58 +0000
+            created at 2026-04-16 18:49 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -137,7 +137,7 @@
     <p class="run"><span class="n"><a id="t55" href="#t55">55</a></span><span class="t">        <span class="nam">cloud_series</span> <span class="op">=</span> <span class="op">[</span><span class="nam">f</span><span class="op">.</span><span class="nam">get</span><span class="op">(</span><span class="str">"cloud_coverage"</span><span class="op">)</span> <span class="key">for</span> <span class="nam">f</span> <span class="key">in</span> <span class="nam">forecast</span><span class="op">]</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t56" href="#t56">56</a></span><span class="t">    <span class="nam">series</span> <span class="op">=</span> <span class="nam">build_solar_series</span><span class="op">(</span><span class="nam">latitude</span><span class="op">,</span> <span class="nam">longitude</span><span class="op">,</span> <span class="nam">n_blocks</span><span class="op">,</span> <span class="num">5.0</span><span class="op">,</span> <span class="nam">cloud_series</span><span class="op">=</span><span class="nam">cloud_series</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t57" href="#t57">57</a></span><span class="t">    <span class="key">if</span> <span class="nam">series</span> <span class="key">is</span> <span class="key">not</span> <span class="key">None</span> <span class="key">and</span> <span class="nam">shading_factor</span> <span class="op">!=</span> <span class="num">1.0</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis show_mis"><span class="n"><a id="t58" href="#t58">58</a></span><span class="t">        <span class="nam">series</span> <span class="op">=</span> <span class="op">[</span><span class="nam">s</span> <span class="op">*</span> <span class="nam">shading_factor</span> <span class="key">for</span> <span class="nam">s</span> <span class="key">in</span> <span class="nam">series</span><span class="op">]</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t58" href="#t58">58</a></span><span class="t">        <span class="nam">series</span> <span class="op">=</span> <span class="op">[</span><span class="nam">s</span> <span class="op">*</span> <span class="nam">shading_factor</span> <span class="key">for</span> <span class="nam">s</span> <span class="key">in</span> <span class="nam">series</span><span class="op">]</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t59" href="#t59">59</a></span><span class="t">    <span class="key">return</span> <span class="nam">series</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t60" href="#t60">60</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t61" href="#t61">61</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
@@ -384,14 +384,14 @@
     <p class="run"><span class="n"><a id="t302" href="#t302">302</a></span><span class="t">                <span class="key">pass</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t303" href="#t303">303</a></span><span class="t">            <span class="nam">sim_residual_elapsed</span> <span class="op">+=</span> <span class="num">5.0</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t304" href="#t304">304</a></span><span class="t">            <span class="key">if</span> <span class="nam">heating_system_type</span> <span class="key">and</span> <span class="nam">sim_was_heating</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t305" href="#t305">305</a></span><span class="t">                <span class="key">from</span> <span class="op">.</span><span class="nam">residual_heat</span> <span class="key">import</span> <span class="nam">compute_residual_heat</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t305" href="#t305">305</a></span><span class="t">                <span class="key">from</span> <span class="op">.</span><span class="nam">residual_heat</span> <span class="key">import</span> <span class="nam">compute_residual_heat</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t306" href="#t306">306</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t307" href="#t307">307</a></span><span class="t">                <span class="nam">current_q_residual</span> <span class="op">=</span> <span class="nam">compute_residual_heat</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t308" href="#t308">308</a></span><span class="t">                    <span class="nam">sim_residual_elapsed</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t309" href="#t309">309</a></span><span class="t">                    <span class="nam">heating_system_type</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t310" href="#t310">310</a></span><span class="t">                    <span class="nam">last_power_fraction</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t311" href="#t311">311</a></span><span class="t">                    <span class="nam">sim_heating_blocks</span> <span class="op">*</span> <span class="num">5.0</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t312" href="#t312">312</a></span><span class="t">                <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t307" href="#t307">307</a></span><span class="t">                <span class="nam">current_q_residual</span> <span class="op">=</span> <span class="nam">compute_residual_heat</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis mis2 show_mis"><span class="n"><a id="t308" href="#t308">308</a></span><span class="t">                    <span class="nam">sim_residual_elapsed</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis mis2 show_mis"><span class="n"><a id="t309" href="#t309">309</a></span><span class="t">                    <span class="nam">heating_system_type</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis mis2 show_mis"><span class="n"><a id="t310" href="#t310">310</a></span><span class="t">                    <span class="nam">last_power_fraction</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis mis2 show_mis"><span class="n"><a id="t311" href="#t311">311</a></span><span class="t">                    <span class="nam">sim_heating_blocks</span> <span class="op">*</span> <span class="num">5.0</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis mis2 show_mis"><span class="n"><a id="t312" href="#t312">312</a></span><span class="t">                <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t313" href="#t313">313</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t314" href="#t314">314</a></span><span class="t">        <span class="key">if</span> <span class="nam">action</span> <span class="op">==</span> <span class="nam">prev_action</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t315" href="#t315">315</a></span><span class="t">            <span class="nam">blocks_in_action</span> <span class="op">+=</span> <span class="num">1</span>&nbsp;</span><span class="r"></span></p>
@@ -521,7 +521,7 @@
             <a class="nav" href="z_4db10c526d707b88_mpc_controller_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.13.5">coverage.py v7.13.5</a>,
-            created at 2026-04-11 21:58 +0000
+            created at 2026-04-16 18:49 +0000
         </p>
     </div>
 </footer>
