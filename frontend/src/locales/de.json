@@ -9,6 +9,7 @@
 
   "badge.beta": "Beta",
   "badge.beta_hint": "Dieses Feature ist in der Beta-Phase und kann sich in zukünftigen Updates noch ändern.",
+  "common.learn_more": "Mehr erfahren",
 
   "panel.stat.rooms": "Räume",
   "panel.stat.heating": "Heizen",
@@ -191,6 +192,14 @@
   "devices.setpoint_mode_hint": "Verwende Direkt für Heizlüfter oder Pelletöfen mit eigenem Thermostat. Proportional ist optimal für Heizkörperventile (TRVs).",
   "devices.valve_protection_excluded": "Vom Ventilschutz ausgenommen",
   "devices.valve_protection_exclude_hint": "Dieses Gerät wird nicht vom Ventilschutz bewegt (z.B. virtuelle Kessel-Entitäten)",
+  "devices.info.types_title": "Gerätetypen",
+  "devices.info.types_body": "Thermostat bedeutet Heizkörperthermostat / TRV. Klimagerät bedeutet AC, Wärmepumpe oder eine andere Klima-Entität für Kühlung oder Warmluftheizung. Beides sind Home-Assistant-Klima-Entitäten; der Unterschied liegt darin, wie RoomMind sie ansteuert.",
+  "devices.info.control_title": "Wie RoomMind sie steuert",
+  "devices.info.control_body": "Der Sollwert-Modus gilt nur für Thermostate in Räumen mit Full Control und externem Temperatursensor. Verwende Proportional, wenn RoomMind die Heizleistung über angehobene Sollwerte steuern soll. Verwende Direkt, wenn das Gerät selbst um den echten Zielwert regeln soll.",
+  "devices.info.modes_title": "Verhalten im Leerlauf",
+  "devices.info.modes_body": "Im Leerlauf gilt nur für Klimageräte. Ausschalten schaltet das Gerät aus. Nur Ventilator hält die Luftzirkulation ohne Heizen oder Kühlen aufrecht. Absenkung lässt den aktuellen Modus aktiv, verschiebt den Sollwert aber um 2°C vom Raumziel weg. Dieser Offset ist derzeit fest.",
+  "devices.info.heat_source_title": "Intelligente Quellenwahl",
+  "devices.info.heat_source_body": "Diese Funktion erscheint nur, wenn ein Raum sowohl ein Thermostat/TRV als auch ein Klimagerät und zusätzlich einen externen Temperatursensor hat. RoomMind kann dann je nach Temperaturdifferenz und Außenbedingungen auswählen, welche Quelle das Heizen übernimmt.",
 
   "hero.window_open": "Fenster offen – pausiert",
   "card.window_open": "Fenster offen",
@@ -320,6 +329,7 @@
   "settings.comfort_weight": "Priorität",
   "settings.comfort_weight_comfort": "Komfort",
   "settings.comfort_weight_efficiency": "Effizienz",
+  "settings.comfort_weight_hint": "Gewichtet Temperaturgenauigkeit gegen Energieverbrauch. Komfort reagiert früher und bleibt näher am Zielwert. Effizienz erlaubt mehr Abweichung, um Heiz- und Kühllaufzeiten zu reduzieren.",
   "settings.weather_entity": "Wettervorhersage",
   "settings.weather_entity_hint": "Optional: ermöglicht vorausschauende Außentemperaturplanung",
   "settings.prediction_enabled": "Temperaturvorhersage",

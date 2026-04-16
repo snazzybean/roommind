@@ -9,6 +9,7 @@
 
   "badge.beta": "Beta",
   "badge.beta_hint": "This feature is in beta and may change or be restructured in future updates.",
+  "common.learn_more": "Learn more",
 
   "panel.stat.rooms": "Rooms",
   "panel.stat.heating": "Heating",
@@ -191,6 +192,14 @@
   "devices.setpoint_mode_hint": "Use Direct for space heaters or pellet stoves with their own thermostat. Proportional is best for radiator valves (TRVs).",
   "devices.valve_protection_excluded": "Excluded from valve protection",
   "devices.valve_protection_exclude_hint": "This entity will not be cycled by valve protection (e.g. virtual boiler entities)",
+  "devices.info.types_title": "Device types",
+  "devices.info.types_body": "Thermostat means a radiator thermostat / TRV. Climate Device means an AC, heat pump, or other climate entity used for cooling or forced-air heating. Both are Home Assistant climate entities; the distinction is how RoomMind controls them.",
+  "devices.info.control_title": "How RoomMind controls them",
+  "devices.info.control_body": "Setpoint mode only applies to thermostats in Full Control rooms with an external temperature sensor. Use Proportional when RoomMind should drive heating output by sending boosted setpoints. Use Direct when the device should regulate itself around the real target temperature.",
+  "devices.info.modes_title": "Idle behavior",
+  "devices.info.modes_body": "When idle only applies to Climate Devices. Turn off powers the device down. Fan only keeps airflow without heating or cooling. Setback keeps the current mode active but moves the target 2°C away from the room target. This setback offset is currently fixed.",
+  "devices.info.heat_source_title": "Smart source selection",
+  "devices.info.heat_source_body": "This appears only when a room has both a thermostat/TRV and a Climate Device plus an external temperature sensor. RoomMind can then choose which source should handle heating based on temperature gap and outdoor conditions.",
 
   "hero.window_open": "Window open – paused",
   "card.window_open": "Window open",
@@ -320,6 +329,7 @@
   "settings.comfort_weight": "Priority",
   "settings.comfort_weight_comfort": "Comfort",
   "settings.comfort_weight_efficiency": "Efficiency",
+  "settings.comfort_weight_hint": "Balances temperature precision against energy use. Comfort reacts earlier and stays closer to target. Efficiency allows more drift to reduce heating/cooling runtime.",
   "settings.weather_entity": "Weather Forecast",
   "settings.weather_entity_hint": "Optional: enables predictive outdoor temperature planning",
   "settings.prediction_enabled": "Temperature prediction",
