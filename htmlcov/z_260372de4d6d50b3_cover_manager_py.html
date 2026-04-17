@@ -65,7 +65,7 @@
             <a id="nextFileLink" class="nav" href="z_260372de4d6d50b3_cover_orchestrator_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.13.5">coverage.py v7.13.5</a>,
-            created at 2026-04-16 22:04 +0000
+            created at 2026-04-17 18:30 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -173,7 +173,7 @@
     <p class="run run2"><span class="n"><a id="t91" href="#t91">91</a></span><span class="t">            <span class="key">and</span> <span class="op">(</span><span class="nam">time</span><span class="op">.</span><span class="nam">time</span><span class="op">(</span><span class="op">)</span> <span class="op">-</span> <span class="nam">state</span><span class="op">.</span><span class="nam">last_command_ts</span><span class="op">)</span> <span class="op">>=</span> <span class="nam">COVER_TRANSITION_SETTLE_S</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t92" href="#t92">92</a></span><span class="t">        <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t93" href="#t93">93</a></span><span class="t">        <span class="key">if</span> <span class="nam">_drift</span> <span class="key">and</span> <span class="nam">override_minutes</span> <span class="op">></span> <span class="num">0</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t94" href="#t94">94</a></span><span class="t">            <span class="key">if</span> <span class="nam">state</span><span class="op">.</span><span class="nam">user_override_until</span> <span class="op">&lt;=</span> <span class="nam">time</span><span class="op">.</span><span class="nam">time</span><span class="op">(</span><span class="op">)</span> <span class="key">or</span> <span class="nam">position</span> <span class="op">!=</span> <span class="nam">state</span><span class="op">.</span><span class="nam">current_position</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t94" href="#t94">94</a></span><span class="t">            <span class="key">if</span> <span class="nam">state</span><span class="op">.</span><span class="nam">user_override_until</span> <span class="op">==</span> <span class="num">0</span> <span class="key">or</span> <span class="nam">position</span> <span class="op">!=</span> <span class="nam">state</span><span class="op">.</span><span class="nam">current_position</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t95" href="#t95">95</a></span><span class="t">                <span class="nam">state</span><span class="op">.</span><span class="nam">user_override_until</span> <span class="op">=</span> <span class="nam">time</span><span class="op">.</span><span class="nam">time</span><span class="op">(</span><span class="op">)</span> <span class="op">+</span> <span class="nam">override_minutes</span> <span class="op">*</span> <span class="num">60</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t96" href="#t96">96</a></span><span class="t">                <span class="nam">_LOGGER</span><span class="op">.</span><span class="nam">info</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t97" href="#t97">97</a></span><span class="t">                    <span class="str">"Cover user override detected [%s]: position %d vs commanded %d &#8594; pausing %d min"</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
@@ -398,7 +398,7 @@
             <a class="nav" href="z_260372de4d6d50b3_cover_orchestrator_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.13.5">coverage.py v7.13.5</a>,
-            created at 2026-04-16 22:04 +0000
+            created at 2026-04-17 18:30 +0000
         </p>
     </div>
 </footer>
