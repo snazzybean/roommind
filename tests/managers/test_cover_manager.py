@@ -1204,6 +1204,36 @@ def test_override_not_perpetually_refreshed_when_drift_persists(mock_t):
     assert state.user_override_until == first_expiry
 
 
+@patch("custom_components.roommind.managers.cover_manager.time")
+def test_override_expires_and_does_not_renew_on_persistent_drift(mock_t):
+    """A naturally expired override must not silently renew itself.
+
+    Real-world scenario: user opens covers via HomeKit/Siri at 12:31. Covers
+    stay open (no further user interaction). At 13:31 the override should
+    expire so the 19:00 schedule can close them. Previously update_position()
+    was renewing the override every cycle once it expired, turning the 60 min
+    window into an infinite loop.
+    """
+    mgr = CoverManager()
+    mock_t.time.return_value = 1000.0
+    mgr.evaluate("lr", predicted_peak_temp=25.0, target_temp=22.0, **_BASE_KWARGS)
+
+    mock_t.time.return_value = 1100.0
+    mgr.update_position("lr", 100)
+    state = mgr._get_state("lr")
+    first_expiry = state.user_override_until
+    assert first_expiry == 1100.0 + COVER_USER_OVERRIDE_MINUTES * 60
+
+    for t in range(1100, int(first_expiry) + 7200, 30):
+        mock_t.time.return_value = float(t)
+        mgr.update_position("lr", 100)
+
+    assert state.user_override_until == first_expiry
+
+    mock_t.time.return_value = first_expiry + 1.0
+    assert mgr.is_user_override_active("lr") is False
+
+
 # ── Per-cover min position tests ─────────────────────────────────────
 
 

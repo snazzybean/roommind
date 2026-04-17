@@ -91,7 +91,7 @@ class CoverManager:
             and (time.time() - state.last_command_ts) >= COVER_TRANSITION_SETTLE_S
         )
         if _drift and override_minutes > 0:
-            if state.user_override_until <= time.time() or position != state.current_position:
+            if state.user_override_until == 0 or position != state.current_position:
                 state.user_override_until = time.time() + override_minutes * 60
                 _LOGGER.info(
                     "Cover user override detected [%s]: position %d vs commanded %d → pausing %d min",
