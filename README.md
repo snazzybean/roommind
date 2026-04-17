@@ -131,3 +131,10 @@ These can be used in HA automations, dashboards, or other integrations.
 - Optional: temperature sensor, humidity sensor, window sensors, weather entity, schedule helpers, person entities
 
 No cloud services required - everything runs locally.
+
+## Feedback & Contributing
+
+- 🐛 **Bug reports** - [Open an issue](https://github.com/snazzybean/roommind/issues/new?template=bug_report.yml)
+- 💡 **Feature requests & ideas** - [Post in Discussions](https://github.com/snazzybean/roommind/discussions/categories/feature-requests) so the community can vote and discuss
+- 🙋 **Questions & usage help** - [Ask in Q&A](https://github.com/snazzybean/roommind/discussions/categories/q-a)
+- 📣 **Announcements** - [Follow Announcements](https://github.com/snazzybean/roommind/discussions/categories/announcements)

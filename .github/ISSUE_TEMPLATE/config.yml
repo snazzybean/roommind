@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 💡 Feature Request / Idea
+    url: https://github.com/snazzybean/roommind/discussions/categories/feature-requests
+    about: Please post feature requests in Discussions. The community can vote and discuss there.
+  - name: 🙋 Question / Usage Help
+    url: https://github.com/snazzybean/roommind/discussions/categories/q-a
+    about: For setup or usage questions, please ask in Q&A Discussions.
