@@ -14,7 +14,7 @@ jobs:
       issues: write
     steps:
       - name: Comment reopen hint
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         with:
           script: |
             const issue = context.payload.issue;
@@ -39,7 +39,7 @@ jobs:
       issues: write
     steps:
       - name: Reopen if requested by author
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         with:
           script: |
             const issue = context.payload.issue;
