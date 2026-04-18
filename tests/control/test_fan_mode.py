@@ -397,6 +397,100 @@ async def test_mpc_apply_call_hvac_off_uses_idle_action():
 
 
 # ---------------------------------------------------------------------------
+# async_idle_device — "low" unit tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_async_idle_device_low_lowers_to_min_temp():
+    """Device with idle_action='low' lowers setpoint to min_temp and never sends set_hvac_mode."""
+    clear_command_cache()
+    hass = build_hass()
+    state = MagicMock()
+    state.state = "heat"
+    state.attributes = {
+        "hvac_modes": ["heat", "off"],
+        "min_temp": 5.0,
+        "max_temp": 35.0,
+        "temperature": 21.0,
+    }
+    hass.states.get = MagicMock(return_value=state)
+
+    devices = [{"entity_id": "climate.trv1", "type": "trv", "role": "auto", "idle_action": "low", "idle_fan_mode": ""}]
+    await async_idle_device(hass, "climate.trv1", devices, area_id="living_room")
+
+    calls = hass.services.async_call.call_args_list
+    temp_calls = [c for c in calls if c[0][1] == "set_temperature"]
+    assert len(temp_calls) == 1
+    assert temp_calls[0][0][2]["temperature"] == 5.0
+    assert temp_calls[0][0][2]["entity_id"] == "climate.trv1"
+    hvac_calls = [c for c in calls if c[0][1] == "set_hvac_mode"]
+    assert len(hvac_calls) == 0
+
+
+@pytest.mark.asyncio
+async def test_async_idle_device_low_redundancy():
+    """Device with idle_action='low' already at min_temp skips the call."""
+    clear_command_cache()
+    hass = build_hass()
+    state = MagicMock()
+    state.state = "heat"
+    state.attributes = {
+        "hvac_modes": ["heat", "off"],
+        "min_temp": 5.0,
+        "max_temp": 35.0,
+        "temperature": 5.0,
+    }
+    hass.states.get = MagicMock(return_value=state)
+
+    devices = [{"entity_id": "climate.trv1", "type": "trv", "role": "auto", "idle_action": "low", "idle_fan_mode": ""}]
+    await async_idle_device(hass, "climate.trv1", devices, area_id="living_room")
+
+    hass.services.async_call.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_async_idle_device_low_no_state_noop():
+    """Device with idle_action='low' and no state performs no service call."""
+    clear_command_cache()
+    hass = build_hass()
+    hass.states.get = MagicMock(return_value=None)
+
+    devices = [{"entity_id": "climate.trv1", "type": "trv", "role": "auto", "idle_action": "low", "idle_fan_mode": ""}]
+    await async_idle_device(hass, "climate.trv1", devices, area_id="living_room")
+
+    hass.services.async_call.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_async_idle_device_low_falls_back_to_heat_target_when_min_temp_invalid():
+    """When device reports min_temp <= 0, 'low' falls back to heat target minus setback offset."""
+    clear_command_cache()
+    hass = build_hass()
+    state = MagicMock()
+    state.state = "heat"
+    state.attributes = {
+        "hvac_modes": ["heat", "off"],
+        "min_temp": 0.0,
+        "max_temp": 35.0,
+        "temperature": 21.0,
+    }
+    hass.states.get = MagicMock(return_value=state)
+
+    devices = [{"entity_id": "climate.trv1", "type": "trv", "role": "auto", "idle_action": "low", "idle_fan_mode": ""}]
+    targets = TargetTemps(heat=21.0, cool=None)
+    await async_idle_device(hass, "climate.trv1", devices, area_id="living_room", targets=targets)
+
+    calls = hass.services.async_call.call_args_list
+    temp_calls = [c for c in calls if c[0][1] == "set_temperature"]
+    assert len(temp_calls) == 1
+    # heat - DEFAULT_IDLE_SETBACK_OFFSET = 21 - 2 = 19
+    assert temp_calls[0][0][2]["temperature"] == 19.0
+    hvac_calls = [c for c in calls if c[0][1] == "set_hvac_mode"]
+    assert len(hvac_calls) == 0
+
+
+# ---------------------------------------------------------------------------
 # async_idle_device — setback unit tests
 # ---------------------------------------------------------------------------
 

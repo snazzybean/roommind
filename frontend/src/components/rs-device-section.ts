@@ -378,7 +378,10 @@ export class RsDeviceSection extends LitElement {
 
     const device =
       type === "climate" ? this.devices.find((d) => d.entity_id === entityId) : undefined;
-    const showIdleBadge = device?.idle_action === "fan_only" || device?.idle_action === "setback";
+    const showIdleBadge =
+      device?.idle_action === "fan_only" ||
+      device?.idle_action === "setback" ||
+      device?.idle_action === "low";
     const showDirectBadge =
       device?.type === "trv" && device?.setpoint_mode === "direct" && !!this.selectedTempSensor;
 
@@ -394,7 +397,9 @@ export class RsDeviceSection extends LitElement {
                     .idle_fan_mode
                     ? ` (${device!.idle_fan_mode})`
                     : nothing}`
-                : localize("devices.idle_action_setback", this.hass.language)}
+                : device!.idle_action === "low"
+                  ? localize("devices.idle_action_low", this.hass.language)
+                  : localize("devices.idle_action_setback", this.hass.language)}
             </span>`
           : nothing}
         ${showDirectBadge
@@ -600,67 +605,107 @@ export class RsDeviceSection extends LitElement {
         const hvacModes = (entityState?.attributes?.hvac_modes ?? []) as string[];
         const supportsFanOnly = hvacModes.includes("fan_only");
         const device = this.devices.find((d) => d.entity_id === entityId);
-        if (!isSelected || device?.type !== "ac") return nothing;
-        return html`
-          <div class="idle-action-row">
-            <ha-select
-              .label=${localize("devices.idle_action", this.hass.language)}
-              .value=${device.idle_action ?? "off"}
-              .options=${[
-                {
-                  value: "off",
-                  label: localize("devices.idle_action_off", this.hass.language),
-                },
-                ...(supportsFanOnly
-                  ? [
-                      {
-                        value: "fan_only",
-                        label: localize("devices.idle_action_fan_only", this.hass.language),
-                      },
-                    ]
-                  : []),
-                {
-                  value: "setback",
-                  label: localize("devices.idle_action_setback", this.hass.language),
-                },
-              ]}
-              @selected=${(e: Event) => this._onIdleActionChange(entityId, getSelectValue(e)!)}
-              @closed=${(e: Event) => e.stopPropagation()}
-              fixedMenuPosition
-            >
-              <ha-list-item value="off"
-                >${localize("devices.idle_action_off", this.hass.language)}</ha-list-item
+        if (!isSelected) return nothing;
+        if (device?.type === "ac") {
+          return html`
+            <div class="idle-action-row">
+              <ha-select
+                .label=${localize("devices.idle_action", this.hass.language)}
+                .value=${device.idle_action ?? "off"}
+                .options=${[
+                  {
+                    value: "off",
+                    label: localize("devices.idle_action_off", this.hass.language),
+                  },
+                  ...(supportsFanOnly
+                    ? [
+                        {
+                          value: "fan_only",
+                          label: localize("devices.idle_action_fan_only", this.hass.language),
+                        },
+                      ]
+                    : []),
+                  {
+                    value: "setback",
+                    label: localize("devices.idle_action_setback", this.hass.language),
+                  },
+                ]}
+                @selected=${(e: Event) => this._onIdleActionChange(entityId, getSelectValue(e)!)}
+                @closed=${(e: Event) => e.stopPropagation()}
+                fixedMenuPosition
               >
-              ${supportsFanOnly
-                ? html`<ha-list-item value="fan_only"
-                    >${localize("devices.idle_action_fan_only", this.hass.language)}</ha-list-item
-                  >`
+                <ha-list-item value="off"
+                  >${localize("devices.idle_action_off", this.hass.language)}</ha-list-item
+                >
+                ${supportsFanOnly
+                  ? html`<ha-list-item value="fan_only"
+                      >${localize("devices.idle_action_fan_only", this.hass.language)}</ha-list-item
+                    >`
+                  : nothing}
+                <ha-list-item value="setback"
+                  >${localize("devices.idle_action_setback", this.hass.language)}</ha-list-item
+                >
+              </ha-select>
+              ${device.idle_action === "fan_only"
+                ? html`
+                    <ha-select
+                      .label=${localize("devices.idle_fan_mode", this.hass.language)}
+                      .value=${device.idle_fan_mode ?? "low"}
+                      .options=${((entityState?.attributes?.fan_modes ?? []) as string[]).map(
+                        (fm) => ({ value: fm, label: fm }),
+                      )}
+                      @selected=${(e: Event) =>
+                        this._onIdleFanModeChange(entityId, getSelectValue(e)!)}
+                      @closed=${(e: Event) => e.stopPropagation()}
+                      fixedMenuPosition
+                    >
+                      ${((entityState?.attributes?.fan_modes ?? []) as string[]).map(
+                        (fm) => html`<ha-list-item value="${fm}">${fm}</ha-list-item>`,
+                      )}
+                    </ha-select>
+                  `
                 : nothing}
-              <ha-list-item value="setback"
-                >${localize("devices.idle_action_setback", this.hass.language)}</ha-list-item
+            </div>
+          `;
+        }
+        if (device?.type === "trv") {
+          return html`
+            <div class="idle-action-row">
+              <ha-select
+                .label=${localize("devices.idle_action", this.hass.language)}
+                .value=${device.idle_action ?? "off"}
+                .options=${[
+                  {
+                    value: "off",
+                    label: localize("devices.idle_action_off", this.hass.language),
+                  },
+                  {
+                    value: "low",
+                    label: localize("devices.idle_action_low", this.hass.language),
+                  },
+                ]}
+                @selected=${(e: Event) => this._onIdleActionChange(entityId, getSelectValue(e)!)}
+                @closed=${(e: Event) => e.stopPropagation()}
+                fixedMenuPosition
               >
-            </ha-select>
-            ${device.idle_action === "fan_only"
+                <ha-list-item value="off"
+                  >${localize("devices.idle_action_off", this.hass.language)}</ha-list-item
+                >
+                <ha-list-item value="low"
+                  >${localize("devices.idle_action_low", this.hass.language)}</ha-list-item
+                >
+              </ha-select>
+            </div>
+            ${device.idle_action === "low"
               ? html`
-                  <ha-select
-                    .label=${localize("devices.idle_fan_mode", this.hass.language)}
-                    .value=${device.idle_fan_mode ?? "low"}
-                    .options=${((entityState?.attributes?.fan_modes ?? []) as string[]).map(
-                      (fm) => ({ value: fm, label: fm }),
-                    )}
-                    @selected=${(e: Event) =>
-                      this._onIdleFanModeChange(entityId, getSelectValue(e)!)}
-                    @closed=${(e: Event) => e.stopPropagation()}
-                    fixedMenuPosition
-                  >
-                    ${((entityState?.attributes?.fan_modes ?? []) as string[]).map(
-                      (fm) => html`<ha-list-item value="${fm}">${fm}</ha-list-item>`,
-                    )}
-                  </ha-select>
+                  <div class="setpoint-mode-hint">
+                    ${localize("devices.idle_action_low_hint", this.hass.language)}
+                  </div>
                 `
               : nothing}
-          </div>
-        `;
+          `;
+        }
+        return nothing;
       })()}
       ${(() => {
         const device = this.devices.find((d) => d.entity_id === entityId);
@@ -770,7 +815,7 @@ export class RsDeviceSection extends LitElement {
   private _onIdleActionChange(entityId: string, idleAction: string): void {
     const newDevices = this.devices.map((d) => {
       if (d.entity_id !== entityId) return d;
-      const updated = { ...d, idle_action: idleAction as "off" | "fan_only" | "setback" };
+      const updated = { ...d, idle_action: idleAction as "off" | "fan_only" | "setback" | "low" };
       if (idleAction === "fan_only" && !d.idle_fan_mode) {
         updated.idle_fan_mode = "low";
       }
