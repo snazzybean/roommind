@@ -30,6 +30,7 @@ from ..const import (
 from ..utils.device_utils import (
     DEFAULT_IDLE_SETBACK_OFFSET,
     IDLE_ACTION_FAN_ONLY,
+    IDLE_ACTION_LOW,
     IDLE_ACTION_SETBACK,
     get_ac_eids,
     get_direct_setpoint_eids,
@@ -373,6 +374,7 @@ async def async_idle_device(
     "off"      -> async_turn_off_climate() (existing behavior)
     "fan_only" -> hvac_mode=fan_only + set_fan_mode(idle_fan_mode)
     "setback"  -> keep current hvac_mode, shift target by offset
+    "low"      -> lower setpoint to device min_temp, never send set_hvac_mode(off)
     Falls back to off when the configured action is not applicable.
     """
     idle_action, idle_fan_mode = get_idle_action(devices, entity_id)
@@ -382,6 +384,24 @@ async def async_idle_device(
     fallback_temp: float | None = None
     if targets is not None and targets.heat is not None:
         fallback_temp = celsius_to_ha_temp(hass, targets.heat - DEFAULT_IDLE_SETBACK_OFFSET)
+
+    # --- LOW branch ---
+    # Some TRVs (e.g. battery Zigbee valves) enter deep-sleep hibernation after
+    # extended time in hvac_mode=off, causing later wake-up commands to be lost.
+    # "low" keeps the device out of off-mode by only lowering the setpoint.
+    if idle_action == IDLE_ACTION_LOW:
+        state = hass.states.get(entity_id)
+        if state is None:
+            return
+        effective_setpoint = _resolve_idle_setpoint(
+            state,
+            fallback_temp,
+            area_id=area_id,
+            entity_id=entity_id,
+        )
+        if effective_setpoint is not None:
+            await _send_idle_setpoint(hass, entity_id, state, effective_setpoint, area_id=area_id)
+        return
 
     # --- SETBACK branch ---
     if idle_action == IDLE_ACTION_SETBACK:
