@@ -271,7 +271,7 @@ async def websocket_list_rooms(
                 vol.Required("type"): vol.In(["trv", "ac"]),
                 vol.Optional("role", default="auto"): vol.In(["primary", "secondary", "auto"]),
                 vol.Optional("heating_system_type", default=""): vol.In(["", "radiator", "underfloor"]),
-                vol.Optional("idle_action", default="off"): vol.In(["off", "fan_only", "setback"]),
+                vol.Optional("idle_action", default="off"): vol.In(["off", "fan_only", "setback", "low"]),
                 vol.Optional("idle_fan_mode", default="low"): str,
                 vol.Optional("setpoint_mode", default="proportional"): vol.In(["proportional", "direct"]),
             }
