@@ -29,6 +29,9 @@ import { fireSaveStatus } from "../utils/events";
 import { resolveHeatingSystemType } from "../utils/device-utils";
 import type { RsOverrideSection } from "./rs-override-section";
 
+const CONTROL_DOCS_URL =
+  "https://github.com/snazzybean/roommind/blob/main/docs/control-and-devices.md";
+
 @customElement("rs-room-detail")
 export class RsRoomDetail extends LitElement {
   @property({ attribute: false }) public area!: HassArea;
@@ -182,6 +185,18 @@ export class RsRoomDetail extends LitElement {
     }
 
     .exceptions-link:hover {
+      text-decoration: underline;
+    }
+
+    .helper-link {
+      display: inline-block;
+      margin-top: 12px;
+      color: var(--primary-color);
+      font-size: 12px;
+      text-decoration: none;
+    }
+
+    .helper-link:hover {
       text-decoration: underline;
     }
   `;
@@ -452,6 +467,7 @@ export class RsRoomDetail extends LitElement {
                 <rs-section-card
                   icon="mdi:power-plug"
                   .heading=${localize("room.section.devices", this.hass.language)}
+                  hasInfo
                   editable
                   .editing=${this._editingDevices}
                   .doneLabel=${localize("devices.done", this.hass.language)}
@@ -462,6 +478,23 @@ export class RsRoomDetail extends LitElement {
                     this._editingDevices = false;
                   }}
                 >
+                  <div slot="info">
+                    <b>${localize("devices.info.types_title", this.hass.language)}</b><br />
+                    ${localize("devices.info.types_body", this.hass.language)}
+                    <br /><br />
+                    <b>${localize("devices.info.control_title", this.hass.language)}</b><br />
+                    ${localize("devices.info.control_body", this.hass.language)}
+                    <br /><br />
+                    <b>${localize("devices.info.modes_title", this.hass.language)}</b><br />
+                    ${localize("devices.info.modes_body", this.hass.language)}
+                    <br /><br />
+                    <b>${localize("devices.info.heat_source_title", this.hass.language)}</b><br />
+                    ${localize("devices.info.heat_source_body", this.hass.language)}
+                    <br />
+                    <a class="helper-link" href=${CONTROL_DOCS_URL} target="_blank" rel="noreferrer">
+                      ${localize("common.learn_more", this.hass.language)}
+                    </a>
+                  </div>
                   <rs-device-section
                     .hass=${this.hass}
                     .area=${this.area}
