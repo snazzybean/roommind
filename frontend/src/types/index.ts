@@ -60,7 +60,7 @@ export interface DeviceConfig {
   type: DeviceType;
   role: DeviceRole;
   heating_system_type?: string;
-  idle_action?: "off" | "fan_only" | "setback"; // default "off"
+  idle_action?: "off" | "fan_only" | "setback" | "low"; // default "off"
   idle_fan_mode?: string; // default "low"
   setpoint_mode?: "proportional" | "direct"; // default "proportional"
 }

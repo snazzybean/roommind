@@ -182,6 +182,8 @@
   "devices.idle_action_off": "Turn off",
   "devices.idle_action_fan_only": "Fan only",
   "devices.idle_action_setback": "Setback",
+  "devices.idle_action_low": "Low setpoint (keep awake)",
+  "devices.idle_action_low_hint": "Lowers the setpoint to the device minimum instead of sending off. Prevents TRVs that hibernate in off mode from losing later commands.",
   "devices.idle_fan_mode": "Fan speed",
   "devices.setpoint_mode": "Setpoint mode",
   "devices.setpoint_mode_proportional": "Proportional (valve control)",
