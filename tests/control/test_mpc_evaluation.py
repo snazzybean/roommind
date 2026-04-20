@@ -845,3 +845,69 @@ def test_build_solar_series_short_cloud_extended():
     )
     series = ctrl._build_solar_series(30)
     assert len(series) == 30
+
+
+# ---------------------------------------------------------------------------
+# Issue #131: UFH proactive pre-heating — end-to-end via _evaluate_mpc
+# ---------------------------------------------------------------------------
+
+
+def test_evaluate_mpc_ufh_preheats_before_setpoint_drop():
+    """UFH room at target with cold outdoor: _evaluate_mpc picks HEATING proactively."""
+    hass = build_hass()
+    room = make_room(heating_system_type="underfloor")
+    mgr = RoomModelManager()
+    # Stub a well-trained model and enough data for MPC to activate.
+    mgr.get_mode_counts = MagicMock(return_value=(100, 50, 0))
+    mgr.get_prediction_std = MagicMock(return_value=0.3)
+    mgr.get_model = MagicMock(return_value=RCModel(C=1.0, U=0.15, Q_heat=3.0, Q_cool=4.0))
+    ctrl = MPCController(
+        hass,
+        room,
+        model_manager=mgr,
+        outdoor_temp=5.0,
+        settings={"comfort_weight": 70, "control_mode": "mpc"},
+        has_external_sensor=True,
+        heating_system_type="underfloor",
+    )
+    mode, pf = ctrl._evaluate_mpc(20.0, TargetTemps(heat=20.0, cool=20.0))
+    assert mode == MODE_HEATING, f"Expected HEATING, got {mode}"
+    assert pf > 0.0
+
+
+def test_mpc_guard_horizon_extended_for_ufh(monkeypatch):
+    """UFH guard uses the optimizer's extended lookahead for idle-drift prediction.
+
+    At outdoor=19°C, room=21°C, target=21°C the 30-min drift stays above the
+    20.8°C suppression threshold (would trigger old-style suppression), but the
+    120-min drift dips below it (the fix allows heating).
+    """
+    hass = build_hass()
+    room = make_room(heating_system_type="underfloor")
+    mgr = RoomModelManager()
+    mgr.get_mode_counts = MagicMock(return_value=(100, 50, 0))
+    mgr.get_prediction_std = MagicMock(return_value=0.3)
+    mgr.get_model = MagicMock(return_value=RCModel(C=1.0, U=0.15, Q_heat=3.0, Q_cool=4.0))
+    ctrl = MPCController(
+        hass,
+        room,
+        model_manager=mgr,
+        outdoor_temp=19.0,
+        settings={"comfort_weight": 70, "control_mode": "mpc"},
+        has_external_sensor=True,
+        heating_system_type="underfloor",
+    )
+
+    fake_plan = MPCPlan(
+        actions=[MODE_HEATING] * 24,
+        temperatures=[21.0] * 25,
+        power_fractions=[0.8] * 24,
+        lookahead_blocks=24,  # UFH lookahead as per fix
+    )
+
+    monkeypatch.setattr(
+        "custom_components.roommind.control.mpc_controller.MPCOptimizer.optimize",
+        lambda *a, **kw: fake_plan,
+    )
+    mode, _ = ctrl._evaluate_mpc(21.0, TargetTemps(heat=21.0, cool=25.0))
+    assert mode == MODE_HEATING, "Extended guard horizon for UFH should allow heating at mild outdoor=19°C"

@@ -889,6 +889,7 @@ class MPCController:
             outdoor_heating_max=self.outdoor_heating_max,
             min_run_blocks=min_run,
             override_active=is_override_active(self.room_config),
+            heating_system_type=self._heating_system_type,
         )
 
         plan = optimizer.optimize(
@@ -909,8 +910,11 @@ class MPCController:
         # Safety guard: don't heat above the maximum upcoming target,
         # don't cool below the minimum upcoming target, while preserving
         # pre-heating/pre-cooling when the model predicts a drift past target.
-        # The guard horizon scales with heating system response time.
-        guard_blocks = max(SAFETY_GUARD_MIN_BLOCKS, min_run)
+        # The guard horizon scales with heating system response time and
+        # matches the optimizer's per-system lookahead (read from the plan) so
+        # mild-weather UFH pre-heat decisions don't get suppressed by a short
+        # drift check.
+        guard_blocks = max(SAFETY_GUARD_MIN_BLOCKS, min_run, plan.lookahead_blocks)
         guard_horizon_minutes = guard_blocks * PLAN_DT_MINUTES
         near_heat = heat_target_series[:guard_blocks]
         near_cool = cool_target_series[:guard_blocks]
