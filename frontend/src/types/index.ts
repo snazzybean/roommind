@@ -242,7 +242,14 @@ export interface AnalyticsData {
   forecast?: AnalyticsDataPoint[];
   model: {
     confidence: number;
-    model: { C: number; U: number; Q_heat: number; Q_cool: number; Q_solar: number };
+    model: {
+      C: number;
+      U: number;
+      Q_heat: number;
+      Q_cool: number;
+      Q_solar: number;
+      Q_occupancy: number;
+    };
     n_samples: number;
     n_observations: number;
     n_heating: number;
@@ -252,6 +259,7 @@ export interface AnalyticsData {
     sigma_e: number;
     prediction_std_idle: number;
     prediction_std_heating: number;
+    has_occupancy_sensors: boolean;
   };
 }
 

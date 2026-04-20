@@ -229,6 +229,7 @@ async def build_analytics_data(
                 mpc_active = False
             # EKF uncertainty: sqrt(P[0][0]) as proxy for sigma_e
             sigma_proxy = math.sqrt(max(est._P[0][0], 0.0))
+            has_occupancy_sensors = len(room_config.get("occupancy_sensors", [])) > 0
             model_info = {
                 "confidence": est.confidence,
                 "model": rc.to_dict(),
@@ -241,6 +242,7 @@ async def build_analytics_data(
                 "sigma_e": round(sigma_proxy, 4),
                 "prediction_std_idle": round(pred_std_idle, 4),
                 "prediction_std_heating": round(pred_std_heat, 4),
+                "has_occupancy_sensors": has_occupancy_sensors,
             }
 
     # Build merged forecast: same format as history points, on a shared 5-min grid
