@@ -1356,6 +1356,48 @@ async def test_analytics_mold_delta_from_live(ws_hass, store, connection):
     assert result["forecast"][0]["target_temp"] == 23.0
 
 
+@pytest.mark.asyncio
+async def test_analytics_model_has_occupancy_sensors_true(ws_hass, store, connection):
+    """Analytics model_info reports has_occupancy_sensors=True when room has occupancy sensors."""
+    await store.async_load()
+    await store.async_save_room(
+        "room_a",
+        {
+            "thermostats": ["climate.trv1"],
+            "occupancy_sensors": ["binary_sensor.room_a_occupancy"],
+        },
+    )
+
+    est = _make_mock_estimator(model_dict={"Q_heat": 3.0, "Q_solar": 0.5, "Q_occupancy": 0.3})
+    coordinator = _make_analytics_coordinator(history_rows=[], estimator=est)
+    ws_hass.data[DOMAIN]["coordinator"] = coordinator
+
+    msg = {"id": 60, "type": "roommind/analytics/get", "area_id": "room_a"}
+    await _get_analytics(ws_hass, connection, msg)
+
+    result = connection.send_result.call_args[0][1]
+    assert result["model"]["has_occupancy_sensors"] is True
+    assert "Q_occupancy" in result["model"]["model"]
+
+
+@pytest.mark.asyncio
+async def test_analytics_model_has_occupancy_sensors_false(ws_hass, store, connection):
+    """Analytics model_info reports has_occupancy_sensors=False when no occupancy sensors configured."""
+    await store.async_load()
+    await store.async_save_room("room_a", {"thermostats": ["climate.trv1"]})
+
+    est = _make_mock_estimator(model_dict={"Q_heat": 3.0, "Q_solar": 0.5, "Q_occupancy": 0.3})
+    coordinator = _make_analytics_coordinator(history_rows=[], estimator=est)
+    ws_hass.data[DOMAIN]["coordinator"] = coordinator
+
+    msg = {"id": 61, "type": "roommind/analytics/get", "area_id": "room_a"}
+    await _get_analytics(ws_hass, connection, msg)
+
+    result = connection.send_result.call_args[0][1]
+    assert result["model"]["has_occupancy_sensors"] is False
+    assert "Q_occupancy" in result["model"]["model"]
+
+
 # ---------------------------------------------------------------------------
 # Registration
 # ---------------------------------------------------------------------------
