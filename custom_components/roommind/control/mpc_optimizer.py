@@ -5,8 +5,17 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 
-from ..const import MIN_POWER_FRACTION, MODE_COOLING, MODE_HEATING, MODE_IDLE
+from ..const import HEATING_SYSTEM_PROFILES, MIN_POWER_FRACTION, MODE_COOLING, MODE_HEATING, MODE_IDLE
+from .residual_heat import compute_residual_heat
 from .thermal_model import RCModel
+
+# Base lookahead for per-block decision cost evaluation. Radiator / unknown
+# systems stay at this value; systems with long thermal time constants scale up.
+LOOKAHEAD_BASE_BLOCKS = 6
+# How many tau time-constants to include in the lookahead beyond min_run. Set to
+# 1.0 so UFH lookahead (24 blocks = 120 min) matches the outer horizon minimum,
+# avoiding silent clamping. See issue #131.
+LOOKAHEAD_HORIZON_SCALE = 1.0
 
 
 @dataclass
@@ -17,6 +26,9 @@ class MPCPlan:
     temperatures: list[float]  # len = len(actions) + 1 (includes initial)
     dt_minutes: float = 5.0
     power_fractions: list[float] = field(default_factory=list)
+    # Per-system decision lookahead used when building this plan. Exposed so
+    # the controller's safety guard can align its horizon with the optimizer's.
+    lookahead_blocks: int = LOOKAHEAD_BASE_BLOCKS
 
     def get_current_action(self) -> str:
         """Return the action for the current (first) time block."""
@@ -50,6 +62,12 @@ class MPCOptimizer:
     temp_min: float = 5.0  # frost protection
     temp_max: float = 30.0  # overheat protection
     override_active: bool = False
+    heating_system_type: str = ""  # key into HEATING_SYSTEM_PROFILES; "" = unknown
+
+    def __post_init__(self) -> None:
+        # Set before optimize() runs so callers / patched optimize() still expose
+        # a sensible default. optimize() refreshes this from dt_minutes per call.
+        self._lookahead_blocks = LOOKAHEAD_BASE_BLOCKS
 
     def optimize(
         self,
@@ -77,6 +95,22 @@ class MPCOptimizer:
 
         # Clamp inverted targets: cool must be >= heat
         cool_target_series = [max(h, c) for h, c in zip(heat_target_series, cool_target_series, strict=False)]
+
+        # Per-system decision lookahead. UFH (tau=90min) scales up so the cost
+        # function can see post-heating residual afterglow; radiator / "" stay
+        # at LOOKAHEAD_BASE_BLOCKS for byte-identical behaviour. Hybrid UFH+AC
+        # rooms (can_cool=True) also keep the base lookahead: extending the
+        # horizon without a matching cooling-side synthesis would shift the
+        # energy/comfort ratio for COOLING and cause more aggressive AC use.
+        profile = HEATING_SYSTEM_PROFILES.get(self.heating_system_type) if self.heating_system_type else None
+        if profile and dt_minutes > 0 and not self.can_cool:
+            tau_blocks = math.ceil(profile["tau_minutes"] / dt_minutes)
+            self._lookahead_blocks = max(
+                LOOKAHEAD_BASE_BLOCKS,
+                self.min_run_blocks + math.ceil(LOOKAHEAD_HORIZON_SCALE * tau_blocks),
+            )
+        else:
+            self._lookahead_blocks = LOOKAHEAD_BASE_BLOCKS
 
         n_blocks = min(len(T_outdoor_series), len(heat_target_series), len(cool_target_series))
         if n_blocks == 0 or not math.isfinite(T_room):
@@ -193,6 +227,7 @@ class MPCOptimizer:
             temperatures=temperatures,
             dt_minutes=dt_minutes,
             power_fractions=power_fractions,
+            lookahead_blocks=self._lookahead_blocks,
         )
 
     def _evaluate_action(
@@ -211,22 +246,50 @@ class MPCOptimizer:
         future_residual: list[float] | None = None,
         future_occupancy: list[float] | None = None,
     ) -> float:
-        """Evaluate the cost of taking an action, looking a few steps ahead."""
-        lookahead = min(6, len(future_T_outdoor))  # 30 min lookahead for local decision
+        """Evaluate the cost of taking an action, looking a few steps ahead.
+
+        Per-system lookahead (self._lookahead_blocks) extends the window for
+        slow heating systems. For UFH, the HEATING hypothesis synthesizes its
+        own post-heating residual afterglow so the cost function values the
+        sustained-comfort benefit of pre-heating. Radiator / "" lookahead stays
+        at LOOKAHEAD_BASE_BLOCKS and synthesis is gated off — byte-identical
+        to pre-fix behaviour.
+        """
+        lookahead = min(self._lookahead_blocks, len(future_T_outdoor))
         Q = self._action_to_Q(action)
         total_cost = 0.0
         T = T_room
         solar = future_solar or []
         residual = future_residual or []
         occupancy = future_occupancy or []
+        synthesis_enabled = (
+            action == MODE_HEATING
+            and self._lookahead_blocks > LOOKAHEAD_BASE_BLOCKS
+            and self.min_run_blocks > 0
+            and bool(self.heating_system_type)
+        )
+        heating_duration_minutes = self.min_run_blocks * dt_minutes
 
         for j in range(lookahead):
             qs = solar[j] if j < len(solar) else 0.0
-            qr = residual[j] if j < len(residual) else 0.0
             qo = occupancy[j] if j < len(occupancy) else 0.0
             # Simulate HVAC for min_run_blocks (not just 1 block) to correctly
             # value sustained heating/cooling over the lookahead horizon.
             block_Q = Q if j < self.min_run_blocks else 0.0
+            # Residual for the idle / post-run blocks. For the HEATING
+            # hypothesis on a gated slow system, synthesize the afterglow this
+            # hypothetical run would generate; otherwise fall back to the
+            # controller-provided current-state decay.
+            if synthesis_enabled and j >= self.min_run_blocks:
+                elapsed = (j - self.min_run_blocks) * dt_minutes
+                qr = compute_residual_heat(
+                    elapsed,
+                    self.heating_system_type,
+                    last_power_fraction=1.0,
+                    heating_duration_minutes=heating_duration_minutes,
+                )
+            else:
+                qr = residual[j] if j < len(residual) else 0.0
             T = self.model.predict(
                 T,
                 future_T_outdoor[j],

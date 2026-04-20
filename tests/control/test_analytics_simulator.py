@@ -922,3 +922,64 @@ class TestSimulateMPCEdgeCases:
         assert any(r > n for r, n in zip(result_with_residual, result_no_residual, strict=True)), (
             "Residual series should raise temperatures compared to no residual"
         )
+
+
+# ---------------------------------------------------------------------------
+# Issue #131: analytics simulation reflects UFH pre-heating
+# ---------------------------------------------------------------------------
+
+
+def test_analytics_simulator_ufh_shows_preheat():
+    """UFH simulation reaches/holds target earlier than empty-type baseline.
+
+    Proves the UFH pre-heat fix propagates through the analytics simulator via
+    the shared MPCOptimizer: the empty-type baseline stays at target longer
+    before finally reacting, while UFH pre-heats and lifts T above target
+    earlier.
+    """
+    # Mild conditions so the decision window (not the drift magnitude) is the
+    # dominant signal in the comparison.
+    model = RCModel(C=1.0, U=0.1, Q_heat=1.0, Q_cool=1.0, Q_solar=0.0)
+    n_blocks = 24  # 2 hours
+    target_forecast = [{"target_temp": 20.0, "heat_target": 20.0, "cool_target": 20.0}] * n_blocks
+    outdoor_series = [12.0] * n_blocks
+
+    def _config(hst):
+        return {
+            "thermostats": ["climate.trv"],
+            "acs": [],
+            "devices": [{"entity_id": "climate.trv", "type": "trv", "role": "auto", "heating_system_type": hst}],
+            "climate_mode": "auto",
+            "heating_system_type": hst,
+        }
+
+    settings = {"comfort_weight": 70}
+
+    temps_ufh = _simulate_mpc(
+        model,
+        target_forecast,
+        outdoor_series,
+        current_temp=20.0,
+        room_config=_config("underfloor"),
+        settings=settings,
+        heating_system_type="underfloor",
+    )
+    temps_empty = _simulate_mpc(
+        model,
+        target_forecast,
+        outdoor_series,
+        current_temp=20.0,
+        room_config=_config(""),
+        settings=settings,
+        heating_system_type="",
+    )
+
+    assert len(temps_ufh) == n_blocks
+    assert len(temps_empty) == n_blocks
+    # UFH should hold the average temperature higher over the window (pre-heat
+    # keeps it nearer target instead of letting drift accumulate first).
+    avg_ufh = sum(temps_ufh) / len(temps_ufh)
+    avg_empty = sum(temps_empty) / len(temps_empty)
+    assert avg_ufh > avg_empty, (
+        f"UFH avg temp {avg_ufh:.3f} should exceed empty-type avg {avg_empty:.3f} — UFH pre-heats, empty type waits"
+    )

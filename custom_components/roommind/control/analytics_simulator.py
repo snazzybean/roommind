@@ -204,6 +204,7 @@ def _simulate_mpc(
         outdoor_cooling_min=ocm,
         outdoor_heating_max=ohm,
         min_run_blocks=min_run,
+        heating_system_type=heating_system_type,
     )
 
     T = current_temp

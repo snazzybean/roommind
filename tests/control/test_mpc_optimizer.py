@@ -511,3 +511,224 @@ def test_min_run_forced_idle_outdoor_gate_mid_run():
     )
     if len(plan.actions) > 1 and plan.actions[0] == "cooling":
         assert plan.actions[1] == "idle"
+
+
+# ---------------------------------------------------------------------------
+# Issue #131: UFH proactive pre-heating
+# ---------------------------------------------------------------------------
+
+
+def _ufh_optimizer(**overrides):
+    """Construct an optimizer with UFH heat-only profile settings.
+
+    Default can_cool=False matches pure UFH rooms (primary fix target).
+    Override can_cool=True to exercise the hybrid UFH+AC code path.
+    """
+    model = overrides.pop("model", RCModel(C=2.0, U=50.0, Q_heat=1000.0, Q_cool=1500.0))
+    defaults = {
+        "can_cool": False,
+        "w_comfort": 7.0,
+        "w_energy": 3.0,
+        "min_run_blocks": 6,
+        "heating_system_type": "underfloor",
+    }
+    defaults.update(overrides)
+    return MPCOptimizer(model=model, **defaults)
+
+
+def test_ufh_proactive_preheat_at_target():
+    """UFH room at target with cold outdoor should pre-heat, not wait for drop."""
+    opt = _ufh_optimizer()
+    n = 30
+    plan = opt.optimize(
+        T_room=20.0,
+        T_outdoor_series=[5.0] * n,
+        heat_target_series=[20.0] * n,
+        cool_target_series=[20.0] * n,
+        dt_minutes=5,
+    )
+    assert plan.actions[0] == "heating", f"UFH at target should pre-heat, got {plan.actions[0]}"
+
+
+def test_ufh_afterglow_visible_in_cost():
+    """Synthesis reduces HEATING cost vs non-synthesized path at equal lookahead.
+
+    Isolates the synthesis effect by forcing both optimizers to the same
+    lookahead. Only the heating_system_type-based synthesis gate differs.
+    """
+    model = RCModel(C=200.0, U=50.0, Q_heat=300.0, Q_cool=1500.0)
+    shared = {
+        "T_room": 20.0,
+        "T_outdoor": 5.0,
+        "heat_target": 20.0,
+        "cool_target": 20.0,
+        "future_T_outdoor": [5.0] * 30,
+        "future_heat_targets": [20.0] * 30,
+        "future_cool_targets": [20.0] * 30,
+        "dt_minutes": 5.0,
+    }
+
+    opt_ufh = MPCOptimizer(
+        model=model,
+        can_cool=False,
+        w_comfort=7.0,
+        w_energy=3.0,
+        min_run_blocks=6,
+        heating_system_type="underfloor",
+    )
+    opt_empty = MPCOptimizer(
+        model=model,
+        can_cool=False,
+        w_comfort=7.0,
+        w_energy=3.0,
+        min_run_blocks=6,
+        heating_system_type="",
+    )
+    # Force equal lookahead — isolate synthesis from horizon-size effect.
+    opt_ufh._lookahead_blocks = 24
+    opt_empty._lookahead_blocks = 24
+
+    cost_ufh = opt_ufh._evaluate_action("heating", **shared)
+    cost_empty = opt_empty._evaluate_action("heating", **shared)
+
+    assert cost_ufh < cost_empty, (
+        f"UFH heating cost {cost_ufh} should be lower than empty-type {cost_empty} "
+        "due to afterglow synthesis reducing post-run comfort penalty"
+    )
+
+
+def test_radiator_plan_matches_empty_plan():
+    """Radiator and empty-type plans must be byte-identical (no radiator regression)."""
+    model = RCModel(C=2.0, U=50.0, Q_heat=1000.0, Q_cool=1500.0)
+    kwargs = {
+        "T_room": 19.5,
+        "T_outdoor_series": [5.0] * 12,
+        "heat_target_series": [21.0] * 12,
+        "dt_minutes": 5,
+    }
+    plan_rad = MPCOptimizer(model=model, heating_system_type="radiator").optimize(**kwargs)
+    plan_empty = MPCOptimizer(model=model, heating_system_type="").optimize(**kwargs)
+    assert plan_rad.actions == plan_empty.actions
+    assert plan_rad.temperatures == plan_empty.temperatures
+    assert plan_rad.power_fractions == plan_empty.power_fractions
+
+
+def test_unknown_system_no_regression():
+    """Empty heating_system_type keeps base lookahead and synthesis off."""
+    model = RCModel(C=2.0, U=50.0, Q_heat=1000.0, Q_cool=1500.0)
+    opt = MPCOptimizer(model=model, heating_system_type="")
+    plan = opt.optimize(
+        T_room=19.5,
+        T_outdoor_series=[5.0] * 12,
+        heat_target_series=[21.0] * 12,
+        dt_minutes=5,
+    )
+    assert plan.lookahead_blocks == 6
+
+
+def test_cooling_lookahead_no_afterglow_synthesis():
+    """COOLING uses the provided future_residual; never synthesizes afterglow.
+
+    Exercised on an extended-lookahead UFH setup (can_cool=False keeps the
+    extension active). With lookahead=24 and min_run=6, the 18 post-run blocks
+    see block_Q=0 and let residual through. Proves residual drives COOLING
+    cost, not synthesis.
+    """
+    model = RCModel(C=2.0, U=50.0, Q_heat=1000.0, Q_cool=200.0)
+    opt = _ufh_optimizer(model=model)  # can_cool=False by helper default
+    opt.optimize(
+        T_room=25.0,
+        T_outdoor_series=[28.0] * 30,
+        heat_target_series=[22.0] * 30,
+        cool_target_series=[22.0] * 30,
+        dt_minutes=5,
+    )
+    shared = {
+        "T_room": 25.0,
+        "T_outdoor": 28.0,
+        "heat_target": 22.0,
+        "cool_target": 22.0,
+        "future_T_outdoor": [28.0] * 30,
+        "future_heat_targets": [22.0] * 30,
+        "future_cool_targets": [22.0] * 30,
+        "dt_minutes": 5.0,
+    }
+    cost_with_residual = opt._evaluate_action("cooling", **shared, future_residual=[0.5] * 30)
+    cost_without_residual = opt._evaluate_action("cooling", **shared, future_residual=[0.0] * 30)
+    assert cost_with_residual != cost_without_residual
+
+
+def test_lookahead_clamps_to_horizon():
+    """Short outer horizon clamps lookahead without errors."""
+    opt = _ufh_optimizer()
+    plan = opt.optimize(
+        T_room=20.0,
+        T_outdoor_series=[5.0] * 8,
+        heat_target_series=[20.0] * 8,
+        cool_target_series=[20.0] * 8,
+        dt_minutes=5,
+    )
+    assert len(plan.actions) == 8  # no crash, plan produced
+
+
+def test_lookahead_blocks_attribute_exposed():
+    """Plan exposes lookahead_blocks for guard integration; covers all setups."""
+    model = RCModel(C=2.0, U=50.0, Q_heat=1000.0, Q_cool=1500.0)
+    cases = [
+        # (heating_system_type, can_cool, min_run_blocks, expected_lookahead)
+        ("", False, 2, 6),
+        ("", True, 2, 6),
+        ("radiator", False, 2, 6),
+        ("radiator", True, 2, 6),
+        ("underfloor", False, 6, 24),
+        ("underfloor", True, 6, 6),  # hybrid UFH+AC keeps base lookahead
+    ]
+    for hst, can_cool, mrb, exp_blocks in cases:
+        opt = MPCOptimizer(
+            model=model,
+            can_cool=can_cool,
+            min_run_blocks=mrb,
+            heating_system_type=hst,
+        )
+        plan = opt.optimize(
+            T_room=20.0,
+            T_outdoor_series=[10.0] * 30,
+            heat_target_series=[20.0] * 30,
+            dt_minutes=5,
+        )
+        assert plan.lookahead_blocks == exp_blocks, (
+            f"hst={hst!r} can_cool={can_cool}: expected {exp_blocks}, got {plan.lookahead_blocks}"
+        )
+
+
+def test_hybrid_ufh_ac_cooling_balance_preserved():
+    """Hybrid UFH+AC rooms keep base lookahead → cooling plan matches pre-fix."""
+    model = RCModel(C=2.0, U=50.0, Q_heat=1000.0, Q_cool=200.0)
+    kwargs = {
+        "T_room": 25.0,
+        "T_outdoor_series": [28.0] * 24,
+        "heat_target_series": [21.0] * 24,
+        "cool_target_series": [23.0] * 24,
+        "dt_minutes": 5,
+    }
+    # Hybrid: UFH TRV + AC cooling. With the fix gated on not can_cool, the
+    # UFH profile must NOT extend the lookahead — cooling stays at base=6.
+    plan_hybrid = MPCOptimizer(
+        model=model,
+        can_heat=True,
+        can_cool=True,
+        min_run_blocks=6,
+        heating_system_type="underfloor",
+    ).optimize(**kwargs)
+    # Reference: same room without UFH profile — the baseline cooling plan.
+    plan_baseline = MPCOptimizer(
+        model=model,
+        can_heat=True,
+        can_cool=True,
+        min_run_blocks=6,
+        heating_system_type="",
+    ).optimize(**kwargs)
+    assert plan_hybrid.lookahead_blocks == 6
+    assert plan_hybrid.actions == plan_baseline.actions
+    assert plan_hybrid.temperatures == plan_baseline.temperatures
+    assert plan_hybrid.power_fractions == plan_baseline.power_fractions
