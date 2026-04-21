@@ -33,6 +33,19 @@ from .services.analytics_service import (
 
 _LOGGER = logging.getLogger(__name__)
 
+
+def _validate_device_idle_action(device: dict) -> dict:
+    """Enforce type-specific idle_action constraints.
+
+    idle_action="low" lowers the setpoint to min_temp while keeping the
+    device in its active hvac_mode. For ACs this would cool continuously
+    toward the minimum, which is never the intent. Restrict "low" to TRVs.
+    """
+    if device.get("type") == "ac" and device.get("idle_action") == "low":
+        raise vol.Invalid("idle_action='low' is only supported for TRVs (type='trv')")
+    return device
+
+
 if TYPE_CHECKING:
     from homeassistant.components.websocket_api import ActiveConnection
 
@@ -266,15 +279,18 @@ async def websocket_list_rooms(
         vol.Optional("thermostats"): [str],
         vol.Optional("acs"): [str],
         vol.Optional("devices"): [
-            {
-                vol.Required("entity_id"): str,
-                vol.Required("type"): vol.In(["trv", "ac"]),
-                vol.Optional("role", default="auto"): vol.In(["primary", "secondary", "auto"]),
-                vol.Optional("heating_system_type", default=""): vol.In(["", "radiator", "underfloor"]),
-                vol.Optional("idle_action", default="off"): vol.In(["off", "fan_only", "setback", "low"]),
-                vol.Optional("idle_fan_mode", default="low"): str,
-                vol.Optional("setpoint_mode", default="proportional"): vol.In(["proportional", "direct"]),
-            }
+            vol.All(
+                {
+                    vol.Required("entity_id"): str,
+                    vol.Required("type"): vol.In(["trv", "ac"]),
+                    vol.Optional("role", default="auto"): vol.In(["primary", "secondary", "auto"]),
+                    vol.Optional("heating_system_type", default=""): vol.In(["", "radiator", "underfloor"]),
+                    vol.Optional("idle_action", default="off"): vol.In(["off", "fan_only", "setback", "low"]),
+                    vol.Optional("idle_fan_mode", default="low"): str,
+                    vol.Optional("setpoint_mode", default="proportional"): vol.In(["proportional", "direct"]),
+                },
+                _validate_device_idle_action,
+            )
         ],
         vol.Optional("temperature_sensor"): str,
         vol.Optional("humidity_sensor"): str,

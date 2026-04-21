@@ -14,7 +14,7 @@ from ..const import (
     VALVE_PROTECTION_CYCLE_DURATION,
     make_roommind_context,
 )
-from ..control.mpc_controller import async_turn_off_climate, resolve_hvac_mode
+from ..control.mpc_controller import async_idle_device, async_turn_off_climate, resolve_hvac_mode
 from ..utils.device_utils import get_trv_eids
 from ..utils.temp_utils import celsius_to_ha_temp
 
@@ -71,17 +71,44 @@ class ValveManager:
             self._last_actuation[eid] = now_ts
         self._actuation_dirty = True
 
-    async def async_finish_cycles(self) -> None:
-        """End valve protection cycles that have exceeded their duration."""
+    async def _async_close_valve(
+        self,
+        eid: str,
+        rooms_devices: dict[str, list[dict]] | None,
+        log_context: str,
+    ) -> None:
+        """Close a valve respecting the device's idle_action when possible.
+
+        When rooms_devices provides the device list for this entity, delegates
+        to async_idle_device so idle_action="low" TRVs stay awake. Otherwise
+        falls back to async_turn_off_climate for backward compatibility.
+        """
+        try:
+            devices = rooms_devices.get(eid) if rooms_devices else None
+            if devices is not None:
+                await async_idle_device(self.hass, eid, devices, area_id="valve_protection")
+            else:
+                await async_turn_off_climate(self.hass, eid, area_id="valve_protection")
+        except Exception:  # noqa: BLE001
+            _LOGGER.warning("Valve protection: failed to close '%s' %s", eid, log_context)
+
+    async def async_finish_cycles(
+        self,
+        rooms_devices: dict[str, list[dict]] | None = None,
+    ) -> None:
+        """End valve protection cycles that have exceeded their duration.
+
+        rooms_devices: optional {eid: devices[]} map. When provided, the
+        device's configured idle_action is respected (so idle_action="low"
+        TRVs stay awake after the cycle). If omitted, falls back to
+        async_turn_off_climate for backward compatibility.
+        """
         if not self._cycling:
             return
         now = time.time()
         finished = [eid for eid, start in self._cycling.items() if now - start >= VALVE_PROTECTION_CYCLE_DURATION]
         for eid in finished:
-            try:
-                await async_turn_off_climate(self.hass, eid, area_id="valve_protection")
-            except Exception:  # noqa: BLE001
-                _LOGGER.warning("Valve protection: failed to close '%s'", eid)
+            await self._async_close_valve(eid, rooms_devices, log_context="after cycle")
             self._cycling.pop(eid, None)
             self._last_actuation[eid] = now
             self._actuation_dirty = True
@@ -91,11 +118,14 @@ class ValveManager:
         """Scan for TRV valves that have been idle too long and start cycling them."""
         if not settings.get("valve_protection_enabled", False):
             # Disabled -- close any active cycles before clearing
+            rooms_devices = {
+                d["entity_id"]: room.get("devices", [])
+                for room in rooms.values()
+                for d in room.get("devices", [])
+                if d.get("entity_id")
+            }
             for eid in list(self._cycling):
-                try:
-                    await async_turn_off_climate(self.hass, eid, area_id="valve_protection")
-                except Exception:  # noqa: BLE001
-                    _LOGGER.warning("Valve protection: failed to close '%s' on disable", eid)
+                await self._async_close_valve(eid, rooms_devices, log_context="on disable")
             self._cycling.clear()
             return
 
