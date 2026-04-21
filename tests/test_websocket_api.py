@@ -1924,13 +1924,14 @@ async def test_save_room_accepts_idle_action_low_for_trv(ws_hass, store, connect
 
 @pytest.mark.asyncio
 async def test_save_room_rejects_ac_with_low_idle_action(ws_hass, store, connection):
-    """idle_action='low' is not permitted on AC devices — they would cool continuously."""
+    """idle_action='low' is not permitted on AC devices — they would cool continuously.
+
+    Imports the real _validate_device_idle_action so the test catches any regression
+    in the production validator, not a local copy.
+    """
     import voluptuous as vol
 
-    def _validate_device_idle_action(device: dict) -> dict:
-        if device.get("type") == "ac" and device.get("idle_action") == "low":
-            raise vol.Invalid("idle_action='low' is only supported for TRVs (type='trv')")
-        return device
+    from custom_components.roommind.websocket_api import _validate_device_idle_action
 
     device_schema = vol.All(
         vol.Schema(
@@ -1964,6 +1965,28 @@ async def test_save_room_rejects_ac_with_low_idle_action(ws_hass, store, connect
 
     with pytest.raises(vol.Invalid):
         save_room_schema(msg)
+
+
+@pytest.mark.asyncio
+async def test_validate_device_idle_action_unit():
+    """Direct unit test of the real validator — catches regressions if the function changes."""
+    import voluptuous as vol
+
+    from custom_components.roommind.websocket_api import _validate_device_idle_action
+
+    # TRV + low is allowed
+    assert _validate_device_idle_action({"type": "trv", "idle_action": "low"}) == {
+        "type": "trv",
+        "idle_action": "low",
+    }
+    # AC + off is allowed
+    assert _validate_device_idle_action({"type": "ac", "idle_action": "off"}) == {
+        "type": "ac",
+        "idle_action": "off",
+    }
+    # AC + low is rejected
+    with pytest.raises(vol.Invalid):
+        _validate_device_idle_action({"type": "ac", "idle_action": "low"})
 
 
 @pytest.mark.asyncio

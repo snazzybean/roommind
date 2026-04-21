@@ -796,9 +796,16 @@ export class RsDeviceSection extends LitElement {
 
   private _onDeviceTypeChange(entityId: string, type: "thermostat" | "ac") {
     const deviceType: DeviceType = type === "thermostat" ? "trv" : "ac";
-    const newDevices = this.devices.map((d) =>
-      d.entity_id === entityId ? { ...d, type: deviceType } : d,
-    );
+    const newDevices = this.devices.map((d) => {
+      if (d.entity_id !== entityId) return d;
+      const updated: DeviceConfig = { ...d, type: deviceType };
+      // idle_action="low" is TRV-only; the backend schema rejects it for ACs.
+      // Reset when switching to AC so the next save does not fail.
+      if (deviceType === "ac" && updated.idle_action === "low") {
+        updated.idle_action = "off";
+      }
+      return updated;
+    });
     this._fireDeviceChanged(newDevices);
   }
 

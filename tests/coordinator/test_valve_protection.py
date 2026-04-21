@@ -570,3 +570,45 @@ class TestValveProtectionRespectsIdleAction:
             and c[0][2].get("hvac_mode") == "off"
         ]
         assert len(off_calls) >= 1
+
+    @pytest.mark.asyncio
+    async def test_low_with_broken_min_temp_uses_fallback_target(self, hass, mock_config_entry):
+        """When a 'low' TRV reports min_temp <= 0, valve protection uses the synthetic
+        comfort-heat fallback so the device does not remain stuck on boost after cycle end.
+        """
+        coordinator = _create_coordinator(hass, mock_config_entry)
+        hass.services.async_call = AsyncMock()
+        broken_state = MagicMock()
+        broken_state.state = "heat"
+        broken_state.attributes = {
+            "hvac_modes": ["heat", "off"],
+            "min_temp": 0.0,  # broken (Z2M firmware bug)
+            "max_temp": 35.0,
+            "temperature": 28.0,  # still on valve-protection boost
+        }
+        hass.states.get = MagicMock(return_value=broken_state)
+
+        coordinator._valve_manager._cycling["climate.trv_low"] = time.time() - 120
+        devices = [
+            {"entity_id": "climate.trv_low", "type": "trv", "role": "auto", "idle_action": "low"},
+        ]
+        rooms_devices_map = {"climate.trv_low": devices}
+
+        await coordinator._valve_manager.async_finish_cycles(rooms_devices_map)
+
+        calls = hass.services.async_call.call_args_list
+        # Fallback = DEFAULT_COMFORT_HEAT (21) - DEFAULT_IDLE_SETBACK_OFFSET (2) = 19
+        temp_calls = [
+            c for c in calls if c[0][1] == "set_temperature" and c[0][2].get("entity_id") == "climate.trv_low"
+        ]
+        assert len(temp_calls) == 1
+        assert temp_calls[0][0][2]["temperature"] == 19.0
+        # Still no off command
+        off_calls = [
+            c
+            for c in calls
+            if c[0][1] == "set_hvac_mode"
+            and c[0][2].get("entity_id") == "climate.trv_low"
+            and c[0][2].get("hvac_mode") == "off"
+        ]
+        assert off_calls == []

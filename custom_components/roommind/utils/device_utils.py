@@ -228,6 +228,20 @@ def get_direct_setpoint_eids(devices: list[dict]) -> set[str]:
     return {d["entity_id"] for d in devices if d.get("entity_id") and d.get("setpoint_mode") == SETPOINT_MODE_DIRECT}
 
 
+def build_rooms_devices_map(rooms: dict) -> dict[str, list[dict]]:
+    """Return {entity_id: devices[]} map across all rooms.
+
+    Used by managers that need to resolve a device's configuration (e.g.
+    idle_action) by entity_id without carrying the full rooms dict.
+    """
+    return {
+        d["entity_id"]: room.get("devices", [])
+        for room in rooms.values()
+        for d in room.get("devices", [])
+        if d.get("entity_id")
+    }
+
+
 def migrate_heat_pump_devices(devices: list[dict]) -> bool:
     """Convert any heat_pump devices to ac. Returns True if any were migrated."""
     migrated = False

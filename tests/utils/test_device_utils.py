@@ -8,6 +8,7 @@ from custom_components.roommind.utils.device_utils import (
     SETPOINT_MODE_PROPORTIONAL,
     VALID_DEVICE_TYPES,
     VALID_HEATING_SYSTEM_TYPES,
+    build_rooms_devices_map,
     devices_to_legacy,
     ensure_room_has_devices,
     get_ac_eids,
@@ -403,6 +404,39 @@ def test_get_idle_action_configured():
     action, fan_mode = get_idle_action(devices, "climate.ac1")
     assert action == "fan_only"
     assert fan_mode == "auto"
+
+
+def test_build_rooms_devices_map_basic():
+    """Maps every entity_id to its room's devices list across all rooms."""
+    rooms = {
+        "living_room": {
+            "devices": [
+                {"entity_id": "climate.trv1", "type": "trv"},
+                {"entity_id": "climate.ac1", "type": "ac"},
+            ],
+        },
+        "bedroom": {
+            "devices": [
+                {"entity_id": "climate.trv2", "type": "trv"},
+            ],
+        },
+    }
+    mapping = build_rooms_devices_map(rooms)
+    assert set(mapping) == {"climate.trv1", "climate.ac1", "climate.trv2"}
+    # Entities from the same room share the same devices list reference
+    assert mapping["climate.trv1"] is mapping["climate.ac1"]
+    assert mapping["climate.trv2"] is not mapping["climate.trv1"]
+
+
+def test_build_rooms_devices_map_empty_and_missing_fields():
+    """Handles empty rooms, missing devices key, and devices without entity_id."""
+    rooms = {
+        "empty": {},
+        "no_devices": {"devices": []},
+        "bad_entry": {"devices": [{"type": "trv"}, {"entity_id": "climate.ok", "type": "trv"}]},
+    }
+    mapping = build_rooms_devices_map(rooms)
+    assert mapping == {"climate.ok": rooms["bad_entry"]["devices"]}
 
 
 # ---------------------------------------------------------------------------

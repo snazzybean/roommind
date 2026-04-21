@@ -8,14 +8,16 @@ import time
 from homeassistant.core import HomeAssistant
 
 from ..const import (
+    DEFAULT_COMFORT_HEAT,
     DEFAULT_VALVE_PROTECTION_INTERVAL,
     HEATING_BOOST_TARGET,
     VALVE_PROTECTION_CHECK_CYCLES,
     VALVE_PROTECTION_CYCLE_DURATION,
+    TargetTemps,
     make_roommind_context,
 )
 from ..control.mpc_controller import async_idle_device, async_turn_off_climate, resolve_hvac_mode
-from ..utils.device_utils import get_trv_eids
+from ..utils.device_utils import build_rooms_devices_map, get_trv_eids
 from ..utils.temp_utils import celsius_to_ha_temp
 
 _LOGGER = logging.getLogger(__name__)
@@ -86,7 +88,19 @@ class ValveManager:
         try:
             devices = rooms_devices.get(eid) if rooms_devices else None
             if devices is not None:
-                await async_idle_device(self.hass, eid, devices, area_id="valve_protection")
+                # Synthetic fallback targets so idle_action="low" has a sensible
+                # setpoint when the device reports a broken min_temp (=0). Without
+                # this the LOW branch would be a no-op and the TRV would stay on
+                # the valve-protection boost setpoint until the next coordinator
+                # tick (see review of PR #271).
+                fallback_targets = TargetTemps(heat=DEFAULT_COMFORT_HEAT, cool=None)
+                await async_idle_device(
+                    self.hass,
+                    eid,
+                    devices,
+                    area_id="valve_protection",
+                    targets=fallback_targets,
+                )
             else:
                 await async_turn_off_climate(self.hass, eid, area_id="valve_protection")
         except Exception:  # noqa: BLE001
@@ -118,12 +132,7 @@ class ValveManager:
         """Scan for TRV valves that have been idle too long and start cycling them."""
         if not settings.get("valve_protection_enabled", False):
             # Disabled -- close any active cycles before clearing
-            rooms_devices = {
-                d["entity_id"]: room.get("devices", [])
-                for room in rooms.values()
-                for d in room.get("devices", [])
-                if d.get("entity_id")
-            }
+            rooms_devices = build_rooms_devices_map(rooms)
             for eid in list(self._cycling):
                 await self._async_close_valve(eid, rooms_devices, log_context="on disable")
             self._cycling.clear()
