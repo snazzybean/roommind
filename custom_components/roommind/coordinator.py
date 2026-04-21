@@ -63,6 +63,7 @@ from .managers.valve_manager import ValveManager
 from .managers.weather_manager import WeatherManager
 from .managers.window_manager import WindowManager
 from .utils.device_utils import (
+    build_rooms_devices_map,
     get_ac_eids,
     get_all_entity_ids,
     get_direct_setpoint_eids,
@@ -315,13 +316,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         # Pass a {eid: devices[]} map so idle_action is respected when the
         # cycle closes (idle_action="low" TRVs stay awake instead of being
         # hard-turned-off).
-        rooms_devices_map: dict[str, list[dict]] = {
-            d["entity_id"]: room.get("devices", [])
-            for room in rooms.values()
-            for d in room.get("devices", [])
-            if d.get("entity_id")
-        }
-        await self._valve_manager.async_finish_cycles(rooms_devices_map)
+        await self._valve_manager.async_finish_cycles(build_rooms_devices_map(rooms))
 
         # Valve protection: check for stale valves (throttled)
         if self._valve_manager.should_run_cycle_check():
