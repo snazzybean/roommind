@@ -439,3 +439,134 @@ class TestValveProtectionCheck:
 
         assert "climate.old_trv" not in coordinator._valve_manager._last_actuation
         assert coordinator._valve_manager._actuation_dirty is True
+
+
+class TestValveProtectionRespectsIdleAction:
+    """Valve protection must honor idle_action='low' on cycle end (Issue #183)."""
+
+    @staticmethod
+    def _trv_state(min_temp: float = 5.0, current_hvac: str = "heat") -> MagicMock:
+        state = MagicMock()
+        state.state = current_hvac
+        state.attributes = {
+            "hvac_modes": ["heat", "off"],
+            "min_temp": min_temp,
+            "max_temp": 35.0,
+            "temperature": 21.0,
+            "current_temperature": 20.0,
+        }
+        return state
+
+    @pytest.mark.asyncio
+    async def test_respects_idle_action_low_on_finish(self, hass, mock_config_entry):
+        """TRV with idle_action='low' stays awake after a valve protection cycle."""
+        coordinator = _create_coordinator(hass, mock_config_entry)
+        hass.services.async_call = AsyncMock()
+        hass.states.get = MagicMock(return_value=self._trv_state(min_temp=5.0))
+
+        # Simulate a finished cycle
+        coordinator._valve_manager._cycling["climate.trv_low"] = time.time() - 120
+
+        devices = [
+            {"entity_id": "climate.trv_low", "type": "trv", "role": "auto", "idle_action": "low"},
+        ]
+        rooms_devices_map = {"climate.trv_low": devices}
+
+        await coordinator._valve_manager.async_finish_cycles(rooms_devices_map)
+
+        calls = hass.services.async_call.call_args_list
+        # set_temperature with min_temp must be sent
+        temp_calls = [
+            c for c in calls if c[0][1] == "set_temperature" and c[0][2].get("entity_id") == "climate.trv_low"
+        ]
+        assert len(temp_calls) >= 1
+        assert temp_calls[-1][0][2]["temperature"] == 5.0
+        # set_hvac_mode('off') must NOT be sent for this entity
+        off_calls = [
+            c
+            for c in calls
+            if c[0][1] == "set_hvac_mode"
+            and c[0][2].get("entity_id") == "climate.trv_low"
+            and c[0][2].get("hvac_mode") == "off"
+        ]
+        assert off_calls == []
+
+    @pytest.mark.asyncio
+    async def test_respects_idle_action_low_on_disable(self, hass, mock_config_entry):
+        """Disabling valve protection while a low-TRV is cycling keeps it awake."""
+        coordinator = _create_coordinator(hass, mock_config_entry)
+        hass.services.async_call = AsyncMock()
+        hass.states.get = MagicMock(return_value=self._trv_state(min_temp=5.0))
+
+        coordinator._valve_manager._cycling["climate.trv_low"] = time.time()
+        rooms = {
+            "room_a": {
+                "devices": [
+                    {"entity_id": "climate.trv_low", "type": "trv", "role": "auto", "idle_action": "low"},
+                ]
+            }
+        }
+        settings = {"valve_protection_enabled": False}
+
+        await coordinator._valve_manager.async_check_and_cycle(rooms, settings)
+
+        assert len(coordinator._valve_manager._cycling) == 0
+        calls = hass.services.async_call.call_args_list
+        temp_calls = [
+            c for c in calls if c[0][1] == "set_temperature" and c[0][2].get("entity_id") == "climate.trv_low"
+        ]
+        assert len(temp_calls) >= 1
+        assert temp_calls[-1][0][2]["temperature"] == 5.0
+        off_calls = [
+            c
+            for c in calls
+            if c[0][1] == "set_hvac_mode"
+            and c[0][2].get("entity_id") == "climate.trv_low"
+            and c[0][2].get("hvac_mode") == "off"
+        ]
+        assert off_calls == []
+
+    @pytest.mark.asyncio
+    async def test_default_off_unchanged_when_no_map_passed(self, hass, mock_config_entry):
+        """Backward compat: finish without rooms_devices uses async_turn_off_climate."""
+        coordinator = _create_coordinator(hass, mock_config_entry)
+        hass.services.async_call = AsyncMock()
+        hass.states.get = MagicMock(return_value=self._trv_state(min_temp=5.0))
+
+        coordinator._valve_manager._cycling["climate.trv1"] = time.time() - 120
+
+        # No rooms_devices parameter -> legacy turn-off path
+        await coordinator._valve_manager.async_finish_cycles()
+
+        off_calls = [
+            c
+            for c in hass.services.async_call.call_args_list
+            if c[0][1] == "set_hvac_mode"
+            and c[0][2].get("entity_id") == "climate.trv1"
+            and c[0][2].get("hvac_mode") == "off"
+        ]
+        assert len(off_calls) >= 1
+
+    @pytest.mark.asyncio
+    async def test_default_off_with_map_delegates_to_async_idle_device(self, hass, mock_config_entry):
+        """TRV with idle_action='off' + map -> delegates via async_idle_device, ends at off."""
+        coordinator = _create_coordinator(hass, mock_config_entry)
+        hass.services.async_call = AsyncMock()
+        hass.states.get = MagicMock(return_value=self._trv_state(min_temp=5.0))
+
+        coordinator._valve_manager._cycling["climate.trv_off"] = time.time() - 120
+        devices = [
+            {"entity_id": "climate.trv_off", "type": "trv", "role": "auto", "idle_action": "off"},
+        ]
+        rooms_devices_map = {"climate.trv_off": devices}
+
+        await coordinator._valve_manager.async_finish_cycles(rooms_devices_map)
+
+        off_calls = [
+            c
+            for c in hass.services.async_call.call_args_list
+            if c[0][1] == "set_hvac_mode"
+            and c[0][2].get("entity_id") == "climate.trv_off"
+            and c[0][2].get("hvac_mode") == "off"
+        ]
+        assert len(off_calls) >= 1

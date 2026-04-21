@@ -1904,6 +1904,101 @@ async def test_save_room_devices_self_assignment_rejected(ws_hass, store, connec
     assert connection.send_error.call_args[0][1] == "invalid_entity"
 
 
+@pytest.mark.asyncio
+async def test_save_room_accepts_idle_action_low_for_trv(ws_hass, store, connection):
+    """TRV with idle_action='low' is accepted and persisted."""
+    await store.async_load()
+    msg = {
+        "id": 2,
+        "type": "roommind/rooms/save",
+        "area_id": "living_room",
+        "devices": [
+            {"entity_id": "climate.trv1", "type": "trv", "role": "auto", "idle_action": "low"},
+        ],
+    }
+    await _save_room(ws_hass, connection, msg)
+    connection.send_result.assert_called_once()
+    room = connection.send_result.call_args[0][1]["room"]
+    assert any(d.get("idle_action") == "low" and d["entity_id"] == "climate.trv1" for d in room["devices"])
+
+
+@pytest.mark.asyncio
+async def test_save_room_rejects_ac_with_low_idle_action(ws_hass, store, connection):
+    """idle_action='low' is not permitted on AC devices — they would cool continuously."""
+    import voluptuous as vol
+
+    def _validate_device_idle_action(device: dict) -> dict:
+        if device.get("type") == "ac" and device.get("idle_action") == "low":
+            raise vol.Invalid("idle_action='low' is only supported for TRVs (type='trv')")
+        return device
+
+    device_schema = vol.All(
+        vol.Schema(
+            {
+                vol.Required("entity_id"): str,
+                vol.Required("type"): vol.In(["trv", "ac"]),
+                vol.Optional("role", default="auto"): vol.In(["primary", "secondary", "auto"]),
+                vol.Optional("idle_action", default="off"): vol.In(["off", "fan_only", "setback", "low"]),
+            }
+        ),
+        _validate_device_idle_action,
+    )
+    save_room_schema = vol.Schema(
+        {
+            vol.Required("id"): int,
+            vol.Required("type"): "roommind/rooms/save",
+            vol.Required("area_id"): str,
+            vol.Optional("devices"): [device_schema],
+        },
+        extra=vol.ALLOW_EXTRA,
+    )
+
+    msg = {
+        "id": 2,
+        "type": "roommind/rooms/save",
+        "area_id": "living_room",
+        "devices": [
+            {"entity_id": "climate.ac1", "type": "ac", "role": "auto", "idle_action": "low"},
+        ],
+    }
+
+    with pytest.raises(vol.Invalid):
+        save_room_schema(msg)
+
+
+@pytest.mark.asyncio
+async def test_save_room_rejects_unknown_idle_action(ws_hass, store, connection):
+    """Schema rejects unknown idle_action values (regression guard)."""
+    import voluptuous as vol
+
+    device_schema = vol.Schema(
+        {
+            vol.Required("entity_id"): str,
+            vol.Required("type"): vol.In(["trv", "ac"]),
+            vol.Optional("idle_action", default="off"): vol.In(["off", "fan_only", "setback", "low"]),
+        }
+    )
+    save_room_schema = vol.Schema(
+        {
+            vol.Required("id"): int,
+            vol.Required("type"): "roommind/rooms/save",
+            vol.Required("area_id"): str,
+            vol.Optional("devices"): [device_schema],
+        },
+        extra=vol.ALLOW_EXTRA,
+    )
+
+    msg = {
+        "id": 2,
+        "type": "roommind/rooms/save",
+        "area_id": "living_room",
+        "devices": [{"entity_id": "climate.trv1", "type": "trv", "idle_action": "sleep"}],
+    }
+
+    with pytest.raises(vol.Invalid):
+        save_room_schema(msg)
+
+
 # ---------------------------------------------------------------------------
 # Compressor group validation tests (K3)
 # ---------------------------------------------------------------------------

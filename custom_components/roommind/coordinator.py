@@ -311,8 +311,17 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 except Exception:  # noqa: BLE001
                     _LOGGER.warning("History rotation failed for '%s'", area_id)
 
-        # Valve protection: finish active cycles (runs every tick, cheap)
-        await self._valve_manager.async_finish_cycles()
+        # Valve protection: finish active cycles (runs every tick, cheap).
+        # Pass a {eid: devices[]} map so idle_action is respected when the
+        # cycle closes (idle_action="low" TRVs stay awake instead of being
+        # hard-turned-off).
+        rooms_devices_map: dict[str, list[dict]] = {
+            d["entity_id"]: room.get("devices", [])
+            for room in rooms.values()
+            for d in room.get("devices", [])
+            if d.get("entity_id")
+        }
+        await self._valve_manager.async_finish_cycles(rooms_devices_map)
 
         # Valve protection: check for stale valves (throttled)
         if self._valve_manager.should_run_cycle_check():
