@@ -15,8 +15,8 @@
 | custom\_components/roommind/control/mpc\_optimizer.py              |      186 |        0 |    100% |           |
 | custom\_components/roommind/control/residual\_heat.py              |       24 |        0 |    100% |           |
 | custom\_components/roommind/control/solar.py                       |       81 |        1 |     99% |        72 |
-| custom\_components/roommind/control/thermal\_model.py              |      422 |       18 |     96% |394, 668, 859-874, 933, 1056, 1063-1067 |
-| custom\_components/roommind/coordinator.py                         |      804 |       54 |     93% |312-313, 508-511, 547, 692-693, 703, 705, 1055, 1096, 1154, 1372-1375, 1509-1511, 1515-1521, 1525, 1530, 1551, 1556, 1558, 1561, 1564, 1587, 1592-1597, 1601, 1634, 1636, 1639, 1642, 1658-1659, 1770, 1790-1798, 1816-1817, 1832-1837, 1854-1855 |
+| custom\_components/roommind/control/thermal\_model.py              |      429 |       17 |     96% |394, 863-878, 951, 1074, 1081-1085 |
+| custom\_components/roommind/coordinator.py                         |      815 |       54 |     93% |312-313, 508-511, 547, 692-693, 703, 705, 1089, 1130, 1188, 1406-1409, 1543-1545, 1549-1555, 1559, 1564, 1585, 1590, 1592, 1595, 1598, 1621, 1626-1631, 1635, 1668, 1670, 1673, 1676, 1692-1693, 1804, 1824-1832, 1850-1851, 1866-1871, 1888-1889 |
 | custom\_components/roommind/diagnostics.py                         |      166 |        0 |    100% |           |
 | custom\_components/roommind/managers/\_\_init\_\_.py               |        0 |        0 |    100% |           |
 | custom\_components/roommind/managers/compressor\_group\_manager.py |      157 |        2 |     99% |  121, 184 |
@@ -45,7 +45,7 @@
 | custom\_components/roommind/utils/sensor\_utils.py                 |       29 |        1 |     97% |        25 |
 | custom\_components/roommind/utils/temp\_utils.py                   |       26 |        0 |    100% |           |
 | custom\_components/roommind/websocket\_api.py                      |      267 |        2 |     99% |   638-643 |
-| **TOTAL**                                                          | **5297** |  **246** | **95%** |           |
+| **TOTAL**                                                          | **5315** |  **245** | **95%** |           |
 
 
 ## Setup coverage badge
