@@ -278,6 +278,12 @@ export class RoomMindPanel extends LitElement {
       font-size: 20px;
       font-weight: 500;
       color: var(--primary-text-color);
+      --mdc-icon-size: 22px;
+      line-height: 1;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 24px;
     }
 
     .stat-label {
@@ -526,7 +532,9 @@ export class RoomMindPanel extends LitElement {
               ${this._vacationActive
                 ? html`
                     <div class="stat">
-                      <span class="stat-value" style="color: var(--success-color, #4caf50)">✈</span>
+                      <span class="stat-value" style="color: var(--success-color, #4caf50)">
+                        <ha-icon icon="mdi:airplane"></ha-icon>
+                      </span>
                       <span class="stat-label">${localize("panel.stat.vacation", l)}</span>
                     </div>
                   `
@@ -534,7 +542,9 @@ export class RoomMindPanel extends LitElement {
               ${this._presenceEnabled && !this._anyoneHome
                 ? html`
                     <div class="stat">
-                      <span class="stat-value" style="color: var(--secondary-text-color)">⏻</span>
+                      <span class="stat-value" style="color: var(--secondary-text-color)">
+                        <ha-icon icon="mdi:power"></ha-icon>
+                      </span>
                       <span class="stat-label">${localize("panel.stat.away", l)}</span>
                     </div>
                   `
