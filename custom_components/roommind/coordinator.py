@@ -891,6 +891,40 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             ekf_mode = observed_mode  # may be None → skip training
             ekf_pf = observed_pf
 
+        # --- Observation-based corrections on the training mode (#150, #241) ---
+        # Ghost-heating guard: in Full Control the controller's commanded mode
+        # can diverge from what the device actually does.  Near target with
+        # setpoint_mode="direct" a device's internal hysteresis can block
+        # firing even while RoomMind commands heating/cooling.  Without this
+        # guard the EKF receives a heating/cooling label for a period where no
+        # energy actually entered the room, which drives alpha toward its
+        # upper bound via cross-covariance with a negative innovation.
+        # We only override to idle when all active devices unambiguously
+        # report idle/off — heating/cooling observations keep the commanded
+        # power_fraction so MPC throttling (e.g. pf=0.3) is preserved.
+        q_residual_training = q_residual
+        if climate_active and has_external_sensor and ekf_mode in (MODE_HEATING, MODE_COOLING):
+            obs_mode, _ = self._observe_device_action(room)
+            if obs_mode == MODE_IDLE:
+                _LOGGER.debug(
+                    "Room '%s': ghost-heating guard — commanded %s but devices idle, training as idle",
+                    area_id,
+                    ekf_mode,
+                )
+                ekf_mode = MODE_IDLE
+                ekf_pf = 0.0
+                q_residual_training = 0.0
+
+        # Zero-power normalization: heat source orchestration may yield
+        # mean(pf)=0 while the commanded mode is still heating/cooling.
+        # Without this the predict step inflates Q_BETA_H through a zero
+        # Jacobian (F[0][2]=pf=0) — variance grows without an observable
+        # signal and destabilises the alpha↔beta coupling.  Downgrade to idle
+        # for a consistent training batch.
+        if ekf_mode in (MODE_HEATING, MODE_COOLING) and ekf_pf == 0.0:
+            ekf_mode = MODE_IDLE
+            q_residual_training = 0.0
+
         # Update thermal model with observation (EKF online learning)
         learning_disabled = settings.get("learning_disabled_rooms", [])
         learning_active = area_id not in learning_disabled
@@ -905,7 +939,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 ekf_pf=ekf_pf,
                 window_open=window_open,
                 raw_open=raw_open,
-                q_residual=q_residual,
+                q_residual=q_residual_training,
                 shading_factor=shading_factor if shading_factor is not None else 0.0,
                 q_solar=self._current_q_solar,
                 can_heat=can_heat,
