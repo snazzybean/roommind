@@ -491,7 +491,12 @@ export class RsRoomDetail extends LitElement {
                     <b>${localize("devices.info.heat_source_title", this.hass.language)}</b><br />
                     ${localize("devices.info.heat_source_body", this.hass.language)}
                     <br />
-                    <a class="helper-link" href=${CONTROL_DOCS_URL} target="_blank" rel="noreferrer">
+                    <a
+                      class="helper-link"
+                      href=${CONTROL_DOCS_URL}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
                       ${localize("common.learn_more", this.hass.language)}
                     </a>
                   </div>
