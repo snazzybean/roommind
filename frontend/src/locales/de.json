@@ -197,7 +197,7 @@
   "devices.info.control_title": "Wie RoomMind sie steuert",
   "devices.info.control_body": "Der Sollwert-Modus gilt nur für Thermostate in Räumen mit Full Control und externem Temperatursensor. Verwende Proportional, wenn RoomMind die Heizleistung über angehobene Sollwerte steuern soll. Verwende Direkt, wenn das Gerät selbst um den echten Zielwert regeln soll.",
   "devices.info.modes_title": "Verhalten im Leerlauf",
-  "devices.info.modes_body": "Im Leerlauf gilt nur für Klimageräte. Ausschalten schaltet das Gerät aus. Nur Ventilator hält die Luftzirkulation ohne Heizen oder Kühlen aufrecht. Absenkung lässt den aktuellen Modus aktiv, verschiebt den Sollwert aber um 2°C vom Raumziel weg. Dieser Offset ist derzeit fest.",
+  "devices.info.modes_body": "Im Leerlauf gilt nur für Klimageräte. Ausschalten schaltet das Gerät aus. Nur Ventilator hält die Luftzirkulation ohne Heizen oder Kühlen aufrecht. Absenkung lässt den aktuellen Modus aktiv, verschiebt den Sollwert aber um 2°C vom Raumziel weg. Dieser Offset ist derzeit fest. Für Thermostate hält Niedrig den TRV aktiv auf minimalem Sollwert statt ihn auszuschalten, nützlich für batteriebetriebene Zigbee-TRVs, die beim Ausschalten in den Tiefschlaf gehen.",
   "devices.info.heat_source_title": "Intelligente Quellenwahl",
   "devices.info.heat_source_body": "Diese Funktion erscheint nur, wenn ein Raum sowohl ein Thermostat/TRV als auch ein Klimagerät und zusätzlich einen externen Temperatursensor hat. RoomMind kann dann je nach Temperaturdifferenz und Außenbedingungen auswählen, welche Quelle das Heizen übernimmt.",
 

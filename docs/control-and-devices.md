@@ -92,6 +92,20 @@ Important:
 - the setback offset is currently fixed at `2°C`
 - it is **not configurable** in the current UI
 
+## Idle Behavior for Thermostats: Off, Low
+
+`When idle` also applies to `Thermostat` / TRV entries, with different options.
+
+### Turn off
+
+RoomMind sends the TRV to its `off` state.
+
+### Low
+
+RoomMind keeps the TRV in its current heating mode but lowers the setpoint to the device's minimum temperature.
+
+Useful for battery-powered Zigbee TRVs that enter deep sleep when set to `off` and then stop reacting to commands. `Low` keeps the valve responsive while effectively stopping heating.
+
 ## Smart Source Selection
 
 `Smart source selection` only appears when a room has:
