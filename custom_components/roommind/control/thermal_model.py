@@ -245,7 +245,7 @@ class ThermalEKF:
 
     # Parameter bounds (C=1 normalization: alpha=U/C, beta=Q/C)
     _ALPHA_MIN: float = 0.005  # time constant up to 200 h (very heavy building)
-    _ALPHA_MAX: float = 5.0  # time constant down to 12 min (lightweight space)
+    _ALPHA_MAX: float = 2.0  # time constant down to 30 min — defensive for residential rooms
     _BETA_H_MIN: float = 0.1  # very weak heater relative to thermal mass
     _BETA_H_MAX: float = 200.0  # powerful heater in lightweight room
     _BETA_C_MIN: float = 0.1
@@ -551,8 +551,12 @@ class ThermalEKF:
             self._last_mode = mode
             return
 
-        # Use the mode that was active during this time interval
-        predict_mode = self._last_mode or mode
+        # `mode` represents the mode during the accumulated batch (set by the
+        # EkfTrainingManager on flush).  Using self._last_mode would lag by one
+        # call and propagate the next batch with the previous batch's dynamics,
+        # which is wrong at mode transitions (e.g. a heating → idle flush would
+        # match a cooling measurement against a heating-dynamics prediction).
+        predict_mode = mode
         dt_h = dt_minutes / 60.0
 
         # --- Predict step ---
@@ -900,6 +904,20 @@ class ThermalEKF:
         ekf._initialized = data.get("initialized", ekf._n_updates > 0)
         ekf._k_window = data.get("k_window", cls._K_WINDOW_DEFAULT)
         ekf._k_window_n = data.get("k_window_n", 0)
+        # Migration for models trained under a legacy higher _ALPHA_MAX (#150):
+        # Such models have alpha pegged at the old bound with beta_h/beta_c
+        # scaled up proportionally so that T_eq = T_out + beta/alpha still fit
+        # observations.  Clamping alpha alone would shift T_eq and make
+        # predictions momentarily worse.  Scale all betas by the same factor
+        # to preserve equilibrium; the filter re-learns the individual values
+        # over subsequent updates.
+        if len(ekf._x) >= 6 and ekf._x[1] > cls._ALPHA_MAX:
+            scale = cls._ALPHA_MAX / ekf._x[1]
+            ekf._x[1] = cls._ALPHA_MAX
+            ekf._x[2] *= scale
+            ekf._x[3] *= scale
+            ekf._x[4] *= scale
+            ekf._x[5] *= scale
         # Apply bounds in case stored data is out of range
         ekf._clamp_parameters()
         return ekf

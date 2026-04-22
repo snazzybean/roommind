@@ -329,7 +329,20 @@ class TestHeatSourceIntegration:
         # Expected mean pf = (0.0 + 0.8) / 2 = 0.4
         expected_ekf_pf = 0.4
 
-        hass.states.get = MagicMock(side_effect=_make_hass_states(temp="20.5", outdoor_temp="10.0"))
+        # Observed state reflects the plan: AC actually heating, TRV idle.
+        # With the #150 ghost-heating guard in place, mode=heating flows
+        # through only when at least one device's hvac_action confirms firing.
+        states_after_plan = _make_hass_states(
+            temp="20.5",
+            outdoor_temp="10.0",
+            extra={
+                "climate.ac_living": (
+                    "heat",
+                    {"hvac_modes": ["off", "heat", "cool", "heat_cool"], "hvac_action": "heating"},
+                ),
+            },
+        )
+        hass.states.get = MagicMock(side_effect=states_after_plan)
 
         with patch(
             "custom_components.roommind.coordinator.evaluate_heat_sources",
@@ -352,6 +365,7 @@ class TestHeatSourceIntegration:
 
         # Run again with the capture
         hass.services.async_call.reset_mock()
+        hass.states.get = MagicMock(side_effect=states_after_plan)
         with (
             patch(
                 "custom_components.roommind.coordinator.evaluate_heat_sources",

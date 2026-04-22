@@ -1654,3 +1654,189 @@ def test_ekf_p55_frozen_when_unoccupied():
     for _ in range(20):
         ekf.update(20.0, 10.0, "idle", 3.0, q_occupancy=0.0)
     assert ekf._P[5][5] <= p55_after_first + 1e-6
+
+
+# ---------------------------------------------------------------------------
+# Regression tests for #150 — legacy bound migration + predict_mode correctness
+# ---------------------------------------------------------------------------
+
+
+def test_from_dict_migrates_legacy_alpha_preserving_teq():
+    """Legacy models with alpha above the new _ALPHA_MAX should load with
+    alpha clamped AND beta_h/beta_c/beta_s/beta_o proportionally scaled,
+    so that T_eq = T_out + beta/alpha is invariant. See #150."""
+    # Corrupt model mimicking diag master_bedroom: alpha=5, beta_h=65
+    data = {
+        "ekf_version": 4,
+        "x": [19.8, 5.0, 65.0, 20.0, 5.0, 2.0],
+        "P": [[0.1 if i == j else 0.0 for j in range(6)] for i in range(6)],
+        "n_updates": 10000,
+        "n_heating": 50,
+        "n_cooling": 0,
+        "n_idle": 9950,
+        "applicable_modes": ["heating", "idle"],
+        "last_mode": "idle",
+        "initialized": True,
+    }
+    ekf = ThermalEKF.from_dict(data)
+    # alpha clamped
+    assert ekf._x[1] == pytest.approx(ThermalEKF._ALPHA_MAX)
+    # betas scaled by the same factor
+    scale = ThermalEKF._ALPHA_MAX / 5.0
+    assert ekf._x[2] == pytest.approx(65.0 * scale)
+    assert ekf._x[3] == pytest.approx(20.0 * scale)
+    assert ekf._x[4] == pytest.approx(5.0 * scale)
+    assert ekf._x[5] == pytest.approx(2.0 * scale)
+    # T_eq invariant: old (65/5) must equal new (beta_h/alpha)
+    assert (65.0 / 5.0) == pytest.approx(ekf._x[2] / ekf._x[1])
+    # Counters preserved
+    assert ekf._n_updates == 10000
+
+
+def test_from_dict_no_migration_when_alpha_within_bound():
+    """Healthy models (alpha <= _ALPHA_MAX) load unchanged."""
+    data = {
+        "ekf_version": 4,
+        "x": [20.5, 0.2, 3.5, 4.0, 0.5, 0.3],
+        "P": [[0.1 if i == j else 0.0 for j in range(6)] for i in range(6)],
+        "n_updates": 500,
+        "n_heating": 50,
+        "n_cooling": 0,
+        "n_idle": 450,
+        "applicable_modes": ["heating", "idle"],
+        "last_mode": "idle",
+        "initialized": True,
+    }
+    ekf = ThermalEKF.from_dict(data)
+    assert ekf._x[1] == pytest.approx(0.2)
+    assert ekf._x[2] == pytest.approx(3.5)
+    assert ekf._x[3] == pytest.approx(4.0)
+    assert ekf._x[4] == pytest.approx(0.5)
+    assert ekf._x[5] == pytest.approx(0.3)
+
+
+def test_from_dict_migration_respects_beta_min():
+    """When scaled beta would fall below its _BETA_*_MIN floor, clamping
+    kicks in via _clamp_parameters — no negative or sub-floor values."""
+    data = {
+        "ekf_version": 4,
+        # alpha=5, beta_h=0.2 → scale=0.4 → beta_h=0.08 which is below BETA_H_MIN=0.1
+        "x": [20.0, 5.0, 0.2, 0.2, 0.0, 0.0],
+        "P": [[0.1 if i == j else 0.0 for j in range(6)] for i in range(6)],
+        "n_updates": 100,
+        "applicable_modes": ["heating", "idle"],
+        "last_mode": "idle",
+        "initialized": True,
+    }
+    ekf = ThermalEKF.from_dict(data)
+    assert ekf._x[1] == pytest.approx(ThermalEKF._ALPHA_MAX)
+    # beta_h scaled to 0.08 but clamped to BETA_H_MIN
+    assert ekf._x[2] == pytest.approx(ThermalEKF._BETA_H_MIN)
+    assert ekf._x[3] == pytest.approx(ThermalEKF._BETA_C_MIN)
+    # beta_s/beta_o stay at their minimum (0.0)
+    assert ekf._x[4] == pytest.approx(ThermalEKF._BETA_S_MIN)
+    assert ekf._x[5] == pytest.approx(ThermalEKF._BETA_O_MIN)
+
+
+def test_from_dict_migration_on_5d_legacy():
+    """5D legacy data with alpha>max first extends to 6D with default beta_o,
+    then the migration applies the proportional scaling to all six betas."""
+    data = {
+        "ekf_version": 3,
+        "x": [20.0, 5.0, 65.0, 20.0, 5.0],  # 5 dimensions (no beta_o)
+        "P": [[0.5 if i == j else 0.0 for j in range(5)] for i in range(5)],
+        "n_updates": 1000,
+        "applicable_modes": ["heating", "idle"],
+        "last_mode": "idle",
+        "initialized": True,
+    }
+    ekf = ThermalEKF.from_dict(data)
+    assert len(ekf._x) == 6
+    scale = ThermalEKF._ALPHA_MAX / 5.0
+    assert ekf._x[1] == pytest.approx(ThermalEKF._ALPHA_MAX)
+    assert ekf._x[2] == pytest.approx(65.0 * scale)
+    # beta_o was extended with _DEFAULT_BETA_O, then scaled
+    assert ekf._x[5] == pytest.approx(ThermalEKF._DEFAULT_BETA_O * scale)
+
+
+def test_from_dict_migration_at_exact_boundary():
+    """alpha == _ALPHA_MAX must not trigger migration (strict `>` condition)."""
+    data = {
+        "ekf_version": 4,
+        "x": [20.0, ThermalEKF._ALPHA_MAX, 3.0, 4.0, 0.5, 0.3],
+        "P": [[0.1 if i == j else 0.0 for j in range(6)] for i in range(6)],
+        "n_updates": 100,
+        "applicable_modes": ["heating", "idle"],
+        "last_mode": "idle",
+        "initialized": True,
+    }
+    ekf = ThermalEKF.from_dict(data)
+    assert ekf._x[1] == pytest.approx(ThermalEKF._ALPHA_MAX)
+    # betas unchanged
+    assert ekf._x[2] == pytest.approx(3.0)
+    assert ekf._x[3] == pytest.approx(4.0)
+
+
+def test_ekf_update_uses_current_mode_for_predict():
+    """predict_mode inside update() uses the `mode` argument, not self._last_mode.
+
+    Regression guard for the one-flush-lag bug: if the EKF propagated the
+    next batch using the previous flush's mode, a heating→idle flush would
+    match a cooling measurement against a heating-dynamics prediction,
+    yielding a large negative innovation that drives alpha upward. See #150.
+    """
+    ekf = ThermalEKF()
+    # Known state: T=21, alpha=0.15, beta_h=3.0
+    ekf._x = [21.0, 0.15, 3.0, 4.0, 0.5, 0.3]
+    # Zero covariance so the Kalman update contributes nothing — only the
+    # predict step moves _x[0].  This isolates predict_mode selection.
+    ekf._P = [[0.0] * 6 for _ in range(6)]
+    ekf._initialized = True
+    # Simulate: the previous update ended in heating mode.  Without the fix
+    # this would leak into the NEXT predict step.
+    ekf._last_mode = "heating"
+
+    # Call update with mode="idle" — representing a batch of idle time.
+    # Measurement at 20.8 is plausible for idle cooling (T_out=10, dt=3min).
+    ekf.update(T_measured=20.8, T_outdoor=10.0, mode="idle", dt_minutes=3.0)
+
+    # idle predict: T_new = 10 + (21-10)*exp(-0.15*0.05) ≈ 20.92
+    # heating predict (bug): T_eq=30, T_new=30+(21-30)*exp(-0.0075)≈21.07
+    # After the predict step, the update step pulls _x[0] slightly toward the
+    # measurement via K[0] = P[0][0]/(P[0][0]+R) > 0 (P[0][0] inflates to Q_T
+    # in predict).  With idle-predict the result stays below 21; with
+    # heating-predict it would stay above.
+    assert ekf._x[0] < 21.0, f"T propagated with heating dynamics instead of idle (x[0]={ekf._x[0]})"
+    # Tighter numeric check: idle-predict ≈ 20.918, then pulled toward 20.8
+    # by a small K[0] factor → ≈ 20.89 (well below 21).
+    assert 20.85 < ekf._x[0] < 20.95
+
+
+def test_ekf_mode_transition_does_not_inflate_alpha():
+    """After many heating→idle transitions, alpha should stay in a plausible
+    range rather than drifting toward _ALPHA_MAX (regression for #150).
+
+    This simulates the frequent-transition scenario where before the fix
+    each transition flush contributed a biased alpha update.
+    """
+    true_model = RCModel(C=1.0, U=0.2, Q_heat=3.0, Q_cool=4.0)
+    ekf = ThermalEKF()
+    T = 20.0
+    T_out = 10.0
+    # Initialize
+    ekf.update(T_measured=T, T_outdoor=T_out, mode="idle", dt_minutes=5.0)
+
+    # Alternate idle/heating sequences to create many mode transitions
+    for _cycle in range(20):
+        # 3 idle steps
+        for _ in range(3):
+            T = true_model.predict(T, T_out, 0.0, dt_minutes=5.0)
+            ekf.update(T_measured=T, T_outdoor=T_out, mode="idle", dt_minutes=5.0)
+        # 3 heating steps
+        for _ in range(3):
+            T = true_model.predict(T, T_out, true_model.Q_heat, dt_minutes=5.0)
+            ekf.update(T_measured=T, T_outdoor=T_out, mode="heating", dt_minutes=5.0)
+
+    # alpha must be near truth (0.2), not drifted to the upper bound
+    assert ekf._x[1] < 1.0, f"alpha drifted far above true value: {ekf._x[1]}"
+    assert ekf._x[1] > 0.05, f"alpha collapsed: {ekf._x[1]}"
