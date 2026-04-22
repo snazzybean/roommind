@@ -161,7 +161,7 @@ export class RsAnalyticsModel extends LitElement {
                   "analytics.info.solar_gain",
                 )
               : nothing}
-            ${model && m?.has_occupancy_sensors && model.Q_occupancy > 0.1
+            ${model && m?.has_occupancy_sensors
               ? stat(
                   "occupancy_gain",
                   toDisplayDelta(model.Q_occupancy, this.hass).toFixed(1) +
