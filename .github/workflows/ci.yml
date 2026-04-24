@@ -30,7 +30,7 @@ jobs:
         run: pytest tests/ -v --cov=custom_components/roommind --cov-report=term --cov-fail-under=95
 
       - name: Coverage badge
-        uses: py-cov-action/python-coverage-comment-action@v3
+        uses: py-cov-action/python-coverage-comment-action@v3.40
         with:
           GITHUB_TOKEN: ${{ github.token }}
 
