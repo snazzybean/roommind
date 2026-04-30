@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import random
 
 import pytest
 
@@ -381,7 +382,7 @@ def test_ekf_serialization_roundtrip():
     assert restored.confidence == pytest.approx(ekf.confidence, abs=0.01)
 
     # Verify serialization metadata
-    assert data["ekf_version"] == 4
+    assert data["ekf_version"] == 5
 
 
 def test_ekf_get_model_c1_normalization():
@@ -1628,7 +1629,7 @@ def test_ekf_from_dict_6d_roundtrip():
     ekf.update(T_measured=20.0, T_outdoor=5.0, mode="idle", dt_minutes=5.0, q_occupancy=1.0)
     ekf.update(T_measured=20.5, T_outdoor=5.0, mode="idle", dt_minutes=5.0, q_occupancy=1.0)
     data = ekf.to_dict()
-    assert data["ekf_version"] == 4
+    assert data["ekf_version"] == 5
     restored = ThermalEKF.from_dict(data)
     for i in range(6):
         assert restored._x[i] == pytest.approx(ekf._x[i], rel=1e-6)
@@ -1657,15 +1658,18 @@ def test_ekf_p55_frozen_when_unoccupied():
 
 
 # ---------------------------------------------------------------------------
-# Regression tests for #150 — legacy bound migration + predict_mode correctness
+# Regression tests for #150 — recovery migration + predict_mode correctness
 # ---------------------------------------------------------------------------
 
 
-def test_from_dict_migrates_legacy_alpha_preserving_teq():
-    """Legacy models with alpha above the new _ALPHA_MAX should load with
-    alpha clamped AND beta_h/beta_c/beta_s/beta_o proportionally scaled,
-    so that T_eq = T_out + beta/alpha is invariant. See #150."""
-    # Corrupt model mimicking diag master_bedroom: alpha=5, beta_h=65
+def test_from_dict_resets_corrupt_alpha_at_bound():
+    """v<5 saves with alpha pegged at the upper bound get a full reset of
+    all RC parameters and their P block to defaults.  Counters, T-state,
+    P[0][0], applicable_modes, last_mode are preserved.  See #150 follow-up.
+    """
+    # Corrupt model mimicking diag master_bedroom: alpha=5, beta_h=65.  After
+    # _clamp_parameters runs at the end of from_dict, alpha would be clipped
+    # to _ALPHA_MAX, but our migration reset takes effect first.
     data = {
         "ekf_version": 4,
         "x": [19.8, 5.0, 65.0, 20.0, 5.0, 2.0],
@@ -1679,22 +1683,27 @@ def test_from_dict_migrates_legacy_alpha_preserving_teq():
         "initialized": True,
     }
     ekf = ThermalEKF.from_dict(data)
-    # alpha clamped
-    assert ekf._x[1] == pytest.approx(ThermalEKF._ALPHA_MAX)
-    # betas scaled by the same factor
-    scale = ThermalEKF._ALPHA_MAX / 5.0
-    assert ekf._x[2] == pytest.approx(65.0 * scale)
-    assert ekf._x[3] == pytest.approx(20.0 * scale)
-    assert ekf._x[4] == pytest.approx(5.0 * scale)
-    assert ekf._x[5] == pytest.approx(2.0 * scale)
-    # T_eq invariant: old (65/5) must equal new (beta_h/alpha)
-    assert (65.0 / 5.0) == pytest.approx(ekf._x[2] / ekf._x[1])
-    # Counters preserved
+    # All RC parameters reset to defaults
+    assert ekf._x[1] == pytest.approx(ThermalEKF._DEFAULT_ALPHA)
+    assert ekf._x[2] == pytest.approx(ThermalEKF._DEFAULT_BETA_H)
+    assert ekf._x[3] == pytest.approx(ThermalEKF._DEFAULT_BETA_C)
+    assert ekf._x[4] == pytest.approx(ThermalEKF._DEFAULT_BETA_S)
+    assert ekf._x[5] == pytest.approx(ThermalEKF._DEFAULT_BETA_O)
+    # T-state and P[0][0] preserved (the diagnostics-derived loaded values)
+    assert ekf._x[0] == pytest.approx(19.8)
+    assert ekf._P[0][0] == pytest.approx(0.1)
+    # Counters preserved → MPC data gates remain satisfied
     assert ekf._n_updates == 10000
+    assert ekf._n_heating == 50
+    assert ekf._n_cooling == 0
+    assert ekf._n_idle == 9950
+    assert ekf._initialized is True
+    assert ekf._last_mode == "idle"
+    assert ekf._applicable_modes == {"heating", "idle"}
 
 
 def test_from_dict_no_migration_when_alpha_within_bound():
-    """Healthy models (alpha <= _ALPHA_MAX) load unchanged."""
+    """Healthy models (alpha well inside the bounds) load unchanged on v4."""
     data = {
         "ekf_version": 4,
         "x": [20.5, 0.2, 3.5, 4.0, 0.5, 0.3],
@@ -1715,12 +1724,29 @@ def test_from_dict_no_migration_when_alpha_within_bound():
     assert ekf._x[5] == pytest.approx(0.3)
 
 
-def test_from_dict_migration_respects_beta_min():
-    """When scaled beta would fall below its _BETA_*_MIN floor, clamping
-    kicks in via _clamp_parameters — no negative or sub-floor values."""
+def test_from_dict_no_migration_when_alpha_within_bound_v5():
+    """v5 saves with healthy alpha load unchanged regardless of the gate."""
+    data = {
+        "ekf_version": 5,
+        "x": [20.5, 0.2, 3.5, 4.0, 0.5, 0.3],
+        "P": [[0.1 if i == j else 0.0 for j in range(6)] for i in range(6)],
+        "n_updates": 500,
+        "applicable_modes": ["heating", "idle"],
+        "last_mode": "idle",
+        "initialized": True,
+    }
+    ekf = ThermalEKF.from_dict(data)
+    assert ekf._x[1] == pytest.approx(0.2)
+    assert ekf._x[2] == pytest.approx(3.5)
+
+
+def test_reset_migration_lands_above_param_bounds():
+    """After reset, all parameters equal their defaults — well inside bounds,
+    so _clamp_parameters at the end of from_dict has no further effect."""
     data = {
         "ekf_version": 4,
-        # alpha=5, beta_h=0.2 → scale=0.4 → beta_h=0.08 which is below BETA_H_MIN=0.1
+        # alpha at the bound to trigger reset; betas would scale below MIN under
+        # the old scaling logic, but the new reset puts them at defaults.
         "x": [20.0, 5.0, 0.2, 0.2, 0.0, 0.0],
         "P": [[0.1 if i == j else 0.0 for j in range(6)] for i in range(6)],
         "n_updates": 100,
@@ -1729,21 +1755,26 @@ def test_from_dict_migration_respects_beta_min():
         "initialized": True,
     }
     ekf = ThermalEKF.from_dict(data)
-    assert ekf._x[1] == pytest.approx(ThermalEKF._ALPHA_MAX)
-    # beta_h scaled to 0.08 but clamped to BETA_H_MIN
-    assert ekf._x[2] == pytest.approx(ThermalEKF._BETA_H_MIN)
-    assert ekf._x[3] == pytest.approx(ThermalEKF._BETA_C_MIN)
-    # beta_s/beta_o stay at their minimum (0.0)
-    assert ekf._x[4] == pytest.approx(ThermalEKF._BETA_S_MIN)
-    assert ekf._x[5] == pytest.approx(ThermalEKF._BETA_O_MIN)
+    assert ekf._x[1] == pytest.approx(ThermalEKF._DEFAULT_ALPHA)
+    assert ekf._x[2] == pytest.approx(ThermalEKF._DEFAULT_BETA_H)
+    assert ekf._x[3] == pytest.approx(ThermalEKF._DEFAULT_BETA_C)
+    assert ekf._x[4] == pytest.approx(ThermalEKF._DEFAULT_BETA_S)
+    assert ekf._x[5] == pytest.approx(ThermalEKF._DEFAULT_BETA_O)
+    # All defaults sit above their respective minimums by construction.
+    assert ekf._x[1] >= ThermalEKF._ALPHA_MIN
+    assert ekf._x[2] >= ThermalEKF._BETA_H_MIN
+    assert ekf._x[3] >= ThermalEKF._BETA_C_MIN
+    assert ekf._x[4] >= ThermalEKF._BETA_S_MIN
+    assert ekf._x[5] >= ThermalEKF._BETA_O_MIN
 
 
-def test_from_dict_migration_on_5d_legacy():
-    """5D legacy data with alpha>max first extends to 6D with default beta_o,
-    then the migration applies the proportional scaling to all six betas."""
+def test_from_dict_resets_corrupt_5d_legacy():
+    """5D ekf_version=3 with alpha=5 is first extended to 6D, then reset.
+    All six parameters end up at their defaults; _P is 6×6 with off-diagonals
+    zero and parameter diagonals at _P_INIT_*."""
     data = {
         "ekf_version": 3,
-        "x": [20.0, 5.0, 65.0, 20.0, 5.0],  # 5 dimensions (no beta_o)
+        "x": [20.0, 5.0, 65.0, 20.0, 5.0],  # 5D (no beta_o)
         "P": [[0.5 if i == j else 0.0 for j in range(5)] for i in range(5)],
         "n_updates": 1000,
         "applicable_modes": ["heating", "idle"],
@@ -1752,17 +1783,28 @@ def test_from_dict_migration_on_5d_legacy():
     }
     ekf = ThermalEKF.from_dict(data)
     assert len(ekf._x) == 6
-    scale = ThermalEKF._ALPHA_MAX / 5.0
-    assert ekf._x[1] == pytest.approx(ThermalEKF._ALPHA_MAX)
-    assert ekf._x[2] == pytest.approx(65.0 * scale)
-    # beta_o was extended with _DEFAULT_BETA_O, then scaled
-    assert ekf._x[5] == pytest.approx(ThermalEKF._DEFAULT_BETA_O * scale)
+    assert len(ekf._P) == 6
+    assert all(len(row) == 6 for row in ekf._P)
+    # All RC parameters reset to defaults regardless of the legacy values.
+    assert ekf._x[1] == pytest.approx(ThermalEKF._DEFAULT_ALPHA)
+    assert ekf._x[2] == pytest.approx(ThermalEKF._DEFAULT_BETA_H)
+    assert ekf._x[5] == pytest.approx(ThermalEKF._DEFAULT_BETA_O)
+    # Off-diagonals zeroed
+    for i in range(6):
+        for j in range(6):
+            if i != j:
+                assert ekf._P[i][j] == 0.0
+    # Param diagonals at initials, P[0][0] preserved from input
+    assert ekf._P[0][0] == pytest.approx(0.5)
+    assert ekf._P[1][1] == pytest.approx(ThermalEKF._P_INIT_ALPHA)
+    assert ekf._P[2][2] == pytest.approx(ThermalEKF._P_INIT_BETA)
 
 
-def test_from_dict_migration_at_exact_boundary():
-    """alpha == _ALPHA_MAX must not trigger migration (strict `>` condition)."""
+def test_v5_save_at_bound_does_not_reset():
+    """v5 saves with alpha exactly at the bound are NOT reset — the migration
+    is a one-shot for legacy data only."""
     data = {
-        "ekf_version": 4,
+        "ekf_version": 5,
         "x": [20.0, ThermalEKF._ALPHA_MAX, 3.0, 4.0, 0.5, 0.3],
         "P": [[0.1 if i == j else 0.0 for j in range(6)] for i in range(6)],
         "n_updates": 100,
@@ -1772,9 +1814,231 @@ def test_from_dict_migration_at_exact_boundary():
     }
     ekf = ThermalEKF.from_dict(data)
     assert ekf._x[1] == pytest.approx(ThermalEKF._ALPHA_MAX)
-    # betas unchanged
     assert ekf._x[2] == pytest.approx(3.0)
     assert ekf._x[3] == pytest.approx(4.0)
+    assert ekf._x[4] == pytest.approx(0.5)
+    assert ekf._x[5] == pytest.approx(0.3)
+
+
+def test_v4_save_at_bound_triggers_reset():
+    """v4 save with alpha exactly at the bound IS reset (the case ashleyhorsley
+    encountered after the partial 1.7.2-beta.1 migration)."""
+    data = {
+        "ekf_version": 4,
+        "x": [20.0, ThermalEKF._ALPHA_MAX, 0.58, 1.6, 0.38, 0.12],
+        "P": [[0.1 if i == j else 0.0 for j in range(6)] for i in range(6)],
+        "n_updates": 14671,
+        "n_heating": 2854,
+        "n_idle": 11817,
+        "applicable_modes": ["heating", "idle"],
+        "last_mode": "idle",
+        "initialized": True,
+    }
+    ekf = ThermalEKF.from_dict(data)
+    assert ekf._x[1] == pytest.approx(ThermalEKF._DEFAULT_ALPHA)
+    assert ekf._x[2] == pytest.approx(ThermalEKF._DEFAULT_BETA_H)
+
+
+def test_to_dict_writes_v5():
+    """to_dict emits the current ekf_version stamp."""
+    ekf = ThermalEKF()
+    ekf.update(T_measured=20.0, T_outdoor=10.0, mode="idle", dt_minutes=5.0)
+    data = ekf.to_dict()
+    assert data["ekf_version"] == 5
+
+
+def test_from_dict_v4_at_bound_preserves_counters_and_modes():
+    """MPC-readiness regression: counters, modes and k_window state survive
+    the reset migration intact."""
+    data = {
+        "ekf_version": 4,
+        "x": [20.0, 2.0, 0.5, 1.6, 0.4, 0.1],
+        "P": [[0.1 if i == j else 0.0 for j in range(6)] for i in range(6)],
+        "n_updates": 14671,
+        "n_heating": 2854,
+        "n_cooling": 0,
+        "n_idle": 11817,
+        "applicable_modes": ["heating", "idle"],
+        "last_mode": "heating",
+        "initialized": True,
+        "k_window": 8.5,
+        "k_window_n": 42,
+    }
+    ekf = ThermalEKF.from_dict(data)
+    # Reset took place
+    assert ekf._x[1] == pytest.approx(ThermalEKF._DEFAULT_ALPHA)
+    # Everything that should survive
+    assert ekf._n_updates == 14671
+    assert ekf._n_heating == 2854
+    assert ekf._n_cooling == 0
+    assert ekf._n_idle == 11817
+    assert ekf._initialized is True
+    assert ekf._last_mode == "heating"
+    assert ekf._applicable_modes == {"heating", "idle"}
+    assert ekf._k_window == pytest.approx(8.5)
+    assert ekf._k_window_n == 42
+
+
+def test_from_dict_v4_at_bound_zeroes_all_off_diagonals():
+    """Every off-diagonal entry of P must be zero after the reset; the
+    parameter diagonals must equal _P_INIT_*; P[0][0] is preserved."""
+    data = {
+        "ekf_version": 4,
+        "x": [19.5, 2.0, 0.58, 1.6, 0.38, 0.12],
+        "P": [
+            [0.025, -0.01, 0.02, 0.0, 0.0, 0.0],
+            [-0.01, 0.30, -0.05, 0.0, 0.0, 0.0],
+            [0.02, -0.05, 0.22, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 312.5, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 0.0, 0.48, 0.0],
+            [0.0, 0.0, 0.0, 0.0, 0.0, 62.5],
+        ],
+        "n_updates": 14671,
+        "applicable_modes": ["heating", "idle"],
+        "last_mode": "idle",
+        "initialized": True,
+    }
+    ekf = ThermalEKF.from_dict(data)
+    # Off-diagonals zeroed everywhere
+    for i in range(6):
+        for j in range(6):
+            if i != j:
+                assert ekf._P[i][j] == 0.0, f"P[{i}][{j}] should be 0, got {ekf._P[i][j]}"
+    # P[0][0] preserved
+    assert ekf._P[0][0] == pytest.approx(0.025)
+    # Param diagonals at initials
+    assert ekf._P[1][1] == pytest.approx(ThermalEKF._P_INIT_ALPHA)
+    assert ekf._P[2][2] == pytest.approx(ThermalEKF._P_INIT_BETA)
+    assert ekf._P[3][3] == pytest.approx(ThermalEKF._P_INIT_BETA)
+    assert ekf._P[4][4] == pytest.approx(ThermalEKF._P_INIT_BETA_S)
+    assert ekf._P[5][5] == pytest.approx(ThermalEKF._P_INIT_BETA_O)
+
+
+def test_from_dict_v4_below_bound_no_reset():
+    """alpha=1.5 is below the 0.99×_ALPHA_MAX trigger — no migration fires."""
+    data = {
+        "ekf_version": 4,
+        "x": [20.0, 1.5, 4.0, 5.0, 0.6, 0.3],
+        "P": [[0.1 if i == j else 0.0 for j in range(6)] for i in range(6)],
+        "n_updates": 500,
+        "applicable_modes": ["heating", "idle"],
+        "last_mode": "idle",
+        "initialized": True,
+    }
+    ekf = ThermalEKF.from_dict(data)
+    assert ekf._x[1] == pytest.approx(1.5)
+    assert ekf._x[2] == pytest.approx(4.0)
+
+
+def test_from_dict_missing_version_treated_as_v0():
+    """Saves without an ekf_version key (ancient) trigger reset on alpha-at-bound."""
+    data = {
+        "x": [20.0, 2.0, 0.5, 1.6, 0.4, 0.1],
+        "P": [[0.1 if i == j else 0.0 for j in range(6)] for i in range(6)],
+        "n_updates": 100,
+        "applicable_modes": ["heating", "idle"],
+        "last_mode": "idle",
+        "initialized": True,
+    }
+    ekf = ThermalEKF.from_dict(data)
+    assert ekf._x[1] == pytest.approx(ThermalEKF._DEFAULT_ALPHA)
+
+
+def test_from_dict_invalid_version_treated_as_v0():
+    """Non-int ekf_version is treated as 0 — no crash, reset fires."""
+    data = {
+        "ekf_version": None,
+        "x": [20.0, 2.0, 0.5, 1.6, 0.4, 0.1],
+        "P": [[0.1 if i == j else 0.0 for j in range(6)] for i in range(6)],
+        "n_updates": 100,
+        "applicable_modes": ["heating", "idle"],
+        "last_mode": "idle",
+        "initialized": True,
+    }
+    ekf = ThermalEKF.from_dict(data)
+    assert ekf._x[1] == pytest.approx(ThermalEKF._DEFAULT_ALPHA)
+
+
+def test_corrupt_ekf_relearns_realistic_alpha_after_reset():
+    """End-to-end convergence regression for #150.
+
+    Load a corrupt save (alpha pegged, beta_h degenerate — like ashleyhorsley's
+    kitchen), feed synthetic data from a realistic RCModel for ~50 cycles of
+    mixed idle/heating with sensor noise, and verify the EKF re-learns alpha
+    into a plausible residential range with low prediction std.
+    """
+    data = {
+        "ekf_version": 4,
+        "x": [20.0, 2.0, 0.58, 1.6, 0.38, 0.12],
+        "P": [[0.1 if i == j else 0.0 for j in range(6)] for i in range(6)],
+        "n_updates": 14671,
+        "n_heating": 2854,
+        "n_cooling": 0,
+        "n_idle": 11817,
+        "applicable_modes": ["heating", "idle"],
+        "last_mode": "idle",
+        "initialized": True,
+    }
+    ekf = ThermalEKF.from_dict(data)
+    # Migration reset alpha to default
+    assert ekf._x[1] == pytest.approx(ThermalEKF._DEFAULT_ALPHA)
+
+    true_model = RCModel(C=1.0, U=0.1, Q_heat=2.0, Q_cool=4.0)
+    T = 20.0
+    T_out = 8.0
+    rng = random.Random(42)
+    # Force EKF to use the loaded T-state for the first predict (skip the
+    # first-call shortcut by calling update once at the loaded T).
+    ekf.update(T_measured=T, T_outdoor=T_out, mode="idle", dt_minutes=3.0)
+
+    for _ in range(50):
+        # 6 idle steps (~18 min) then 4 heating steps (~12 min)
+        for _ in range(6):
+            T = true_model.predict(T, T_out, 0.0, dt_minutes=3.0)
+            T += rng.gauss(0, 0.05)
+            ekf.update(T_measured=T, T_outdoor=T_out, mode="idle", dt_minutes=3.0)
+        for _ in range(4):
+            T = true_model.predict(T, T_out, true_model.Q_heat, dt_minutes=3.0)
+            T += rng.gauss(0, 0.05)
+            ekf.update(T_measured=T, T_outdoor=T_out, mode="heating", dt_minutes=3.0)
+
+    # alpha relearned into a plausible residential range
+    assert 0.05 < ekf._x[1] < 0.5, f"alpha {ekf._x[1]} out of plausible range"
+    # beta_h adjusted toward the truth (true=2.0, default=3.0, started corrupt at 0.58)
+    assert 1.5 < ekf._x[2] < 3.5, f"beta_h {ekf._x[2]} did not converge"
+    # Predictions are accurate enough for MPC
+    assert ekf.prediction_std(0.0, 20.0, 8.0, 5.0) < 0.5
+
+
+def test_room_model_manager_resets_corrupt_rooms_only():
+    """Mixed dict: the corrupt room is reset, the healthy room is left alone."""
+    data = {
+        "corrupt_room": {
+            "ekf_version": 4,
+            "x": [20.0, 2.0, 0.58, 1.6, 0.4, 0.1],
+            "P": [[0.1 if i == j else 0.0 for j in range(6)] for i in range(6)],
+            "n_updates": 14671,
+            "applicable_modes": ["heating", "idle"],
+            "last_mode": "idle",
+            "initialized": True,
+        },
+        "healthy_room": {
+            "ekf_version": 4,
+            "x": [20.5, 0.2, 3.5, 4.0, 0.5, 0.3],
+            "P": [[0.1 if i == j else 0.0 for j in range(6)] for i in range(6)],
+            "n_updates": 500,
+            "applicable_modes": ["heating", "idle"],
+            "last_mode": "idle",
+            "initialized": True,
+        },
+    }
+    mgr = RoomModelManager.from_dict(data)
+    corrupt = mgr._estimators["corrupt_room"]
+    healthy = mgr._estimators["healthy_room"]
+    assert corrupt._x[1] == pytest.approx(ThermalEKF._DEFAULT_ALPHA)
+    assert corrupt._x[2] == pytest.approx(ThermalEKF._DEFAULT_BETA_H)
+    assert healthy._x[1] == pytest.approx(0.2)
+    assert healthy._x[2] == pytest.approx(3.5)
 
 
 def test_ekf_update_uses_current_mode_for_predict():
