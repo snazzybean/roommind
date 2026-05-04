@@ -189,7 +189,7 @@
   "devices.setpoint_mode": "Sollwert-Modus",
   "devices.setpoint_mode_proportional": "Proportional (Ventilsteuerung)",
   "devices.setpoint_mode_direct": "Direkt (Gerät regelt selbst)",
-  "devices.setpoint_mode_hint": "Verwende Direkt für Heizlüfter oder Pelletöfen mit eigenem Thermostat. Proportional ist optimal für Heizkörperventile (TRVs).",
+  "devices.setpoint_mode_hint": "Direkt sendet die tatsächliche Raum-Zieltemperatur ans Gerät — geeignet für Thermostate und Heizlüfter mit eigener Regelung. Proportional sendet einen erhöhten Sollwert Richtung Geräte-max_temp — geeignet für Heizkörperventile (TRVs).",
   "devices.valve_protection_excluded": "Vom Ventilschutz ausgenommen",
   "devices.valve_protection_exclude_hint": "Dieses Gerät wird nicht vom Ventilschutz bewegt (z.B. virtuelle Kessel-Entitäten)",
   "devices.info.types_title": "Gerätetypen",

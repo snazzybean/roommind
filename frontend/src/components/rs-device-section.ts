@@ -382,8 +382,7 @@ export class RsDeviceSection extends LitElement {
       device?.idle_action === "fan_only" ||
       device?.idle_action === "setback" ||
       device?.idle_action === "low";
-    const showDirectBadge =
-      device?.type === "trv" && device?.setpoint_mode === "direct" && !!this.selectedTempSensor;
+    const showDirectBadge = device?.setpoint_mode === "direct" && !!this.selectedTempSensor;
 
     return html`
       <div class="view-row">
@@ -709,7 +708,7 @@ export class RsDeviceSection extends LitElement {
       })()}
       ${(() => {
         const device = this.devices.find((d) => d.entity_id === entityId);
-        if (!isSelected || !this.selectedTempSensor || device?.type !== "trv") return nothing;
+        if (!isSelected || !this.selectedTempSensor) return nothing;
         return html`
           <div class="setpoint-mode-row">
             <ha-select

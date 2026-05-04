@@ -189,7 +189,7 @@
   "devices.setpoint_mode": "Setpoint mode",
   "devices.setpoint_mode_proportional": "Proportional (valve control)",
   "devices.setpoint_mode_direct": "Direct (device regulates)",
-  "devices.setpoint_mode_hint": "Use Direct for space heaters or pellet stoves with their own thermostat. Proportional is best for radiator valves (TRVs).",
+  "devices.setpoint_mode_hint": "Direct sends the actual room target to the device — best for thermostats and space heaters that regulate themselves. Proportional sends a boosted setpoint toward the device max_temp — best for radiator valves (TRVs).",
   "devices.valve_protection_excluded": "Excluded from valve protection",
   "devices.valve_protection_exclude_hint": "This entity will not be cycled by valve protection (e.g. virtual boiler entities)",
   "devices.info.types_title": "Device types",
