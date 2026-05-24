@@ -236,7 +236,7 @@ export class RsEditDialog extends LitElement {
 
   private _close() {
     this._infoExpanded = false;
-    this.dispatchEvent(new CustomEvent("dialog-closed", { bubbles: true, composed: true }));
+    this.dispatchEvent(new CustomEvent("rs-dialog-closed", { bubbles: true, composed: true }));
   }
 }
 
