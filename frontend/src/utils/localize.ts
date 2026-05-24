@@ -1,9 +1,15 @@
 import en from "../locales/en.json";
 import de from "../locales/de.json";
+import zhHans from "../locales/zh-Hans.json";
 
 export type TranslationKey = keyof typeof en;
 
-const translations: Record<string, Record<string, string>> = { en, de };
+const translations: Record<string, Record<string, string>> = {
+  en,
+  de,
+  "zh-Hans": zhHans,
+  zh: zhHans,
+};
 
 /**
  * Look up a translation key for the given language.

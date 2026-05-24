@@ -1,0 +1,26 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "RoomMind",
+        "description": "设置 RoomMind 以管理房间温控。安装完成后，可在 RoomMind 面板中配置房间。"
+      }
+    },
+    "abort": {
+      "already_configured": "RoomMind 已经配置过了。"
+    }
+  },
+  "issues": {
+    "restart_required": {
+      "title": "需要重启",
+      "fix_flow": {
+        "step": {
+          "confirm_restart": {
+            "title": "重启 Home Assistant？",
+            "description": "RoomMind {version} 已安装，但 Home Assistant 仍在运行旧版本。请重启以完成更新。"
+          }
+        }
+      }
+    }
+  }
+}
