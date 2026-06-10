@@ -255,7 +255,7 @@ export function buildChartOptions(
           seriesId: string;
         }>,
       ) => {
-        if (!Array.isArray(params) || params.length === 0) return "";
+        if (!Array.isArray(params) || params.length === 0) return null;
         const date = new Date(params[0].value[0]);
         const time = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
         let markup = `<div style="font-weight:500;margin-bottom:4px">${time}</div>`;
@@ -312,7 +312,14 @@ export function buildChartOptions(
             }
           }
         }
-        return markup;
+        // HA 2026.6's ha-chart-base pipes the tooltip formatter result through
+        // Lit's render() (wrapLitTooltipFormatter). A returned string is
+        // rendered as escaped text — the raw HTML shows up as code. Returning
+        // an HTMLElement renders correctly there and is also a valid return
+        // value for ECharts' html tooltip on older HA, so both paths work.
+        const tooltipEl = document.createElement("div");
+        tooltipEl.innerHTML = markup;
+        return tooltipEl;
       },
     },
     grid: {

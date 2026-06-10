@@ -6,6 +6,19 @@
  */
 /* eslint-disable @typescript-eslint/no-explicit-any -- HA runtime APIs are untyped */
 export const loadHaElements = async (): Promise<void> => {
+  // HA 2026.6 removed the standalone `ha-radio` element (replaced by the
+  // Web Awesome `ha-radio-group`/`ha-radio-option`). Register a self-contained
+  // polyfill so existing `<ha-radio>` templates keep rendering. It depends on
+  // no other HA element, so register it up front — before the entity-picker
+  // fast-path return below — and only when `ha-radio` is genuinely missing,
+  // leaving older HA versions on their native element.
+  if (!customElements.get("ha-radio")) {
+    const { HaRadioPolyfill } = await import("./ha-radio-polyfill");
+    if (!customElements.get("ha-radio")) {
+      customElements.define("ha-radio", HaRadioPolyfill);
+    }
+  }
+
   if (customElements.get("ha-entity-picker")) return;
 
   // Step 1: Load base HA components via partial-panel-resolver.
@@ -73,22 +86,25 @@ export const loadHaElements = async (): Promise<void> => {
 
   await customElements.whenDefined("ha-card");
 
-  // Step 2b: HA 2026.5 removed `ha-textfield` (home-assistant/frontend#30349).
-  // If it is missing but the successor `ha-input` exists, register a
-  // wrapper so existing `<ha-textfield>` templates keep working. Older HA
-  // versions retain their native ha-textfield and fall through untouched.
+  // Step 2b: HA 2026.5 removed `ha-textfield` (home-assistant/frontend#30349)
+  // in favour of `ha-input`. Register a wrapper so existing `<ha-textfield>`
+  // templates keep working. Older HA versions retain their native
+  // ha-textfield and skip this block.
+  //
+  // We wait briefly for `ha-input` so the wrapper can upgrade immediately, but
+  // register regardless of whether that wait resolves: on HA 2026.6 the panel
+  // chain may import `ha-input` lazily (after our budget), and a missed
+  // registration leaves every text field — room comfort/eco temps included —
+  // invisible. A `<ha-input>` rendered before its definition simply upgrades
+  // once HA defines it, so unconditional registration is strictly safer.
   if (!customElements.get("ha-textfield")) {
-    try {
-      await Promise.race([
-        customElements.whenDefined("ha-input"),
-        new Promise<void>((_, rej) => setTimeout(() => rej(new Error("timeout")), 5000)),
-      ]);
-      const { HaTextfieldPolyfill } = await import("./ha-textfield-polyfill");
-      if (!customElements.get("ha-textfield")) {
-        customElements.define("ha-textfield", HaTextfieldPolyfill);
-      }
-    } catch {
-      // ha-input not available — ha-textfield templates will render empty
+    await Promise.race([
+      customElements.whenDefined("ha-input"),
+      new Promise<void>((r) => setTimeout(r, 5000)),
+    ]);
+    const { HaTextfieldPolyfill } = await import("./ha-textfield-polyfill");
+    if (!customElements.get("ha-textfield")) {
+      customElements.define("ha-textfield", HaTextfieldPolyfill);
     }
   }
 
