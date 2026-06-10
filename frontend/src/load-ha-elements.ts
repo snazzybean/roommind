@@ -19,6 +19,22 @@ export const loadHaElements = async (): Promise<void> => {
     }
   }
 
+  // HA 2026.5 removed `ha-textfield` (home-assistant/frontend#30349) in favour
+  // of `ha-input`; register a wrapper so existing `<ha-textfield>` templates
+  // keep working. This MUST run before the entity-picker fast-path return
+  // below: on HA 2026.6 `ha-entity-picker` is already defined at panel start,
+  // so a registration placed after the return never runs and every text field
+  // (room comfort/eco temps included) stays invisible. We do not wait for
+  // `ha-input` here — the wrapper renders `<ha-input>`, which upgrades
+  // automatically once HA defines it, so registering eagerly is safe and avoids
+  // delaying cold loads. Older HA versions keep their native ha-textfield.
+  if (!customElements.get("ha-textfield")) {
+    const { HaTextfieldPolyfill } = await import("./ha-textfield-polyfill");
+    if (!customElements.get("ha-textfield")) {
+      customElements.define("ha-textfield", HaTextfieldPolyfill);
+    }
+  }
+
   if (customElements.get("ha-entity-picker")) return;
 
   // Step 1: Load base HA components via partial-panel-resolver.
@@ -85,28 +101,6 @@ export const loadHaElements = async (): Promise<void> => {
   }
 
   await customElements.whenDefined("ha-card");
-
-  // Step 2b: HA 2026.5 removed `ha-textfield` (home-assistant/frontend#30349)
-  // in favour of `ha-input`. Register a wrapper so existing `<ha-textfield>`
-  // templates keep working. Older HA versions retain their native
-  // ha-textfield and skip this block.
-  //
-  // We wait briefly for `ha-input` so the wrapper can upgrade immediately, but
-  // register regardless of whether that wait resolves: on HA 2026.6 the panel
-  // chain may import `ha-input` lazily (after our budget), and a missed
-  // registration leaves every text field — room comfort/eco temps included —
-  // invisible. A `<ha-input>` rendered before its definition simply upgrades
-  // once HA defines it, so unconditional registration is strictly safer.
-  if (!customElements.get("ha-textfield")) {
-    await Promise.race([
-      customElements.whenDefined("ha-input"),
-      new Promise<void>((r) => setTimeout(r, 5000)),
-    ]);
-    const { HaTextfieldPolyfill } = await import("./ha-textfield-polyfill");
-    if (!customElements.get("ha-textfield")) {
-      customElements.define("ha-textfield", HaTextfieldPolyfill);
-    }
-  }
 
   // Step 3: Load ha-date-range-picker (used by rs-analytics).
   if (!customElements.get("ha-date-range-picker")) {
