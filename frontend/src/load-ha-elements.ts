@@ -13,9 +13,15 @@ export const loadHaElements = async (): Promise<void> => {
   // fast-path return below — and only when `ha-radio` is genuinely missing,
   // leaving older HA versions on their native element.
   if (!customElements.get("ha-radio")) {
-    const { HaRadioPolyfill } = await import("./ha-radio-polyfill");
-    if (!customElements.get("ha-radio")) {
-      customElements.define("ha-radio", HaRadioPolyfill);
+    try {
+      const { HaRadioPolyfill } = await import("./ha-radio-polyfill");
+      if (!customElements.get("ha-radio")) {
+        customElements.define("ha-radio", HaRadioPolyfill);
+      }
+    } catch (err) {
+      // A failed polyfill load (chunk/network error) must not abort the rest
+      // of element initialisation below — radios degrade, panel survives.
+      console.warn("RoomMind: ha-radio polyfill failed to load", err);
     }
   }
 
@@ -29,9 +35,15 @@ export const loadHaElements = async (): Promise<void> => {
   // automatically once HA defines it, so registering eagerly is safe and avoids
   // delaying cold loads. Older HA versions keep their native ha-textfield.
   if (!customElements.get("ha-textfield")) {
-    const { HaTextfieldPolyfill } = await import("./ha-textfield-polyfill");
-    if (!customElements.get("ha-textfield")) {
-      customElements.define("ha-textfield", HaTextfieldPolyfill);
+    try {
+      const { HaTextfieldPolyfill } = await import("./ha-textfield-polyfill");
+      if (!customElements.get("ha-textfield")) {
+        customElements.define("ha-textfield", HaTextfieldPolyfill);
+      }
+    } catch (err) {
+      // As above: don't let a polyfill load failure block entity-picker /
+      // chart-base setup. Text fields degrade, the rest of the panel loads.
+      console.warn("RoomMind: ha-textfield polyfill failed to load", err);
     }
   }
 
