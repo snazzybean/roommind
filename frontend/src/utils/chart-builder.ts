@@ -255,7 +255,7 @@ export function buildChartOptions(
           seriesId: string;
         }>,
       ) => {
-        if (!Array.isArray(params) || params.length === 0) return null;
+        if (!Array.isArray(params) || params.length === 0) return "";
         const date = new Date(params[0].value[0]);
         const time = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
         let markup = `<div style="font-weight:500;margin-bottom:4px">${time}</div>`;
