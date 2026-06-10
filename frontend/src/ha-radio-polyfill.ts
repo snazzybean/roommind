@@ -68,6 +68,6 @@ export class HaRadioPolyfill extends LitElement {
     // Native `change` does not cross the shadow boundary, so re-emit one from
     // the host. Listeners on `<ha-radio @change>` (e.g. rs-radio-group) then
     // fire with `target.checked` / `target.value` reading from this element.
-    this.dispatchEvent(new Event("change", { bubbles: true }));
+    this.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
   }
 }
