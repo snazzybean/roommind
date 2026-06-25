@@ -758,7 +758,19 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                     if self._compressor_manager.check_must_stay_active(eid):
                         compressor_forced_on.add(eid)
 
-            if compressor_forced_off and compressor_forced_off >= set(all_device_eids):
+            # In cooling mode only ACs can cool, so TRVs must not prevent the IDLE
+            # transition when all cooling-capable devices are blocked.  In heating
+            # mode both TRVs and ACs can contribute, so the full device set applies.
+            _mode_relevant_eids = (
+                set(get_ac_eids(room.get("devices", [])))
+                if mode == MODE_COOLING
+                else set(all_device_eids)
+            )
+            if (
+                compressor_forced_off
+                and _mode_relevant_eids
+                and compressor_forced_off >= _mode_relevant_eids
+            ):
                 mode = MODE_IDLE
                 power_fraction = 0.0
                 compressor_forced_off.clear()
