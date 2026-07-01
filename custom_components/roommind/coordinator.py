@@ -762,15 +762,9 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             # transition when all cooling-capable devices are blocked.  In heating
             # mode both TRVs and ACs can contribute, so the full device set applies.
             _mode_relevant_eids = (
-                set(get_ac_eids(room.get("devices", [])))
-                if mode == MODE_COOLING
-                else set(all_device_eids)
+                set(get_ac_eids(room.get("devices", []))) if mode == MODE_COOLING else set(all_device_eids)
             )
-            if (
-                compressor_forced_off
-                and _mode_relevant_eids
-                and compressor_forced_off >= _mode_relevant_eids
-            ):
+            if compressor_forced_off and _mode_relevant_eids and compressor_forced_off >= _mode_relevant_eids:
                 mode = MODE_IDLE
                 power_fraction = 0.0
                 compressor_forced_off.clear()

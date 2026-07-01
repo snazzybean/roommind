@@ -459,9 +459,7 @@ class TestHeatSourceOrchestration:
         assert coordinator._compressor_manager.is_compressor_running("shared_outdoor") is False
 
     @pytest.mark.asyncio
-    async def test_compressor_min_off_blocks_ac_in_cool_only_room_with_trv(
-        self, hass, mock_config_entry
-    ):
+    async def test_compressor_min_off_blocks_ac_in_cool_only_room_with_trv(self, hass, mock_config_entry):
         """Compressor protection sets mode to IDLE in a cool_only room that also has a TRV.
 
         Regression test: before the fix, the TRV's presence in all_device_eids caused
