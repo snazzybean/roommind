@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
+
+from homeassistant.util import dt as dt_util
 
 from ..const import (
     DEFAULT_COMFORT_COOL,
@@ -27,7 +29,7 @@ def find_active_block(schedule_blocks: dict, ts: float) -> dict[str, Any] | None
     Returns the block's ``data`` dict, or None if no block matches.
     Caller must check ``schedule_blocks is None`` before calling.
     """
-    dt = datetime.fromtimestamp(ts)
+    dt = dt_util.as_local(datetime.fromtimestamp(ts, tz=UTC))
     day_name = dt.strftime("%A").lower()
     current_time = dt.time()
     day_blocks = schedule_blocks.get(day_name, [])

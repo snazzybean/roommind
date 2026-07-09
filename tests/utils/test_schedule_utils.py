@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import time
-from datetime import datetime
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
+from zoneinfo import ZoneInfo
 
 import pytest
+from homeassistant.util import dt as dt_util
 
 from custom_components.roommind.const import TargetTemps
 from custom_components.roommind.utils.schedule_utils import (
+    find_active_block,
     get_active_schedule_entity,
     make_target_resolver,
     read_schedule_blocks,
@@ -248,7 +252,7 @@ class TestResolveTargetAtTime:
         """Inside a schedule block that has a temperature → returns that temperature."""
         # Create a timestamp that falls on a known day and time
         # Use a Monday at 10:00
-        dt = datetime(2025, 1, 6, 10, 0, 0)  # Monday
+        dt = datetime(2025, 1, 6, 10, 0, 0, tzinfo=dt_util.DEFAULT_TIME_ZONE)  # Monday
         ts = dt.timestamp()
         schedule_blocks = {
             "monday": [
@@ -273,7 +277,7 @@ class TestResolveTargetAtTime:
 
     def test_inside_block_without_temperature(self):
         """Inside a block without temperature data → returns comfort_temp."""
-        dt = datetime(2025, 1, 6, 10, 0, 0)  # Monday
+        dt = datetime(2025, 1, 6, 10, 0, 0, tzinfo=dt_util.DEFAULT_TIME_ZONE)  # Monday
         ts = dt.timestamp()
         schedule_blocks = {
             "monday": [
@@ -298,7 +302,7 @@ class TestResolveTargetAtTime:
 
     def test_outside_all_blocks_returns_eco(self):
         """Outside all schedule blocks → returns eco_temp."""
-        dt = datetime(2025, 1, 6, 6, 0, 0)  # Monday 06:00 — before any block
+        dt = datetime(2025, 1, 6, 6, 0, 0, tzinfo=dt_util.DEFAULT_TIME_ZONE)  # Monday 06:00 — before any block
         ts = dt.timestamp()
         schedule_blocks = {
             "monday": [
@@ -323,7 +327,7 @@ class TestResolveTargetAtTime:
 
     def test_day_with_no_blocks_returns_eco(self):
         """Day without any blocks → returns eco_temp."""
-        dt = datetime(2025, 1, 7, 10, 0, 0)  # Tuesday
+        dt = datetime(2025, 1, 7, 10, 0, 0, tzinfo=dt_util.DEFAULT_TIME_ZONE)  # Tuesday
         ts = dt.timestamp()
         schedule_blocks = {
             "monday": [
@@ -348,7 +352,7 @@ class TestResolveTargetAtTime:
 
     def test_block_with_invalid_temperature(self):
         """Block with non-numeric temperature → falls back to comfort_temp."""
-        dt = datetime(2025, 1, 6, 10, 0, 0)  # Monday
+        dt = datetime(2025, 1, 6, 10, 0, 0, tzinfo=dt_util.DEFAULT_TIME_ZONE)  # Monday
         ts = dt.timestamp()
         schedule_blocks = {
             "monday": [
@@ -373,7 +377,7 @@ class TestResolveTargetAtTime:
 
     def test_vacation_expired_falls_through(self):
         """Expired vacation falls through to schedule."""
-        dt = datetime(2025, 1, 6, 10, 0, 0)  # Monday
+        dt = datetime(2025, 1, 6, 10, 0, 0, tzinfo=dt_util.DEFAULT_TIME_ZONE)  # Monday
         ts = dt.timestamp()
         schedule_blocks = {
             "monday": [
@@ -432,7 +436,7 @@ class TestResolveTargetAtTime:
 
     def test_schedule_off_action_off_returns_none(self):
         """When schedule_off_action is 'off' and outside schedule blocks, returns None."""
-        dt = datetime(2025, 1, 6, 23, 0, 0)  # Monday 23:00 - outside blocks
+        dt = datetime(2025, 1, 6, 23, 0, 0, tzinfo=dt_util.DEFAULT_TIME_ZONE)  # Monday 23:00 - outside blocks
         ts = dt.timestamp()
         schedule_blocks = {
             "monday": [
@@ -454,7 +458,7 @@ class TestResolveTargetAtTime:
 
     def test_schedule_off_action_eco_returns_eco(self):
         """When schedule_off_action is 'eco' (default), returns eco_temp."""
-        dt = datetime(2025, 1, 6, 23, 0, 0)  # Monday 23:00 - outside blocks
+        dt = datetime(2025, 1, 6, 23, 0, 0, tzinfo=dt_util.DEFAULT_TIME_ZONE)  # Monday 23:00 - outside blocks
         ts = dt.timestamp()
         schedule_blocks = {
             "monday": [
@@ -519,7 +523,7 @@ class TestMakeTargetResolverOffActions:
         # No schedule blocks → falls through to eco/off logic
         # Actually with no schedule blocks, it returns comfort_temp (no blocks = comfort)
         # So we need schedule_blocks with no matching block
-        dt = datetime(2025, 1, 6, 23, 0, 0)
+        dt = datetime(2025, 1, 6, 23, 0, 0, tzinfo=dt_util.DEFAULT_TIME_ZONE)
         ts = dt.timestamp()
         blocks = {"monday": [{"from": "08:00:00", "to": "12:00:00", "data": {"temperature": 22.0}}]}
         resolver2 = make_target_resolver(blocks, room, settings)
@@ -631,7 +635,7 @@ class TestFahrenheitBlockConversion:
         """resolve_target_at_time applies block_temp_converter to schedule block temps."""
         from datetime import datetime
 
-        dt = datetime(2025, 1, 6, 10, 0, 0)  # Monday 10:00
+        dt = datetime(2025, 1, 6, 10, 0, 0, tzinfo=dt_util.DEFAULT_TIME_ZONE)  # Monday 10:00
         ts = dt.timestamp()
         schedule_blocks = {
             "monday": [
@@ -665,7 +669,7 @@ class TestFahrenheitBlockConversion:
         """Converter is not called when block has no temperature data."""
         from datetime import datetime
 
-        dt = datetime(2025, 1, 6, 10, 0, 0)  # Monday 10:00
+        dt = datetime(2025, 1, 6, 10, 0, 0, tzinfo=dt_util.DEFAULT_TIME_ZONE)  # Monday 10:00
         ts = dt.timestamp()
         schedule_blocks = {
             "monday": [
@@ -710,7 +714,7 @@ class TestFahrenheitBlockConversion:
         settings: dict = {}
 
         # Monday 10:00 schedule block with 71.6°F
-        dt = datetime(2025, 1, 6, 10, 0, 0)
+        dt = datetime(2025, 1, 6, 10, 0, 0, tzinfo=dt_util.DEFAULT_TIME_ZONE)
         ts = dt.timestamp()
         schedule_blocks = {
             "monday": [
@@ -744,7 +748,7 @@ class TestFahrenheitBlockConversion:
         room = _make_room(comfort_temp=21.0, eco_temp=18.0)
         settings: dict = {}
 
-        dt = datetime(2025, 1, 6, 10, 0, 0)
+        dt = datetime(2025, 1, 6, 10, 0, 0, tzinfo=dt_util.DEFAULT_TIME_ZONE)
         ts = dt.timestamp()
         schedule_blocks = {
             "monday": [
@@ -777,7 +781,7 @@ class TestResolveTargetsAtTime:
         """Inside a schedule block without custom temp returns comfort_heat/comfort_cool."""
         from custom_components.roommind.utils.schedule_utils import resolve_targets_at_time
 
-        dt = datetime(2025, 1, 6, 10, 0, 0)  # Monday 10:00
+        dt = datetime(2025, 1, 6, 10, 0, 0, tzinfo=dt_util.DEFAULT_TIME_ZONE)  # Monday 10:00
         ts = dt.timestamp()
         schedule_blocks = {
             "monday": [
@@ -803,7 +807,7 @@ class TestResolveTargetsAtTime:
         """Outside schedule blocks returns eco_heat/eco_cool."""
         from custom_components.roommind.utils.schedule_utils import resolve_targets_at_time
 
-        dt = datetime(2025, 1, 6, 6, 0, 0)  # Monday 06:00 - before blocks
+        dt = datetime(2025, 1, 6, 6, 0, 0, tzinfo=dt_util.DEFAULT_TIME_ZONE)  # Monday 06:00 - before blocks
         ts = dt.timestamp()
         schedule_blocks = {
             "monday": [
@@ -937,7 +941,7 @@ class TestResolveTargetsAtTime:
         """Schedule block with custom temperature creates TargetTemps(heat=t, cool=t)."""
         from custom_components.roommind.utils.schedule_utils import resolve_targets_at_time
 
-        dt = datetime(2025, 1, 6, 10, 0, 0)  # Monday 10:00
+        dt = datetime(2025, 1, 6, 10, 0, 0, tzinfo=dt_util.DEFAULT_TIME_ZONE)  # Monday 10:00
         ts = dt.timestamp()
         schedule_blocks = {
             "monday": [
@@ -1068,7 +1072,7 @@ class TestResolveTargetsAtTimeSplitBlockTemps:
         """Block with heat_temperature and cool_temperature returns split TargetTemps."""
         from custom_components.roommind.utils.schedule_utils import resolve_targets_at_time
 
-        dt = datetime(2025, 1, 6, 10, 0, 0)  # Monday 10:00
+        dt = datetime(2025, 1, 6, 10, 0, 0, tzinfo=dt_util.DEFAULT_TIME_ZONE)  # Monday 10:00
         ts = dt.timestamp()
         schedule_blocks = {
             "monday": [
@@ -1098,7 +1102,7 @@ class TestResolveTargetsAtTimeSplitBlockTemps:
         """Block with only heat_temperature falls back to comfort_cool."""
         from custom_components.roommind.utils.schedule_utils import resolve_targets_at_time
 
-        dt = datetime(2025, 1, 6, 10, 0, 0)  # Monday 10:00
+        dt = datetime(2025, 1, 6, 10, 0, 0, tzinfo=dt_util.DEFAULT_TIME_ZONE)  # Monday 10:00
         ts = dt.timestamp()
         schedule_blocks = {
             "monday": [
@@ -1128,7 +1132,7 @@ class TestResolveTargetsAtTimeSplitBlockTemps:
         """Block with only cool_temperature falls back to comfort_heat."""
         from custom_components.roommind.utils.schedule_utils import resolve_targets_at_time
 
-        dt = datetime(2025, 1, 6, 10, 0, 0)  # Monday 10:00
+        dt = datetime(2025, 1, 6, 10, 0, 0, tzinfo=dt_util.DEFAULT_TIME_ZONE)  # Monday 10:00
         ts = dt.timestamp()
         schedule_blocks = {
             "monday": [
@@ -1158,7 +1162,7 @@ class TestResolveTargetsAtTimeSplitBlockTemps:
         """Block with only temperature creates single-point (backward compat)."""
         from custom_components.roommind.utils.schedule_utils import resolve_targets_at_time
 
-        dt = datetime(2025, 1, 6, 10, 0, 0)  # Monday 10:00
+        dt = datetime(2025, 1, 6, 10, 0, 0, tzinfo=dt_util.DEFAULT_TIME_ZONE)  # Monday 10:00
         ts = dt.timestamp()
         schedule_blocks = {
             "monday": [
@@ -1388,3 +1392,111 @@ class TestReadScheduleBlocksLogging:
             await read_schedule_blocks(hass, "schedule.heating", cache=cache)
         relevant = [r for r in caplog.records if r.name == "custom_components.roommind.utils.schedule_utils"]
         assert relevant == []
+
+
+# ---------------------------------------------------------------------------
+# Timezone-aware block resolution
+#
+# time.time() is a UTC epoch. Schedule blocks are authored in the user's local
+# (HA-configured) timezone. The resolver must therefore evaluate the block
+# window in HA's timezone, NOT the host/container timezone.
+#
+# These tests set HA's default timezone to Australia/Sydney (UTC+10) and pick
+# UTC instants whose Sydney-local day/time lands on the OPPOSITE
+# side of the block boundary from UTC — so they fail on the naive code (in a
+# UTC/non-Sydney runner) and pass once the resolver honours HA's timezone.
+# ---------------------------------------------------------------------------
+
+
+@contextlib.contextmanager
+def _ha_time_zone(name: str):
+    """Temporarily set HA's default timezone (restored afterwards)."""
+    original = dt_util.DEFAULT_TIME_ZONE
+    dt_util.set_default_time_zone(ZoneInfo(name))
+    try:
+        yield
+    finally:
+        dt_util.set_default_time_zone(original)
+
+
+def _utc_ts(year, month, day, hour, minute=0):
+    """Epoch seconds for an explicit UTC wall-clock instant."""
+    return datetime(year, month, day, hour, minute, tzinfo=UTC).timestamp()
+
+
+class TestTimezoneAwareBlockResolution:
+    """Schedule windows are evaluated in HA's timezone, not the host's."""
+
+    # 2024-07-06 is a Saturday; +10h (Sydney AEST) → Sunday. July has no DST.
+    _SUNDAY_BLOCK = {
+        "sunday": [{"from": "08:00:00", "to": "21:00:00", "data": {"temperature": 22.0}}],
+        # deliberately no "saturday" entry — the UTC-naive reading would land here
+    }
+
+    def test_find_active_block_uses_ha_timezone_not_host(self):
+        """Sat 23:30 UTC is Sun 09:30 in Sydney → matches the Sunday block."""
+        ts = _utc_ts(2024, 7, 6, 23, 30)  # Sydney: Sun 2024-07-07 09:30
+        with _ha_time_zone("Australia/Sydney"):
+            block = find_active_block(self._SUNDAY_BLOCK, ts)
+        assert block is not None
+        assert block["temperature"] == 22.0
+
+    def test_find_active_block_ha_local_outside_window_returns_none(self):
+        """Sun 12:00 UTC is Sun 22:00 in Sydney → past the 21:00 block end → None."""
+        ts = _utc_ts(2024, 7, 7, 12, 0)  # Sydney: Sun 2024-07-07 22:00
+        with _ha_time_zone("Australia/Sydney"):
+            block = find_active_block(self._SUNDAY_BLOCK, ts)
+        assert block is None
+
+    def test_overnight_resolves_to_eco_in_ha_timezone(self):
+        """Sydney overnight (outside the daytime block) must resolve to eco, not comfort."""
+        from custom_components.roommind.utils.schedule_utils import resolve_targets_at_time
+
+        blocks = {
+            day: [{"from": "07:00:00", "to": "21:30:00", "data": {}}]
+            for day in ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
+        }
+        # 2024-07-08 16:00 UTC → Sydney Tue 2024-07-09 02:00 (overnight, block is 07:00–21:30)
+        ts = _utc_ts(2024, 7, 8, 16, 0)
+        with _ha_time_zone("Australia/Sydney"):
+            result = resolve_targets_at_time(
+                ts=ts,
+                schedule_blocks=blocks,
+                override_until=None,
+                override_heat=None,
+                override_cool=None,
+                vacation_until=None,
+                vacation_temp=None,
+                comfort_heat=24.0,
+                comfort_cool=26.0,
+                eco_heat=19.0,
+                eco_cool=29.0,
+            )
+        assert result == TargetTemps(heat=19.0, cool=29.0)  # eco
+
+    def test_daytime_resolves_to_comfort_in_ha_timezone(self):
+        """Sydney daytime (inside the block) must resolve to comfort even when UTC is 'off'."""
+        from custom_components.roommind.utils.schedule_utils import resolve_targets_at_time
+
+        blocks = {
+            day: [{"from": "07:00:00", "to": "21:30:00", "data": {}}]
+            for day in ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
+        }
+        # 2024-07-08 00:00 UTC → Sydney Mon 2024-07-08 10:00 (inside 07:00–21:30);
+        # naive-UTC reading (00:00) would be outside the block → eco.
+        ts = _utc_ts(2024, 7, 8, 0, 0)
+        with _ha_time_zone("Australia/Sydney"):
+            result = resolve_targets_at_time(
+                ts=ts,
+                schedule_blocks=blocks,
+                override_until=None,
+                override_heat=None,
+                override_cool=None,
+                vacation_until=None,
+                vacation_temp=None,
+                comfort_heat=24.0,
+                comfort_cool=26.0,
+                eco_heat=19.0,
+                eco_cool=29.0,
+            )
+        assert result == TargetTemps(heat=24.0, cool=26.0)  # comfort

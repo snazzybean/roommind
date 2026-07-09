@@ -34,6 +34,37 @@ jobs:
         with:
           GITHUB_TOKEN: ${{ github.token }}
 
+  timezone-sweep:
+    name: TZ sweep (OS=${{ matrix.os_tz }}, HA=${{ matrix.ha_tz }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Sweep the schedule-resolution tests across host-OS × HA timezone
+        # permutations.
+        os_tz: ["UTC", "US/Pacific", "Australia/Sydney"]
+        ha_tz: ["UTC", "US/Pacific", "Australia/Sydney"]
+    env:
+      TZ: ${{ matrix.os_tz }} # host/OS timezone (naive datetime, libc)
+      ROOMMIND_TEST_TZ: ${{ matrix.ha_tz }} # HA's configured timezone (dt_util)
+    steps:
+      - uses: actions/checkout@v7.0.0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Schedule-resolution timezone tests
+        # asyncio_mode is passed explicitly because this branch's base has no
+        # pytest asyncio config; matches how the suite is run elsewhere.
+        run: pytest tests/utils/test_schedule_utils.py -v -o asyncio_mode=auto
+
   frontend:
     name: Frontend type check
     runs-on: ubuntu-latest
