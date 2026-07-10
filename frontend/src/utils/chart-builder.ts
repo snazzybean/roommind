@@ -29,6 +29,7 @@ export function buildChartSeries(
   const targetData: Array<[number, number]> = [];
   const predictedData: Array<[number, number]> = [];
   const outdoorData: Array<[number, number]> = [];
+  const deviceTargetData: Array<[number, number]> = [];
 
   for (const p of points) {
     const ts = p.ts * 1000;
@@ -36,6 +37,7 @@ export function buildChartSeries(
     if (!isOutdoor && p.target_temp !== null) targetData.push([ts, d(p.target_temp)]);
     if (!isOutdoor && p.predicted_temp !== null) predictedData.push([ts, d(p.predicted_temp)]);
     if (p.outdoor_temp !== null) outdoorData.push([ts, d(p.outdoor_temp)]);
+    if (!isOutdoor && p.device_setpoint != null) deviceTargetData.push([ts, d(p.device_setpoint)]);
   }
 
   for (const p of forecast ?? []) {
@@ -82,6 +84,21 @@ export function buildChartSeries(
       showSymbol: false,
       smooth: true,
       lineStyle: { width: 2, type: "dotted" },
+      yAxisIndex: 0,
+    });
+  }
+
+  if (deviceTargetData.length > 0) {
+    series.push({
+      id: "device_target",
+      type: "line",
+      name: "TRV / AC",
+      color: "rgb(156, 39, 176)",
+      data: deviceTargetData,
+      showSymbol: false,
+      smooth: false,
+      step: "end",
+      lineStyle: { width: 1, type: "dashed" },
       yAxisIndex: 0,
     });
   }
