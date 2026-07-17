@@ -919,6 +919,51 @@ async def test_list_rooms_includes_active_schedule_index(ws_hass, store, connect
 
 
 @pytest.mark.asyncio
+async def test_list_rooms_includes_compressor_protection_status(ws_hass, store, connection):
+    """Verify compressor_protection_active/reason pass through from the
+    coordinator into list_rooms' live data.
+
+    Regression test: these fields were added to the coordinator's room-state
+    dict but the websocket_list_rooms handler builds `live` from an explicit
+    field allow-list, so they were silently dropped until this handler was
+    also updated (#386).
+    """
+    await store.async_load()
+
+    save_msg = {
+        "id": 2,
+        "type": "roommind/rooms/save",
+        "area_id": "kinderzimmer",
+        "thermostats": ["climate.kz_trv"],
+        "temperature_sensor": "sensor.kz_temp",
+    }
+    await _save_room(ws_hass, connection, save_msg)
+    connection.send_result.reset_mock()
+
+    mock_coordinator = MagicMock()
+    mock_coordinator.rooms = {
+        "kinderzimmer": {
+            "current_temp": 25.0,
+            "target_temp": 25.0,
+            "mode": "idle",
+            "compressor_protection_active": True,
+            "compressor_protection_reason": "min_off",
+        }
+    }
+    mock_coordinator.async_request_refresh = AsyncMock()
+    ws_hass.data[DOMAIN]["coordinator"] = mock_coordinator
+
+    list_msg = {"id": 3, "type": "roommind/rooms/list"}
+    await _list_rooms(ws_hass, connection, list_msg)
+
+    connection.send_result.assert_called_once()
+    call_args = connection.send_result.call_args
+    live = call_args[0][1]["rooms"]["kinderzimmer"]["live"]
+    assert live["compressor_protection_active"] is True
+    assert live["compressor_protection_reason"] == "min_off"
+
+
+@pytest.mark.asyncio
 async def test_list_rooms_includes_cover_override_until(ws_hass, store, connection):
     """Verify cover_override_until appears in live data from list_rooms."""
     await store.async_load()
