@@ -22,6 +22,6 @@
     "eslint-plugin-lit": "^2.3.1",
     "prettier": "^3.8.4",
     "typescript": "^6.0.3",
-    "vite": "^8.1.3"
+    "vite": "^8.1.4"
   }
 }
