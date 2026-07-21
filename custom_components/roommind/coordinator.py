@@ -359,46 +359,58 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         self,
         room: dict,
         area_id: str,
-    ) -> tuple[float | None, float | None, float | None, bool]:
+    ) -> tuple[float | None, float | None, float | None, bool, str, float | None]:
         """Read temperature and humidity sensors for a room.
 
-        Returns (current_temp, current_temp_raw, current_humidity, has_external_sensor).
+        Returns (current_temp, current_temp_raw, current_humidity, has_external_sensor, temp_source, temp_age_seconds).
         """
         temp_sensor_id = room.get("temperature_sensor")
         has_external_sensor = bool(temp_sensor_id)
+        temp_source = "none"
+        temp_age_seconds: float | None = None
 
         raw_temp = read_sensor_value(self.hass, temp_sensor_id, area_id, "temperature")
         current_temp = (
             ha_temp_to_celsius(self.hass, raw_temp, entity_id=temp_sensor_id) if raw_temp is not None else None
         )
 
-        # Fallback: read current_temperature from first thermostat/AC if no external sensor
+        if current_temp is not None:
+            temp_source = "sensor"
+            temp_age_seconds = 0.0
+
         if current_temp is None and not has_external_sensor:
             raw_dev = self._read_device_temp(room)
             current_temp = ha_temp_to_celsius(self.hass, raw_dev) if raw_dev is not None else None
+            if current_temp is not None:
+                temp_source = "device"
+                temp_age_seconds = 0.0
 
-        # --- Sensor dropout fallback: use cached temp if fresh enough ---
-        current_temp_raw = current_temp  # preserve original for EKF/history
+        current_temp_raw = current_temp
 
         if current_temp is not None:
             self._last_valid_temps[area_id] = (current_temp, time.monotonic())
             self._had_valid_temp.add(area_id)
         elif area_id in self._last_valid_temps:
             cached_temp, cached_ts = self._last_valid_temps[area_id]
-            if time.monotonic() - cached_ts < MAX_SENSOR_STALENESS:
+            cache_age = time.monotonic() - cached_ts
+            if cache_age < MAX_SENSOR_STALENESS:
                 current_temp = cached_temp
+                temp_source = "cache"
+                temp_age_seconds = cache_age
                 _LOGGER.debug(
                     "Room '%s': sensor unavailable, using cached temp %.1f°C (age %.0fs)",
                     area_id,
                     cached_temp,
-                    time.monotonic() - cached_ts,
+                    cache_age,
                 )
             else:
                 del self._last_valid_temps[area_id]
+                temp_source = "none"
+                temp_age_seconds = None
 
         current_humidity = read_sensor_value(self.hass, room.get("humidity_sensor"), area_id, "humidity")
 
-        return current_temp, current_temp_raw, current_humidity, has_external_sensor
+        return current_temp, current_temp_raw, current_humidity, has_external_sensor, temp_source, temp_age_seconds
 
     def _resolve_outdoor_temp(self, settings: dict) -> tuple[float | None, str]:
         """Return (temp, source) for the current cycle.
@@ -505,7 +517,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         """Process a single room: read sensor, evaluate schedule, apply control."""
         area_id = room.get("area_id", "unknown")
 
-        current_temp, current_temp_raw, current_humidity, has_external_sensor = self._read_room_sensors(room, area_id)
+        current_temp, current_temp_raw, current_humidity, has_external_sensor, temp_source, temp_age_seconds = self._read_room_sensors(room, area_id)
 
         # --- Outdoor room: skip all control logic ---
         if room.get("is_outdoor", False):
@@ -514,6 +526,8 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 "current_temp": current_temp,
                 "current_temp_raw": current_temp_raw,
                 "current_humidity": current_humidity,
+                "temp_source": temp_source,
+                "temp_age_seconds": temp_age_seconds,
                 "target_temp": None,
                 "heat_target": None,
                 "cool_target": None,
@@ -943,6 +957,8 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             current_temp=current_temp,
             current_temp_raw=current_temp_raw,
             current_humidity=current_humidity,
+            temp_source=temp_source,
+            temp_age_seconds=temp_age_seconds,
             target_temp=target_temp,
             targets=targets,
             display_mode=display_mode,
@@ -1154,6 +1170,8 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         current_temp: float | None,
         current_temp_raw: float | None,
         current_humidity: float | None,
+        temp_source: str,
+        temp_age_seconds: float | None,
         target_temp: float | None,
         targets: TargetTemps,
         display_mode: str,
@@ -1199,6 +1217,8 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             "current_temp": current_temp,
             "current_temp_raw": current_temp_raw,
             "current_humidity": current_humidity,
+            "temp_source": temp_source,
+            "temp_age_seconds": temp_age_seconds,
             "target_temp": target_temp,
             "heat_target": targets.heat,
             "cool_target": targets.cool,

@@ -30,12 +30,16 @@ async def test_sensor_dropout_keeps_previous_mode(hass, mock_config_entry):
     coordinator = _create_coordinator(hass, mock_config_entry)
     result1 = await coordinator._async_update_data()
     assert result1["rooms"]["living_room_abc12345"]["mode"] == "heating"
+    assert result1["rooms"]["living_room_abc12345"]["temp_source"] == "sensor"
+    assert result1["rooms"]["living_room_abc12345"]["temp_age_seconds"] == 0.0
 
     # Cycle 2: sensor dropout (temp=None) → should still be heating via cache
     hass.states.get = MagicMock(side_effect=make_mock_states_get(temp=None))
     result2 = await coordinator._async_update_data()
     room2 = result2["rooms"]["living_room_abc12345"]
     assert room2["mode"] == "heating", "sensor dropout should use cached temp, not idle"
+    assert room2["temp_source"] == "cache"
+    assert room2["temp_age_seconds"] is not None and room2["temp_age_seconds"] > 0
     assert room2["current_temp"] == 18.0, "current_temp should show cached value"
     assert room2["current_temp_raw"] is None, "current_temp_raw should be None (real reading)"
 
@@ -60,7 +64,10 @@ async def test_sensor_dropout_staleness_timeout(hass, mock_config_entry):
     # Cycle 2: sensor dropout with expired cache → idle
     hass.states.get = MagicMock(side_effect=make_mock_states_get(temp=None))
     result = await coordinator._async_update_data()
-    assert result["rooms"]["living_room_abc12345"]["mode"] == MODE_IDLE
+    room = result["rooms"]["living_room_abc12345"]
+    assert room["mode"] == MODE_IDLE
+    assert room["temp_source"] == "none"
+    assert room["temp_age_seconds"] is None
 
 
 @pytest.mark.asyncio
@@ -102,6 +109,8 @@ async def test_sensor_dropout_history_records_none(hass, mock_config_entry):
     result = await coordinator._async_update_data()
     room = result["rooms"]["living_room_abc12345"]
     assert room["current_temp_raw"] is None
+    assert room["temp_source"] == "cache"
+    assert room["temp_age_seconds"] is not None and room["temp_age_seconds"] > 0
     assert room["current_temp"] == 18.0  # cached for display
 
 
@@ -120,7 +129,6 @@ async def test_sensor_dropout_min_run_preserved(hass, mock_config_entry):
     assert area_id in coordinator._mode_on_since, "_mode_on_since should be set after heating starts"
     ts_before = coordinator._mode_on_since[area_id]
 
-    # Sensor dropout
     hass.states.get = MagicMock(side_effect=make_mock_states_get(temp=None))
     await coordinator._async_update_data()
 
@@ -139,7 +147,10 @@ async def test_no_cache_first_cycle_stays_idle(hass, mock_config_entry):
     coordinator = _create_coordinator(hass, mock_config_entry)
     result = await coordinator._async_update_data()
 
-    assert result["rooms"]["living_room_abc12345"]["mode"] == MODE_IDLE
+    room = result["rooms"]["living_room_abc12345"]
+    assert room["mode"] == MODE_IDLE
+    assert room["temp_source"] == "none"
+    assert room["temp_age_seconds"] is None
 
 
 @pytest.mark.asyncio
@@ -190,6 +201,9 @@ async def test_managed_mode_dropout_uses_cache(hass, mock_config_entry):
     await coordinator._async_update_data()
 
     area_id = "living_room_abc12345"
+    room1 = coordinator.rooms[area_id]
+    assert room1["temp_source"] == "device"
+    assert room1["temp_age_seconds"] == 0.0
     assert area_id in coordinator._last_valid_temps
     cached_val, _ = coordinator._last_valid_temps[area_id]
     assert cached_val == 19.0
@@ -210,5 +224,7 @@ async def test_managed_mode_dropout_uses_cache(hass, mock_config_entry):
     )
     result = await coordinator._async_update_data()
     room = result["rooms"]["living_room_abc12345"]
+    assert room["temp_source"] == "cache"
+    assert room["temp_age_seconds"] is not None and room["temp_age_seconds"] > 0
     assert room["current_temp"] == 19.0, "should use cached device temp"
     assert room["current_temp_raw"] is None

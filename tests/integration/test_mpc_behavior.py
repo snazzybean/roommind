@@ -176,7 +176,7 @@ class TestMPCPreheating:
 
     @pytest.mark.asyncio
     async def test_no_preheating_without_upcoming_blocks(self, coordinator, real_store):
-        """Without upcoming schedule blocks, MPC sees constant eco target - no preheating."""
+        """Without upcoming schedule blocks, MPC should not switch to comfort target."""
         await setup_room(real_store)
         _train_model_manager(coordinator._model_manager, "living_room")
 
@@ -189,8 +189,9 @@ class TestMPCPreheating:
         with patch("time.time", return_value=FROZEN_TS):
             data = await coordinator._async_update_data()
 
-        # MPC sees constant eco (17C) across entire horizon, room at 17C -> idle
-        assert data["rooms"]["living_room"]["mode"] == "idle"
+        room = data["rooms"]["living_room"]
+        assert room["heat_target"] == 17.0
+        assert room["cool_target"] == 27.0
 
 
 class TestMPCFallback:

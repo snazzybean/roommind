@@ -36,6 +36,8 @@ NORMAL_ROOM_KEYS = {
     "current_temp",
     "current_temp_raw",
     "current_humidity",
+    "temp_source",
+    "temp_age_seconds",
     "target_temp",
     "heat_target",
     "cool_target",
@@ -78,6 +80,8 @@ OUTDOOR_ROOM_KEYS = {
     "current_temp",
     "current_temp_raw",
     "current_humidity",
+    "temp_source",
+    "temp_age_seconds",
     "target_temp",
     "heat_target",
     "cool_target",
@@ -136,6 +140,8 @@ class TestProcessRoomSnapshot:
 
         assert result["area_id"] == "living_room_abc12345"
         assert result["current_temp"] == 18.0
+        assert result["temp_source"] == "sensor"
+        assert result["temp_age_seconds"] == 0.0
         assert result["target_temp"] == pytest.approx(21.0)
         assert result["heat_target"] == pytest.approx(21.0)
         assert result["mode"] == "heating"
@@ -166,6 +172,8 @@ class TestProcessRoomSnapshot:
 
         assert result["area_id"] == "living_room_abc12345"
         assert result["current_temp"] == 21.0
+        assert result["temp_source"] == "sensor"
+        assert result["temp_age_seconds"] == 0.0
         assert result["target_temp"] == pytest.approx(21.0)
         assert result["heat_target"] == pytest.approx(21.0)
         # At target, bang-bang controller should be idle
@@ -250,6 +258,8 @@ class TestProcessRoomSnapshot:
         result = await coordinator._async_process_room(room, settings, [])
 
         assert result["window_open"] is True
+        assert result["temp_source"] == "sensor"
+        assert result["temp_age_seconds"] == 0.0
         assert result["mode"] == "idle"
         assert result["heating_power"] == 0
 
@@ -273,6 +283,8 @@ class TestProcessRoomSnapshot:
         result = await coordinator._async_process_room(room, settings, [])
 
         assert set(result.keys()) == OUTDOOR_ROOM_KEYS
+        assert result["temp_source"] == "sensor"
+        assert result["temp_age_seconds"] == 0.0
         assert result["mode"] == "idle"
         assert result["force_off"] is False  # NOT True!
         assert result["target_temp"] is None
@@ -298,6 +310,8 @@ class TestProcessRoomSnapshot:
         result = await coordinator._async_process_room(room, settings, [])
 
         assert result["mode"] == "idle"
+        assert result["temp_source"] == "sensor"
+        assert result["temp_age_seconds"] == 0.0
         assert result["heating_power"] == 0
         # All normal keys should still be present
         assert set(result.keys()) == NORMAL_ROOM_KEYS
@@ -334,5 +348,7 @@ class TestProcessRoomSnapshot:
         result = await coordinator._async_process_room(MANAGED_ROOM, settings, [])
 
         assert result["target_temp"] is not None
+        assert result["temp_source"] == "device"
+        assert result["temp_age_seconds"] == 0.0
         # Managed mode should still return all normal keys
         assert set(result.keys()) == NORMAL_ROOM_KEYS
