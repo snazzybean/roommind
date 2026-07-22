@@ -22,7 +22,7 @@ export class RsAnalyticsChart extends LitElement {
   @property({ type: String }) public language = "en";
   @property({ type: Boolean }) public isOutdoor = false;
 
-  @state() private _hiddenSeries = new Set(["outdoor_temp"]);
+  @state() private _hiddenSeries = new Set(["outdoor_temp", "device_target"]);
   @state() private _chartInfoExpanded = false;
 
   render() {

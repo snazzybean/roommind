@@ -293,6 +293,11 @@ class TestHeatSourceOrchestration:
 
         # Mode should be idle because the only device is blocked by min-off
         assert room_state["mode"] == MODE_IDLE
+        # UI-visible compressor protection status (#compressor-protection-visibility):
+        # must report min_off even though the room was fully idled (which
+        # clears the internal forced_off set after resolving mode).
+        assert room_state["compressor_protection_active"] is True
+        assert room_state["compressor_protection_reason"] == "min_off"
 
     @pytest.mark.asyncio
     async def test_compressor_min_run_keeps_ac_on(self, hass, mock_config_entry):
@@ -337,11 +342,14 @@ class TestHeatSourceOrchestration:
         coordinator._compressor_manager.update_member("climate.living_room_ac", True)
         # compressor_on_since is now ~monotonic(), so min-run (15 min) not expired
 
-        await coordinator._async_update_data()
+        data = await coordinator._async_update_data()
+        room_state = data["rooms"]["living_room_abc12345"]
 
         # The compressor manager should have forced the AC to stay on
         # Verify the AC was NOT turned off (check_must_stay_active returns True)
         assert coordinator._compressor_manager.check_must_stay_active("climate.living_room_ac") is True
+        assert room_state["compressor_protection_active"] is True
+        assert room_state["compressor_protection_reason"] == "min_run"
 
     @pytest.mark.asyncio
     async def test_compressor_window_open_overrides_min_run(self, hass, mock_config_entry):
@@ -391,6 +399,10 @@ class TestHeatSourceOrchestration:
         # Window open forces idle regardless of compressor protection
         assert room_state["mode"] == MODE_IDLE
         assert room_state["window_open"] is True
+        # Window-open short-circuits the compressor-group block entirely, so
+        # this idle must NOT be misreported as compressor protection.
+        assert room_state["compressor_protection_active"] is False
+        assert room_state["compressor_protection_reason"] is None
 
     @pytest.mark.asyncio
     async def test_compressor_cross_room(self, hass, mock_config_entry):

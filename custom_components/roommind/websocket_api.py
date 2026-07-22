@@ -260,6 +260,8 @@ async def websocket_list_rooms(
             "active_cover_schedule_index": live.get("active_cover_schedule_index", -1),
             "active_heat_sources": live.get("active_heat_sources"),
             "learning_paused_reason": learning_paused_reason,
+            "compressor_protection_active": live.get("compressor_protection_active", False),
+            "compressor_protection_reason": live.get("compressor_protection_reason"),
         }
         result[area_id] = room_data
 

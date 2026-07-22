@@ -544,6 +544,8 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 "active_cover_schedule_index": -1,
                 "q_occupancy": 0.0,
                 "active_heat_sources": None,
+                "compressor_protection_active": False,
+                "compressor_protection_reason": None,
             }
 
         # --- Mold risk calculation ---
@@ -766,6 +768,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         all_device_eids = get_all_entity_ids(room.get("devices", []))
         compressor_forced_on: set[str] = set()
         compressor_forced_off: set[str] = set()
+        compressor_protection_reason: str | None = None
 
         if all_device_eids and climate_active and not window_open and not force_off:
             for eid in all_device_eids:
@@ -784,6 +787,15 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 else:
                     if self._compressor_manager.check_must_stay_active(eid):
                         compressor_forced_on.add(eid)
+
+            # Exposed for the UI (#compressor-protection-visibility). Must be
+            # captured here, before the "fully blocked" branch below clears
+            # compressor_forced_off — otherwise a room idled entirely by the
+            # shared-compressor guard would silently look like a normal idle.
+            if compressor_forced_off:
+                compressor_protection_reason = "min_off"
+            elif compressor_forced_on:
+                compressor_protection_reason = "min_run"
 
             # In cooling mode only ACs can cool, so TRVs must not prevent the IDLE
             # transition when all cooling-capable devices are blocked.  In heating
@@ -954,6 +966,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             cover_eids=cover_eids,
             cover_result=cover_result,
             mpc_active=mpc_active,
+            compressor_protection_reason=compressor_protection_reason,
         )
 
     async def _observe_and_train(
@@ -1164,12 +1177,22 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         cover_eids: list[str],
         cover_result: CoverResult,
         mpc_active: bool,
+        compressor_protection_reason: str | None = None,
     ) -> dict:
         """Build the final room state dictionary."""
         _room_devices = room.get("devices", [])
         _direct_eids = get_direct_setpoint_eids(_room_devices)
-        _devs_with_eid = [d for d in _room_devices if d.get("entity_id")]
-        _all_direct = bool(_devs_with_eid) and len(_direct_eids) == len(_devs_with_eid)
+        # Directness is evaluated only over the devices actually driven in the
+        # current mode: cooling only ever commands ACs (TRVs are turned off),
+        # heating can command both. Including mode-irrelevant devices in the
+        # check previously made a room with a direct AC + a proportional TRV
+        # display the TRV's proportional boost value for the AC too, even
+        # though async_apply() (see mpc_controller) already sends the correct
+        # direct target to the AC. (#device_setpoint mixed-mode display bug)
+        _mode_relevant_eids: set[str] = (
+            set(get_ac_eids(_room_devices)) if mode == MODE_COOLING else set(get_all_entity_ids(_room_devices))
+        )
+        _all_direct = bool(_mode_relevant_eids) and _mode_relevant_eids <= _direct_eids
 
         return {
             "area_id": area_id,
@@ -1227,6 +1250,8 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             "cover_forced_reason": (cover_result.forced_reason if cover_eids else ""),
             "active_cover_schedule_index": (cover_result.active_cover_schedule_index if cover_eids else -1),
             "active_heat_sources": self._heat_source_states.get(area_id),
+            "compressor_protection_active": compressor_protection_reason is not None,
+            "compressor_protection_reason": compressor_protection_reason,
         }
 
     @staticmethod

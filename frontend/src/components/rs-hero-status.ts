@@ -613,6 +613,21 @@ export class RsHeroStatus extends LitElement {
                         : localize("hero.heat_source_both", this.hass?.language ?? "en")}
                   </div>`
                 : nothing}
+              ${live.compressor_protection_active && !this.isOutdoor
+                ? html`<div class="hero-metric info">
+                    <ha-icon icon="mdi:timer-sand"></ha-icon>
+                    ${live.compressor_protection_reason === "min_run"
+                      ? localize("hero.compressor_protection_min_run", this.hass?.language ?? "en")
+                      : localize("hero.compressor_protection_min_off", this.hass?.language ?? "en")}
+                    <rs-info-icon
+                      icon="mdi:information-outline"
+                      .text=${localize(
+                        "hero.compressor_protection_info",
+                        this.hass?.language ?? "en",
+                      )}
+                    ></rs-info-icon>
+                  </div>`
+                : nothing}
               ${live.mold_surface_rh != null && !this.isOutdoor
                 ? html`<div
                     class="hero-metric ${live.mold_risk_level === "critical"
