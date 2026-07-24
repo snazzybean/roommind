@@ -17,8 +17,10 @@ from custom_components.roommind.store import RoomMindStore
 def _ha_default_timezone():
     """Set HA's configured timezone from the ``ROOMMIND_TEST_TZ`` env var.
 
-    Autouse + function-scoped so it re-establishes the baseline after any test
-    (e.g. the ``hass`` fixture temporarily sets US/Pacific and restores).
+    Autouse + function-scoped so every test starts from a known HA timezone and
+    the previous value is restored afterwards. This isolates tests that mutate
+    ``dt_util.DEFAULT_TIME_ZONE`` themselves (e.g. the schedule-resolution tests
+    in ``test_schedule_utils.py``, which pin non-UTC zones via a context manager).
     """
     tz_name = os.environ.get("ROOMMIND_TEST_TZ", "UTC")
     original = dt_util.get_default_time_zone()

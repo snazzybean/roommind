@@ -6,6 +6,7 @@ from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from homeassistant.util import dt as dt_util
 
 from custom_components.roommind.control.thermal_model import RoomModelManager
 
@@ -67,8 +68,19 @@ def _make_schedule_blocks_at(hour: int, minute: int, duration_hours: int, day_na
     }
 
 
-# Frozen time: Monday 2026-03-09 10:00:00 (inside a typical schedule window)
-FROZEN_TS = datetime(2026, 3, 9, 10, 0, 0).timestamp()
+@pytest.fixture
+def frozen_ts():
+    """Epoch for Monday 2026-03-09 10:00:00 in HA's configured timezone.
+
+    Built at test time from ``dt_util.DEFAULT_TIME_ZONE`` (set per-test by the
+    autouse ``_ha_default_timezone`` fixture) rather than as a naive module-level
+    constant. Schedule blocks are authored in HA-local wall-clock time, so the
+    frozen instant must map to 10:00 Monday in the *same* timezone the resolver
+    uses — otherwise the schedule-window assertions only hold when host TZ == HA
+    TZ. See #318.
+    """
+    return datetime(2026, 3, 9, 10, 0, 0, tzinfo=dt_util.DEFAULT_TIME_ZONE).timestamp()
+
 
 # Schedule block that covers 06:00-22:00 on Monday (frozen time is inside it)
 ACTIVE_SCHEDULE = _make_schedule_blocks_at(6, 0, 16, "monday")
@@ -80,7 +92,7 @@ UPCOMING_SCHEDULE = _make_schedule_blocks_at(10, 10, 8, "monday")
 
 class TestMPCActivation:
     @pytest.mark.asyncio
-    async def test_mpc_activates_after_training(self, coordinator, real_store):
+    async def test_mpc_activates_after_training(self, coordinator, real_store, frozen_ts):
         """After enough EKF observations, coordinator should use MPC (not bang-bang)."""
         await setup_room(real_store)
         _train_model_manager(coordinator._model_manager, "living_room")
@@ -88,7 +100,7 @@ class TestMPCActivation:
         coordinator.hass.states.get = MagicMock(side_effect=make_hass_states(temp="18.0"))
         coordinator.hass.services.async_call = _make_schedule_service_mock(ACTIVE_SCHEDULE)
 
-        with patch("time.time", return_value=FROZEN_TS):
+        with patch("time.time", return_value=frozen_ts):
             data = await coordinator._async_update_data()
 
         room = data["rooms"]["living_room"]
@@ -97,7 +109,7 @@ class TestMPCActivation:
         assert 0 <= room["heating_power"] <= 100
 
     @pytest.mark.asyncio
-    async def test_mpc_proportional_power_varies_with_distance(self, coordinator, real_store):
+    async def test_mpc_proportional_power_varies_with_distance(self, coordinator, real_store, frozen_ts):
         """MPC power fraction should be higher when further from target."""
         await setup_room(real_store)
         _train_model_manager(coordinator._model_manager, "living_room")
@@ -106,7 +118,7 @@ class TestMPCActivation:
         coordinator.hass.states.get = MagicMock(side_effect=make_hass_states(temp="15.0"))
         coordinator.hass.services.async_call = _make_schedule_service_mock(ACTIVE_SCHEDULE)
 
-        with patch("time.time", return_value=FROZEN_TS):
+        with patch("time.time", return_value=frozen_ts):
             data_far = await coordinator._async_update_data()
         hp_far = data_far["rooms"]["living_room"]["heating_power"]
 
@@ -114,7 +126,7 @@ class TestMPCActivation:
         coordinator.hass.states.get = MagicMock(side_effect=make_hass_states(temp="20.5"))
         coordinator.hass.services.async_call = _make_schedule_service_mock(ACTIVE_SCHEDULE)
 
-        with patch("time.time", return_value=FROZEN_TS):
+        with patch("time.time", return_value=frozen_ts):
             data_close = await coordinator._async_update_data()
         hp_close = data_close["rooms"]["living_room"]["heating_power"]
 
@@ -122,7 +134,7 @@ class TestMPCActivation:
         assert hp_far >= hp_close
 
     @pytest.mark.asyncio
-    async def test_mpc_idles_at_target(self, coordinator, real_store):
+    async def test_mpc_idles_at_target(self, coordinator, real_store, frozen_ts):
         """When current temp is at or above target, MPC should idle."""
         await setup_room(real_store)
         _train_model_manager(coordinator._model_manager, "living_room")
@@ -130,7 +142,7 @@ class TestMPCActivation:
         coordinator.hass.states.get = MagicMock(side_effect=make_hass_states(temp="21.5"))
         coordinator.hass.services.async_call = _make_schedule_service_mock(ACTIVE_SCHEDULE)
 
-        with patch("time.time", return_value=FROZEN_TS):
+        with patch("time.time", return_value=frozen_ts):
             data = await coordinator._async_update_data()
 
         assert data["rooms"]["living_room"]["mode"] == "idle"
@@ -138,7 +150,7 @@ class TestMPCActivation:
 
 class TestMPCPreheating:
     @pytest.mark.asyncio
-    async def test_preheating_before_schedule_on(self, coordinator, real_store):
+    async def test_preheating_before_schedule_on(self, coordinator, real_store, frozen_ts):
         """MPC should start heating before schedule turns on if it sees the transition.
 
         Scenario: it's 10:00 (schedule off -> eco 17C), schedule starts at 10:10
@@ -152,7 +164,7 @@ class TestMPCPreheating:
         # But read_schedule_blocks returns blocks showing comfort starts at 10:30
         coordinator.hass.services.async_call = _make_schedule_service_mock(UPCOMING_SCHEDULE)
 
-        with patch("time.time", return_value=FROZEN_TS):
+        with patch("time.time", return_value=frozen_ts):
             data = await coordinator._async_update_data()
 
         room = data["rooms"]["living_room"]
@@ -160,7 +172,7 @@ class TestMPCPreheating:
         assert room["mode"] == "heating"
 
     @pytest.mark.asyncio
-    async def test_no_preheating_at_target(self, coordinator, real_store):
+    async def test_no_preheating_at_target(self, coordinator, real_store, frozen_ts):
         """When already at comfort temp, no preheating needed before schedule."""
         await setup_room(real_store)
         _train_model_manager(coordinator._model_manager, "living_room")
@@ -169,13 +181,13 @@ class TestMPCPreheating:
         coordinator.hass.states.get = MagicMock(side_effect=make_hass_states(temp="21.0", schedule_state="off"))
         coordinator.hass.services.async_call = _make_schedule_service_mock(UPCOMING_SCHEDULE)
 
-        with patch("time.time", return_value=FROZEN_TS):
+        with patch("time.time", return_value=frozen_ts):
             data = await coordinator._async_update_data()
 
         assert data["rooms"]["living_room"]["mode"] == "idle"
 
     @pytest.mark.asyncio
-    async def test_no_preheating_without_upcoming_blocks(self, coordinator, real_store):
+    async def test_no_preheating_without_upcoming_blocks(self, coordinator, real_store, frozen_ts):
         """Without upcoming schedule blocks, MPC sees constant eco target - no preheating."""
         await setup_room(real_store)
         _train_model_manager(coordinator._model_manager, "living_room")
@@ -186,7 +198,7 @@ class TestMPCPreheating:
         empty_schedule = {"monday": []}
         coordinator.hass.services.async_call = _make_schedule_service_mock(empty_schedule)
 
-        with patch("time.time", return_value=FROZEN_TS):
+        with patch("time.time", return_value=frozen_ts):
             data = await coordinator._async_update_data()
 
         # MPC sees constant eco (17C) across entire horizon, room at 17C -> idle

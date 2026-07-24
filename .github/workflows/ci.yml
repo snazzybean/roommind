@@ -63,6 +63,11 @@ jobs:
       - name: Schedule-resolution timezone tests
         # asyncio_mode is passed explicitly because this branch's base has no
         # pytest asyncio config; matches how the suite is run elsewhere.
+        # Only the pure schedule-resolution tests are swept across HA timezones.
+        # MPC/solar tests are deliberately excluded: their decisions depend on
+        # the absolute instant (sun position), so pinning a local wall clock
+        # while sweeping the HA zone changes the *correct* answer — that is not a
+        # timezone-correctness bug.
         run: pytest tests/utils/test_schedule_utils.py -v -o asyncio_mode=auto
 
   frontend:
