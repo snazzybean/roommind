@@ -16,7 +16,7 @@
 | custom\_components/roommind/control/residual\_heat.py              |       24 |        0 |    100% |           |
 | custom\_components/roommind/control/solar.py                       |       81 |        1 |     99% |        72 |
 | custom\_components/roommind/control/thermal\_model.py              |      442 |       17 |     96% |394, 863-878, 989, 1112, 1119-1123 |
-| custom\_components/roommind/coordinator.py                         |      909 |       53 |     94% |337-338, 620-623, 848-849, 859, 861, 1268, 1309, 1367, 1621-1624, 1760-1762, 1766-1772, 1776, 1785, 1806, 1811, 1813, 1816, 1819, 1859, 1864-1869, 1873, 1906, 1908, 1911, 1914, 1930-1931, 2047, 2067-2075, 2093-2094, 2109-2114, 2131-2132 |
+| custom\_components/roommind/coordinator.py                         |      908 |       53 |     94% |369-370, 652-655, 880-881, 891, 893, 1300, 1341, 1399, 1653-1656, 1781-1783, 1787-1793, 1797, 1806, 1827, 1832, 1834, 1837, 1840, 1880, 1885-1890, 1894, 1927, 1929, 1932, 1935, 1951-1952, 2068, 2088-2096, 2114-2115, 2130-2135, 2152-2153 |
 | custom\_components/roommind/diagnostics.py                         |      166 |        0 |    100% |           |
 | custom\_components/roommind/managers/\_\_init\_\_.py               |        0 |        0 |    100% |           |
 | custom\_components/roommind/managers/compressor\_group\_manager.py |      157 |        2 |     99% |  121, 184 |
@@ -45,7 +45,7 @@
 | custom\_components/roommind/utils/sensor\_utils.py                 |       29 |        1 |     97% |        25 |
 | custom\_components/roommind/utils/temp\_utils.py                   |       26 |        0 |    100% |           |
 | custom\_components/roommind/websocket\_api.py                      |      292 |        2 |     99% |   676-681 |
-| **TOTAL**                                                          | **5677** |  **237** | **96%** |           |
+| **TOTAL**                                                          | **5676** |  **237** | **96%** |           |
 
 
 ## Setup coverage badge
