@@ -41,11 +41,11 @@
 | custom\_components/roommind/utils/mold\_utils.py                   |       32 |        0 |    100% |           |
 | custom\_components/roommind/utils/notification\_utils.py           |       50 |        0 |    100% |           |
 | custom\_components/roommind/utils/presence\_utils.py               |       22 |        0 |    100% |           |
-| custom\_components/roommind/utils/schedule\_utils.py               |      163 |        6 |     96% |141-142, 147-148, 156-157 |
+| custom\_components/roommind/utils/schedule\_utils.py               |      164 |        6 |     96% |143-144, 149-150, 158-159 |
 | custom\_components/roommind/utils/sensor\_utils.py                 |       29 |        1 |     97% |        25 |
 | custom\_components/roommind/utils/temp\_utils.py                   |       26 |        0 |    100% |           |
 | custom\_components/roommind/websocket\_api.py                      |      292 |        2 |     99% |   676-681 |
-| **TOTAL**                                                          | **5668** |  **238** | **96%** |           |
+| **TOTAL**                                                          | **5669** |  **238** | **96%** |           |
 
 
 ## Setup coverage badge
