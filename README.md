@@ -16,7 +16,7 @@
 | custom\_components/roommind/control/residual\_heat.py              |       24 |        0 |    100% |           |
 | custom\_components/roommind/control/solar.py                       |       81 |        1 |     99% |        72 |
 | custom\_components/roommind/control/thermal\_model.py              |      442 |       17 |     96% |394, 863-878, 989, 1112, 1119-1123 |
-| custom\_components/roommind/coordinator.py                         |      901 |       54 |     94% |337-338, 620-623, 659, 848-849, 859, 861, 1268, 1309, 1367, 1605-1608, 1744-1746, 1750-1756, 1760, 1769, 1790, 1795, 1797, 1800, 1803, 1843, 1848-1853, 1857, 1890, 1892, 1895, 1898, 1914-1915, 2031, 2051-2059, 2077-2078, 2093-2098, 2115-2116 |
+| custom\_components/roommind/coordinator.py                         |      909 |       53 |     94% |337-338, 620-623, 848-849, 859, 861, 1268, 1309, 1367, 1621-1624, 1760-1762, 1766-1772, 1776, 1785, 1806, 1811, 1813, 1816, 1819, 1859, 1864-1869, 1873, 1906, 1908, 1911, 1914, 1930-1931, 2047, 2067-2075, 2093-2094, 2109-2114, 2131-2132 |
 | custom\_components/roommind/diagnostics.py                         |      166 |        0 |    100% |           |
 | custom\_components/roommind/managers/\_\_init\_\_.py               |        0 |        0 |    100% |           |
 | custom\_components/roommind/managers/compressor\_group\_manager.py |      157 |        2 |     99% |  121, 184 |
@@ -45,7 +45,7 @@
 | custom\_components/roommind/utils/sensor\_utils.py                 |       29 |        1 |     97% |        25 |
 | custom\_components/roommind/utils/temp\_utils.py                   |       26 |        0 |    100% |           |
 | custom\_components/roommind/websocket\_api.py                      |      292 |        2 |     99% |   676-681 |
-| **TOTAL**                                                          | **5669** |  **238** | **96%** |           |
+| **TOTAL**                                                          | **5677** |  **237** | **96%** |           |
 
 
 ## Setup coverage badge
