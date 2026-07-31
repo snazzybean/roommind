@@ -48,7 +48,7 @@ jobs:
       TZ: ${{ matrix.os_tz }} # host/OS timezone (naive datetime, libc)
       ROOMMIND_TEST_TZ: ${{ matrix.ha_tz }} # HA's configured timezone (dt_util)
     steps:
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@v7.0.1
 
       - name: Set up Python
         uses: actions/setup-python@v6
