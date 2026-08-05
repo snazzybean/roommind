@@ -7,7 +7,12 @@ import math
 import pytest
 
 from custom_components.roommind.const import MIN_POWER_FRACTION, MODE_COOLING, MODE_HEATING
-from custom_components.roommind.control.mpc_optimizer import MPCOptimizer, MPCPlan
+from custom_components.roommind.control.mpc_optimizer import (
+    LOOKAHEAD_BASE_BLOCKS,
+    LOOKAHEAD_COOLING_BLOCKS,
+    MPCOptimizer,
+    MPCPlan,
+)
 from custom_components.roommind.control.thermal_model import RCModel
 
 
@@ -619,25 +624,33 @@ def test_radiator_plan_matches_empty_plan():
 
 
 def test_unknown_system_no_regression():
-    """Empty heating_system_type keeps base lookahead and synthesis off."""
+    """Empty heating_system_type contributes no tau extension of its own.
+
+    A pure-heating room (can_cool=False) therefore keeps the base lookahead and
+    synthesis off — byte-identical to pre-fix behaviour. A cool-capable room with
+    no heating profile still extends to LOOKAHEAD_COOLING_BLOCKS: the lookahead is
+    the max of the heating tau horizon and the cooling horizon.
+    """
     model = RCModel(C=2.0, U=50.0, Q_heat=1000.0, Q_cool=1500.0)
-    opt = MPCOptimizer(model=model, heating_system_type="")
-    plan = opt.optimize(
-        T_room=19.5,
-        T_outdoor_series=[5.0] * 12,
-        heat_target_series=[21.0] * 12,
-        dt_minutes=5,
-    )
-    assert plan.lookahead_blocks == 6
+    kwargs = {
+        "T_room": 19.5,
+        "T_outdoor_series": [5.0] * 12,
+        "heat_target_series": [21.0] * 12,
+        "dt_minutes": 5,
+    }
+    plan_heat_only = MPCOptimizer(model=model, heating_system_type="", can_cool=False).optimize(**kwargs)
+    assert plan_heat_only.lookahead_blocks == LOOKAHEAD_BASE_BLOCKS
+    plan_cool_capable = MPCOptimizer(model=model, heating_system_type="", can_cool=True).optimize(**kwargs)
+    assert plan_cool_capable.lookahead_blocks == LOOKAHEAD_COOLING_BLOCKS
 
 
 def test_cooling_lookahead_no_afterglow_synthesis():
     """COOLING uses the provided future_residual; never synthesizes afterglow.
 
-    Exercised on an extended-lookahead UFH setup (can_cool=False keeps the
-    extension active). With lookahead=24 and min_run=6, the 18 post-run blocks
-    see block_Q=0 and let residual through. Proves residual drives COOLING
-    cost, not synthesis.
+    Exercised on an extended-lookahead UFH setup (the UFH tau horizon supplies
+    the extension here; a cool-capable room would extend anyway). With
+    lookahead=24 and min_run=6, the 18 post-run blocks see block_Q=0 and let
+    residual through. Proves residual drives COOLING cost, not synthesis.
     """
     model = RCModel(C=2.0, U=50.0, Q_heat=1000.0, Q_cool=200.0)
     opt = _ufh_optimizer(model=model)  # can_cool=False by helper default
@@ -679,14 +692,18 @@ def test_lookahead_clamps_to_horizon():
 def test_lookahead_blocks_attribute_exposed():
     """Plan exposes lookahead_blocks for guard integration; covers all setups."""
     model = RCModel(C=2.0, U=50.0, Q_heat=1000.0, Q_cool=1500.0)
+    # Expected lookahead = max(base 6, heating tau horizon, cooling horizon 18).
+    # Heating tau horizon = min_run_blocks + ceil(tau_minutes / dt_minutes), only
+    # for a known profile: radiator tau=10min -> 2+2=4 (below base), underfloor
+    # tau=90min -> 6+18=24. The cooling horizon applies whenever can_cool.
     cases = [
         # (heating_system_type, can_cool, min_run_blocks, expected_lookahead)
-        ("", False, 2, 6),
-        ("", True, 2, 6),
-        ("radiator", False, 2, 6),
-        ("radiator", True, 2, 6),
-        ("underfloor", False, 6, 24),
-        ("underfloor", True, 6, 6),  # hybrid UFH+AC keeps base lookahead
+        ("", False, 2, 6),  # no profile, no cooling -> base
+        ("", True, 2, 18),  # cooling horizon alone extends it
+        ("radiator", False, 2, 6),  # tau horizon 4 < base
+        ("radiator", True, 2, 18),  # cooling horizon dominates
+        ("underfloor", False, 6, 24),  # UFH tau horizon
+        ("underfloor", True, 6, 24),  # hybrid UFH+AC: max(24, 18) = 24
     ]
     for hst, can_cool, mrb, exp_blocks in cases:
         opt = MPCOptimizer(
@@ -706,8 +723,14 @@ def test_lookahead_blocks_attribute_exposed():
         )
 
 
-def test_hybrid_ufh_ac_cooling_balance_preserved():
-    """Hybrid UFH+AC rooms keep base lookahead → cooling plan matches pre-fix."""
+def test_hybrid_ufh_ac_gets_max_of_both_horizons():
+    """Hybrid UFH+AC rooms take the max of the heating tau and cooling horizons.
+
+    Pre-cooling used to be sacrificed to protect UFH pre-heating: cool-capable
+    rooms were pinned to the base lookahead. The lookahead is now the max of both
+    needs, so a hybrid room keeps the full UFH horizon (winter pre-heating) while
+    also clearing the cooling horizon (summer pre-cooling).
+    """
     model = RCModel(C=2.0, U=50.0, Q_heat=1000.0, Q_cool=200.0)
     kwargs = {
         "T_room": 25.0,
@@ -716,27 +739,32 @@ def test_hybrid_ufh_ac_cooling_balance_preserved():
         "cool_target_series": [23.0] * 24,
         "dt_minutes": 5,
     }
-    # Hybrid: UFH TRV + AC cooling. With the fix gated on not can_cool, the
-    # UFH profile must NOT extend the lookahead — cooling stays at base=6.
-    plan_hybrid = MPCOptimizer(
-        model=model,
-        can_heat=True,
-        can_cool=True,
-        min_run_blocks=6,
-        heating_system_type="underfloor",
-    ).optimize(**kwargs)
-    # Reference: same room without UFH profile — the baseline cooling plan.
-    plan_baseline = MPCOptimizer(
+    hybrid_kwargs = {
+        "model": model,
+        "can_heat": True,
+        "min_run_blocks": 6,
+        "heating_system_type": "underfloor",
+    }
+    plan_hybrid = MPCOptimizer(**hybrid_kwargs, can_cool=True).optimize(**kwargs)
+    # Pure UFH reference: the heating tau horizon on its own.
+    plan_ufh_heat_only = MPCOptimizer(**hybrid_kwargs, can_cool=False).optimize(**kwargs)
+    # Cool-capable room with no heating profile: the cooling horizon on its own.
+    plan_cool_only = MPCOptimizer(
         model=model,
         can_heat=True,
         can_cool=True,
         min_run_blocks=6,
         heating_system_type="",
     ).optimize(**kwargs)
-    assert plan_hybrid.lookahead_blocks == 6
-    assert plan_hybrid.actions == plan_baseline.actions
-    assert plan_hybrid.temperatures == plan_baseline.temperatures
-    assert plan_hybrid.power_fractions == plan_baseline.power_fractions
+
+    assert plan_ufh_heat_only.lookahead_blocks == 24
+    assert plan_cool_only.lookahead_blocks == LOOKAHEAD_COOLING_BLOCKS
+    # max(24, 18) = 24: UFH pre-heating horizon preserved, cooling horizon cleared.
+    assert plan_hybrid.lookahead_blocks == max(plan_ufh_heat_only.lookahead_blocks, LOOKAHEAD_COOLING_BLOCKS)
+    assert plan_hybrid.lookahead_blocks >= LOOKAHEAD_COOLING_BLOCKS
+    # The hybrid room is no longer pinned to the base lookahead — that pinning is
+    # exactly what kept the AC from seeing an upcoming comfort window.
+    assert plan_hybrid.lookahead_blocks > LOOKAHEAD_BASE_BLOCKS
 
 
 # ---------------------------------------------------------------------------
