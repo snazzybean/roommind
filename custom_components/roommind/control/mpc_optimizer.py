@@ -75,8 +75,11 @@ class MPCOptimizer:
 
     def __post_init__(self) -> None:
         # Set before optimize() runs so callers / patched optimize() still expose
-        # a sensible default. optimize() refreshes this from dt_minutes per call.
+        # a sensible default. optimize() refreshes these from dt_minutes per call.
         self._lookahead_blocks = LOOKAHEAD_BASE_BLOCKS
+        # Heating-only horizon, kept separate from the combined lookahead so the
+        # afterglow synthesis gate cannot be tripped by the cooling extension.
+        self._heating_lookahead_blocks = LOOKAHEAD_BASE_BLOCKS
 
     def optimize(
         self,
@@ -115,16 +118,23 @@ class MPCOptimizer:
         #    synthesis — the RC model already captures post-run warm-back.
         # Hybrid UFH+AC rooms get both (max): winter pre-heating is preserved and
         # summer pre-cooling is enabled.
-        lookahead = LOOKAHEAD_BASE_BLOCKS
+        #
+        # The heating horizon is tracked separately from the combined lookahead:
+        # the afterglow synthesis gate keys off the heating horizon alone, so a
+        # cooling-driven extension can never switch synthesis on for a system whose
+        # own tau does not warrant it (e.g. radiator + AC).
+        heating_lookahead = LOOKAHEAD_BASE_BLOCKS
         profile = HEATING_SYSTEM_PROFILES.get(self.heating_system_type) if self.heating_system_type else None
         if profile and dt_minutes > 0:
             tau_blocks = math.ceil(profile["tau_minutes"] / dt_minutes)
-            lookahead = max(
-                lookahead,
+            heating_lookahead = max(
+                heating_lookahead,
                 self.min_run_blocks + math.ceil(LOOKAHEAD_HORIZON_SCALE * tau_blocks),
             )
+        lookahead = heating_lookahead
         if self.can_cool and dt_minutes > 0:
             lookahead = max(lookahead, LOOKAHEAD_COOLING_BLOCKS)
+        self._heating_lookahead_blocks = heating_lookahead
         self._lookahead_blocks = lookahead
 
         n_blocks = min(len(T_outdoor_series), len(heat_target_series), len(cool_target_series))
@@ -273,6 +283,11 @@ class MPCOptimizer:
         post-run warm-back). Radiator / "" rooms with no cooling stay at
         LOOKAHEAD_BASE_BLOCKS with synthesis gated off — byte-identical to
         pre-fix behaviour.
+
+        Synthesis is gated on self._heating_lookahead_blocks, not on the combined
+        lookahead, so adding cooling to a room never enables synthesis on its
+        heating hypothesis: a radiator + AC room keeps the same heating cost as an
+        unprofiled room at the same horizon.
         """
         lookahead = min(self._lookahead_blocks, len(future_T_outdoor))
         Q = self._action_to_Q(action)
@@ -283,7 +298,7 @@ class MPCOptimizer:
         occupancy = future_occupancy or []
         synthesis_enabled = (
             action == MODE_HEATING
-            and self._lookahead_blocks > LOOKAHEAD_BASE_BLOCKS
+            and self._heating_lookahead_blocks > LOOKAHEAD_BASE_BLOCKS
             and self.min_run_blocks > 0
             and bool(self.heating_system_type)
         )

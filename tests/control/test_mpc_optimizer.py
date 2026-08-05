@@ -594,9 +594,13 @@ def test_ufh_afterglow_visible_in_cost():
         min_run_blocks=6,
         heating_system_type="",
     )
-    # Force equal lookahead — isolate synthesis from horizon-size effect.
+    # Force equal lookahead — isolate synthesis from horizon-size effect. The
+    # heating horizon must be set too: the synthesis gate keys off it, not off the
+    # combined lookahead.
     opt_ufh._lookahead_blocks = 24
     opt_empty._lookahead_blocks = 24
+    opt_ufh._heating_lookahead_blocks = 24
+    opt_empty._heating_lookahead_blocks = 24
 
     cost_ufh = opt_ufh._evaluate_action("heating", **shared)
     cost_empty = opt_empty._evaluate_action("heating", **shared)
@@ -765,6 +769,64 @@ def test_hybrid_ufh_ac_gets_max_of_both_horizons():
     # The hybrid room is no longer pinned to the base lookahead — that pinning is
     # exactly what kept the AC from seeing an upcoming comfort window.
     assert plan_hybrid.lookahead_blocks > LOOKAHEAD_BASE_BLOCKS
+
+
+def test_cooling_extension_does_not_enable_heating_synthesis():
+    """The cooling horizon must never switch afterglow synthesis on.
+
+    Synthesis is gated on the heating horizon alone, not on the combined lookahead.
+    A radiator room (tau=10min, so its own horizon stays below base) that gains an
+    AC gets a longer combined lookahead, but its HEATING hypothesis must still cost
+    exactly what an unprofiled room costs at the same horizon. Only a system whose
+    own tau warrants synthesis (UFH) stays eligible for it.
+    """
+    model = RCModel(C=200.0, U=50.0, Q_heat=300.0, Q_cool=1500.0)
+    plan_kwargs = {
+        "T_room": 20.0,
+        "T_outdoor_series": [5.0] * 30,
+        "heat_target_series": [20.0] * 30,
+        "cool_target_series": [20.0] * 30,
+        "dt_minutes": 5,
+    }
+    cost_kwargs = {
+        "T_room": 20.0,
+        "T_outdoor": 5.0,
+        "heat_target": 20.0,
+        "cool_target": 20.0,
+        "future_T_outdoor": [5.0] * 30,
+        "future_heat_targets": [20.0] * 30,
+        "future_cool_targets": [20.0] * 30,
+        "dt_minutes": 5.0,
+    }
+
+    def cool_capable(heating_system_type):
+        opt = MPCOptimizer(
+            model=model,
+            can_heat=True,
+            can_cool=True,
+            min_run_blocks=2,
+            heating_system_type=heating_system_type,
+        )
+        opt.optimize(**plan_kwargs)
+        return opt, opt._evaluate_action(MODE_HEATING, **cost_kwargs)
+
+    opt_radiator, cost_radiator = cool_capable("radiator")
+    opt_empty, cost_empty = cool_capable("")
+    opt_ufh, _ = cool_capable("underfloor")
+
+    # All three are cool-capable, so all three clear the cooling horizon.
+    assert opt_radiator._lookahead_blocks == LOOKAHEAD_COOLING_BLOCKS
+    assert opt_empty._lookahead_blocks == LOOKAHEAD_COOLING_BLOCKS
+    # Radiator's own tau horizon (2 + 2 = 4) stays below base, so it is not
+    # synthesis-eligible even though its combined lookahead grew to 18.
+    assert opt_radiator._heating_lookahead_blocks == LOOKAHEAD_BASE_BLOCKS
+    assert opt_empty._heating_lookahead_blocks == LOOKAHEAD_BASE_BLOCKS
+    assert cost_radiator == cost_empty, (
+        f"radiator+AC heating cost {cost_radiator} must equal unprofiled+AC "
+        f"{cost_empty}: the cooling extension must not enable afterglow synthesis"
+    )
+    # UFH's own tau horizon (2 + 18 = 20) clears base, so it stays eligible.
+    assert opt_ufh._heating_lookahead_blocks > LOOKAHEAD_BASE_BLOCKS
 
 
 # ---------------------------------------------------------------------------
