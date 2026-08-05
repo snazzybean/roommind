@@ -35,6 +35,7 @@ from ..const import (
 )
 from ..utils.device_utils import (
     DEFAULT_IDLE_SETBACK_OFFSET,
+    IDLE_ACTION_ENGAGED,
     IDLE_ACTION_FAN_ONLY,
     IDLE_ACTION_LOW,
     IDLE_ACTION_OFF,
@@ -394,7 +395,7 @@ async def async_idle_device(
     commands (#183), and lowering to min_temp already stops all heat output.
     """
     idle_action, idle_fan_mode = get_idle_action(devices, entity_id)
-    if force_off and idle_action != IDLE_ACTION_LOW:
+    if force_off and idle_action not in (IDLE_ACTION_LOW, IDLE_ACTION_ENGAGED):
         idle_action = IDLE_ACTION_OFF
 
     # Fallback low setpoint (in HA display units) for devices where min_temp
@@ -422,27 +423,51 @@ async def async_idle_device(
         return
 
     # --- SETBACK branch ---
-    if idle_action == IDLE_ACTION_SETBACK:
+    if idle_action in (IDLE_ACTION_SETBACK, IDLE_ACTION_ENGAGED):
+        # "engaged" is a never-off variant of "setback": it floats exactly on
+        # the setpoint (offset 0) and, when the unit is found idle in a
+        # non-cooling mode (auto/off/dry/fan_only), re-engages a cooling mode
+        # instead of turning off, so an inverter AC keeps modulating on the
+        # setpoint. It is also exempt from force_off (handled above, like LOW).
+        engaged = idle_action == IDLE_ACTION_ENGAGED
+        offset = 0.0 if engaged else DEFAULT_IDLE_SETBACK_OFFSET
         state = hass.states.get(entity_id)
         current_hvac = state.state if state else None
+        reengage_mode: str | None = None
 
-        if current_hvac not in ("heat", "cool") or targets is None:
-            _LOGGER.debug(
-                "Area '%s': setback not applicable for '%s' (hvac=%s, targets=%s), falling back to off",
-                area_id,
-                entity_id,
-                current_hvac,
-                targets,
-            )
+        if state is None or targets is None:
             await async_turn_off_climate(hass, entity_id, area_id=area_id, fallback_setpoint=fallback_temp)
             return
 
-        # Compute setback temperature
+        hvac_modes = state.attributes.get("hvac_modes") or []
+
+        # Compute the float/setback setpoint. For "engaged", a cool-capable unit
+        # found outside heat/cool re-engages cooling rather than falling to off.
         if current_hvac == "heat" and targets.heat is not None:
-            setback_temp = targets.heat - DEFAULT_IDLE_SETBACK_OFFSET
+            setback_temp = targets.heat - offset
         elif current_hvac == "cool" and targets.cool is not None:
-            setback_temp = targets.cool + DEFAULT_IDLE_SETBACK_OFFSET
+            setback_temp = targets.cool + offset
+        elif (
+            engaged
+            and targets.cool is not None
+            and any(m in hvac_modes for m in ("cool", "heat_cool", "auto"))
+        ):
+            setback_temp = targets.cool + offset
+            reengage_mode = (
+                "cool"
+                if "cool" in hvac_modes
+                else "heat_cool"
+                if "heat_cool" in hvac_modes
+                else "auto"
+            )
         else:
+            if not engaged:
+                _LOGGER.debug(
+                    "Area '%s': setback not applicable for '%s' (hvac=%s), falling back to off",
+                    area_id,
+                    entity_id,
+                    current_hvac,
+                )
             await async_turn_off_climate(hass, entity_id, area_id=area_id, fallback_setpoint=fallback_temp)
             return
 
@@ -463,13 +488,17 @@ async def async_idle_device(
             if max_t is not None:
                 ha_t = min(ha_t, float(max_t))
 
-        # Redundancy check: already at setback temp
+        # Redundancy check: already at setback temp (skip while re-engaging a mode)
         current_temp_attr = state.attributes.get("temperature")
-        if current_temp_attr is not None and abs(float(current_temp_attr) - ha_t) < 0.1:
+        if (
+            reengage_mode is None
+            and current_temp_attr is not None
+            and abs(float(current_temp_attr) - ha_t) < 0.1
+        ):
             return
 
         # Cache check (only for devices without reliable state feedback)
-        if _should_use_cache(state):
+        if reengage_mode is None and _should_use_cache(state):
             cached = _last_commands.get(entity_id)
             if cached and cached.get("service") == "set_temperature" and cached.get("temperature") == ha_t:
                 return
@@ -482,6 +511,15 @@ async def async_idle_device(
             ha_t,
         )
         try:
+            if reengage_mode is not None:
+                # Airstage gotcha: set_hvac_mode BEFORE set_temperature
+                await hass.services.async_call(
+                    "climate",
+                    "set_hvac_mode",
+                    {"entity_id": entity_id, "hvac_mode": reengage_mode},
+                    blocking=True,
+                    context=make_roommind_context(),
+                )
             await hass.services.async_call(
                 "climate",
                 "set_temperature",
