@@ -228,6 +228,25 @@ def get_direct_setpoint_eids(devices: list[dict]) -> set[str]:
     return {d["entity_id"] for d in devices if d.get("entity_id") and d.get("setpoint_mode") == SETPOINT_MODE_DIRECT}
 
 
+def get_valve_eids_map(devices: list[dict]) -> dict[str, tuple[str | None, str | None]]:
+    """Return {climate_entity_id: (opening_eid, closing_eid)} for TRVs with direct valve control.
+
+    Only TRV devices with at least one of ``valve_opening_entity`` or
+    ``valve_closing_entity`` configured are included.  Either field may be
+    ``None`` if only one number entity is available for that TRV.
+    """
+    result: dict[str, tuple[str | None, str | None]] = {}
+    for d in devices:
+        eid = d.get("entity_id")
+        if not eid or d.get("type") != DEVICE_TYPE_TRV:
+            continue
+        opening = d.get("valve_opening_entity") or None
+        closing = d.get("valve_closing_entity") or None
+        if opening or closing:
+            result[eid] = (opening, closing)
+    return result
+
+
 def build_rooms_devices_map(rooms: dict) -> dict[str, list[dict]]:
     """Return {entity_id: devices[]} map across all rooms.
 

@@ -16,8 +16,8 @@ from ..const import (
     TargetTemps,
     make_roommind_context,
 )
-from ..control.mpc_controller import async_idle_device, async_turn_off_climate, resolve_hvac_mode
-from ..utils.device_utils import build_rooms_devices_map, get_trv_eids
+from ..control.mpc_controller import async_idle_device, async_send_valve_position, async_turn_off_climate, resolve_hvac_mode
+from ..utils.device_utils import build_rooms_devices_map, get_trv_eids, get_valve_eids_map
 from ..utils.temp_utils import celsius_to_ha_temp
 
 _LOGGER = logging.getLogger(__name__)
@@ -122,11 +122,23 @@ class ValveManager:
         now = time.time()
         finished = [eid for eid, start in self._cycling.items() if now - start >= VALVE_PROTECTION_CYCLE_DURATION]
         for eid in finished:
-            await self._async_close_valve(eid, rooms_devices, log_context="after cycle")
-            self._cycling.pop(eid, None)
-            self._last_actuation[eid] = now
-            self._actuation_dirty = True
-            _LOGGER.info("Valve protection: cycle complete for '%s'", eid)
+            dev_devices = rooms_devices.get(eid) if rooms_devices else None
+            _valve_ents = get_valve_eids_map(dev_devices).get(eid) if dev_devices else None
+            if _valve_ents:
+                await async_send_valve_position(
+                    self.hass, _valve_ents[0], _valve_ents[1], 0,
+                    area_id="valve_protection", climate_eid=eid,
+                )
+                self._cycling.pop(eid, None)
+                self._last_actuation[eid] = now
+                self._actuation_dirty = True
+                _LOGGER.info("Valve protection: cycle complete for '%s'", eid)
+            else:
+                await self._async_close_valve(eid, rooms_devices, log_context="after cycle")
+                self._cycling.pop(eid, None)
+                self._last_actuation[eid] = now
+                self._actuation_dirty = True
+                _LOGGER.info("Valve protection: cycle complete for '%s'", eid)
 
     async def async_check_and_cycle(self, rooms: dict, settings: dict) -> None:
         """Scan for TRV valves that have been idle too long and start cycling them."""
@@ -157,62 +169,77 @@ class ValveManager:
         all_trvs -= all_excluded
 
         # Start cycling stale valves
+        rooms_devices_map = build_rooms_devices_map(rooms)
         for eid in all_trvs:
             if eid in self._cycling:
                 continue
             last = self._last_actuation.get(eid, 0)
             if now - last >= threshold:
                 try:
-                    eid_state = self.hass.states.get(eid)
-                    vp_modes = (eid_state.attributes.get("hvac_modes") or []) if eid_state else []
-                    vp_resolved = resolve_hvac_mode("heat", vp_modes)
-                    if vp_resolved is None:
-                        _LOGGER.debug(
-                            "Valve protection: '%s' supports neither 'heat' nor 'auto', skipping",
-                            eid,
+                    idle_days = int((now - last) / 86400) if last else 0
+                    _valve_ents = get_valve_eids_map(rooms_devices_map.get(eid, [])).get(eid)
+                    if _valve_ents:
+                        # Direct valve control: open fully for the cycle duration
+                        await async_send_valve_position(
+                            self.hass, _valve_ents[0], _valve_ents[1], 100,
+                            area_id="valve_protection", climate_eid=eid,
                         )
-                        continue
-                    await self.hass.services.async_call(
-                        "climate",
-                        "set_hvac_mode",
-                        {"entity_id": eid, "hvac_mode": vp_resolved},
-                        blocking=True,
-                        context=make_roommind_context(),
-                    )
-                    boost_temp = celsius_to_ha_temp(self.hass, HEATING_BOOST_TARGET)
-                    if eid_state:
-                        dev_max = eid_state.attributes.get("max_temp")
-                        if dev_max is not None and boost_temp > dev_max:
-                            boost_temp = dev_max
-                    is_range = eid_state and eid_state.attributes.get("target_temp_low") is not None
-                    if is_range:
-                        cur_high = eid_state.attributes.get("target_temp_high", boost_temp)
-                        await self.hass.services.async_call(
-                            "climate",
-                            "set_temperature",
-                            {
-                                "entity_id": eid,
-                                "target_temp_low": boost_temp,
-                                "target_temp_high": max(boost_temp, cur_high),
-                            },
-                            blocking=True,
-                            context=make_roommind_context(),
+                        self._cycling[eid] = now
+                        _LOGGER.info(
+                            "Valve protection: cycling '%s' via direct valve (idle for %d days)",
+                            eid,
+                            idle_days,
                         )
                     else:
+                        eid_state = self.hass.states.get(eid)
+                        vp_modes = (eid_state.attributes.get("hvac_modes") or []) if eid_state else []
+                        vp_resolved = resolve_hvac_mode("heat", vp_modes)
+                        if vp_resolved is None:
+                            _LOGGER.debug(
+                                "Valve protection: '%s' supports neither 'heat' nor 'auto', skipping",
+                                eid,
+                            )
+                            continue
                         await self.hass.services.async_call(
                             "climate",
-                            "set_temperature",
-                            {"entity_id": eid, "temperature": boost_temp},
+                            "set_hvac_mode",
+                            {"entity_id": eid, "hvac_mode": vp_resolved},
                             blocking=True,
                             context=make_roommind_context(),
                         )
-                    self._cycling[eid] = now
-                    idle_days = int((now - last) / 86400) if last else 0
-                    _LOGGER.info(
-                        "Valve protection: cycling '%s' (idle for %d days)",
-                        eid,
-                        idle_days,
-                    )
+                        boost_temp = celsius_to_ha_temp(self.hass, HEATING_BOOST_TARGET)
+                        if eid_state:
+                            dev_max = eid_state.attributes.get("max_temp")
+                            if dev_max is not None and boost_temp > dev_max:
+                                boost_temp = dev_max
+                        is_range = eid_state and eid_state.attributes.get("target_temp_low") is not None
+                        if is_range:
+                            cur_high = eid_state.attributes.get("target_temp_high", boost_temp)
+                            await self.hass.services.async_call(
+                                "climate",
+                                "set_temperature",
+                                {
+                                    "entity_id": eid,
+                                    "target_temp_low": boost_temp,
+                                    "target_temp_high": max(boost_temp, cur_high),
+                                },
+                                blocking=True,
+                                context=make_roommind_context(),
+                            )
+                        else:
+                            await self.hass.services.async_call(
+                                "climate",
+                                "set_temperature",
+                                {"entity_id": eid, "temperature": boost_temp},
+                                blocking=True,
+                                context=make_roommind_context(),
+                            )
+                        self._cycling[eid] = now
+                        _LOGGER.info(
+                            "Valve protection: cycling '%s' (idle for %d days)",
+                            eid,
+                            idle_days,
+                        )
                 except Exception:  # noqa: BLE001
                     _LOGGER.warning("Valve protection: failed to start cycle for '%s'", eid)
 

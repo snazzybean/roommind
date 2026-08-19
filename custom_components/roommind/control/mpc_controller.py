@@ -43,6 +43,7 @@ from ..utils.device_utils import (
     get_direct_setpoint_eids,
     get_idle_action,
     get_trv_eids,
+    get_valve_eids_map,
     has_reliable_hvac_modes,
 )
 from ..utils.temp_utils import celsius_delta_to_ha, celsius_to_ha_temp
@@ -63,6 +64,13 @@ _SENTINEL: object = object()  # default marker for backward-compat keyword detec
 # resets on integration reload (module reimport).
 _last_commands: dict[str, dict[str, Any]] = {}
 _setpoint_override_warned: set[str] = set()
+
+# Cache of last sent valve opening percentage per climate entity.
+# Keyed as "<climate_entity_id>:opening" → last opening % (0-100).
+_last_valve_pcts: dict[str, int] = {}
+
+# Minimum valve position change (%) before a new number.set_value is sent.
+VALVE_POSITION_DEADBAND = 5
 
 
 def _cache_entry(service: str, data: dict) -> dict[str, Any]:
@@ -100,6 +108,70 @@ def clear_command_cache() -> None:
     """Clear the sent-command cache (for tests)."""
     _last_commands.clear()
     _setpoint_override_warned.clear()
+    _last_valve_pcts.clear()
+
+
+async def async_send_valve_position(
+    hass: HomeAssistant,
+    opening_entity: str | None,
+    closing_entity: str | None,
+    opening_pct: int,
+    *,
+    area_id: str = "unknown",
+    climate_eid: str = "unknown",
+) -> None:
+    """Send direct valve position commands to TRV number entities.
+
+    ``opening_pct`` is 0-100 (100 = fully open).  The closing percentage is
+    computed as ``100 - opening_pct``.  Commands are suppressed when the
+    position has not changed by more than ``VALVE_POSITION_DEADBAND`` percent
+    since the last successful send.
+    """
+    opening_pct = max(0, min(100, opening_pct))
+    closing_pct = 100 - opening_pct
+
+    cache_key = f"{climate_eid}:opening"
+    last_opening = _last_valve_pcts.get(cache_key)
+    if last_opening is not None and abs(opening_pct - last_opening) < VALVE_POSITION_DEADBAND:
+        return
+
+    if opening_entity:
+        try:
+            await hass.services.async_call(
+                "number",
+                "set_value",
+                {"entity_id": opening_entity, "value": float(opening_pct)},
+                blocking=True,
+                context=make_roommind_context(),
+            )
+        except Exception:  # noqa: BLE001
+            _LOGGER.warning(
+                "Area '%s': number.set_value(%d) failed on valve opening entity '%s'",
+                area_id,
+                opening_pct,
+                opening_entity,
+                exc_info=True,
+            )
+
+    if closing_entity:
+        try:
+            await hass.services.async_call(
+                "number",
+                "set_value",
+                {"entity_id": closing_entity, "value": float(closing_pct)},
+                blocking=True,
+                context=make_roommind_context(),
+            )
+        except Exception:  # noqa: BLE001
+            _LOGGER.warning(
+                "Area '%s': number.set_value(%d) failed on valve closing entity '%s'",
+                area_id,
+                closing_pct,
+                closing_entity,
+                exc_info=True,
+            )
+
+    _last_valve_pcts[cache_key] = opening_pct
 
 
 def _resolve_idle_setpoint(
@@ -743,6 +815,7 @@ class MPCController:
         self.acs: list[str] = get_ac_eids(room_config.get("devices", []))
         self._devices: list[dict] = room_config.get("devices", [])
         self._direct_eids: set[str] = get_direct_setpoint_eids(self._devices)
+        self._valve_eids: dict[str, tuple[str | None, str | None]] = get_valve_eids_map(self._devices)
         self.climate_mode: str = room_config.get("climate_mode", "auto")
         self.outdoor_temp = outdoor_temp
         self.outdoor_forecast = outdoor_forecast or []
@@ -1440,12 +1513,23 @@ class MPCController:
                         t_final = effective_target if cmd.entity_id in self._direct_eids else t
                         ha_t = celsius_to_ha_temp(self.hass, t_final)
                         await self._call("set_hvac_mode", {"entity_id": cmd.entity_id, "hvac_mode": "heat"})
-                        await self._call(
-                            "set_temperature",
-                            {"entity_id": cmd.entity_id, "temperature": ha_t, "hvac_mode": "heat"},
-                            temp_intent="heat",
-                            deadband=self._proportional_deadband(cmd.entity_id, current_temp, effective_target),
-                        )
+                        _valve_ents = self._valve_eids.get(cmd.entity_id)
+                        if _valve_ents:
+                            await async_send_valve_position(
+                                self.hass,
+                                _valve_ents[0],
+                                _valve_ents[1],
+                                round(cmd.power_fraction * 100),
+                                area_id=self._area_id,
+                                climate_eid=cmd.entity_id,
+                            )
+                        else:
+                            await self._call(
+                                "set_temperature",
+                                {"entity_id": cmd.entity_id, "temperature": ha_t, "hvac_mode": "heat"},
+                                temp_intent="heat",
+                                deadband=self._proportional_deadband(cmd.entity_id, current_temp, effective_target),
+                            )
                     else:  # ac
                         if self.has_external_sensor and current_temp is not None:
                             t = round(
@@ -1494,6 +1578,16 @@ class MPCController:
                             area_id=self._area_id,
                             targets=targets,
                         )
+                        _valve_ents = self._valve_eids.get(cmd.entity_id)
+                        if _valve_ents:
+                            await async_send_valve_position(
+                                self.hass,
+                                _valve_ents[0],
+                                _valve_ents[1],
+                                0,
+                                area_id=self._area_id,
+                                climate_eid=cmd.entity_id,
+                            )
                     else:
                         # ACs can be turned off without boiler cycling concerns
                         await self._call("set_hvac_mode", {"entity_id": cmd.entity_id, "hvac_mode": "off"})
@@ -1517,15 +1611,28 @@ class MPCController:
             for eid in thermostats:
                 if eid in _forced_off:
                     await async_idle_device(self.hass, eid, self._devices, area_id=self._area_id, targets=targets)
+                    _valve_ents = self._valve_eids.get(eid)
+                    if _valve_ents:
+                        await async_send_valve_position(
+                            self.hass, _valve_ents[0], _valve_ents[1], 0,
+                            area_id=self._area_id, climate_eid=eid,
+                        )
                     continue
                 ha_t = ha_trv_direct if eid in self._direct_eids else ha_trv
                 await self._call("set_hvac_mode", {"entity_id": eid, "hvac_mode": "heat"})
-                await self._call(
-                    "set_temperature",
-                    {"entity_id": eid, "temperature": ha_t, "hvac_mode": "heat"},
-                    temp_intent="heat",
-                    deadband=self._proportional_deadband(eid, current_temp, effective_target),
-                )
+                _valve_ents = self._valve_eids.get(eid)
+                if _valve_ents:
+                    await async_send_valve_position(
+                        self.hass, _valve_ents[0], _valve_ents[1], round(power_fraction * 100),
+                        area_id=self._area_id, climate_eid=eid,
+                    )
+                else:
+                    await self._call(
+                        "set_temperature",
+                        {"entity_id": eid, "temperature": ha_t, "hvac_mode": "heat"},
+                        temp_intent="heat",
+                        deadband=self._proportional_deadband(eid, current_temp, effective_target),
+                    )
             # ACs: proportional setpoint in Full Control, actual target otherwise
             if self.has_external_sensor and current_temp is not None:
                 ac_heat_target = round(
@@ -1642,6 +1749,12 @@ class MPCController:
                     targets=targets,
                     force_off=force_off,
                 )
+                _valve_ents = self._valve_eids.get(eid)
+                if _valve_ents:
+                    await async_send_valve_position(
+                        self.hass, _valve_ents[0], _valve_ents[1], 0,
+                        area_id=self._area_id, climate_eid=eid,
+                    )
 
     def _proportional_deadband(self, eid: str, current_temp: float | None, effective_target: float) -> float | None:
         """Deadband threshold for a proportional setpoint send, or None to disable.
