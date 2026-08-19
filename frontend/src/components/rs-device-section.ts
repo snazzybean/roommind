@@ -302,6 +302,17 @@ export class RsDeviceSection extends LitElement {
         --mdc-icon-size: 12px;
       }
 
+      .detail-section-label {
+        font-size: 11px;
+        font-weight: 500;
+        color: var(--secondary-text-color);
+        text-transform: uppercase;
+        letter-spacing: 0.4px;
+        padding: 10px 0 4px 0;
+        border-top: 1px solid var(--divider-color, rgba(0, 0, 0, 0.08));
+        margin-top: 4px;
+      }
+
       /* View mode styles */
       .view-row {
         display: flex;
@@ -415,6 +426,8 @@ export class RsDeviceSection extends LitElement {
       device?.idle_action === "setback" ||
       device?.idle_action === "low";
     const showDirectBadge = device?.setpoint_mode === "direct" && !!this.selectedTempSensor;
+    const showValveBadge =
+      device?.type === "trv" && (!!device?.valve_opening_entity || !!device?.valve_closing_entity);
 
     return html`
       <div class="view-row">
@@ -440,6 +453,14 @@ export class RsDeviceSection extends LitElement {
           showDirectBadge
             ? html`<span class="valve-exclude-badge">
                 ${localize("devices.setpoint_mode_direct", this.hass.language)}
+              </span>`
+            : nothing
+        }
+        ${
+          showValveBadge
+            ? html`<span class="valve-exclude-badge">
+                <ha-icon icon="mdi:valve"></ha-icon>
+                ${localize("devices.valve_direct_badge", this.hass.language)}
               </span>`
             : nothing
         }
@@ -1034,6 +1055,48 @@ export class RsDeviceSection extends LitElement {
             `
           : nothing
       }
+      ${
+        isThermostat
+          ? html`
+              <div class="detail-section-label">
+                ${localize("devices.valve_direct_control", lang)}
+              </div>
+              <div class="detail-field with-info">
+                <ha-entity-picker
+                  .hass=${this.hass}
+                  .includeDomains=${["number"]}
+                  .value=${device.valve_opening_entity ?? ""}
+                  .label=${localize("devices.valve_opening_entity", lang)}
+                  @value-changed=${(e: CustomEvent) =>
+                    this._onValveEntityChange(
+                      entityId,
+                      "valve_opening_entity",
+                      e.detail.value as string,
+                    )}
+                  allowCustomEntity
+                ></ha-entity-picker>
+                <rs-info-icon
+                  .text=${localize("devices.valve_direct_control_hint", lang)}
+                ></rs-info-icon>
+              </div>
+              <div class="detail-field">
+                <ha-entity-picker
+                  .hass=${this.hass}
+                  .includeDomains=${["number"]}
+                  .value=${device.valve_closing_entity ?? ""}
+                  .label=${localize("devices.valve_closing_entity", lang)}
+                  @value-changed=${(e: CustomEvent) =>
+                    this._onValveEntityChange(
+                      entityId,
+                      "valve_closing_entity",
+                      e.detail.value as string,
+                    )}
+                  allowCustomEntity
+                ></ha-entity-picker>
+              </div>
+            `
+          : nothing
+      }
     `;
   }
 
@@ -1167,6 +1230,24 @@ export class RsDeviceSection extends LitElement {
     this._fireDeviceChanged(
       this.devices.map((d) => (d.entity_id === entityId ? { ...d, coil_dry_fan_mode: value } : d)),
     );
+  }
+
+  private _onValveEntityChange(
+    entityId: string,
+    field: "valve_opening_entity" | "valve_closing_entity",
+    value: string,
+  ): void {
+    const newDevices = this.devices.map((d) => {
+      if (d.entity_id !== entityId) return d;
+      const updated = { ...d };
+      if (value) {
+        updated[field] = value;
+      } else {
+        delete updated[field];
+      }
+      return updated;
+    });
+    this._fireDeviceChanged(newDevices);
   }
 
   private _onHeatingSystemTypeChange(e: Event) {

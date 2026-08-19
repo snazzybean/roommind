@@ -368,6 +368,8 @@ async def websocket_list_rooms(
                     vol.Optional("coil_dry_minutes", default=0): vol.All(vol.Coerce(int), vol.Range(min=0, max=60)),
                     vol.Optional("coil_dry_mode", default=""): vol.In(["", *COIL_DRY_MODES]),
                     vol.Optional("coil_dry_fan_mode", default=""): str,
+                    vol.Optional("valve_opening_entity"): vol.Any(str, None),
+                    vol.Optional("valve_closing_entity"): vol.Any(str, None),
                 },
                 _validate_device_idle_action,
                 _validate_device_coil_dry,
