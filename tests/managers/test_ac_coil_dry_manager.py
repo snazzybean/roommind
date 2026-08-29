@@ -878,3 +878,134 @@ async def test_pending_restore_blocks_new_run_when_wet_and_enabled(monkeypatch):
     now[0] += 30.0
     await process(mgr, mode="idle")
     assert mgr.state_for(AC_EID).phase == "blow"
+
+
+@pytest.mark.asyncio
+async def test_state_roundtrip_and_resume(monkeypatch):
+    """A run interrupted by a restart continues with its remaining time."""
+    import custom_components.roommind.managers.ac_coil_dry_manager as mod
+
+    now = [1000.0]
+    monkeypatch.setattr(mod.time, "time", lambda: now[0])
+    mgr = AcCoilDryManager(build_hass(fan_mode="auto"))
+
+    await _wet(mgr, now)  # blow until 1900 + 1200 = 3100
+    dumped = mgr.get_state()
+    assert dumped[AC_EID]["phase"] == "blow"
+    assert dumped[AC_EID]["prev_fan_mode"] == "auto"
+
+    now[0] = 2500.0  # still inside the phase
+    fresh = AcCoilDryManager(build_hass(fan_mode="low"))
+    fresh.load_state(dumped)
+    st = fresh.state_for(AC_EID)
+    assert st.phase == "blow"
+    assert st.phase_until == pytest.approx(3100.0)
+    assert st.prev_fan_mode == "auto"
+
+
+@pytest.mark.asyncio
+async def test_expired_phase_is_dropped_on_load(monkeypatch):
+    """Restart after the phase would have ended: drop it, keep prev_fan_mode."""
+    import custom_components.roommind.managers.ac_coil_dry_manager as mod
+
+    monkeypatch.setattr(mod.time, "time", lambda: 9999.0)
+    mgr = AcCoilDryManager(build_hass())
+    mgr.load_state(
+        {
+            AC_EID: {
+                "wet_seconds": 900.0,
+                "expires_at": None,
+                "phase": "blow",
+                "phase_until": 3100.0,
+                "mode": "fan_only",
+                "fan_mode": "low",
+                "prev_fan_mode": "auto",
+            }
+        }
+    )
+    st = mgr.state_for(AC_EID)
+    assert st.phase is None
+    assert st.phase_until is None
+    assert st.prev_fan_mode == "auto"  # pending restore survives
+
+
+@pytest.mark.asyncio
+async def test_get_state_folds_in_ongoing_cooling(monkeypatch):
+    """Cooling time so far must not be lost across a restart."""
+    import custom_components.roommind.managers.ac_coil_dry_manager as mod
+
+    now = [0.0]
+    monkeypatch.setattr(mod.time, "time", lambda: now[0])
+    mgr = AcCoilDryManager(build_hass())
+
+    await process(mgr, mode="cooling")
+    now[0] = 480.0
+    dumped = mgr.get_state()
+    assert dumped[AC_EID]["wet_seconds"] == pytest.approx(480.0)
+
+
+@pytest.mark.asyncio
+async def test_get_state_omits_empty_entries(monkeypatch):
+    """Nothing worth remembering -> nothing written."""
+    import custom_components.roommind.managers.ac_coil_dry_manager as mod
+
+    monkeypatch.setattr(mod.time, "time", lambda: 100.0)
+    mgr = AcCoilDryManager(build_hass())
+    await process(mgr, mode="idle")
+    assert mgr.get_state() == {}
+
+
+@pytest.mark.asyncio
+async def test_load_state_tolerates_garbage(monkeypatch):
+    """Corrupt persisted data must never break startup."""
+    import custom_components.roommind.managers.ac_coil_dry_manager as mod
+
+    monkeypatch.setattr(mod.time, "time", lambda: 100.0)
+    mgr = AcCoilDryManager(build_hass())
+    mgr.load_state({AC_EID: {"wet_seconds": "nonsense"}, "climate.x": None})
+    assert mgr.state_for(AC_EID).wet_seconds == 0.0
+    assert mgr.state_for("climate.x") is None
+    mgr.load_state({})
+    mgr.load_state(None)
+
+
+@pytest.mark.asyncio
+async def test_dirty_flag(monkeypatch):
+    import custom_components.roommind.managers.ac_coil_dry_manager as mod
+
+    now = [0.0]
+    monkeypatch.setattr(mod.time, "time", lambda: now[0])
+    mgr = AcCoilDryManager(build_hass())
+    assert mgr.state_dirty is False
+    await process(mgr, mode="cooling")
+    assert mgr.state_dirty is True
+    mgr.state_dirty = False
+    assert mgr.state_dirty is False
+
+
+@pytest.mark.asyncio
+async def test_prune_drops_unknown_entities(monkeypatch):
+    import custom_components.roommind.managers.ac_coil_dry_manager as mod
+
+    monkeypatch.setattr(mod.time, "time", lambda: 100.0)
+    mgr = AcCoilDryManager(build_hass())
+    await process(mgr, mode="cooling")
+    assert mgr.state_for(AC_EID) is not None
+
+    mgr.prune({"climate.somewhere_else"})
+    assert mgr.state_for(AC_EID) is None
+
+
+@pytest.mark.asyncio
+async def test_remove_room_drops_that_areas_entities(monkeypatch):
+    """State is keyed by entity_id, so remove_room resolves via the area map."""
+    import custom_components.roommind.managers.ac_coil_dry_manager as mod
+
+    monkeypatch.setattr(mod.time, "time", lambda: 100.0)
+    mgr = AcCoilDryManager(build_hass())
+    await process(mgr, mode="cooling")
+
+    mgr.remove_room("other_room")
+    assert mgr.state_for(AC_EID) is not None
+    mgr.remove_room("living_room")
+    assert mgr.state_for(AC_EID) is None

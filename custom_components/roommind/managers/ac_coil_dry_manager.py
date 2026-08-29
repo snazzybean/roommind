@@ -421,3 +421,90 @@ class AcCoilDryManager:
             )
         except Exception:  # noqa: BLE001
             _LOGGER.warning("Area '%s': coil dry climate.%s failed on '%s'", area_id, service, eid, exc_info=True)
+
+    # --- persistence -------------------------------------------------------
+
+    @property
+    def state_dirty(self) -> bool:
+        """True when the state changed since it was last persisted."""
+        return self._dirty
+
+    @state_dirty.setter
+    def state_dirty(self, value: bool) -> None:
+        self._dirty = value
+
+    def load_state(self, data: dict | None) -> None:
+        """Restore persisted state.  Tolerates corrupt entries.
+
+        ``cooling_since`` is deliberately never restored — a restart ends the
+        cooling command, and get_state() has already folded the elapsed time
+        into ``wet_seconds``.  A phase whose end has passed is dropped;
+        ``prev_fan_mode`` survives as a pending restore (see spec 5.5).
+        """
+        now = time.time()
+        self._states = {}
+        for eid, raw in (data or {}).items():
+            if not isinstance(raw, dict):
+                _LOGGER.debug("Coil dry: ignoring malformed persisted state for '%s'", eid)
+                continue
+            try:
+                wet = float(raw.get("wet_seconds", 0.0))
+            except (TypeError, ValueError):
+                wet = 0.0
+            st = CoilDryState(
+                wet_seconds=wet,
+                expires_at=raw.get("expires_at"),
+                phase=raw.get("phase"),
+                phase_until=raw.get("phase_until"),
+                mode=raw.get("mode", ""),
+                fan_mode=raw.get("fan_mode", ""),
+                prev_fan_mode=raw.get("prev_fan_mode"),
+            )
+            if st.phase is not None and not (st.phase_until and st.phase_until > now):
+                st.phase = None
+                st.phase_until = None
+            self._states[eid] = st
+
+    def get_state(self) -> dict:
+        """Serialise state for the store.  Empty entries are omitted."""
+        now = time.time()
+        out: dict[str, dict] = {}
+        for eid, st in self._states.items():
+            wet = st.wet_seconds + (now - st.cooling_since if st.cooling_since is not None else 0.0)
+            if wet <= 0 and st.phase is None and st.prev_fan_mode is None:
+                continue
+            out[eid] = {
+                "wet_seconds": round(wet, 1),
+                "expires_at": st.expires_at,
+                "phase": st.phase,
+                "phase_until": st.phase_until,
+                "mode": st.mode,
+                "fan_mode": st.fan_mode,
+                "prev_fan_mode": st.prev_fan_mode,
+            }
+        return out
+
+    # --- cleanup ----------------------------------------------------------
+
+    def prune(self, known_eids: set[str]) -> None:
+        """Drop state for devices that are no longer configured anywhere.
+
+        Mirrors the stale-entry cleanup in ValveManager.async_check_and_cycle.
+        """
+        stale = [eid for eid in self._states if eid not in known_eids]
+        for eid in stale:
+            del self._states[eid]
+            self._eid_to_area.pop(eid, None)
+            self._unsupported_warned.discard(eid)
+        if stale:
+            self._dirty = True
+
+    def remove_room(self, area_id: str) -> None:
+        """Drop state for every device of a deleted room."""
+        eids = [eid for eid, area in self._eid_to_area.items() if area == area_id]
+        for eid in eids:
+            self._states.pop(eid, None)
+            self._eid_to_area.pop(eid, None)
+            self._unsupported_warned.discard(eid)
+        if eids:
+            self._dirty = True
