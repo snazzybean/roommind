@@ -4384,3 +4384,95 @@ async def test_apply_idle_forced_on_set_temperature_has_no_hvac_mode():
     temp_calls = _temp_calls(hass, "climate.ac")
     assert temp_calls
     assert "hvac_mode" not in temp_calls[0][0][2]
+
+
+def _ac_room():
+    """Room with one TRV and one AC, both in devices[]."""
+    room = make_room(acs=["climate.living_ac"])
+    return room
+
+
+def _ac_state(hvac_modes=None):
+    state = MagicMock()
+    state.state = "off"
+    state.attributes = {
+        "hvac_modes": hvac_modes if hvac_modes is not None else ["off", "cool", "heat", "fan_only"],
+        "fan_modes": ["auto", "low", "high"],
+        "fan_mode": "auto",
+        "min_temp": 16.0,
+        "max_temp": 30.0,
+        "temperature": 22.0,
+    }
+    return state
+
+
+def _targeted_entities(hass):
+    """Entity IDs of every climate service call."""
+    return {
+        c[0][2]["entity_id"]
+        for c in hass.services.async_call.call_args_list
+        if c[0][0] == "climate" and "entity_id" in c[0][2]
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("mode", "has_external_sensor", "climate_mode"),
+    [
+        ("cooling", True, "auto"),
+        ("heating", True, "auto"),
+        ("idle", True, "auto"),
+        ("cooling", False, "auto"),  # managed mode branch
+    ],
+)
+async def test_exclude_eids_filters_acs(mode, has_external_sensor, climate_mode):
+    """An excluded AC must receive no command in any async_apply branch."""
+    clear_command_cache()
+    hass = build_hass()
+    hass.states.get = MagicMock(return_value=_ac_state())
+    room = _ac_room()
+    room["climate_mode"] = climate_mode
+    ctrl = MPCController(
+        hass,
+        room,
+        model_manager=RoomModelManager(),
+        outdoor_temp=25.0,
+        settings={"outdoor_cooling_min": 10},
+        has_external_sensor=has_external_sensor,
+    )
+
+    await ctrl.async_apply(
+        mode,
+        TargetTemps(heat=21.0, cool=24.0),
+        current_temp=26.0,
+        exclude_eids={"climate.living_ac"},
+    )
+
+    assert "climate.living_ac" not in _targeted_entities(hass)
+
+
+@pytest.mark.asyncio
+async def test_exclude_eids_still_commands_other_devices():
+    """Excluding the AC must not stop the TRV from being commanded."""
+    clear_command_cache()
+    hass = build_hass()
+    hass.states.get = MagicMock(return_value=_ac_state())
+    ctrl = MPCController(
+        hass,
+        _ac_room(),
+        model_manager=RoomModelManager(),
+        outdoor_temp=5.0,
+        settings={},
+        has_external_sensor=True,
+    )
+
+    await ctrl.async_apply(
+        "heating",
+        TargetTemps(heat=21.0, cool=24.0),
+        current_temp=18.0,
+        exclude_eids={"climate.living_ac"},
+    )
+
+    targeted = _targeted_entities(hass)
+    assert "climate.living_trv" in targeted
+    assert "climate.living_ac" not in targeted
