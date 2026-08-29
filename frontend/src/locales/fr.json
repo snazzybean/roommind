@@ -486,7 +486,7 @@
   "compressor.enforce_uniform_mode": "Imposer un mode uniforme",
   "compressor.enforce_uniform_mode_hint": "Tous les thermostats de ce groupe doivent fonctionner dans le même mode HVAC (tout chauffage ou tout refroidissement). Les pièces qui ne sont pas d'accord avec le mode de groupe résolu seront mises en mode repos. Utilisez cela pour les pompes à chaleur qui démarrent automatiquement mais exigent que toutes les unités connectées fonctionnent dans le même mode.",
   "coil_dry.title": "Séchage de l'évaporateur",
-  "coil_dry.hint": "Après le refroidissement, laisse tourner le ventilateur intérieur un moment avant l'arrêt réel du climatiseur. Cela sèche l'évaporateur pour éviter la formation d'un biofilm et l'odeur de moisi au démarrage suivant.",
+  "coil_dry.hint": "Après le refroidissement, laissez tourner le ventilateur intérieur un moment avant l'arrêt réel du climatiseur. Cela sèche l'évaporateur pour éviter la formation d'un biofilm et l'odeur de moisi au démarrage suivant.",
   "coil_dry.duration_label": "Durée de séchage",
   "coil_dry.duration_suffix": "min",
   "coil_dry.duration_hint": "Durée pendant laquelle le ventilateur continue (1–60 min). À vitesse basse, comptez environ le double d'une vitesse élevée.",
