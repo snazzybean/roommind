@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from custom_components.roommind.managers.ac_coil_dry_manager import AcCoilDryManager
-from custom_components.roommind.utils.device_utils import COIL_DRY_STALE_SECONDS
+from custom_components.roommind.utils.device_utils import COIL_DRY_FAN_MODE_KEEP, COIL_DRY_STALE_SECONDS
 
 AC_EID = "climate.living_ac"
 
@@ -232,3 +232,290 @@ async def test_result_is_empty_without_active_run(monkeypatch):
     assert result.controlled_eids == set()
     assert result.active is False
     assert result.skip_ekf_training is False
+
+
+async def _wet(mgr, monkeypatch_time, seconds=900.0, settings=None):
+    """Helper: accumulate `seconds` of cooling, then go idle."""
+    await process(mgr, mode="cooling", settings=settings)
+    monkeypatch_time[0] += seconds
+    return await process(mgr, mode="idle", settings=settings)
+
+
+@pytest.mark.asyncio
+async def test_run_starts_after_enough_cooling(monkeypatch):
+    """15 min cooling clears the 10 min threshold -> blow phase starts."""
+    import custom_components.roommind.managers.ac_coil_dry_manager as mod
+
+    now = [0.0]
+    monkeypatch.setattr(mod.time, "time", lambda: now[0])
+    hass = build_hass()
+    mgr = AcCoilDryManager(hass)
+
+    result = await _wet(mgr, now)
+
+    st = mgr.state_for(AC_EID)
+    assert st.phase == "blow"
+    assert st.phase_until == pytest.approx(900.0 + 20 * 60)
+    assert result.controlled_eids == {AC_EID}
+    assert result.active is True
+    assert result.phase == "blow"
+
+    calls = [c for c in hass.services.async_call.call_args_list if c[0][0] == "climate"]
+    services = [c[0][1] for c in calls]
+    assert "set_hvac_mode" in services
+    hvac_call = next(c for c in calls if c[0][1] == "set_hvac_mode")
+    assert hvac_call[0][2]["hvac_mode"] == "fan_only"
+    fan_call = next(c for c in calls if c[0][1] == "set_fan_mode")
+    assert fan_call[0][2]["fan_mode"] == "low"
+
+
+@pytest.mark.asyncio
+async def test_no_run_below_threshold(monkeypatch):
+    """5 min cooling is below the 10 min default threshold."""
+    import custom_components.roommind.managers.ac_coil_dry_manager as mod
+
+    now = [0.0]
+    monkeypatch.setattr(mod.time, "time", lambda: now[0])
+    mgr = AcCoilDryManager(build_hass())
+
+    result = await _wet(mgr, now, seconds=300.0)
+    assert mgr.state_for(AC_EID).phase is None
+    assert result.controlled_eids == set()
+
+
+@pytest.mark.asyncio
+async def test_no_run_when_disabled(monkeypatch):
+    import custom_components.roommind.managers.ac_coil_dry_manager as mod
+
+    now = [0.0]
+    monkeypatch.setattr(mod.time, "time", lambda: now[0])
+    mgr = AcCoilDryManager(build_hass())
+    await _wet(mgr, now, settings={})
+    assert mgr.state_for(AC_EID).phase is None
+
+
+@pytest.mark.asyncio
+async def test_no_run_when_compressor_min_run_active(monkeypatch):
+    """forced_on means the device must keep running — nothing to dry yet."""
+    import custom_components.roommind.managers.ac_coil_dry_manager as mod
+
+    now = [0.0]
+    monkeypatch.setattr(mod.time, "time", lambda: now[0])
+    mgr = AcCoilDryManager(build_hass())
+
+    await process(mgr, mode="cooling")
+    now[0] += 900.0
+    await process(mgr, mode="idle", forced_on={AC_EID})
+    assert mgr.state_for(AC_EID).phase is None
+
+
+@pytest.mark.asyncio
+async def test_no_run_when_idle_action_is_fan_only(monkeypatch):
+    """The device is parked in fan_only anyway — a bounded run is a no-op."""
+    import custom_components.roommind.managers.ac_coil_dry_manager as mod
+
+    now = [0.0]
+    monkeypatch.setattr(mod.time, "time", lambda: now[0])
+    mgr = AcCoilDryManager(build_hass())
+    room = make_room(device={"idle_action": "fan_only"})
+
+    await process(mgr, mode="cooling", room=room)
+    now[0] += 900.0
+    await process(mgr, mode="idle", room=room)
+    assert mgr.state_for(AC_EID).phase is None
+
+
+@pytest.mark.asyncio
+async def test_run_starts_with_fan_only_idle_action_under_force_off(monkeypatch):
+    """force_off normalises idle_action to off (#368), so the run IS needed."""
+    import custom_components.roommind.managers.ac_coil_dry_manager as mod
+
+    now = [0.0]
+    monkeypatch.setattr(mod.time, "time", lambda: now[0])
+    mgr = AcCoilDryManager(build_hass())
+    room = make_room(device={"idle_action": "fan_only"})
+
+    await process(mgr, mode="cooling", room=room)
+    now[0] += 900.0
+    await process(mgr, mode="idle", room=room, force_off=True)
+    assert mgr.state_for(AC_EID).phase == "blow"
+
+
+@pytest.mark.asyncio
+async def test_no_run_when_device_lacks_target_mode(monkeypatch):
+    """Device without fan_only support -> warn once, no run."""
+    import custom_components.roommind.managers.ac_coil_dry_manager as mod
+
+    now = [0.0]
+    monkeypatch.setattr(mod.time, "time", lambda: now[0])
+    mgr = AcCoilDryManager(build_hass(hvac_modes=["off", "cool"]))
+
+    await _wet(mgr, now)
+    assert mgr.state_for(AC_EID).phase is None
+
+
+@pytest.mark.asyncio
+async def test_dry_mode_requires_compressor_can_activate(monkeypatch):
+    """dry runs the compressor, so min-off must allow it."""
+    import custom_components.roommind.managers.ac_coil_dry_manager as mod
+
+    now = [0.0]
+    monkeypatch.setattr(mod.time, "time", lambda: now[0])
+    mgr = AcCoilDryManager(build_hass())
+    settings = {"coil_dry_enabled": True, "coil_dry_mode": "dry"}
+
+    await process(mgr, mode="cooling", settings=settings)
+    now[0] += 900.0
+    await process(mgr, mode="idle", settings=settings, can_activate=lambda _e: False)
+    assert mgr.state_for(AC_EID).phase is None
+
+
+@pytest.mark.asyncio
+async def test_dry_mode_marks_compressor_active_and_skips_ekf(monkeypatch):
+    """dry keeps the compressor running: report it and stop EKF training."""
+    import custom_components.roommind.managers.ac_coil_dry_manager as mod
+
+    now = [0.0]
+    monkeypatch.setattr(mod.time, "time", lambda: now[0])
+    mgr = AcCoilDryManager(build_hass())
+    settings = {"coil_dry_enabled": True, "coil_dry_mode": "dry"}
+
+    result = await _wet(mgr, now, settings=settings)
+    assert result.compressor_active_eids == {AC_EID}
+    assert result.skip_ekf_training is True
+
+
+@pytest.mark.asyncio
+async def test_fan_only_mode_does_not_skip_ekf(monkeypatch):
+    """A fan moving room air is thermally negligible — train as idle."""
+    import custom_components.roommind.managers.ac_coil_dry_manager as mod
+
+    now = [0.0]
+    monkeypatch.setattr(mod.time, "time", lambda: now[0])
+    mgr = AcCoilDryManager(build_hass())
+
+    result = await _wet(mgr, now)
+    assert result.skip_ekf_training is False
+    assert result.compressor_active_eids == set()
+
+
+@pytest.mark.asyncio
+async def test_run_completes_and_resets_wetness(monkeypatch):
+    """After the blow phase expires the device is released and dry."""
+    import custom_components.roommind.managers.ac_coil_dry_manager as mod
+
+    now = [0.0]
+    monkeypatch.setattr(mod.time, "time", lambda: now[0])
+    mgr = AcCoilDryManager(build_hass())
+
+    await _wet(mgr, now)
+    now[0] += 20 * 60 + 1
+    result = await process(mgr, mode="idle")
+
+    st = mgr.state_for(AC_EID)
+    assert st.phase is None
+    assert st.wet_seconds == 0.0
+    assert result.controlled_eids == set()
+    assert result.active is False
+
+
+@pytest.mark.asyncio
+async def test_drain_phase_precedes_blow(monkeypatch):
+    """With drain_minutes > 0 the device stays off first, then blows."""
+    import custom_components.roommind.managers.ac_coil_dry_manager as mod
+
+    now = [0.0]
+    monkeypatch.setattr(mod.time, "time", lambda: now[0])
+    mgr = AcCoilDryManager(build_hass())
+    settings = {"coil_dry_enabled": True, "coil_dry_drain_minutes": 3}
+
+    result = await _wet(mgr, now, settings=settings)
+    assert mgr.state_for(AC_EID).phase == "drain"
+    assert result.controlled_eids == {AC_EID}
+    assert result.phase == "drain"
+
+    now[0] += 3 * 60 + 1
+    await process(mgr, mode="idle", settings=settings)
+    assert mgr.state_for(AC_EID).phase == "blow"
+
+
+@pytest.mark.asyncio
+async def test_unsupported_fan_mode_is_skipped(monkeypatch):
+    """Brand-specific fan names: skip set_fan_mode, keep the device's speed."""
+    import custom_components.roommind.managers.ac_coil_dry_manager as mod
+
+    now = [0.0]
+    monkeypatch.setattr(mod.time, "time", lambda: now[0])
+    hass = build_hass(fan_modes=["Hoch", "Mittel", "Niedrig"], fan_mode="Mittel")
+    mgr = AcCoilDryManager(hass)
+
+    await _wet(mgr, now)
+    calls = [c for c in hass.services.async_call.call_args_list if c[0][1] == "set_fan_mode"]
+    assert calls == []
+    assert mgr.state_for(AC_EID).phase == "blow"
+    assert mgr.state_for(AC_EID).fan_mode == ""
+
+
+@pytest.mark.asyncio
+async def test_drain_phase_reasserts_idle_each_cycle(monkeypatch):
+    """Mid-drain (before phase_until), the device is held off again every cycle.
+
+    The coordinator polls every 30s, so a multi-minute drain is many
+    consecutive ``mode="idle"`` calls, not one. Without the re-assert, the
+    device would only be forced off once at the start and could drift back
+    on for the rest of the drain window.
+    """
+    import custom_components.roommind.managers.ac_coil_dry_manager as mod
+
+    now = [0.0]
+    monkeypatch.setattr(mod.time, "time", lambda: now[0])
+    hass = build_hass()
+    mgr = AcCoilDryManager(hass)
+    settings = {"coil_dry_enabled": True, "coil_dry_drain_minutes": 3}
+
+    def off_calls():
+        return [
+            c
+            for c in hass.services.async_call.call_args_list
+            if c[0][0] == "climate" and c[0][1] == "set_hvac_mode" and c[0][2].get("hvac_mode") == "off"
+        ]
+
+    await _wet(mgr, now, settings=settings)
+    assert mgr.state_for(AC_EID).phase == "drain"
+    off_calls_after_start = len(off_calls())
+
+    now[0] += 60.0  # still well inside the 3 min drain window
+    await process(mgr, mode="idle", settings=settings)
+
+    assert mgr.state_for(AC_EID).phase == "drain"
+    assert len(off_calls()) > off_calls_after_start
+
+
+@pytest.mark.asyncio
+async def test_fan_mode_keep_sends_no_fan_command(monkeypatch, caplog):
+    """coil_dry_fan_mode="__keep__" means: don't touch the fan speed at all.
+
+    Distinct from an unsupported fan_mode name: that path still looks up
+    ``fan_modes`` and logs a "does not support" debug line. "keep" must return
+    before any of that, so the log must stay silent about fan_mode support.
+    """
+    import logging
+
+    import custom_components.roommind.managers.ac_coil_dry_manager as mod
+
+    now = [0.0]
+    monkeypatch.setattr(mod.time, "time", lambda: now[0])
+    hass = build_hass()
+    mgr = AcCoilDryManager(hass)
+    room = make_room(device={"coil_dry_fan_mode": COIL_DRY_FAN_MODE_KEEP})
+
+    with caplog.at_level(logging.DEBUG):
+        await process(mgr, mode="cooling", room=room)
+        now[0] += 900.0
+        await process(mgr, mode="idle", room=room)
+
+    calls = [c for c in hass.services.async_call.call_args_list if c[0][1] == "set_fan_mode"]
+    assert calls == []
+    assert mgr.state_for(AC_EID).phase == "blow"
+    assert mgr.state_for(AC_EID).fan_mode == ""
+    assert "does not support fan_mode" not in caplog.text
