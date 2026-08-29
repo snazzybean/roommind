@@ -177,7 +177,8 @@ export const masterDetailStyles = css`
     flex-direction: column;
   }
 
-  .detail-field ha-select {
+  .detail-field ha-select,
+  .detail-field ha-textfield {
     width: 100%;
   }
 
