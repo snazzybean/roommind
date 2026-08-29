@@ -82,11 +82,12 @@ def _setup(hass, rooms, settings):
     return store
 
 
-async def _run_cycle(coordinator, temp, **kwargs):
+async def _run_cycle(coordinator, temp, schedule_state="on", **kwargs):
     """One coordinator cycle at the given room temperature."""
     coordinator.hass.states.get = make_mock_states_get(
         temp=None if temp is None else str(temp),
         outdoor_temp="28.0",
+        schedule_state=schedule_state,
         extra={AC_EID: _ac_entity_state(**kwargs)},
     )
     data = await coordinator._async_update_data()
@@ -404,6 +405,136 @@ async def test_coil_dry_device_excluded_from_async_apply(hass, mock_config_entry
 
     assert rs["coil_dry_active"] is True
     assert captured and AC_EID in captured[-1]
+
+
+@pytest.mark.asyncio
+async def test_force_off_lets_a_fan_only_device_run_the_ritual(hass, mock_config_entry, frozen_time):
+    """The hook must forward force_off, not a hardcoded False.
+
+    An ``idle_action="fan_only"`` device is normally skipped — async_idle_device
+    parks it in fan_only indefinitely anyway, so there is nothing to add.  Under
+    an explicit shutdown (schedule_off_action="off") the device really goes off,
+    so the bounded run is the only thing that dries the coil.  That distinction
+    exists only if the coordinator passes the room's actual force_off through.
+    """
+    room = {
+        **AC_ROOM,
+        "schedules": [{"entity_id": "schedule.living_room_heating"}],
+        "devices": [{**AC_ROOM["devices"][0], "idle_action": "fan_only"}],
+    }
+    settings = {**COIL_DRY_SETTINGS, "schedule_off_action": "off"}
+    _setup(hass, {"living_room": room}, settings)
+    coordinator = _create_coordinator(hass, mock_config_entry)
+
+    await _run_cycle(coordinator, COOLING_TEMP, schedule_state="on")
+    frozen_time[0] += COOLING_RUN_SECONDS
+    rs = await _run_cycle(coordinator, IDLE_TEMP, schedule_state="off")
+
+    assert rs["force_off"] is True
+    assert rs["coil_dry_active"] is True
+    assert rs["coil_dry_phase"] == "blow"
+
+
+@pytest.mark.asyncio
+async def test_dry_run_blocked_by_compressor_min_off(hass, mock_config_entry, frozen_time):
+    """The hook must forward the real can_activate, not an always-True stub.
+
+    A "dry" run starts the compressor, so it has to respect the group's min-off
+    window exactly like a normal cooling start would.
+    """
+    settings = {
+        **COIL_DRY_SETTINGS,
+        "coil_dry_mode": "dry",
+        "compressor_groups": [
+            {
+                "id": "g1",
+                "name": "Outdoor",
+                "members": [AC_EID],
+                "min_run_minutes": 1,
+                "min_off_minutes": 30,
+            },
+        ],
+    }
+    _setup(hass, {"living_room": dict(AC_ROOM)}, settings)
+    coordinator = _create_coordinator(hass, mock_config_entry)
+
+    await _run_cycle(coordinator, COOLING_TEMP)
+    frozen_time[0] += COOLING_RUN_SECONDS
+    # Compressor just stopped: min-off is running, so nothing may start it again.
+    coordinator._compressor_manager.update_member(AC_EID, False)
+    rs = await _run_cycle(coordinator, IDLE_TEMP)
+
+    assert coordinator._compressor_manager.check_can_activate(AC_EID) is False
+    assert rs["coil_dry_active"] is False
+    # Blocked, not "nothing to dry" — the wetness is still on the books.
+    assert coordinator._coil_dry_manager.state_for(AC_EID).wet_seconds >= 60
+
+
+@pytest.mark.asyncio
+async def test_cycling_valve_entities_are_forwarded_to_the_manager(hass, mock_config_entry, frozen_time):
+    """The hook must forward cycling_eids, not an empty set.
+
+    Valve protection only ever cycles TRVs while the manager only iterates ACs,
+    so the two sets are disjoint today and no room state can tell the difference.
+    The argument is still part of the contract (the manager checks it in both
+    _update_wetness and _should_start), so pin the wiring at the call itself.
+    """
+    trv_eid = "climate.living_trv"
+    room = {
+        **AC_ROOM,
+        "thermostats": [trv_eid],
+        "devices": [
+            AC_ROOM["devices"][0],
+            {"entity_id": trv_eid, "type": "trv", "role": "auto", "heating_system_type": ""},
+        ],
+    }
+    _setup(hass, {"living_room": room}, dict(COIL_DRY_SETTINGS))
+    coordinator = _create_coordinator(hass, mock_config_entry)
+    coordinator._valve_manager.is_entity_cycling = lambda eid: eid == trv_eid
+
+    captured: list[dict] = []
+    original = coordinator._coil_dry_manager.async_process_room
+
+    async def _spy(**kwargs):
+        captured.append(kwargs)
+        return await original(**kwargs)
+
+    coordinator._coil_dry_manager.async_process_room = _spy
+    await _run_cycle(coordinator, COOLING_TEMP)
+
+    assert captured, "the manager was never called"
+    assert captured[-1]["exclude_eids"] == {trv_eid}
+    assert captured[-1]["can_activate"] == coordinator._compressor_manager.check_can_activate
+
+
+@pytest.mark.asyncio
+async def test_running_phase_ends_when_control_is_disabled_mid_run(hass, mock_config_entry, frozen_time):
+    """The hook sits before the climate_active chain, not inside its else.
+
+    Spec 4.2/9.5: when control is switched off mid-run the manager must still
+    run, so the phase ends and the device is released — and the remembered fan
+    speed stays queued as a pending restore, because RoomMind may not command
+    anything in this cycle.  Hooking into the else branch (with a default
+    CoilDryRoomResult before the chain) leaves the phase running forever.
+    """
+    store = _setup(hass, {"living_room": dict(AC_ROOM)}, dict(COIL_DRY_SETTINGS))
+    coordinator = _create_coordinator(hass, mock_config_entry)
+
+    await _run_cycle(coordinator, COOLING_TEMP)
+    frozen_time[0] += COOLING_RUN_SECONDS
+    rs = await _run_cycle(coordinator, IDLE_TEMP)
+    assert rs["coil_dry_phase"] == "blow"
+    assert coordinator._coil_dry_manager.state_for(AC_EID).prev_fan_mode == "auto"
+
+    # Control switched off while the fan is still running.
+    store.get_settings.return_value["climate_control_active"] = False
+    frozen_time[0] += 30.0
+    rs = await _run_cycle(coordinator, IDLE_TEMP)
+
+    assert rs["coil_dry_active"] is False
+    st = coordinator._coil_dry_manager.state_for(AC_EID)
+    assert st.phase is None, "the run must be ended, not left hanging"
+    assert st.prev_fan_mode == "auto", "the fan restore must stay pending"
 
 
 @pytest.mark.asyncio
