@@ -87,6 +87,12 @@ async def test_list_rooms_empty(ws_hass, store, connection):
             "schedule_off_action": "eco",
             "anyone_home": True,
             "valve_protection_enabled": False,
+            "coil_dry_enabled": False,
+            "coil_dry_minutes": 20,
+            "coil_dry_mode": "fan_only",
+            "coil_dry_fan_mode": "low",
+            "coil_dry_min_cooling_minutes": 10,
+            "coil_dry_drain_minutes": 0,
             "compressor_groups": [],
         },
     )
@@ -2795,3 +2801,156 @@ async def test_covers_clear_override_success(ws_hass, store, connection):
     coordinator.clear_cover_override.assert_called_once_with("lr")
     coordinator.async_request_refresh.assert_awaited_once()
     connection.send_result.assert_called_once_with(8, {"success": True})
+
+
+# ---------------------------------------------------------------------------
+# Coil dry (evaporator drying) schema tests (Task 2)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_coil_dry_device_schema_defaults():
+    """Absent coil dry fields get their inherit defaults."""
+    schema = websocket_save_room._ws_schema  # set by the websocket_command decorator
+    result = schema(
+        {
+            "type": "roommind/rooms/save",
+            "id": 1,
+            "area_id": "living_room",
+            "devices": [{"entity_id": "climate.ac", "type": "ac"}],
+        }
+    )
+    dev = result["devices"][0]
+    assert dev["coil_dry"] == "inherit"
+    assert dev["coil_dry_minutes"] == 0
+    assert dev["coil_dry_mode"] == ""
+    assert dev["coil_dry_fan_mode"] == ""
+
+
+@pytest.mark.asyncio
+async def test_coil_dry_rejects_on_for_trv():
+    """A TRV has no evaporator coil."""
+    import voluptuous as vol
+
+    schema = websocket_save_room._ws_schema
+    with pytest.raises(vol.Invalid):
+        schema(
+            {
+                "type": "roommind/rooms/save",
+                "id": 1,
+                "area_id": "living_room",
+                "devices": [{"entity_id": "climate.trv", "type": "trv", "coil_dry": "on"}],
+            }
+        )
+
+
+@pytest.mark.asyncio
+async def test_coil_dry_allows_off_for_trv():
+    """'off' and 'inherit' are harmless on a TRV and must not be rejected."""
+    schema = websocket_save_room._ws_schema
+    result = schema(
+        {
+            "type": "roommind/rooms/save",
+            "id": 1,
+            "area_id": "living_room",
+            "devices": [{"entity_id": "climate.trv", "type": "trv", "coil_dry": "off"}],
+        }
+    )
+    assert result["devices"][0]["coil_dry"] == "off"
+
+
+@pytest.mark.asyncio
+async def test_validate_device_coil_dry_unit():
+    """Direct unit test of the real validator — catches regressions if the function changes."""
+    import voluptuous as vol
+
+    from custom_components.roommind.websocket_api import _validate_device_coil_dry
+
+    # TRV + off is allowed
+    assert _validate_device_coil_dry({"type": "trv", "coil_dry": "off"}) == {
+        "type": "trv",
+        "coil_dry": "off",
+    }
+    # AC + on is allowed
+    assert _validate_device_coil_dry({"type": "ac", "coil_dry": "on"}) == {
+        "type": "ac",
+        "coil_dry": "on",
+    }
+    # TRV + on is rejected
+    with pytest.raises(vol.Invalid):
+        _validate_device_coil_dry({"type": "trv", "coil_dry": "on"})
+
+
+@pytest.mark.asyncio
+async def test_coil_dry_settings_schema_ranges():
+    """Out-of-range values are rejected."""
+    import voluptuous as vol
+
+    schema = websocket_save_settings._ws_schema
+    schema({"type": "roommind/settings/save", "id": 1, "coil_dry_minutes": 60})
+    with pytest.raises(vol.Invalid):
+        schema({"type": "roommind/settings/save", "id": 1, "coil_dry_minutes": 61})
+    with pytest.raises(vol.Invalid):
+        schema({"type": "roommind/settings/save", "id": 1, "coil_dry_drain_minutes": 16})
+    with pytest.raises(vol.Invalid):
+        schema({"type": "roommind/settings/save", "id": 1, "coil_dry_mode": "heat"})
+    # 0 is valid for drain (= phase disabled)
+    schema({"type": "roommind/settings/save", "id": 1, "coil_dry_drain_minutes": 0})
+
+
+@pytest.mark.asyncio
+async def test_coil_dry_state_not_writable_via_ws():
+    """coil_dry_state is server-side runtime state, clients must not set it."""
+    import voluptuous as vol
+
+    schema = websocket_save_settings._ws_schema
+    with pytest.raises(vol.Invalid):
+        schema({"type": "roommind/settings/save", "id": 1, "coil_dry_state": {}})
+
+
+@pytest.mark.asyncio
+async def test_save_settings_persists_coil_dry_keys(ws_hass, store, connection):
+    """settings/save must actually persist coil_dry_* — schema acceptance alone is not enough.
+
+    _SETTINGS_SAVE_FIELDS is a separate allowlist that filters msg into the changes
+    dict handed to the store; a key can pass schema validation and still never reach
+    storage if it is missing from that tuple.
+    """
+    await store.async_load()
+    msg = {
+        "id": 5,
+        "type": "roommind/settings/save",
+        "coil_dry_enabled": True,
+        "coil_dry_minutes": 30,
+        "coil_dry_mode": "dry",
+        "coil_dry_fan_mode": "high",
+        "coil_dry_min_cooling_minutes": 15,
+        "coil_dry_drain_minutes": 5,
+    }
+    await _save_settings(ws_hass, connection, msg)
+
+    connection.send_result.assert_called_once()
+    settings = connection.send_result.call_args[0][1]["settings"]
+    assert settings["coil_dry_enabled"] is True
+    assert settings["coil_dry_minutes"] == 30
+    assert settings["coil_dry_mode"] == "dry"
+    assert settings["coil_dry_fan_mode"] == "high"
+    assert settings["coil_dry_min_cooling_minutes"] == 15
+    assert settings["coil_dry_drain_minutes"] == 5
+
+
+@pytest.mark.asyncio
+async def test_list_rooms_defaults_coil_dry_settings(ws_hass, store, connection):
+    """rooms/list surfaces the six global coil dry settings with their documented defaults."""
+    await store.async_load()
+
+    msg = {"id": 1, "type": "roommind/rooms/list"}
+    await _list_rooms(ws_hass, connection, msg)
+
+    result = connection.send_result.call_args[0][1]
+    assert result["coil_dry_enabled"] is False
+    assert result["coil_dry_minutes"] == 20
+    assert result["coil_dry_mode"] == "fan_only"
+    assert result["coil_dry_fan_mode"] == "low"
+    assert result["coil_dry_min_cooling_minutes"] == 10
+    assert result["coil_dry_drain_minutes"] == 0
