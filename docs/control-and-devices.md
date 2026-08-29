@@ -122,7 +122,7 @@ Drying time, the minimum cooling time before a run is worth it, an optional drai
 ### While it runs
 
 - A returning cooling demand cancels the run immediately and the AC goes straight back to cooling.
-- A returning heating demand cancels it too, and resets the tracked wetness, since a warm coil from heating does not need drying.
+- A returning heating demand cancels it too, and resets the tracked wetness for that room's ACs.
 - A running or draining device shows a badge with the remaining time on the room's status.
 
 ### Relation to `When idle`
