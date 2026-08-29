@@ -358,6 +358,12 @@ export class RsHeroStatus extends LitElement {
     return null;
   }
 
+  /** Whole minutes left, floored at 1 so the badge never reads "0 min". */
+  private _coilDryMinutesLeft(until: number | null): number {
+    if (until == null) return 1;
+    return Math.max(1, Math.ceil((until * 1000 - Date.now()) / 60000));
+  }
+
   private _renderTargetSection(live: NonNullable<RoomConfig["live"]>) {
     const targetTemp = live.target_temp;
     const l = this.hass?.language ?? "en";
@@ -625,6 +631,20 @@ export class RsHeroStatus extends LitElement {
                         "hero.compressor_protection_info",
                         this.hass?.language ?? "en",
                       )}
+                    ></rs-info-icon>
+                  </div>`
+                : nothing}
+              ${live.coil_dry_active && !this.isOutdoor
+                ? html`<div class="hero-metric info">
+                    <ha-icon icon="mdi:air-filter"></ha-icon>
+                    ${localize(
+                      live.coil_dry_phase === "drain" ? "hero.coil_dry_drain" : "hero.coil_dry",
+                      this.hass?.language ?? "en",
+                      { minutes: this._coilDryMinutesLeft(live.coil_dry_until) },
+                    )}
+                    <rs-info-icon
+                      icon="mdi:information-outline"
+                      .text=${localize("hero.coil_dry_info", this.hass?.language ?? "en")}
                     ></rs-info-icon>
                   </div>`
                 : nothing}
