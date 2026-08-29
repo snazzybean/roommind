@@ -1066,6 +1066,7 @@ async def test_load_state_tolerates_garbage(monkeypatch):
             AC_EID: {"wet_seconds": "nonsense"},
             "climate.x": None,
             "climate.y": {"phase": "blow", "phase_until": "corrupt"},
+            "climate.z": {"expires_at": "corrupt"},
         }
     )
     assert mgr.state_for(AC_EID).wet_seconds == 0.0
@@ -1075,6 +1076,12 @@ async def test_load_state_tolerates_garbage(monkeypatch):
     st_y = mgr.state_for("climate.y")
     assert st_y.phase is None
     assert st_y.phase_until is None
+    # Same for expires_at: a non-numeric value must not crash the "expired?"
+    # comparison in _update_wetness (`now >= st.expires_at`) — discarded, not
+    # coerced into a crash that would take the whole room's climate control
+    # down with it (the per-room try in the coordinator would swallow it, but
+    # the bad value would otherwise survive every restart via get_state()).
+    assert mgr.state_for("climate.z").expires_at is None
     mgr.load_state({})
     mgr.load_state(None)
 
