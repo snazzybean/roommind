@@ -440,6 +440,49 @@ async def test_drain_phase_precedes_blow(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_setback_without_force_off_skips_drain(monkeypatch):
+    """§5.3: idle_action="setback" without force_off never really turns the
+    device off, so a DRAIN phase would test a false premise — a starting run
+    skips straight to BLOW instead.
+    """
+    import custom_components.roommind.managers.ac_coil_dry_manager as mod
+
+    now = [0.0]
+    monkeypatch.setattr(mod.time, "time", lambda: now[0])
+    mgr = AcCoilDryManager(build_hass())
+    settings = {"coil_dry_enabled": True, "coil_dry_drain_minutes": 3}
+    room = make_room(device={"idle_action": "setback"})
+
+    await process(mgr, mode="cooling", room=room, settings=settings)
+    now[0] += 900.0
+    result = await process(mgr, mode="idle", room=room, settings=settings)
+
+    assert mgr.state_for(AC_EID).phase == "blow"
+    assert result.phase == "blow"
+
+
+@pytest.mark.asyncio
+async def test_setback_with_force_off_still_drains(monkeypatch):
+    """force_off normalises idle_action to off (#368), so DRAIN is meaningful
+    again even though the device's own configured idle_action is "setback".
+    """
+    import custom_components.roommind.managers.ac_coil_dry_manager as mod
+
+    now = [0.0]
+    monkeypatch.setattr(mod.time, "time", lambda: now[0])
+    mgr = AcCoilDryManager(build_hass())
+    settings = {"coil_dry_enabled": True, "coil_dry_drain_minutes": 3}
+    room = make_room(device={"idle_action": "setback"})
+
+    await process(mgr, mode="cooling", room=room, settings=settings)
+    now[0] += 900.0
+    result = await process(mgr, mode="idle", room=room, settings=settings, force_off=True)
+
+    assert mgr.state_for(AC_EID).phase == "drain"
+    assert result.phase == "drain"
+
+
+@pytest.mark.asyncio
 async def test_unsupported_fan_mode_is_skipped(monkeypatch):
     """Brand-specific fan names: skip set_fan_mode, keep the device's speed."""
     import custom_components.roommind.managers.ac_coil_dry_manager as mod
