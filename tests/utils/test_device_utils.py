@@ -5,6 +5,9 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 from custom_components.roommind.utils.device_utils import (
+    COIL_DRY_FAN_MODE_KEEP,
+    DEFAULT_COIL_DRY_FAN_MODE,
+    DEFAULT_COIL_DRY_MINUTES,
     SETPOINT_MODE_PROPORTIONAL,
     VALID_DEVICE_TYPES,
     VALID_HEATING_SYSTEM_TYPES,
@@ -13,6 +16,7 @@ from custom_components.roommind.utils.device_utils import (
     ensure_room_has_devices,
     get_ac_eids,
     get_all_entity_ids,
+    get_coil_dry_config,
     get_device_by_eid,
     get_direct_setpoint_eids,
     get_entity_ids_by_type,
@@ -660,14 +664,6 @@ class TestRoomContributesToGroup:
     def test_unknown_active_sources_value(self):
         # Fail-safe: unknown orchestration state -> master stays idle.
         assert room_contributes_to_group([self.TRV], {"climate.trv1"}, "invalid") is False
-
-
-from custom_components.roommind.utils.device_utils import (
-    COIL_DRY_FAN_MODE_KEEP,
-    DEFAULT_COIL_DRY_FAN_MODE,
-    DEFAULT_COIL_DRY_MINUTES,
-    get_coil_dry_config,
-)
 
 
 def _ac(**overrides):

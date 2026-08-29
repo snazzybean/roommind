@@ -371,8 +371,6 @@ def get_coil_dry_config(devices: list[dict], entity_id: str, settings: dict) -> 
         minutes=int(dev.get("coil_dry_minutes") or settings.get("coil_dry_minutes", DEFAULT_COIL_DRY_MINUTES)),
         mode=dev.get("coil_dry_mode") or settings.get("coil_dry_mode", COIL_DRY_MODE_FAN_ONLY),
         fan_mode=fan_mode,
-        min_cooling_minutes=int(
-            settings.get("coil_dry_min_cooling_minutes", DEFAULT_COIL_DRY_MIN_COOLING_MINUTES)
-        ),
+        min_cooling_minutes=int(settings.get("coil_dry_min_cooling_minutes", DEFAULT_COIL_DRY_MIN_COOLING_MINUTES)),
         drain_minutes=int(settings.get("coil_dry_drain_minutes", DEFAULT_COIL_DRY_DRAIN_MINUTES)),
     )
