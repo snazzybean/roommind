@@ -44,6 +44,10 @@ def _build_device_states(hass: HomeAssistant, devices: list[dict]) -> list[dict[
             "role": dev.get("role", ""),
             "idle_action": dev.get("idle_action", "off"),
             "idle_fan_mode": dev.get("idle_fan_mode", ""),
+            "coil_dry": dev.get("coil_dry", "inherit"),
+            "coil_dry_minutes": dev.get("coil_dry_minutes", 0),
+            "coil_dry_mode": dev.get("coil_dry_mode", ""),
+            "coil_dry_fan_mode": dev.get("coil_dry_fan_mode", ""),
         }
         if state:
             attrs = state.attributes
@@ -312,6 +316,7 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, config_entry: 
         "recent_history": recent_history,
         "compressor_groups": compressor,
         "valve_protection": valve,
+        "coil_dry_state": (coordinator._coil_dry_manager.get_state() if coordinator is not None else {}),
         "presence": {
             "enabled": settings.get("presence_enabled", False),
             "persons": settings.get("presence_persons", []),

@@ -13,6 +13,7 @@ from custom_components.roommind.diagnostics import (
     _build_model_info,
     async_get_config_entry_diagnostics,
 )
+from custom_components.roommind.managers.ac_coil_dry_manager import AcCoilDryManager
 
 
 def _make_estimator():
@@ -78,6 +79,9 @@ def _make_coordinator(
     # Valve manager
     coordinator._valve_manager._cycling = valve_cycling or {}
     coordinator._valve_manager._last_actuation = valve_last_actuation or {}
+
+    # Coil dry manager
+    coordinator._coil_dry_manager.get_state.return_value = {}
 
     return coordinator
 
@@ -715,3 +719,43 @@ async def test_diagnostics_cover_with_last_command_ts(hass, mock_config_entry):
     cover = result["rooms"]["room_a"]["cover"]
     assert 198 <= cover["last_command_ago_s"] <= 202
     assert "last_change_ago_s" not in cover
+
+
+@pytest.mark.asyncio
+async def test_diagnostics_include_coil_dry(hass, mock_config_entry):
+    """Device coil dry config and runtime state must show up in diagnostics."""
+    store = MagicMock()
+    store.get_settings.return_value = {}
+    store.get_rooms.return_value = {
+        "living_room": {
+            "devices": [
+                {
+                    "entity_id": "climate.living_ac",
+                    "type": "ac",
+                    "role": "auto",
+                    "coil_dry": "on",
+                    "coil_dry_minutes": 15,
+                    "coil_dry_mode": "fan_only",
+                    "coil_dry_fan_mode": "high",
+                }
+            ],
+        }
+    }
+
+    hass.states.get = MagicMock(return_value=None)
+
+    coil_dry_manager = AcCoilDryManager(hass)
+    coil_dry_manager.load_state({"climate.living_ac": {"wet_seconds": 600.0, "phase": "blow", "phase_until": 9e12}})
+
+    coordinator = _make_coordinator()
+    coordinator._coil_dry_manager = coil_dry_manager
+    hass.data[DOMAIN] = {"store": store, "coordinator": coordinator}
+
+    result = await async_get_config_entry_diagnostics(hass, mock_config_entry)
+
+    dev = result["rooms"]["living_room"]["device_states"][0]
+    assert dev["coil_dry"] == "on"
+    assert dev["coil_dry_minutes"] == 15
+    assert dev["coil_dry_mode"] == "fan_only"
+    assert dev["coil_dry_fan_mode"] == "high"
+    assert result["coil_dry_state"]["climate.living_ac"]["phase"] == "blow"
