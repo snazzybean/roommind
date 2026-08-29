@@ -93,6 +93,15 @@ async def _run_cycle(coordinator, temp, **kwargs):
     return data["rooms"]["living_room"]
 
 
+def _coil_dry_writes(store, since=0):
+    """Return the coil_dry_state payloads written after call index *since*."""
+    return [
+        call.args[0]["coil_dry_state"]
+        for call in store.async_save_settings.call_args_list[since:]
+        if call.args and "coil_dry_state" in call.args[0]
+    ]
+
+
 def _age_compressor_min_run(coordinator, group_id):
     """Let the group's min-run timer expire.
 
@@ -222,6 +231,35 @@ async def test_coil_dry_state_is_persisted(hass, mock_config_entry, frozen_time)
     assert coil_payloads, f"coil_dry_state never persisted, got {saved}"
     assert AC_EID in coil_payloads[-1]
     assert coil_payloads[-1][AC_EID]["phase"] == "blow"
+
+
+@pytest.mark.asyncio
+async def test_coil_dry_state_persisted_on_change_not_every_cycle(hass, mock_config_entry, frozen_time):
+    """The write is driven by the dirty flag, and the flag is cleared again.
+
+    Two failure modes this pins down: gating the write on the 15 min thermal
+    save cycle would swallow the start of a 20 min run, and forgetting to reset
+    ``state_dirty`` would write the settings store on every 30 s tick forever.
+    """
+    store = _setup(hass, {"living_room": dict(AC_ROOM)}, dict(COIL_DRY_SETTINGS))
+    coordinator = _create_coordinator(hass, mock_config_entry)
+
+    await _run_cycle(coordinator, COOLING_TEMP)
+    frozen_time[0] += COOLING_RUN_SECONDS
+
+    before_start = len(store.async_save_settings.call_args_list)
+    rs = await _run_cycle(coordinator, IDLE_TEMP)
+    assert rs["coil_dry_phase"] == "blow"
+    start_writes = _coil_dry_writes(store, since=before_start)
+    assert len(start_writes) == 1, "the cycle that starts the run must persist it"
+    assert start_writes[0][AC_EID]["phase"] == "blow"
+
+    # Third cycle: still blowing, nothing changed -> nothing to write.
+    before_idle = len(store.async_save_settings.call_args_list)
+    frozen_time[0] += 30.0
+    rs = await _run_cycle(coordinator, IDLE_TEMP)
+    assert rs["coil_dry_phase"] == "blow"
+    assert _coil_dry_writes(store, since=before_idle) == []
 
 
 @pytest.mark.asyncio
