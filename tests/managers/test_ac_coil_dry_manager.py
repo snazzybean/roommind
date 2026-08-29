@@ -901,6 +901,13 @@ async def test_state_roundtrip_and_resume(monkeypatch):
     assert st.phase == "blow"
     assert st.phase_until == pytest.approx(3100.0)
     assert st.prev_fan_mode == "auto"
+    # Every persisted field survives the round trip, not just the three above —
+    # mode/fan_mode are distinct non-default values so a swap or a load_state
+    # key typo (e.g. raw.get("moed")) cannot pass silently.
+    assert st.wet_seconds == pytest.approx(900.0)
+    assert st.mode == "fan_only"
+    assert st.fan_mode == "low"
+    assert st.expires_at == pytest.approx(9100.0)
 
 
 @pytest.mark.asyncio
@@ -962,9 +969,20 @@ async def test_load_state_tolerates_garbage(monkeypatch):
 
     monkeypatch.setattr(mod.time, "time", lambda: 100.0)
     mgr = AcCoilDryManager(build_hass())
-    mgr.load_state({AC_EID: {"wet_seconds": "nonsense"}, "climate.x": None})
+    mgr.load_state(
+        {
+            AC_EID: {"wet_seconds": "nonsense"},
+            "climate.x": None,
+            "climate.y": {"phase": "blow", "phase_until": "corrupt"},
+        }
+    )
     assert mgr.state_for(AC_EID).wet_seconds == 0.0
     assert mgr.state_for("climate.x") is None
+    # A non-numeric phase_until must not crash the "still running?" comparison —
+    # it has to be treated like a phase whose end can't be confirmed: discarded.
+    st_y = mgr.state_for("climate.y")
+    assert st_y.phase is None
+    assert st_y.phase_until is None
     mgr.load_state({})
     mgr.load_state(None)
 

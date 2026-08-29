@@ -451,11 +451,17 @@ class AcCoilDryManager:
                 wet = float(raw.get("wet_seconds", 0.0))
             except (TypeError, ValueError):
                 wet = 0.0
+            phase_until = raw.get("phase_until")
+            if phase_until is not None:
+                try:
+                    phase_until = float(phase_until)
+                except (TypeError, ValueError):
+                    phase_until = None
             st = CoilDryState(
                 wet_seconds=wet,
                 expires_at=raw.get("expires_at"),
                 phase=raw.get("phase"),
-                phase_until=raw.get("phase_until"),
+                phase_until=phase_until,
                 mode=raw.get("mode", ""),
                 fan_mode=raw.get("fan_mode", ""),
                 prev_fan_mode=raw.get("prev_fan_mode"),
