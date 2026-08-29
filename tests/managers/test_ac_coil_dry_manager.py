@@ -881,6 +881,55 @@ async def test_pending_restore_blocks_new_run_when_wet_and_enabled(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_assert_drain_exception_does_not_propagate(monkeypatch, caplog):
+    """async_idle_device raising (e.g. the device dropped off the network)
+    must not crash the coordinator cycle — it is logged and swallowed, and
+    the drain phase keeps running so the next cycle can retry.
+    """
+    import logging
+
+    import custom_components.roommind.managers.ac_coil_dry_manager as mod
+
+    now = [0.0]
+    monkeypatch.setattr(mod.time, "time", lambda: now[0])
+    hass = build_hass()
+    mgr = AcCoilDryManager(hass)
+    settings = {"coil_dry_enabled": True, "coil_dry_drain_minutes": 3}
+    monkeypatch.setattr(mod, "async_idle_device", AsyncMock(side_effect=RuntimeError("boom")))
+
+    with caplog.at_level(logging.WARNING):
+        result = await _wet(mgr, now, settings=settings)
+
+    assert mgr.state_for(AC_EID).phase == "drain"  # state machine still advanced
+    assert result.controlled_eids == {AC_EID}
+    assert "coil dry drain failed on 'climate.living_ac'" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_call_exception_does_not_propagate(monkeypatch, caplog):
+    """A climate service call raising (e.g. device unreachable) must not
+    crash the coordinator cycle — it is logged and swallowed, and the state
+    machine advances into the blow phase regardless.
+    """
+    import logging
+
+    import custom_components.roommind.managers.ac_coil_dry_manager as mod
+
+    now = [0.0]
+    monkeypatch.setattr(mod.time, "time", lambda: now[0])
+    hass = build_hass()
+    hass.services.async_call = AsyncMock(side_effect=RuntimeError("boom"))
+    mgr = AcCoilDryManager(hass)
+
+    with caplog.at_level(logging.WARNING):
+        result = await _wet(mgr, now)  # default drain_minutes=0 -> straight to blow
+
+    assert mgr.state_for(AC_EID).phase == "blow"  # state machine still advanced
+    assert result.active is True
+    assert "coil dry climate.set_hvac_mode failed on 'climate.living_ac'" in caplog.text
+
+
+@pytest.mark.asyncio
 async def test_state_roundtrip_and_resume(monkeypatch):
     """A run interrupted by a restart continues with its remaining time."""
     import custom_components.roommind.managers.ac_coil_dry_manager as mod
