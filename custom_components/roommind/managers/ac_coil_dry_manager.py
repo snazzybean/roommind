@@ -141,6 +141,8 @@ class AcCoilDryManager:
             ):
                 await self._start_run(eid, st, cfg, area_id, now, devices, force_off=force_off)
 
+            await self._restore_fan_mode(eid, st, area_id, commandable)
+
             if st.phase is not None:
                 result.controlled_eids.add(eid)
                 result.active = True
@@ -334,7 +336,27 @@ class AcCoilDryManager:
         commandable: bool,
         force_off: bool,
     ) -> None:
-        """Move a running phase forward, or end it when its time is up."""
+        """Move a running phase forward, or end it (time up / aborted).
+
+        Aborting only ends the phase and releases the device — the hvac_mode is
+        re-commanded by async_apply in the very same coordinator cycle, so there
+        is no second command path and no race.
+        """
+        abort_reason: str | None = None
+        if mode == MODE_COOLING:
+            abort_reason = "cooling demand returned"
+        elif mode == MODE_HEATING:
+            abort_reason = "heating demand returned"
+        elif not commandable:
+            abort_reason = "climate control disabled"
+        elif not cfg.enabled:
+            abort_reason = "coil dry disabled in config"
+
+        if abort_reason is not None:
+            _LOGGER.debug("Area '%s': coil dry on '%s' aborted (%s)", area_id, eid, abort_reason)
+            self._end_phase(st, completed=False)
+            return
+
         if st.phase_until is not None and now >= st.phase_until:
             if st.phase == COIL_DRY_PHASE_DRAIN:
                 await self._start_blow(eid, st, cfg, area_id, now)
@@ -342,8 +364,35 @@ class AcCoilDryManager:
                 _LOGGER.debug("Area '%s': coil dry on '%s' complete", area_id, eid)
                 self._end_phase(st, completed=True)
             return
+
         if st.phase == COIL_DRY_PHASE_DRAIN:
             await self._assert_drain(eid, area_id, devices)
+
+    async def _restore_fan_mode(self, eid: str, st: CoilDryState, area_id: str, commandable: bool) -> None:
+        """Give back the fan speed the device had before the run.
+
+        One idempotent step instead of a copy in every abort path — that is the
+        only way this does not get forgotten in one of them. Runs after the
+        phase logic and before the device is released, so async_apply sees the
+        correct speed in the same cycle.
+        """
+        if st.prev_fan_mode is None or st.phase is not None or not commandable:
+            return
+
+        state = self.hass.states.get(eid)
+        current = state.attributes.get("fan_mode") if state else None
+        if current == st.fan_mode:
+            await self._call(eid, "set_fan_mode", {"fan_mode": st.prev_fan_mode}, area_id)
+        else:
+            _LOGGER.debug(
+                "Area '%s': fan mode on '%s' is '%s', not the coil dry value '%s' — changed externally, not restoring",
+                area_id,
+                eid,
+                current,
+                st.fan_mode,
+            )
+        st.prev_fan_mode = None
+        self._dirty = True
 
     def _end_phase(self, st: CoilDryState, *, completed: bool) -> None:
         """Leave the run.  On completion the coil counts as dry."""

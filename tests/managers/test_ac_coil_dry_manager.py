@@ -616,3 +616,217 @@ async def test_dry_mode_flags_only_active_during_blow_not_drain(monkeypatch):
     assert mgr.state_for(AC_EID).phase == "blow"
     assert result.compressor_active_eids == {AC_EID}
     assert result.skip_ekf_training is True
+
+
+@pytest.mark.asyncio
+async def test_cooling_demand_aborts_and_restores_fan(monkeypatch):
+    """Room warms up again: release the device and give the fan speed back."""
+    import custom_components.roommind.managers.ac_coil_dry_manager as mod
+
+    now = [0.0]
+    monkeypatch.setattr(mod.time, "time", lambda: now[0])
+    hass = build_hass(fan_mode="auto")
+    mgr = AcCoilDryManager(hass)
+
+    await _wet(mgr, now)
+    assert mgr.state_for(AC_EID).prev_fan_mode == "auto"
+
+    # Device now reports the coil dry fan speed
+    hass.states.get.return_value.attributes["fan_mode"] = "low"
+    hass.services.async_call.reset_mock()
+
+    now[0] += 60.0
+    result = await process(mgr, mode="cooling")
+
+    st = mgr.state_for(AC_EID)
+    assert st.phase is None
+    assert st.prev_fan_mode is None
+    assert result.controlled_eids == set()  # released for async_apply
+    assert st.wet_seconds > 0  # coil is getting wet again
+
+    restore = [c for c in hass.services.async_call.call_args_list if c[0][1] == "set_fan_mode"]
+    assert len(restore) == 1
+    assert restore[0][0][2]["fan_mode"] == "auto"
+
+
+@pytest.mark.asyncio
+async def test_completed_run_restores_fan(monkeypatch):
+    import custom_components.roommind.managers.ac_coil_dry_manager as mod
+
+    now = [0.0]
+    monkeypatch.setattr(mod.time, "time", lambda: now[0])
+    hass = build_hass(fan_mode="high")
+    mgr = AcCoilDryManager(hass)
+
+    await _wet(mgr, now)
+    hass.states.get.return_value.attributes["fan_mode"] = "low"
+    hass.services.async_call.reset_mock()
+
+    now[0] += 20 * 60 + 1
+    await process(mgr, mode="idle")
+
+    restore = [c for c in hass.services.async_call.call_args_list if c[0][1] == "set_fan_mode"]
+    assert restore[0][0][2]["fan_mode"] == "high"
+    assert mgr.state_for(AC_EID).prev_fan_mode is None
+
+
+@pytest.mark.asyncio
+async def test_manual_fan_change_wins_over_restore(monkeypatch):
+    """Someone turned the fan up during the run: do not overwrite them."""
+    import custom_components.roommind.managers.ac_coil_dry_manager as mod
+
+    now = [0.0]
+    monkeypatch.setattr(mod.time, "time", lambda: now[0])
+    hass = build_hass(fan_mode="auto")
+    mgr = AcCoilDryManager(hass)
+
+    await _wet(mgr, now)
+    hass.states.get.return_value.attributes["fan_mode"] = "high"  # human intervened
+    hass.services.async_call.reset_mock()
+
+    now[0] += 20 * 60 + 1
+    await process(mgr, mode="idle")
+
+    assert [c for c in hass.services.async_call.call_args_list if c[0][1] == "set_fan_mode"] == []
+    assert mgr.state_for(AC_EID).prev_fan_mode is None
+
+
+@pytest.mark.asyncio
+async def test_heating_demand_aborts_and_clears_wetness(monkeypatch):
+    import custom_components.roommind.managers.ac_coil_dry_manager as mod
+
+    now = [0.0]
+    monkeypatch.setattr(mod.time, "time", lambda: now[0])
+    hass = build_hass(fan_mode="auto")
+    mgr = AcCoilDryManager(hass)
+
+    await _wet(mgr, now)
+    hass.states.get.return_value.attributes["fan_mode"] = "low"
+
+    now[0] += 60.0
+    result = await process(mgr, mode="heating")
+
+    st = mgr.state_for(AC_EID)
+    assert st.phase is None
+    assert st.wet_seconds == 0.0
+    assert result.controlled_eids == set()
+
+
+@pytest.mark.asyncio
+async def test_config_disabled_mid_run_aborts(monkeypatch):
+    import custom_components.roommind.managers.ac_coil_dry_manager as mod
+
+    now = [0.0]
+    monkeypatch.setattr(mod.time, "time", lambda: now[0])
+    mgr = AcCoilDryManager(build_hass())
+
+    await _wet(mgr, now)
+    now[0] += 60.0
+    await process(mgr, mode="idle", settings={})
+    assert mgr.state_for(AC_EID).phase is None
+
+
+@pytest.mark.asyncio
+async def test_not_commandable_ends_phase_without_commands(monkeypatch):
+    """Contract from #36: send nothing. The restore stays pending."""
+    import custom_components.roommind.managers.ac_coil_dry_manager as mod
+
+    now = [0.0]
+    monkeypatch.setattr(mod.time, "time", lambda: now[0])
+    hass = build_hass(fan_mode="auto")
+    mgr = AcCoilDryManager(hass)
+
+    await _wet(mgr, now)
+    hass.states.get.return_value.attributes["fan_mode"] = "low"
+    hass.services.async_call.reset_mock()
+
+    now[0] += 60.0
+    await process(mgr, mode="idle", commandable=False)
+
+    assert hass.services.async_call.call_args_list == []
+    st = mgr.state_for(AC_EID)
+    assert st.phase is None
+    assert st.prev_fan_mode == "auto"  # pending restore
+
+
+@pytest.mark.asyncio
+async def test_pending_restore_runs_when_commandable_returns(monkeypatch):
+    import custom_components.roommind.managers.ac_coil_dry_manager as mod
+
+    now = [0.0]
+    monkeypatch.setattr(mod.time, "time", lambda: now[0])
+    hass = build_hass(fan_mode="auto")
+    mgr = AcCoilDryManager(hass)
+
+    await _wet(mgr, now)
+    hass.states.get.return_value.attributes["fan_mode"] = "low"
+    now[0] += 60.0
+    await process(mgr, mode="idle", commandable=False)
+    hass.services.async_call.reset_mock()
+
+    now[0] += 60.0
+    await process(mgr, mode="idle", settings={})  # disabled, so no new run starts
+
+    restore = [c for c in hass.services.async_call.call_args_list if c[0][1] == "set_fan_mode"]
+    assert restore[0][0][2]["fan_mode"] == "auto"
+    assert mgr.state_for(AC_EID).prev_fan_mode is None
+
+
+@pytest.mark.asyncio
+async def test_keep_fan_mode_means_no_restore_machinery(monkeypatch):
+    """fan_mode="" -> no set_fan_mode at all, so nothing to remember."""
+    import custom_components.roommind.managers.ac_coil_dry_manager as mod
+
+    now = [0.0]
+    monkeypatch.setattr(mod.time, "time", lambda: now[0])
+    hass = build_hass(fan_mode="auto")
+    mgr = AcCoilDryManager(hass)
+    settings = {"coil_dry_enabled": True, "coil_dry_fan_mode": ""}
+
+    await _wet(mgr, now, settings=settings)
+    assert mgr.state_for(AC_EID).prev_fan_mode is None
+    assert [c for c in hass.services.async_call.call_args_list if c[0][1] == "set_fan_mode"] == []
+
+
+@pytest.mark.asyncio
+async def test_device_without_fan_mode_attribute(monkeypatch):
+    """Device reports no fan_mode -> nothing to restore, no crash."""
+    import custom_components.roommind.managers.ac_coil_dry_manager as mod
+
+    now = [0.0]
+    monkeypatch.setattr(mod.time, "time", lambda: now[0])
+    hass = build_hass(fan_mode=None)
+    mgr = AcCoilDryManager(hass)
+
+    await _wet(mgr, now)
+    assert mgr.state_for(AC_EID).prev_fan_mode is None
+    assert mgr.state_for(AC_EID).phase == "blow"
+
+
+@pytest.mark.asyncio
+async def test_no_restore_after_already_restored(monkeypatch):
+    """Once prev_fan_mode is cleared, a later cycle must not resend a stale
+    restore. _end_phase deliberately never clears st.fan_mode (needed for the
+    same-cycle abort->restore comparison), and the mocked device attribute
+    does not move on its own — so on a second cycle 'current == st.fan_mode'
+    would spuriously match again. Only the prev_fan_mode guard prevents a
+    second set_fan_mode(fan_mode=None) call.
+    """
+    import custom_components.roommind.managers.ac_coil_dry_manager as mod
+
+    now = [0.0]
+    monkeypatch.setattr(mod.time, "time", lambda: now[0])
+    hass = build_hass(fan_mode="high")
+    mgr = AcCoilDryManager(hass)
+
+    await _wet(mgr, now)
+    hass.states.get.return_value.attributes["fan_mode"] = "low"
+    now[0] += 20 * 60 + 1
+    await process(mgr, mode="idle")  # completes the run and restores to "high"
+    assert mgr.state_for(AC_EID).prev_fan_mode is None
+
+    hass.services.async_call.reset_mock()
+    now[0] += 60.0
+    await process(mgr, mode="idle")
+
+    assert [c for c in hass.services.async_call.call_args_list if c[0][1] == "set_fan_mode"] == []
