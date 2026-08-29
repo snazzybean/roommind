@@ -205,6 +205,13 @@ class AcCoilDryManager:
         can_activate: Callable[[str], bool],
     ) -> bool:
         """All start conditions from spec 5.1, in cheapest-first order."""
+        if st.prev_fan_mode is not None:
+            # A restore is still pending (e.g. the previous run ended while not
+            # commandable, see §5.5/§9.5). Starting a new run here would let
+            # _start_run overwrite prev_fan_mode with the device's *current*
+            # fan mode — which is still the drying value, since the restore
+            # never happened — losing the user's real original setting.
+            return False
         if not cfg.enabled or not commandable:
             return False
         if mode in (MODE_COOLING, MODE_HEATING):

@@ -765,7 +765,12 @@ async def test_pending_restore_runs_when_commandable_returns(monkeypatch):
     hass.services.async_call.reset_mock()
 
     now[0] += 60.0
-    await process(mgr, mode="idle", settings={})  # disabled, so no new run starts
+    # Coil dry disabled here too: the restore must fire (and no run start)
+    # regardless of config state — this is a separate combination from
+    # test_pending_restore_blocks_new_run_when_wet_and_enabled below, which
+    # covers the case where config is enabled and wet_seconds is still over
+    # threshold (the pending-restore guard alone has to carry that one).
+    await process(mgr, mode="idle", settings={})
 
     restore = [c for c in hass.services.async_call.call_args_list if c[0][1] == "set_fan_mode"]
     assert restore[0][0][2]["fan_mode"] == "auto"
@@ -830,3 +835,46 @@ async def test_no_restore_after_already_restored(monkeypatch):
     await process(mgr, mode="idle")
 
     assert [c for c in hass.services.async_call.call_args_list if c[0][1] == "set_fan_mode"] == []
+
+
+@pytest.mark.asyncio
+async def test_pending_restore_blocks_new_run_when_wet_and_enabled(monkeypatch):
+    """A pending restore must win over starting a fresh run, even when coil
+    dry is enabled and wet_seconds still clears the threshold — otherwise
+    _start_run would overwrite prev_fan_mode with the device's *current*
+    (still drying) fan mode in the very same call, losing the user's real
+    original setting for good.
+    """
+    import custom_components.roommind.managers.ac_coil_dry_manager as mod
+
+    now = [0.0]
+    monkeypatch.setattr(mod.time, "time", lambda: now[0])
+    hass = build_hass(fan_mode="auto")
+    mgr = AcCoilDryManager(hass)
+
+    await _wet(mgr, now)
+    hass.states.get.return_value.attributes["fan_mode"] = "low"
+    now[0] += 60.0
+    await process(mgr, mode="idle", commandable=False)
+    assert mgr.state_for(AC_EID).prev_fan_mode == "auto"  # pending restore
+
+    hass.services.async_call.reset_mock()
+    now[0] += 60.0
+    # Commandable again, coil dry still enabled, wet_seconds still over
+    # threshold (the run never completed) — without the guard this would
+    # start a fresh run instead of restoring.
+    result = await process(mgr, mode="idle")
+
+    st = mgr.state_for(AC_EID)
+    restore = [c for c in hass.services.async_call.call_args_list if c[0][1] == "set_fan_mode"]
+    assert len(restore) == 1
+    assert restore[0][0][2]["fan_mode"] == "auto"
+    assert st.prev_fan_mode is None
+    assert st.phase is None  # no new run started in this cycle
+    assert result.controlled_eids == set()
+
+    # Accepted cost: the new run starts one cycle later instead.
+    hass.services.async_call.reset_mock()
+    now[0] += 30.0
+    await process(mgr, mode="idle")
+    assert mgr.state_for(AC_EID).phase == "blow"
