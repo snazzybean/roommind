@@ -65,6 +65,10 @@ def test_legacy_to_devices_basic():
         "idle_action": "off",
         "idle_fan_mode": "low",
         "setpoint_mode": "proportional",
+        "coil_dry": "inherit",
+        "coil_dry_minutes": 0,
+        "coil_dry_mode": "",
+        "coil_dry_fan_mode": "",
     }
     assert devices[2]["type"] == "ac"
     assert devices[2]["heating_system_type"] == ""
@@ -656,3 +660,106 @@ class TestRoomContributesToGroup:
     def test_unknown_active_sources_value(self):
         # Fail-safe: unknown orchestration state -> master stays idle.
         assert room_contributes_to_group([self.TRV], {"climate.trv1"}, "invalid") is False
+
+
+from custom_components.roommind.utils.device_utils import (
+    COIL_DRY_FAN_MODE_KEEP,
+    DEFAULT_COIL_DRY_FAN_MODE,
+    DEFAULT_COIL_DRY_MINUTES,
+    get_coil_dry_config,
+)
+
+
+def _ac(**overrides):
+    """AC device dict with coil dry defaults."""
+    dev = {"entity_id": "climate.ac", "type": "ac", "role": "auto"}
+    dev.update(overrides)
+    return [dev]
+
+
+def test_coil_dry_config_disabled_by_default():
+    """Master switch off and device on inherit -> disabled."""
+    cfg = get_coil_dry_config(_ac(), "climate.ac", {})
+    assert cfg.enabled is False
+    assert cfg.minutes == DEFAULT_COIL_DRY_MINUTES
+    assert cfg.mode == "fan_only"
+    assert cfg.fan_mode == DEFAULT_COIL_DRY_FAN_MODE
+    assert cfg.min_cooling_minutes == 10
+    assert cfg.drain_minutes == 0
+
+
+def test_coil_dry_config_inherits_global_enable():
+    cfg = get_coil_dry_config(_ac(), "climate.ac", {"coil_dry_enabled": True})
+    assert cfg.enabled is True
+
+
+def test_coil_dry_config_device_on_overrides_disabled_global():
+    """Per-device 'on' wins over a disabled master switch."""
+    cfg = get_coil_dry_config(_ac(coil_dry="on"), "climate.ac", {"coil_dry_enabled": False})
+    assert cfg.enabled is True
+
+
+def test_coil_dry_config_device_off_overrides_enabled_global():
+    cfg = get_coil_dry_config(_ac(coil_dry="off"), "climate.ac", {"coil_dry_enabled": True})
+    assert cfg.enabled is False
+
+
+def test_coil_dry_config_device_minutes_zero_inherits():
+    """0 means inherit, not 'zero minutes'."""
+    cfg = get_coil_dry_config(_ac(coil_dry_minutes=0), "climate.ac", {"coil_dry_minutes": 30})
+    assert cfg.minutes == 30
+
+
+def test_coil_dry_config_device_minutes_override():
+    cfg = get_coil_dry_config(_ac(coil_dry_minutes=5), "climate.ac", {"coil_dry_minutes": 30})
+    assert cfg.minutes == 5
+
+
+def test_coil_dry_config_device_mode_empty_inherits():
+    cfg = get_coil_dry_config(_ac(coil_dry_mode=""), "climate.ac", {"coil_dry_mode": "dry"})
+    assert cfg.mode == "dry"
+
+
+def test_coil_dry_config_device_mode_override():
+    cfg = get_coil_dry_config(_ac(coil_dry_mode="fan_only"), "climate.ac", {"coil_dry_mode": "dry"})
+    assert cfg.mode == "fan_only"
+
+
+def test_coil_dry_config_fan_mode_device_override():
+    """Explicit per-device fan mode wins over the global setting."""
+    cfg = get_coil_dry_config(_ac(coil_dry_fan_mode="high"), "climate.ac", {"coil_dry_fan_mode": "low"})
+    assert cfg.fan_mode == "high"
+
+
+def test_coil_dry_config_fan_mode_keep_sentinel():
+    """__keep__ resolves to "" = send no set_fan_mode at all."""
+    cfg = get_coil_dry_config(
+        _ac(coil_dry_fan_mode=COIL_DRY_FAN_MODE_KEEP), "climate.ac", {"coil_dry_fan_mode": "high"}
+    )
+    assert cfg.fan_mode == ""
+
+
+def test_coil_dry_config_fan_mode_empty_inherits_global():
+    cfg = get_coil_dry_config(_ac(coil_dry_fan_mode=""), "climate.ac", {"coil_dry_fan_mode": "high"})
+    assert cfg.fan_mode == "high"
+
+
+def test_coil_dry_config_global_fan_mode_empty_means_keep():
+    cfg = get_coil_dry_config(_ac(), "climate.ac", {"coil_dry_fan_mode": ""})
+    assert cfg.fan_mode == ""
+
+
+def test_coil_dry_config_unknown_entity_falls_back_to_global():
+    """No matching device -> global settings only, never a crash."""
+    cfg = get_coil_dry_config(_ac(), "climate.other", {"coil_dry_enabled": True})
+    assert cfg.enabled is True
+
+
+def test_legacy_to_devices_sets_coil_dry_defaults():
+    from custom_components.roommind.utils.device_utils import legacy_to_devices
+
+    devices = legacy_to_devices([], ["climate.ac"])
+    assert devices[0]["coil_dry"] == "inherit"
+    assert devices[0]["coil_dry_minutes"] == 0
+    assert devices[0]["coil_dry_mode"] == ""
+    assert devices[0]["coil_dry_fan_mode"] == ""
