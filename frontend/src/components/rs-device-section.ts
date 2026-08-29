@@ -19,6 +19,7 @@ export class RsDeviceSection extends LitElement {
   @property({ type: String }) public selectedTempSensor = "";
   @property({ attribute: false }) public valveProtectionExclude: Set<string> = new Set();
   @property({ type: Boolean }) public valveProtectionEnabled = false;
+  @property({ type: Boolean }) public coilDryEnabledGlobal = false;
 
   @property({ type: Boolean }) public editing = false;
   @state() private _systemTypeInfoExpanded = false;
@@ -603,7 +604,7 @@ export class RsDeviceSection extends LitElement {
                   )}</span
                 >`
               : nothing}
-            ${device?.coil_dry === "on"
+            ${device?.coil_dry === "on" || (device?.coil_dry !== "off" && this.coilDryEnabledGlobal)
               ? html`<span class="meta-pill"
                   >${localize("devices.coil_dry_summary", this.hass.language)}</span
                 >`
