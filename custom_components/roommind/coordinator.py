@@ -53,6 +53,7 @@ from .control.mpc_controller import (
 )
 from .control.solar import compute_q_solar_norm
 from .control.thermal_model import RoomModelManager
+from .managers.ac_coil_dry_manager import AcCoilDryManager, CoilDryRoomResult
 from .managers.compressor_group_manager import (
     CompressorGroupConfig,
     CompressorGroupManager,
@@ -171,6 +172,8 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         self._cover_orchestrator = CoverOrchestrator(hass, self._cover_manager, self._model_manager)
         # Compressor group management (min-run / min-off protection)
         self._compressor_manager = CompressorGroupManager()
+        # AC evaporator drying (anti-odour): bounded fan run after cooling
+        self._coil_dry_manager = AcCoilDryManager(hass)
         # Heat source orchestration state (per room)
         self._heat_source_states: dict[str, str] = {}
         # Track which rooms already have entity platform entities registered
@@ -240,6 +243,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 self._ekf_training._model_manager = self._model_manager
                 self._cover_orchestrator._model_manager = self._model_manager
             self._valve_manager.load_actuation_data(settings.get("valve_last_actuation", {}))
+            self._coil_dry_manager.load_state(settings.get("coil_dry_state", {}))
             self._model_loaded = True
 
         # Initialize history store (once)
@@ -383,6 +387,15 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         if self._valve_manager.actuation_dirty and self._thermal_save_count == 0:
             await store.async_save_settings({"valve_last_actuation": self._valve_manager.get_actuation_data()})
             self._valve_manager.actuation_dirty = False
+
+        # Coil dry: drop state for devices no longer configured anywhere
+        self._coil_dry_manager.prune(set(build_rooms_devices_map(rooms)))
+
+        # Persist coil dry state on change — a 20 min run is far shorter than
+        # the 15 min thermal save cycle, so this must not piggyback on it.
+        if self._coil_dry_manager.state_dirty:
+            await store.async_save_settings({"coil_dry_state": self._coil_dry_manager.get_state()})
+            self._coil_dry_manager.state_dirty = False
 
         self.rooms = room_states
         return {"rooms": room_states}
@@ -578,6 +591,10 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 "active_heat_sources": None,
                 "compressor_protection_active": False,
                 "compressor_protection_reason": None,
+                "coil_dry_active": False,
+                "coil_dry_phase": None,
+                "coil_dry_until": None,
+                "coil_dry_entities": [],
             }
 
         # --- Mold risk calculation ---
@@ -851,6 +868,26 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 q_residual=q_residual,
             )
 
+        # AC evaporator drying: bounded fan run after cooling.  Runs even under
+        # window pause and force_off — the coordinator already bypasses the
+        # compressor timers on those paths, and that is exactly when the coil
+        # would otherwise sit wet for hours.  Deliberately before the
+        # climate_active / waiting_for_data chain and not inside its else
+        # branch: the manager must also run when nothing may be commanded, so
+        # it can end phases and hold the pending fan restore.
+        coil_dry = await self._coil_dry_manager.async_process_room(
+            area_id=area_id,
+            room=room,
+            settings=settings,
+            mode=mode,
+            commandable=climate_active and not waiting_for_data,
+            compressor_forced_on=compressor_forced_on,
+            compressor_forced_off=compressor_forced_off,
+            exclude_eids=cycling_eids,
+            force_off=force_off,
+            can_activate=self._compressor_manager.check_can_activate,
+        )
+
         if not climate_active:
             # Climate control disabled — do NOT send commands.
             mode = MODE_IDLE
@@ -869,7 +906,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                     targets,
                     power_fraction=power_fraction,
                     current_temp=current_temp,
-                    exclude_eids=cycling_eids,
+                    exclude_eids=cycling_eids | coil_dry.controlled_eids,
                     heating_boost_target=device_max_temp,
                     ac_heating_boost_target=ac_device_max_temp,
                     cooling_boost_target=device_min_temp,
@@ -902,6 +939,9 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                         "unknown",
                     )
                     self._compressor_manager.update_member(eid, actually_on)
+                elif eid in coil_dry.compressor_active_eids:
+                    # coil_dry_mode="dry" really runs the compressor
+                    self._compressor_manager.update_member(eid, True)
                 elif mode != MODE_IDLE:
                     self._compressor_manager.update_member(eid, True)
                 else:
@@ -967,6 +1007,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             has_external_sensor=has_external_sensor,
             heat_source_plan=heat_source_plan,
             climate_active=climate_active,
+            coil_dry_skip_training=coil_dry.skip_ekf_training,
         )
 
         return self._build_room_state_dict(
@@ -1000,6 +1041,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             cover_result=cover_result,
             mpc_active=mpc_active,
             compressor_protection_reason=compressor_protection_reason,
+            coil_dry=coil_dry,
         )
 
     async def _observe_and_train(
@@ -1019,6 +1061,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         has_external_sensor: bool,
         heat_source_plan: Any | None,
         climate_active: bool,
+        coil_dry_skip_training: bool = False,
     ) -> tuple[str, float]:
         """Observe device state, train EKF, compute display mode.
 
@@ -1122,9 +1165,16 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         # toward 0, alpha drifts under process noise and eventually pegs at
         # the upper bound (see #301).  Skip the update — and flush any
         # accumulated batch — when no real outdoor source is available.
+        # Same flush for a coil dry run in "dry" mode: the compressor is really
+        # cooling, so training that window as idle would drift alpha (spec 9.3).
         learning_disabled = settings.get("learning_disabled_rooms", [])
         learning_active = area_id not in learning_disabled
-        if learning_active and current_temp_raw is not None and self.outdoor_temp_effective is not None:
+        if (
+            learning_active
+            and not coil_dry_skip_training
+            and current_temp_raw is not None
+            and self.outdoor_temp_effective is not None
+        ):
             can_heat, can_cool = get_can_heat_cool(room, acs_can_heat=check_acs_can_heat(self.hass, room))
             self._ekf_training.process(
                 area_id=area_id,
@@ -1211,6 +1261,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         cover_result: CoverResult,
         mpc_active: bool,
         compressor_protection_reason: str | None = None,
+        coil_dry: CoilDryRoomResult | None = None,
     ) -> dict:
         """Build the final room state dictionary."""
         _room_devices = room.get("devices", [])
@@ -1285,6 +1336,10 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             "active_heat_sources": self._heat_source_states.get(area_id),
             "compressor_protection_active": compressor_protection_reason is not None,
             "compressor_protection_reason": compressor_protection_reason,
+            "coil_dry_active": bool(coil_dry and coil_dry.active),
+            "coil_dry_phase": coil_dry.phase if coil_dry else None,
+            "coil_dry_until": coil_dry.until if coil_dry else None,
+            "coil_dry_entities": sorted(coil_dry.controlled_eids) if coil_dry else [],
         }
 
     @staticmethod
@@ -1728,6 +1783,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         self._climate_entity_areas.discard(area_id)
         self._model_manager.remove_room(area_id)
         self._heat_source_states.pop(area_id, None)
+        self._coil_dry_manager.remove_room(area_id)
         if self._history_store:
             await self.hass.async_add_executor_job(self._history_store.remove_room, area_id)
 

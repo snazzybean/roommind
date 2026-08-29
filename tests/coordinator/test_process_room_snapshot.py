@@ -71,6 +71,10 @@ NORMAL_ROOM_KEYS = {
     "active_heat_sources",
     "compressor_protection_active",
     "compressor_protection_reason",
+    "coil_dry_active",
+    "coil_dry_phase",
+    "coil_dry_until",
+    "coil_dry_entities",
 }
 
 OUTDOOR_ROOM_KEYS = {
@@ -110,6 +114,10 @@ OUTDOOR_ROOM_KEYS = {
     "active_heat_sources",
     "compressor_protection_active",
     "compressor_protection_reason",
+    "coil_dry_active",
+    "coil_dry_phase",
+    "coil_dry_until",
+    "coil_dry_entities",
 }
 
 

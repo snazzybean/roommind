@@ -970,6 +970,82 @@ async def test_list_rooms_includes_compressor_protection_status(ws_hass, store, 
 
 
 @pytest.mark.asyncio
+async def test_list_rooms_includes_coil_dry_status(ws_hass, store, connection):
+    """Verify the four coil_dry_* fields pass through into live data.
+
+    Same allow-list trap as the compressor fields above (#386): the handler
+    builds ``live`` from an explicit field list, so coordinator state that is
+    not named here is silently dropped.
+    """
+    await store.async_load()
+
+    save_msg = {
+        "id": 2,
+        "type": "roommind/rooms/save",
+        "area_id": "kueche",
+        "acs": ["climate.kueche_ac"],
+        "temperature_sensor": "sensor.kueche_temp",
+    }
+    await _save_room(ws_hass, connection, save_msg)
+    connection.send_result.reset_mock()
+
+    mock_coordinator = MagicMock()
+    mock_coordinator.rooms = {
+        "kueche": {
+            "current_temp": 24.0,
+            "target_temp": 24.0,
+            "mode": "idle",
+            "coil_dry_active": True,
+            "coil_dry_phase": "blow",
+            "coil_dry_until": 1700.0,
+            "coil_dry_entities": ["climate.kueche_ac"],
+        }
+    }
+    mock_coordinator.async_request_refresh = AsyncMock()
+    ws_hass.data[DOMAIN]["coordinator"] = mock_coordinator
+
+    list_msg = {"id": 3, "type": "roommind/rooms/list"}
+    await _list_rooms(ws_hass, connection, list_msg)
+
+    connection.send_result.assert_called_once()
+    live = connection.send_result.call_args[0][1]["rooms"]["kueche"]["live"]
+    assert live["coil_dry_active"] is True
+    assert live["coil_dry_phase"] == "blow"
+    assert live["coil_dry_until"] == 1700.0
+    assert live["coil_dry_entities"] == ["climate.kueche_ac"]
+
+
+@pytest.mark.asyncio
+async def test_list_rooms_coil_dry_defaults_without_coordinator_state(ws_hass, store, connection):
+    """A room the coordinator has not run yet reports the inactive defaults."""
+    await store.async_load()
+
+    save_msg = {
+        "id": 2,
+        "type": "roommind/rooms/save",
+        "area_id": "bad",
+        "acs": ["climate.bad_ac"],
+        "temperature_sensor": "sensor.bad_temp",
+    }
+    await _save_room(ws_hass, connection, save_msg)
+    connection.send_result.reset_mock()
+
+    mock_coordinator = MagicMock()
+    mock_coordinator.rooms = {}
+    mock_coordinator.async_request_refresh = AsyncMock()
+    ws_hass.data[DOMAIN]["coordinator"] = mock_coordinator
+
+    list_msg = {"id": 3, "type": "roommind/rooms/list"}
+    await _list_rooms(ws_hass, connection, list_msg)
+
+    live = connection.send_result.call_args[0][1]["rooms"]["bad"]["live"]
+    assert live["coil_dry_active"] is False
+    assert live["coil_dry_phase"] is None
+    assert live["coil_dry_until"] is None
+    assert live["coil_dry_entities"] == []
+
+
+@pytest.mark.asyncio
 async def test_list_rooms_includes_cover_override_until(ws_hass, store, connection):
     """Verify cover_override_until appears in live data from list_rooms."""
     await store.async_load()
