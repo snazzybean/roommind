@@ -102,6 +102,33 @@ async def test_accumulates_cooling_time(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_still_cooling_does_not_reset_start_time(monkeypatch):
+    """Consecutive cooling cycles must not push cooling_since forward.
+
+    The coordinator polls every 30s, so a multi-minute cooling run is many
+    consecutive ``mode="cooling"`` calls, not one. If the rising-edge guard
+    were dropped and ``cooling_since`` got overwritten every cycle instead of
+    only on the first one, the whole run would still end up here — but this
+    test then folds a 90s run into 30s of ``wet_seconds`` instead of 90.
+    """
+    import custom_components.roommind.managers.ac_coil_dry_manager as mod
+
+    now = [0.0]
+    monkeypatch.setattr(mod.time, "time", lambda: now[0])
+    mgr = AcCoilDryManager(build_hass())
+
+    await process(mgr, mode="cooling")
+    now[0] = 30.0
+    await process(mgr, mode="cooling")
+    now[0] = 60.0
+    await process(mgr, mode="cooling")
+
+    now[0] = 90.0
+    await process(mgr, mode="idle")
+    assert mgr.state_for(AC_EID).wet_seconds == pytest.approx(90.0)
+
+
+@pytest.mark.asyncio
 async def test_accumulates_across_bangbang_bursts(monkeypatch):
     """Three short cooling bursts sum up — that is the point in bang-bang mode."""
     import custom_components.roommind.managers.ac_coil_dry_manager as mod
