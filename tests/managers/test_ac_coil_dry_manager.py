@@ -519,3 +519,100 @@ async def test_fan_mode_keep_sends_no_fan_command(monkeypatch, caplog):
     assert mgr.state_for(AC_EID).phase == "blow"
     assert mgr.state_for(AC_EID).fan_mode == ""
     assert "does not support fan_mode" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_no_run_while_still_cooling_even_with_wet_seconds_over_threshold(monkeypatch):
+    """wet_seconds is level-based and can already be over threshold while the
+    device is actively cooling again — a prior attempt was merely blocked
+    (compressor min-run here), not reset. The mode guard must still refuse to
+    start a drying run while ``mode == COOLING``: that would fight the very
+    cooling demand that just resumed.
+    """
+    import custom_components.roommind.managers.ac_coil_dry_manager as mod
+
+    now = [0.0]
+    monkeypatch.setattr(mod.time, "time", lambda: now[0])
+    mgr = AcCoilDryManager(build_hass())
+
+    await process(mgr, mode="cooling")
+    now[0] += 900.0
+    # Blocked start attempt: wet_seconds (900s) clears the threshold, but
+    # compressor_forced_on prevents the run — wet_seconds is carried over.
+    await process(mgr, mode="idle", forced_on={AC_EID})
+    assert mgr.state_for(AC_EID).wet_seconds == pytest.approx(900.0)
+    assert mgr.state_for(AC_EID).phase is None
+
+    # Cooling resumes with the leftover wet_seconds still over threshold.
+    result = await process(mgr, mode="cooling")
+    assert mgr.state_for(AC_EID).phase is None
+    assert result.controlled_eids == set()
+
+
+@pytest.mark.asyncio
+async def test_no_run_during_heating_even_with_zero_threshold(monkeypatch):
+    """``coil_dry_min_cooling_minutes=0`` would otherwise let a freshly-reset
+    ``wet_seconds == 0`` clear the threshold check trivially. The explicit
+    mode guard is what actually keeps a run from starting while the AC heats
+    — the indoor coil is a warm condenser, not something to dry.
+    """
+    import custom_components.roommind.managers.ac_coil_dry_manager as mod
+
+    now = [0.0]
+    monkeypatch.setattr(mod.time, "time", lambda: now[0])
+    mgr = AcCoilDryManager(build_hass())
+    settings = {"coil_dry_enabled": True, "coil_dry_min_cooling_minutes": 0}
+
+    result = await process(mgr, mode="heating", settings=settings)
+    assert mgr.state_for(AC_EID).phase is None
+    assert result.controlled_eids == set()
+
+
+@pytest.mark.asyncio
+async def test_no_run_when_not_commandable_even_with_wet_seconds_over_threshold(monkeypatch):
+    """``commandable=False`` (climate_control_active off / startup guard) must
+    block a start outright — contract #36 forbids RoomMind from sending any
+    command at all, and a fresh drying run would send set_hvac_mode/set_fan_mode.
+    """
+    import custom_components.roommind.managers.ac_coil_dry_manager as mod
+
+    now = [0.0]
+    monkeypatch.setattr(mod.time, "time", lambda: now[0])
+    hass = build_hass()
+    mgr = AcCoilDryManager(hass)
+
+    await process(mgr, mode="cooling")
+    now[0] += 900.0
+    # The idle transition itself flushes cooling_since into wet_seconds (that
+    # happens unconditionally in _update_wetness) — commandable=False here
+    # only needs to block the *start*, on this same call.
+    result = await process(mgr, mode="idle", commandable=False)
+    assert mgr.state_for(AC_EID).wet_seconds == pytest.approx(900.0)
+    assert mgr.state_for(AC_EID).phase is None
+    assert result.controlled_eids == set()
+    assert hass.services.async_call.call_args_list == []
+
+
+@pytest.mark.asyncio
+async def test_dry_mode_flags_only_active_during_blow_not_drain(monkeypatch):
+    """dry mode's compressor_active_eids/skip_ekf_training must stay off while
+    draining (the device is genuinely off, no compressor running) and only
+    come on once blow actually starts the compressor.
+    """
+    import custom_components.roommind.managers.ac_coil_dry_manager as mod
+
+    now = [0.0]
+    monkeypatch.setattr(mod.time, "time", lambda: now[0])
+    mgr = AcCoilDryManager(build_hass())
+    settings = {"coil_dry_enabled": True, "coil_dry_mode": "dry", "coil_dry_drain_minutes": 3}
+
+    result = await _wet(mgr, now, settings=settings)
+    assert mgr.state_for(AC_EID).phase == "drain"
+    assert result.compressor_active_eids == set()
+    assert result.skip_ekf_training is False
+
+    now[0] += 3 * 60 + 1
+    result = await process(mgr, mode="idle", settings=settings)
+    assert mgr.state_for(AC_EID).phase == "blow"
+    assert result.compressor_active_eids == {AC_EID}
+    assert result.skip_ekf_training is True
