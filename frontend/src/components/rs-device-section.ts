@@ -11,6 +11,16 @@ import { inputStyles } from "../styles/input-styles";
 import "./shared/rs-master-detail";
 import "./shared/rs-info-icon";
 
+/**
+ * UI-only sentinel for "inherit the global setting".  ha-select cannot render an
+ * option whose value is the empty string, so the stored "" would show up as a
+ * blank field.  Mapped back to "" on save; "__keep__" keeps its own meaning
+ * (send no fan mode at all) and must not be folded into this.
+ */
+const INHERIT = "__inherit__";
+
+const fromInherit = (value: string | undefined): string => (value === INHERIT ? "" : (value ?? ""));
+
 @customElement("rs-device-section")
 export class RsDeviceSection extends LitElement {
   @property({ attribute: false }) public hass!: HomeAssistant;
@@ -20,6 +30,9 @@ export class RsDeviceSection extends LitElement {
   @property({ attribute: false }) public valveProtectionExclude: Set<string> = new Set();
   @property({ type: Boolean }) public valveProtectionEnabled = false;
   @property({ type: Boolean }) public coilDryEnabledGlobal = false;
+  @property({ type: Number }) public coilDryMinutesGlobal = 20;
+  @property({ type: String }) public coilDryModeGlobal = "fan_only";
+  @property({ type: String }) public coilDryFanModeGlobal = "low";
 
   @property({ type: Boolean }) public editing = false;
   @state() private _systemTypeInfoExpanded = false;
@@ -604,7 +617,8 @@ export class RsDeviceSection extends LitElement {
                   )}</span
                 >`
               : nothing}
-            ${device?.coil_dry === "on" || (device?.coil_dry !== "off" && this.coilDryEnabledGlobal)
+            ${isAc &&
+            (device?.coil_dry === "on" || (device?.coil_dry !== "off" && this.coilDryEnabledGlobal))
               ? html`<span class="meta-pill"
                   >${localize("devices.coil_dry_summary", this.hass.language)}</span
                 >`
@@ -750,12 +764,22 @@ export class RsDeviceSection extends LitElement {
               </ha-select>
             </div>
 
+            ${(device.coil_dry ?? "inherit") === "inherit" && !this.coilDryEnabledGlobal
+              ? html`
+                  <div class="boost-hint">
+                    <ha-icon icon="mdi:information-outline"></ha-icon>
+                    <span>${localize("devices.coil_dry_global_off_hint", lang)}</span>
+                  </div>
+                `
+              : nothing}
             ${(device.coil_dry ?? "inherit") !== "off"
               ? html`
                   <div class="detail-field">
                     <ha-textfield
                       .value=${String(device.coil_dry_minutes ?? 0)}
-                      .label=${localize("devices.coil_dry_minutes", lang)}
+                      .label=${localize("devices.coil_dry_minutes", lang, {
+                        minutes: this.coilDryMinutesGlobal,
+                      })}
                       type="number"
                       step="1"
                       min="0"
@@ -771,19 +795,26 @@ export class RsDeviceSection extends LitElement {
                   <div class="detail-field with-info">
                     <ha-select
                       .label=${localize("devices.coil_dry_mode", lang)}
-                      .value=${device.coil_dry_mode ?? ""}
+                      .value=${device.coil_dry_mode || INHERIT}
                       .options=${[
-                        { value: "", label: localize("devices.coil_dry_mode_inherit", lang) },
+                        {
+                          value: INHERIT,
+                          label: localize("devices.coil_dry_mode_inherit", lang, {
+                            value: this.coilDryModeGlobal,
+                          }),
+                        },
                         { value: "fan_only", label: "fan_only" },
                         { value: "dry", label: "dry" },
                       ]}
                       @selected=${(e: Event) =>
-                        this._onCoilDryModeChange(entityId, getSelectValue(e))}
+                        this._onCoilDryModeChange(entityId, fromInherit(getSelectValue(e)))}
                       @closed=${(e: Event) => e.stopPropagation()}
                       fixedMenuPosition
                     >
-                      <ha-list-item value=""
-                        >${localize("devices.coil_dry_mode_inherit", lang)}</ha-list-item
+                      <ha-list-item value="${INHERIT}"
+                        >${localize("devices.coil_dry_mode_inherit", lang, {
+                          value: this.coilDryModeGlobal,
+                        })}</ha-list-item
                       >
                       <ha-list-item value="fan_only">fan_only</ha-list-item>
                       <ha-list-item value="dry">dry</ha-list-item>
@@ -799,9 +830,14 @@ export class RsDeviceSection extends LitElement {
                   <div class="detail-field">
                     <ha-select
                       .label=${localize("devices.coil_dry_fan_mode", lang)}
-                      .value=${device.coil_dry_fan_mode ?? ""}
+                      .value=${device.coil_dry_fan_mode || INHERIT}
                       .options=${[
-                        { value: "", label: localize("devices.coil_dry_fan_mode_inherit", lang) },
+                        {
+                          value: INHERIT,
+                          label: localize("devices.coil_dry_fan_mode_inherit", lang, {
+                            value: this._globalFanModeLabel(lang),
+                          }),
+                        },
                         {
                           value: "__keep__",
                           label: localize("devices.coil_dry_fan_mode_keep", lang),
@@ -812,12 +848,14 @@ export class RsDeviceSection extends LitElement {
                         })),
                       ]}
                       @selected=${(e: Event) =>
-                        this._onCoilDryFanModeChange(entityId, getSelectValue(e))}
+                        this._onCoilDryFanModeChange(entityId, fromInherit(getSelectValue(e)))}
                       @closed=${(e: Event) => e.stopPropagation()}
                       fixedMenuPosition
                     >
-                      <ha-list-item value=""
-                        >${localize("devices.coil_dry_fan_mode_inherit", lang)}</ha-list-item
+                      <ha-list-item value="${INHERIT}"
+                        >${localize("devices.coil_dry_fan_mode_inherit", lang, {
+                          value: this._globalFanModeLabel(lang),
+                        })}</ha-list-item
                       >
                       <ha-list-item value="__keep__"
                         >${localize("devices.coil_dry_fan_mode_keep", lang)}</ha-list-item
@@ -999,6 +1037,13 @@ export class RsDeviceSection extends LitElement {
       d.entity_id === entityId ? { ...d, setpoint_mode: mode as "proportional" | "direct" } : d,
     );
     this._fireDeviceChanged(newDevices);
+  }
+
+  /** Global fan mode as shown in the inherit option ("" means keep current). */
+  private _globalFanModeLabel(lang: string): string {
+    return this.coilDryFanModeGlobal === ""
+      ? localize("devices.coil_dry_fan_mode_keep", lang)
+      : this.coilDryFanModeGlobal;
   }
 
   private _onCoilDryChange(entityId: string, value: string) {

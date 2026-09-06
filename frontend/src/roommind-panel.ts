@@ -50,6 +50,9 @@ export class RoomMindPanel extends LitElement {
   @state() private _presenceEnabled = false;
   @state() private _valveProtectionEnabled = false;
   @state() private _coilDryEnabled = false;
+  @state() private _coilDryMinutes = 20;
+  @state() private _coilDryMode = "fan_only";
+  @state() private _coilDryFanMode = "low";
   @state() private _anyoneHome = true;
   @state() private _presencePersons: string[] = [];
   @state() private _presenceAwayAction: "eco" | "off" = "eco";
@@ -476,6 +479,9 @@ export class RoomMindPanel extends LitElement {
             .climateControlActive=${this._climateControlActive}
             .valveProtectionEnabled=${this._valveProtectionEnabled}
             .coilDryEnabled=${this._coilDryEnabled}
+            .coilDryMinutes=${this._coilDryMinutes}
+            .coilDryMode=${this._coilDryMode}
+            .coilDryFanMode=${this._coilDryFanMode}
             @back-clicked=${this._onBackFromDetail}
             @room-updated=${this._onRoomUpdated}
           ></rs-room-detail>
@@ -759,6 +765,9 @@ export class RoomMindPanel extends LitElement {
         schedule_off_action: "eco" | "off";
         valve_protection_enabled: boolean;
         coil_dry_enabled: boolean;
+        coil_dry_minutes: number;
+        coil_dry_mode: string;
+        coil_dry_fan_mode: string;
       }>({
         type: "roommind/rooms/list",
       });
@@ -774,6 +783,9 @@ export class RoomMindPanel extends LitElement {
       this._presenceEnabled = result.presence_enabled ?? false;
       this._valveProtectionEnabled = result.valve_protection_enabled ?? false;
       this._coilDryEnabled = result.coil_dry_enabled ?? false;
+      this._coilDryMinutes = result.coil_dry_minutes ?? 20;
+      this._coilDryMode = result.coil_dry_mode ?? "fan_only";
+      this._coilDryFanMode = result.coil_dry_fan_mode ?? "low";
       this._anyoneHome = result.anyone_home ?? true;
       this._presencePersons = result.presence_persons ?? [];
       this._presenceAwayAction = result.presence_away_action ?? "eco";
