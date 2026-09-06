@@ -1512,7 +1512,14 @@ def _monday_blocks(data: dict) -> dict:
     return {"monday": [{"from": "08:00:00", "to": "12:00:00", "data": data}]}
 
 
-_MONDAY_TS = datetime(2025, 1, 6, 10, 0, 0, tzinfo=dt_util.DEFAULT_TIME_ZONE).timestamp()
+def _monday_ts() -> float:
+    """Monday 2025-01-06 10:00 local time, inside the _monday_blocks() window.
+
+    Must be evaluated inside the test, not at import time: the autouse fixture in
+    conftest sets HA's timezone per test, so a module-level constant would be
+    built against the wrong zone and fall outside the block (CI TZ sweep).
+    """
+    return datetime(2025, 1, 6, 10, 0, 0, tzinfo=dt_util.DEFAULT_TIME_ZONE).timestamp()
 
 
 class TestSanitizeBlockTemp:
@@ -1584,7 +1591,7 @@ class TestOutOfRangeBlockTemps:
     def test_resolve_target_at_time_falls_back_to_comfort(self):
         """The #395 typo (110 instead of 11) resolves to comfort_temp."""
         result = resolve_target_at_time(
-            ts=_MONDAY_TS,
+            ts=_monday_ts(),
             schedule_blocks=_monday_blocks({"temperature": 110}),
             override_until=None,
             override_temp=None,
@@ -1598,7 +1605,7 @@ class TestOutOfRangeBlockTemps:
     def test_resolve_target_at_time_accepts_intended_value(self):
         """The value the user meant to type (11) is still honoured."""
         result = resolve_target_at_time(
-            ts=_MONDAY_TS,
+            ts=_monday_ts(),
             schedule_blocks=_monday_blocks({"temperature": 11}),
             override_until=None,
             override_temp=None,
@@ -1614,7 +1621,7 @@ class TestOutOfRangeBlockTemps:
         from custom_components.roommind.utils.schedule_utils import resolve_targets_at_time
 
         result = resolve_targets_at_time(
-            ts=_MONDAY_TS,
+            ts=_monday_ts(),
             schedule_blocks=_monday_blocks({"temperature": 110}),
             override_until=None,
             override_heat=None,
@@ -1633,7 +1640,7 @@ class TestOutOfRangeBlockTemps:
         from custom_components.roommind.utils.schedule_utils import resolve_targets_at_time
 
         result = resolve_targets_at_time(
-            ts=_MONDAY_TS,
+            ts=_monday_ts(),
             schedule_blocks=_monday_blocks({"heat_temperature": 200, "cool_temperature": 25.0}),
             override_until=None,
             override_heat=None,
@@ -1652,7 +1659,7 @@ class TestOutOfRangeBlockTemps:
         from custom_components.roommind.utils.schedule_utils import resolve_targets_at_time
 
         result = resolve_targets_at_time(
-            ts=_MONDAY_TS,
+            ts=_monday_ts(),
             schedule_blocks=_monday_blocks({"heat_temperature": 20.0, "cool_temperature": -40}),
             override_until=None,
             override_heat=None,
@@ -1673,7 +1680,7 @@ class TestOutOfRangeBlockTemps:
             {"comfort_heat": 21.0, "comfort_cool": 24.0, "eco_heat": 17.0, "eco_cool": 27.0},
             {},
         )
-        assert resolver(_MONDAY_TS) == TargetTemps(heat=21.0, cool=24.0)
+        assert resolver(_monday_ts()) == TargetTemps(heat=21.0, cool=24.0)
 
 
 class TestFindRejectedBlockTemps:
