@@ -219,9 +219,10 @@ def resolve_targets_at_time(
             return TargetTemps(heat=h, cool=c)
         block_temp = data.get("temperature")
         if block_temp is not None:
-            t = sanitize_block_temp(block_temp, block_temp_converter)
-            if t is not None:
-                return TargetTemps(heat=t, cool=t)
+            # Distinct name from the vacation branch's `t`, which is a plain float.
+            single = sanitize_block_temp(block_temp, block_temp_converter)
+            if single is not None:
+                return TargetTemps(heat=single, cool=single)
         return TargetTemps(heat=comfort_heat, cool=comfort_cool)
     # Not in any block → eco or off
     if schedule_off_action == "off":

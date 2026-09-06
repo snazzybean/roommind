@@ -17,15 +17,7 @@ import { RsScheduleBase } from "./shared/rs-schedule-base";
 import { inputStyles } from "../styles/input-styles";
 
 /** Mirrors _WEEKDAYS in the backend's schedule_utils.py. */
-const WEEKDAYS = [
-  "monday",
-  "tuesday",
-  "wednesday",
-  "thursday",
-  "friday",
-  "saturday",
-  "sunday",
-];
+const WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
 
 @customElement("rs-schedule-settings")
 export class RsScheduleSettings extends RsScheduleBase {
