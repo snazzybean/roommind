@@ -17,6 +17,8 @@ from ..const import (
     DEFAULT_COMFORT_HEAT,
     DEFAULT_ECO_COOL,
     DEFAULT_ECO_HEAT,
+    MAX_TARGET_TEMP,
+    MIN_TARGET_TEMP,
     TargetTemps,
 )
 
@@ -41,6 +43,78 @@ def find_active_block(schedule_blocks: dict, ts: float) -> dict[str, Any] | None
         if from_time <= current_time < to_time:
             return dict(block.get("data", {}))
     return None
+
+
+def sanitize_block_temp(
+    raw: Any,
+    converter: Callable[[float], float] | None = None,
+) -> float | None:
+    """Convert a schedule block temperature to °C, or None if unusable.
+
+    Schedule blocks are free-form YAML, so a typo (110 instead of 11) reaches us
+    unchecked and would be heated against for hours (#395). Values outside
+    ``MIN_TARGET_TEMP``..``MAX_TARGET_TEMP`` are rejected so the caller can fall
+    back to comfort/eco.
+
+    The range check runs *after* ``converter``, so the bounds always apply to
+    Celsius regardless of the HA display unit (on a °F system the accepted
+    window is 41–95 °F).
+    """
+    try:
+        val = float(raw)
+    except (ValueError, TypeError):
+        return None
+    if converter is not None:
+        val = converter(val)
+    # Negated comparison also rejects NaN, which would pass `MIN <= v <= MAX`.
+    if not MIN_TARGET_TEMP <= val <= MAX_TARGET_TEMP:
+        return None
+    return val
+
+
+# Weekday order used when reporting rejected blocks, so the panel lists them
+# in calendar order rather than dict insertion order.
+_WEEKDAYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
+
+# Block data keys that carry a target temperature.
+_BLOCK_TEMP_FIELDS = ("temperature", "heat_temperature", "cool_temperature")
+
+
+def find_rejected_block_temps(
+    schedule_blocks: dict | None,
+    converter: Callable[[float], float] | None = None,
+) -> list[dict[str, Any]]:
+    """Scan *every* block of a schedule for temperatures the resolver would drop.
+
+    ``sanitize_block_temp`` only sees the block that is running right now, so a
+    typo in a block scheduled for 03:00 stays invisible until it fires (#395).
+    This walks the whole week so the panel can surface it at any time of day.
+
+    Returns one entry per rejected value, each with ``day``, ``from``, ``field``
+    and the offending ``value`` as a string (it may not be numeric at all).
+    Only values that are present but unusable are reported — an absent field is
+    not a problem, it simply falls back to comfort.
+    """
+    if not schedule_blocks:
+        return []
+
+    rejected: list[dict[str, Any]] = []
+    for day in _WEEKDAYS:
+        for block in schedule_blocks.get(day, []) or []:
+            data = block.get("data") or {}
+            for field in _BLOCK_TEMP_FIELDS:
+                raw = data.get(field)
+                if raw is None or sanitize_block_temp(raw, converter) is not None:
+                    continue
+                rejected.append(
+                    {
+                        "day": day,
+                        "from": str(block.get("from", "")),
+                        "field": field,
+                        "value": str(raw),
+                    }
+                )
+    return rejected
 
 
 def resolve_target_at_time(
@@ -79,11 +153,9 @@ def resolve_target_at_time(
     if data is not None:
         block_temp = data.get("temperature")
         if block_temp is not None:
-            try:
-                val = float(block_temp)
-                return block_temp_converter(val) if block_temp_converter else val
-            except (ValueError, TypeError):
-                pass
+            val = sanitize_block_temp(block_temp, block_temp_converter)
+            if val is not None:
+                return val
         return comfort_temp
     # Not in any block → eco or off
     if schedule_off_action == "off":
@@ -137,26 +209,19 @@ def resolve_targets_at_time(
             h = comfort_heat
             c = comfort_cool
             if heat_temp_raw is not None:
-                try:
-                    val = float(heat_temp_raw)
-                    h = block_temp_converter(val) if block_temp_converter else val
-                except (ValueError, TypeError):
-                    pass
+                val = sanitize_block_temp(heat_temp_raw, block_temp_converter)
+                if val is not None:
+                    h = val
             if cool_temp_raw is not None:
-                try:
-                    val = float(cool_temp_raw)
-                    c = block_temp_converter(val) if block_temp_converter else val
-                except (ValueError, TypeError):
-                    pass
+                val = sanitize_block_temp(cool_temp_raw, block_temp_converter)
+                if val is not None:
+                    c = val
             return TargetTemps(heat=h, cool=c)
         block_temp = data.get("temperature")
         if block_temp is not None:
-            try:
-                val = float(block_temp)
-                t = block_temp_converter(val) if block_temp_converter else val
+            t = sanitize_block_temp(block_temp, block_temp_converter)
+            if t is not None:
                 return TargetTemps(heat=t, cool=t)
-            except (ValueError, TypeError):
-                pass
         return TargetTemps(heat=comfort_heat, cool=comfort_cool)
     # Not in any block → eco or off
     if schedule_off_action == "off":

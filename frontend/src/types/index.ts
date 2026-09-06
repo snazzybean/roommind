@@ -60,6 +60,15 @@ export interface RoomLiveData {
   coil_dry_phase: "drain" | "blow" | null;
   coil_dry_until: number | null;
   coil_dry_entities: string[];
+  schedule_temp_warnings: ScheduleTempWarning[];
+}
+
+/** A schedule block temperature the backend discarded as implausible (#395). */
+export interface ScheduleTempWarning {
+  day: string; // lowercase English weekday, e.g. "monday"
+  from: string; // "HH:MM:SS"
+  field: "temperature" | "heat_temperature" | "cool_temperature";
+  value: string; // the offending raw value; may not be numeric
 }
 
 export type DeviceType = "trv" | "ac";

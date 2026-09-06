@@ -156,6 +156,7 @@
   "schedule.from_schedule": "{temp}{unit} from schedule",
   "schedule.from_schedule_split": "{heat}{unit} / {cool}{unit} from schedule",
   "schedule.fallback": "{temp}{unit} (fallback)",
+  "schedule.block_temp_rejected": "Values outside the valid range {min}–{max}{unit}: {values}. The comfort target is used instead — check the schedule helper for a typo.",
   "schedule.eco_detail": "{temp}{unit} (eco)",
   "devices.climate_entities": "Climate entities",
   "devices.temp_sensors": "Temperature sensors",

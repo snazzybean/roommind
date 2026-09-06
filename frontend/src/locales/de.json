@@ -156,6 +156,7 @@
   "schedule.from_schedule": "{temp}{unit} vom Zeitplan",
   "schedule.from_schedule_split": "{heat}{unit} / {cool}{unit} vom Zeitplan",
   "schedule.fallback": "{temp}{unit} (Fallback)",
+  "schedule.block_temp_rejected": "Werte außerhalb des gültigen Bereichs {min}–{max}{unit}: {values}. Stattdessen gilt die Komforttemperatur — bitte den Zeitplan-Helfer auf einen Tippfehler prüfen.",
   "schedule.eco_detail": "{temp}{unit} (Eco)",
   "devices.climate_entities": "Klimageräte",
   "devices.temp_sensors": "Temperatursensoren",

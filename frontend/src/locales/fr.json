@@ -156,6 +156,7 @@
   "schedule.from_schedule": "{temp}{unit} provenant de la planification",
   "schedule.from_schedule_split": "{heat}{unit} / {cool}{unit} provenant de la planification",
   "schedule.fallback": "{temp}{unit} (secours)",
+  "schedule.block_temp_rejected": "Valeurs hors de la plage valide {min}–{max}{unit} : {values}. La température de confort est utilisée à la place — vérifiez l'assistant de planification.",
   "schedule.eco_detail": "{temp}{unit} (éco)",
   "devices.climate_entities": "Entités climatiques",
   "devices.temp_sensors": "Capteurs de température",

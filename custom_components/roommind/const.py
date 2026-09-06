@@ -60,6 +60,13 @@ class TargetTemps(NamedTuple):
     cool: float | None = None  # None = don't cool / force off
 
 
+# Plausibility bounds for resolved room target temperatures (°C).
+# Schedule blocks are free-form YAML, so a typo (110 instead of 11) would
+# otherwise be heated against for hours (#395). Same range as the override
+# climate entity in climate.py, which imports these.
+MIN_TARGET_TEMP = 5.0
+MAX_TARGET_TEMP = 35.0
+
 # Smart control defaults
 BANGBANG_HEAT_HYSTERESIS = 0.2  # °C below target → start heating (bang-bang fallback)
 BANGBANG_COOL_HYSTERESIS = 0.2  # °C above target → start cooling (bang-bang fallback)

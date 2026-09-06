@@ -180,7 +180,9 @@ export abstract class RsScheduleBase extends LitElement {
       padding-left: 4px;
     }
 
-    .selector-warning {
+    /* .inline-warning is the same pill outside the selector context (#395). */
+    .selector-warning,
+    .inline-warning {
       display: flex;
       align-items: center;
       gap: 8px;
@@ -191,7 +193,8 @@ export abstract class RsScheduleBase extends LitElement {
       color: var(--warning-color, #ff9800);
       font-size: 13px;
     }
-    .selector-warning ha-icon {
+    .selector-warning ha-icon,
+    .inline-warning ha-icon {
       --mdc-icon-size: 18px;
       flex-shrink: 0;
     }

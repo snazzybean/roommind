@@ -1500,3 +1500,250 @@ class TestTimezoneAwareBlockResolution:
                 eco_cool=29.0,
             )
         assert result == TargetTemps(heat=24.0, cool=26.0)  # comfort
+
+
+# ---------------------------------------------------------------------------
+# sanitize_block_temp / out-of-range block temps (#395)
+# ---------------------------------------------------------------------------
+
+
+def _monday_blocks(data: dict) -> dict:
+    """Return schedule blocks with a single Monday 08:00-12:00 block."""
+    return {"monday": [{"from": "08:00:00", "to": "12:00:00", "data": data}]}
+
+
+_MONDAY_TS = datetime(2025, 1, 6, 10, 0, 0, tzinfo=dt_util.DEFAULT_TIME_ZONE).timestamp()
+
+
+class TestSanitizeBlockTemp:
+    """Tests for sanitize_block_temp (#395)."""
+
+    def test_valid_value_passes_through(self):
+        """A plausible value is returned unchanged."""
+        from custom_components.roommind.utils.schedule_utils import sanitize_block_temp
+
+        assert sanitize_block_temp(21.0) == 21.0
+
+    @pytest.mark.parametrize("bound", [5.0, 35.0])
+    def test_bounds_are_inclusive(self, bound):
+        """Both range limits are accepted."""
+        from custom_components.roommind.utils.schedule_utils import sanitize_block_temp
+
+        assert sanitize_block_temp(bound) == bound
+
+    @pytest.mark.parametrize("raw", [110, 35.1, 4.9, -5, 0])
+    def test_out_of_range_returns_none(self, raw):
+        """Implausible values are rejected."""
+        from custom_components.roommind.utils.schedule_utils import sanitize_block_temp
+
+        assert sanitize_block_temp(raw) is None
+
+    @pytest.mark.parametrize("raw", ["not_a_number", None, [21.0], {}])
+    def test_non_numeric_returns_none(self, raw):
+        """Unparseable values are rejected (previous ValueError/TypeError path)."""
+        from custom_components.roommind.utils.schedule_utils import sanitize_block_temp
+
+        assert sanitize_block_temp(raw) is None
+
+    def test_nan_returns_none(self):
+        """NaN is rejected — it would pass a naive `MIN <= v <= MAX` check."""
+        from custom_components.roommind.utils.schedule_utils import sanitize_block_temp
+
+        assert sanitize_block_temp(float("nan")) is None
+
+    def test_infinity_returns_none(self):
+        """Infinity is rejected."""
+        from custom_components.roommind.utils.schedule_utils import sanitize_block_temp
+
+        assert sanitize_block_temp(float("inf")) is None
+
+    def test_numeric_string_is_accepted(self):
+        """Numeric strings still resolve (YAML may deliver them quoted)."""
+        from custom_components.roommind.utils.schedule_utils import sanitize_block_temp
+
+        assert sanitize_block_temp("21.5") == 21.5
+
+    def test_range_check_runs_after_converter(self):
+        """71.6°F converts to 22°C and is accepted, not rejected as out of range."""
+        from custom_components.roommind.utils.schedule_utils import sanitize_block_temp
+
+        converter = lambda v: (v - 32) * 5 / 9  # noqa: E731
+        assert sanitize_block_temp(71.6, converter) == pytest.approx(22.0, abs=0.1)
+
+    def test_converted_value_out_of_range_rejected(self):
+        """220°F = 104°C is rejected after conversion."""
+        from custom_components.roommind.utils.schedule_utils import sanitize_block_temp
+
+        converter = lambda v: (v - 32) * 5 / 9  # noqa: E731
+        assert sanitize_block_temp(220.0, converter) is None
+
+
+class TestOutOfRangeBlockTemps:
+    """Out-of-range schedule block temps fall back to comfort (#395)."""
+
+    def test_resolve_target_at_time_falls_back_to_comfort(self):
+        """The #395 typo (110 instead of 11) resolves to comfort_temp."""
+        result = resolve_target_at_time(
+            ts=_MONDAY_TS,
+            schedule_blocks=_monday_blocks({"temperature": 110}),
+            override_until=None,
+            override_temp=None,
+            vacation_until=None,
+            vacation_temp=None,
+            comfort_temp=21.0,
+            eco_temp=18.0,
+        )
+        assert result == 21.0
+
+    def test_resolve_target_at_time_accepts_intended_value(self):
+        """The value the user meant to type (11) is still honoured."""
+        result = resolve_target_at_time(
+            ts=_MONDAY_TS,
+            schedule_blocks=_monday_blocks({"temperature": 11}),
+            override_until=None,
+            override_temp=None,
+            vacation_until=None,
+            vacation_temp=None,
+            comfort_temp=21.0,
+            eco_temp=18.0,
+        )
+        assert result == 11.0
+
+    def test_resolve_targets_single_temp_falls_back(self):
+        """Out-of-range single `temperature` falls back to both comfort targets."""
+        from custom_components.roommind.utils.schedule_utils import resolve_targets_at_time
+
+        result = resolve_targets_at_time(
+            ts=_MONDAY_TS,
+            schedule_blocks=_monday_blocks({"temperature": 110}),
+            override_until=None,
+            override_heat=None,
+            override_cool=None,
+            vacation_until=None,
+            vacation_temp=None,
+            comfort_heat=21.0,
+            comfort_cool=24.0,
+            eco_heat=17.0,
+            eco_cool=27.0,
+        )
+        assert result == TargetTemps(heat=21.0, cool=24.0)
+
+    def test_resolve_targets_bad_heat_keeps_good_cool(self):
+        """Only the out-of-range field falls back; the valid one is kept."""
+        from custom_components.roommind.utils.schedule_utils import resolve_targets_at_time
+
+        result = resolve_targets_at_time(
+            ts=_MONDAY_TS,
+            schedule_blocks=_monday_blocks({"heat_temperature": 200, "cool_temperature": 25.0}),
+            override_until=None,
+            override_heat=None,
+            override_cool=None,
+            vacation_until=None,
+            vacation_temp=None,
+            comfort_heat=21.0,
+            comfort_cool=24.0,
+            eco_heat=17.0,
+            eco_cool=27.0,
+        )
+        assert result == TargetTemps(heat=21.0, cool=25.0)
+
+    def test_resolve_targets_bad_cool_keeps_good_heat(self):
+        """Mirror case: out-of-range cool_temperature falls back to comfort_cool."""
+        from custom_components.roommind.utils.schedule_utils import resolve_targets_at_time
+
+        result = resolve_targets_at_time(
+            ts=_MONDAY_TS,
+            schedule_blocks=_monday_blocks({"heat_temperature": 20.0, "cool_temperature": -40}),
+            override_until=None,
+            override_heat=None,
+            override_cool=None,
+            vacation_until=None,
+            vacation_temp=None,
+            comfort_heat=21.0,
+            comfort_cool=24.0,
+            eco_heat=17.0,
+            eco_cool=27.0,
+        )
+        assert result == TargetTemps(heat=20.0, cool=24.0)
+
+    def test_make_target_resolver_falls_back(self):
+        """The MPC/forecast resolver drops the typo too."""
+        resolver = make_target_resolver(
+            _monday_blocks({"temperature": 110}),
+            {"comfort_heat": 21.0, "comfort_cool": 24.0, "eco_heat": 17.0, "eco_cool": 27.0},
+            {},
+        )
+        assert resolver(_MONDAY_TS) == TargetTemps(heat=21.0, cool=24.0)
+
+
+class TestFindRejectedBlockTemps:
+    """Whole-week scan for unusable block temps (#395)."""
+
+    def test_none_and_empty_return_empty(self):
+        """No schedule blocks → nothing to report."""
+        from custom_components.roommind.utils.schedule_utils import find_rejected_block_temps
+
+        assert find_rejected_block_temps(None) == []
+        assert find_rejected_block_temps({}) == []
+
+    def test_all_valid_returns_empty(self):
+        """A clean schedule produces no warnings."""
+        from custom_components.roommind.utils.schedule_utils import find_rejected_block_temps
+
+        blocks = _monday_blocks({"temperature": 21.0})
+        assert find_rejected_block_temps(blocks) == []
+
+    def test_finds_typo_in_inactive_block(self):
+        """The #395 scenario: a bad value in the 00:00-06:00 block is found at any time."""
+        from custom_components.roommind.utils.schedule_utils import find_rejected_block_temps
+
+        blocks = {"monday": [{"from": "00:00:00", "to": "06:00:00", "data": {"temperature": 110}}]}
+        assert find_rejected_block_temps(blocks) == [
+            {"day": "monday", "from": "00:00:00", "field": "temperature", "value": "110"}
+        ]
+
+    def test_reports_split_fields(self):
+        """heat_temperature and cool_temperature are scanned too."""
+        from custom_components.roommind.utils.schedule_utils import find_rejected_block_temps
+
+        blocks = _monday_blocks({"heat_temperature": 200, "cool_temperature": 24.0})
+        result = find_rejected_block_temps(blocks)
+        assert [r["field"] for r in result] == ["heat_temperature"]
+        assert result[0]["value"] == "200"
+
+    def test_reports_non_numeric_values(self):
+        """Unparseable values are reported as-is, not swallowed."""
+        from custom_components.roommind.utils.schedule_utils import find_rejected_block_temps
+
+        blocks = _monday_blocks({"temperature": "twenty"})
+        assert find_rejected_block_temps(blocks)[0]["value"] == "twenty"
+
+    def test_results_are_in_weekday_order(self):
+        """Entries are ordered Monday-first regardless of dict insertion order."""
+        from custom_components.roommind.utils.schedule_utils import find_rejected_block_temps
+
+        blocks = {
+            "wednesday": [{"from": "01:00:00", "to": "02:00:00", "data": {"temperature": 111}}],
+            "monday": [{"from": "01:00:00", "to": "02:00:00", "data": {"temperature": 110}}],
+        }
+        assert [r["day"] for r in find_rejected_block_temps(blocks)] == ["monday", "wednesday"]
+
+    def test_converter_applied_before_check(self):
+        """71.6°F is valid after conversion and must not be reported."""
+        from custom_components.roommind.utils.schedule_utils import find_rejected_block_temps
+
+        converter = lambda v: (v - 32) * 5 / 9  # noqa: E731
+        assert find_rejected_block_temps(_monday_blocks({"temperature": 71.6}), converter) == []
+        assert len(find_rejected_block_temps(_monday_blocks({"temperature": 220}), converter)) == 1
+
+    def test_missing_data_key_is_not_reported(self):
+        """A block without temperature fields is fine — it falls back to comfort."""
+        from custom_components.roommind.utils.schedule_utils import find_rejected_block_temps
+
+        assert find_rejected_block_temps({"monday": [{"from": "01:00:00", "to": "02:00:00"}]}) == []
+
+    def test_day_with_none_block_list(self):
+        """A day key holding None is tolerated."""
+        from custom_components.roommind.utils.schedule_utils import find_rejected_block_temps
+
+        assert find_rejected_block_temps({"monday": None}) == []

@@ -21,6 +21,8 @@ from .const import (
     DEFAULT_COMFORT_COOL,
     DEFAULT_COMFORT_HEAT,
     DOMAIN,
+    MAX_TARGET_TEMP,
+    MIN_TARGET_TEMP,
     OVERRIDE_CUSTOM,
     is_override_active,
 )
@@ -60,8 +62,8 @@ class RoomMindOverrideClimate(CoordinatorEntity, ClimateEntity):
     _attr_icon = "mdi:thermometer-alert"
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
     _attr_target_temperature_step = 0.5
-    _attr_min_temp = 5.0
-    _attr_max_temp = 35.0
+    _attr_min_temp = MIN_TARGET_TEMP
+    _attr_max_temp = MAX_TARGET_TEMP
 
     def __init__(self, coordinator: RoomMindCoordinator, area_id: str) -> None:
         super().__init__(coordinator)
