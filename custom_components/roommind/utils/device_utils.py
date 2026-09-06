@@ -6,7 +6,7 @@ Pure utility module with NO dependencies on HA or other RoomMind modules.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, NamedTuple
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -30,6 +30,44 @@ DEFAULT_IDLE_SETBACK_OFFSET = 2.0
 
 SETPOINT_MODE_PROPORTIONAL = "proportional"
 SETPOINT_MODE_DIRECT = "direct"
+
+# --- Coil dry (evaporator anti-odour run) ---
+# These live here, not in const.py, because get_coil_dry_config() resolves them
+# and this module is deliberately free of HA / RoomMind imports.  Same
+# precedent as IDLE_ACTION_* above.
+COIL_DRY_INHERIT = "inherit"
+COIL_DRY_ON = "on"
+COIL_DRY_OFF = "off"
+COIL_DRY_OVERRIDES = [COIL_DRY_INHERIT, COIL_DRY_ON, COIL_DRY_OFF]
+
+COIL_DRY_MODE_FAN_ONLY = "fan_only"
+COIL_DRY_MODE_DRY = "dry"
+COIL_DRY_MODES = [COIL_DRY_MODE_FAN_ONLY, COIL_DRY_MODE_DRY]
+
+# Device-level sentinel: "" means "inherit the global setting", so an explicit
+# "keep the device's current fan speed" needs its own value.
+COIL_DRY_FAN_MODE_KEEP = "__keep__"
+
+COIL_DRY_PHASE_DRAIN = "drain"
+COIL_DRY_PHASE_BLOW = "blow"
+
+DEFAULT_COIL_DRY_MINUTES = 20  # low fan speed by default -> double the 10 min
+DEFAULT_COIL_DRY_FAN_MODE = "low"  # HA's FAN_LOW: quiet beats fast, see spec 6.4
+DEFAULT_COIL_DRY_MIN_COOLING_MINUTES = 10
+DEFAULT_COIL_DRY_DRAIN_MINUTES = 0
+COIL_DRY_STALE_SECONDS = 7200.0  # 2 h: accumulated wetness expires, run too late
+
+
+class CoilDryConfig(NamedTuple):
+    """Resolved coil dry configuration for one device."""
+
+    enabled: bool
+    minutes: int
+    mode: str
+    fan_mode: str  # "" = keep the device's current fan speed
+    min_cooling_minutes: int
+    drain_minutes: int
+
 
 # Active HVAC modes that indicate real device capabilities.
 _ACTIVE_HVAC_MODES = {"heat", "cool", "heat_cool", "auto"}
@@ -69,6 +107,10 @@ def legacy_to_devices(
                 "idle_action": IDLE_ACTION_OFF,
                 "idle_fan_mode": DEFAULT_IDLE_FAN_MODE,
                 "setpoint_mode": SETPOINT_MODE_PROPORTIONAL,
+                "coil_dry": COIL_DRY_INHERIT,
+                "coil_dry_minutes": 0,
+                "coil_dry_mode": "",
+                "coil_dry_fan_mode": "",
             }
         )
     for eid in acs:
@@ -81,6 +123,10 @@ def legacy_to_devices(
                 "idle_action": IDLE_ACTION_OFF,
                 "idle_fan_mode": DEFAULT_IDLE_FAN_MODE,
                 "setpoint_mode": SETPOINT_MODE_PROPORTIONAL,
+                "coil_dry": COIL_DRY_INHERIT,
+                "coil_dry_minutes": 0,
+                "coil_dry_mode": "",
+                "coil_dry_fan_mode": "",
             }
         )
     return devices
@@ -293,3 +339,38 @@ def room_contributes_to_group(
         if eid and eid in member_set and dev.get("type") == required_type:
             return True
     return False
+
+
+def get_coil_dry_config(devices: list[dict], entity_id: str, settings: dict) -> CoilDryConfig:
+    """Resolve the effective coil dry config for one device.
+
+    Device fields override the global settings.  Sentinels: ``coil_dry_minutes=0``
+    and ``coil_dry_mode=""`` mean "inherit"; ``coil_dry_fan_mode=""`` means
+    "inherit" while ``"__keep__"`` means "send no set_fan_mode at all".
+    """
+    dev = get_device_by_eid(devices, entity_id) or {}
+
+    override = dev.get("coil_dry", COIL_DRY_INHERIT)
+    if override == COIL_DRY_ON:
+        enabled = True
+    elif override == COIL_DRY_OFF:
+        enabled = False
+    else:
+        enabled = bool(settings.get("coil_dry_enabled", False))
+
+    dev_fan = dev.get("coil_dry_fan_mode", "")
+    if dev_fan == COIL_DRY_FAN_MODE_KEEP:
+        fan_mode = ""
+    elif dev_fan:
+        fan_mode = dev_fan
+    else:
+        fan_mode = settings.get("coil_dry_fan_mode", DEFAULT_COIL_DRY_FAN_MODE)
+
+    return CoilDryConfig(
+        enabled=enabled,
+        minutes=int(dev.get("coil_dry_minutes") or settings.get("coil_dry_minutes", DEFAULT_COIL_DRY_MINUTES)),
+        mode=dev.get("coil_dry_mode") or settings.get("coil_dry_mode", COIL_DRY_MODE_FAN_ONLY),
+        fan_mode=fan_mode,
+        min_cooling_minutes=int(settings.get("coil_dry_min_cooling_minutes", DEFAULT_COIL_DRY_MIN_COOLING_MINUTES)),
+        drain_minutes=int(settings.get("coil_dry_drain_minutes", DEFAULT_COIL_DRY_DRAIN_MINUTES)),
+    )

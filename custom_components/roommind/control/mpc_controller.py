@@ -1278,6 +1278,9 @@ class MPCController:
 
         _exclude = exclude_eids or set()
         thermostats = [e for e in self.thermostats if e not in _exclude]
+        # ACs were previously never filtered because exclude_eids only ever
+        # carried TRVs (valve protection is TRV-only).  Coil dry excludes ACs.
+        acs = [e for e in self.acs if e not in _exclude]
 
         # Managed mode (no external sensor) with auto climate mode and
         # both device types: activate each device in its natural mode so
@@ -1303,7 +1306,7 @@ class MPCController:
                     )
                 else:
                     await self._call("set_hvac_mode", {"entity_id": eid, "hvac_mode": "off"})
-            for eid in self.acs:
+            for eid in acs:
                 if eid in _forced_off:
                     await async_idle_device(self.hass, eid, self._devices, area_id=self._area_id, targets=targets)
                     continue
@@ -1538,7 +1541,7 @@ class MPCController:
                 ac_heat_target = effective_target
             ha_ac_target = celsius_to_ha_temp(self.hass, ac_heat_target)
             ha_ac_direct = celsius_to_ha_temp(self.hass, effective_target)
-            for eid in self.acs:
+            for eid in acs:
                 if eid in _forced_off:
                     await async_idle_device(self.hass, eid, self._devices, area_id=self._area_id, targets=targets)
                     continue
@@ -1575,7 +1578,7 @@ class MPCController:
                 ac_cool_target = effective_target
             ha_target = celsius_to_ha_temp(self.hass, ac_cool_target)
             ha_cool_direct = celsius_to_ha_temp(self.hass, effective_target)
-            for eid in self.acs:
+            for eid in acs:
                 if eid in _forced_off:
                     await async_idle_device(self.hass, eid, self._devices, area_id=self._area_id, targets=targets)
                     continue
@@ -1593,7 +1596,7 @@ class MPCController:
                     continue
                 await self._call("set_hvac_mode", {"entity_id": eid, "hvac_mode": "off"})
         elif mode == MODE_IDLE:
-            for eid in thermostats + self.acs:
+            for eid in thermostats + acs:
                 if eid in _forced_on:
                     # Compressor min-run: set target temp so device self-regulates
                     # instead of overshooting at the old boost setpoint.

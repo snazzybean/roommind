@@ -46,6 +46,7 @@ export class RsRoomDetail extends LitElement {
   @property({ type: Boolean }) public climateControlActive = true;
 
   @property({ type: Boolean }) public valveProtectionEnabled = false;
+  @property({ type: Boolean }) public coilDryEnabled = false;
 
   @state() private _devices: DeviceConfig[] = [];
   @state() private _selectedTempSensor = "";
@@ -479,6 +480,7 @@ export class RsRoomDetail extends LitElement {
                     .selectedTempSensor=${this._selectedTempSensor}
                     .valveProtectionExclude=${this._valveProtectionExclude}
                     .valveProtectionEnabled=${this.valveProtectionEnabled}
+                    .coilDryEnabledGlobal=${this.coilDryEnabled}
                     @device-changed=${this._onDeviceChanged}
                     @valve-protection-exclude-toggle=${this._onValveProtectionExcludeToggle}
                   ></rs-device-section>
@@ -723,6 +725,7 @@ export class RsRoomDetail extends LitElement {
             .selectedTempSensor=${this._selectedTempSensor}
             .valveProtectionExclude=${this._valveProtectionExclude}
             .valveProtectionEnabled=${this.valveProtectionEnabled}
+            .coilDryEnabledGlobal=${this.coilDryEnabled}
             @device-changed=${this._onDeviceChanged}
             @valve-protection-exclude-toggle=${this._onValveProtectionExcludeToggle}
           ></rs-device-section>

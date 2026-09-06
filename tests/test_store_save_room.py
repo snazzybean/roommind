@@ -426,3 +426,39 @@ async def test_create_then_update_preserves_area_id(store):
 
     updated = await store.async_save_room("real_id", {"area_id": "another_fake", "comfort_temp": 20.0})
     assert updated["area_id"] == "real_id"
+
+
+# ---------------------------------------------------------------------------
+# Coil dry (evaporator drying) device fields (Task 2)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_coil_dry_device_fields_survive_save(store):
+    """devices[] is merged as a whole, so coil dry fields must round-trip."""
+    await store.async_load()
+
+    await store.async_save_room(
+        "living_room",
+        {
+            "devices": [
+                {
+                    "entity_id": "climate.living_ac",
+                    "type": "ac",
+                    "role": "auto",
+                    "coil_dry": "on",
+                    "coil_dry_minutes": 15,
+                    "coil_dry_mode": "fan_only",
+                    "coil_dry_fan_mode": "high",
+                }
+            ]
+        },
+    )
+
+    dev = store.get_room("living_room")["devices"][0]
+    assert dev["coil_dry"] == "on"
+    assert dev["coil_dry_minutes"] == 15
+    assert dev["coil_dry_mode"] == "fan_only"
+    assert dev["coil_dry_fan_mode"] == "high"
+    # Legacy sync must still produce the acs list
+    assert store.get_room("living_room")["acs"] == ["climate.living_ac"]

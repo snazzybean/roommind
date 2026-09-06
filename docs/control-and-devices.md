@@ -106,6 +106,33 @@ RoomMind keeps the TRV in its current heating mode but lowers the setpoint to th
 
 Useful for battery-powered Zigbee TRVs that enter deep sleep when set to `off` and then stop reacting to commands. `Low` keeps the valve responsive while effectively stopping heating.
 
+## Evaporator Drying
+
+`Settings -> Evaporator drying` (with a per-device override in `Devices`) keeps an AC's indoor fan running for a while after cooling stops, before the unit really switches off.
+
+Drying the evaporator coil this way cuts down on biofilm buildup and a musty smell on the next cooling start. It is off by default.
+
+### Turning it on
+
+- Enable it globally in `Settings -> Evaporator drying`.
+- Or override a single device in `Devices`: `Use global setting`, `Always on`, or `Always off`. Only `Climate Device` / AC entries offer this; TRVs have no evaporator coil.
+
+Drying time, the minimum cooling time before a run is worth it, an optional drain delay, drying mode (`fan_only` or `dry`), and fan speed are all configurable, both globally and per device. A device left on its default values falls back to the global setting.
+
+### While it runs
+
+- A returning cooling demand cancels the run immediately and the AC goes straight back to cooling.
+- A returning heating demand cancels it too, and resets the tracked wetness for that room's ACs.
+- A running or draining device shows a badge with the remaining time on the room's status.
+
+### Relation to `When idle`
+
+If a drain delay is configured, a run normally holds the device off first so condensate can drain, then switches to the fan. With `When idle` set to `Setback` the device is never actually off, so the drain step is skipped and the run starts directly in the fan phase.
+
+### Relation to an explicit shutdown
+
+An explicit shutdown, `Action when schedule is off` or `Action when away` set to `Turn off devices`, overrides `When idle` (described in the next section) so a device cannot stay fanning or set back indefinitely. Evaporator drying is different: an explicit shutdown does not block it. A run can start fresh or keep going, and always finishes normally, before the device goes off.
+
 ## When "Turn off devices" Overrides `When idle`
 
 `When idle` describes what a device should do while the room simply has no heating or cooling demand. It does **not** apply when you explicitly shut a room down via:

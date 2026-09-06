@@ -56,6 +56,10 @@ export interface RoomLiveData {
   learning_paused_reason: "outdoor_unavailable" | null;
   compressor_protection_active: boolean;
   compressor_protection_reason: "min_off" | "min_run" | null;
+  coil_dry_active: boolean;
+  coil_dry_phase: "drain" | "blow" | null;
+  coil_dry_until: number | null;
+  coil_dry_entities: string[];
 }
 
 export type DeviceType = "trv" | "ac";
@@ -69,6 +73,10 @@ export interface DeviceConfig {
   idle_action?: "off" | "fan_only" | "setback" | "low"; // default "off"
   idle_fan_mode?: string; // default "low"
   setpoint_mode?: "proportional" | "direct"; // default "proportional"
+  coil_dry?: "inherit" | "on" | "off"; // default "inherit"
+  coil_dry_minutes?: number; // 0 = inherit global
+  coil_dry_mode?: "" | "fan_only" | "dry"; // "" = inherit global
+  coil_dry_fan_mode?: string; // "" = inherit global, "__keep__" = keep current
 }
 
 export type ConflictResolution =
@@ -164,6 +172,12 @@ export interface GlobalSettings {
   schedule_off_action?: "eco" | "off";
   valve_protection_enabled?: boolean;
   valve_protection_interval_days?: number;
+  coil_dry_enabled?: boolean;
+  coil_dry_minutes?: number;
+  coil_dry_mode?: "fan_only" | "dry";
+  coil_dry_fan_mode?: string;
+  coil_dry_min_cooling_minutes?: number;
+  coil_dry_drain_minutes?: number;
   mold_detection_enabled?: boolean;
   mold_humidity_threshold?: number;
   mold_sustained_minutes?: number;

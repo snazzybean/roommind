@@ -19,6 +19,7 @@ export class RsDeviceSection extends LitElement {
   @property({ type: String }) public selectedTempSensor = "";
   @property({ attribute: false }) public valveProtectionExclude: Set<string> = new Set();
   @property({ type: Boolean }) public valveProtectionEnabled = false;
+  @property({ type: Boolean }) public coilDryEnabledGlobal = false;
 
   @property({ type: Boolean }) public editing = false;
   @state() private _systemTypeInfoExpanded = false;
@@ -603,6 +604,11 @@ export class RsDeviceSection extends LitElement {
                   )}</span
                 >`
               : nothing}
+            ${device?.coil_dry === "on" || (device?.coil_dry !== "off" && this.coilDryEnabledGlobal)
+              ? html`<span class="meta-pill"
+                  >${localize("devices.coil_dry_summary", this.hass.language)}</span
+                >`
+              : nothing}
             ${device?.setpoint_mode === "direct" && this.selectedTempSensor
               ? html`<span class="meta-pill"
                   >${localize("devices.setpoint_mode_direct", this.hass.language)}</span
@@ -721,6 +727,107 @@ export class RsDeviceSection extends LitElement {
                     )}
                   </ha-select>
                 </div>`
+              : nothing}
+
+            <div class="detail-field">
+              <ha-select
+                .label=${localize("devices.coil_dry", lang)}
+                .value=${device.coil_dry ?? "inherit"}
+                .options=${[
+                  { value: "inherit", label: localize("devices.coil_dry_inherit", lang) },
+                  { value: "on", label: localize("devices.coil_dry_on", lang) },
+                  { value: "off", label: localize("devices.coil_dry_off", lang) },
+                ]}
+                @selected=${(e: Event) => this._onCoilDryChange(entityId, getSelectValue(e))}
+                @closed=${(e: Event) => e.stopPropagation()}
+                fixedMenuPosition
+              >
+                <ha-list-item value="inherit"
+                  >${localize("devices.coil_dry_inherit", lang)}</ha-list-item
+                >
+                <ha-list-item value="on">${localize("devices.coil_dry_on", lang)}</ha-list-item>
+                <ha-list-item value="off">${localize("devices.coil_dry_off", lang)}</ha-list-item>
+              </ha-select>
+            </div>
+
+            ${(device.coil_dry ?? "inherit") !== "off"
+              ? html`
+                  <div class="detail-field">
+                    <ha-textfield
+                      .value=${String(device.coil_dry_minutes ?? 0)}
+                      .label=${localize("devices.coil_dry_minutes", lang)}
+                      type="number"
+                      step="1"
+                      min="0"
+                      max="60"
+                      @change=${(e: Event) => {
+                        const v = parseInt((e.target as HTMLInputElement).value, 10);
+                        if (!isNaN(v) && v >= 0 && v <= 60)
+                          this._onCoilDryMinutesChange(entityId, v);
+                      }}
+                    ></ha-textfield>
+                  </div>
+
+                  <div class="detail-field with-info">
+                    <ha-select
+                      .label=${localize("devices.coil_dry_mode", lang)}
+                      .value=${device.coil_dry_mode ?? ""}
+                      .options=${[
+                        { value: "", label: localize("devices.coil_dry_mode_inherit", lang) },
+                        { value: "fan_only", label: "fan_only" },
+                        { value: "dry", label: "dry" },
+                      ]}
+                      @selected=${(e: Event) =>
+                        this._onCoilDryModeChange(entityId, getSelectValue(e))}
+                      @closed=${(e: Event) => e.stopPropagation()}
+                      fixedMenuPosition
+                    >
+                      <ha-list-item value=""
+                        >${localize("devices.coil_dry_mode_inherit", lang)}</ha-list-item
+                      >
+                      <ha-list-item value="fan_only">fan_only</ha-list-item>
+                      <ha-list-item value="dry">dry</ha-list-item>
+                    </ha-select>
+                    ${device.coil_dry_mode === "dry"
+                      ? html`<rs-info-icon
+                          icon="mdi:alert-outline"
+                          .text=${localize("coil_dry.mode_dry_warning", lang)}
+                        ></rs-info-icon>`
+                      : nothing}
+                  </div>
+
+                  <div class="detail-field">
+                    <ha-select
+                      .label=${localize("devices.coil_dry_fan_mode", lang)}
+                      .value=${device.coil_dry_fan_mode ?? ""}
+                      .options=${[
+                        { value: "", label: localize("devices.coil_dry_fan_mode_inherit", lang) },
+                        {
+                          value: "__keep__",
+                          label: localize("devices.coil_dry_fan_mode_keep", lang),
+                        },
+                        ...((entityState?.attributes?.fan_modes ?? []) as string[]).map((fm) => ({
+                          value: fm,
+                          label: fm,
+                        })),
+                      ]}
+                      @selected=${(e: Event) =>
+                        this._onCoilDryFanModeChange(entityId, getSelectValue(e))}
+                      @closed=${(e: Event) => e.stopPropagation()}
+                      fixedMenuPosition
+                    >
+                      <ha-list-item value=""
+                        >${localize("devices.coil_dry_fan_mode_inherit", lang)}</ha-list-item
+                      >
+                      <ha-list-item value="__keep__"
+                        >${localize("devices.coil_dry_fan_mode_keep", lang)}</ha-list-item
+                      >
+                      ${((entityState?.attributes?.fan_modes ?? []) as string[]).map(
+                        (fm) => html`<ha-list-item value="${fm}">${fm}</ha-list-item>`,
+                      )}
+                    </ha-select>
+                  </div>
+                `
               : nothing}
           `
         : nothing}
@@ -848,6 +955,11 @@ export class RsDeviceSection extends LitElement {
       if (deviceType === "ac" && updated.idle_action === "low") {
         updated.idle_action = "off";
       }
+      // coil_dry="on" is AC-only (no evaporator coil on a TRV); the backend
+      // schema rejects it. Reset when switching to TRV so the next save does not fail.
+      if (deviceType === "trv" && updated.coil_dry === "on") {
+        updated.coil_dry = "inherit";
+      }
       return updated;
     });
     this._fireDeviceChanged(newDevices);
@@ -887,6 +999,34 @@ export class RsDeviceSection extends LitElement {
       d.entity_id === entityId ? { ...d, setpoint_mode: mode as "proportional" | "direct" } : d,
     );
     this._fireDeviceChanged(newDevices);
+  }
+
+  private _onCoilDryChange(entityId: string, value: string) {
+    this._fireDeviceChanged(
+      this.devices.map((d) =>
+        d.entity_id === entityId ? { ...d, coil_dry: value as "inherit" | "on" | "off" } : d,
+      ),
+    );
+  }
+
+  private _onCoilDryMinutesChange(entityId: string, minutes: number) {
+    this._fireDeviceChanged(
+      this.devices.map((d) => (d.entity_id === entityId ? { ...d, coil_dry_minutes: minutes } : d)),
+    );
+  }
+
+  private _onCoilDryModeChange(entityId: string, value: string) {
+    this._fireDeviceChanged(
+      this.devices.map((d) =>
+        d.entity_id === entityId ? { ...d, coil_dry_mode: value as "" | "fan_only" | "dry" } : d,
+      ),
+    );
+  }
+
+  private _onCoilDryFanModeChange(entityId: string, value: string) {
+    this._fireDeviceChanged(
+      this.devices.map((d) => (d.entity_id === entityId ? { ...d, coil_dry_fan_mode: value } : d)),
+    );
   }
 
   private _onHeatingSystemTypeChange(e: Event) {
