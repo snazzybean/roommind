@@ -19,6 +19,8 @@ ROOM_WITH_COVERS = {
     "covers_min_position": 0,
 }
 
+_BUILD_SOLAR_SERIES = "custom_components.roommind.managers.cover_orchestrator.build_solar_series"
+
 ROOM_WITH_COVERS_AUTO = {
     **ROOM_WITH_COVERS,
     "covers_auto_enabled": True,
@@ -310,8 +312,15 @@ class TestCoverIntegration:
         assert room_state["active_cover_schedule_index"] == 1
 
     @pytest.mark.asyncio
-    async def test_covers_deploy_without_mpc_via_solar_prediction(self, coordinator, real_store):
-        """Covers deploy via simple solar prediction even without MPC active."""
+    @patch(_BUILD_SOLAR_SERIES, return_value=[0.8])
+    async def test_covers_deploy_without_mpc_via_solar_prediction(self, _mock_solar, coordinator, real_store):
+        """Covers deploy via simple solar prediction even without MPC active.
+
+        build_solar_series is patched because the estimator builds its own series
+        from sun position — the compute_q_solar_norm mock never reaches it, so
+        without this the predicted peak equals the room temperature and no solar
+        is exercised at all.
+        """
         await setup_room(real_store, ROOM_WITH_COVERS_AUTO)
         coordinator.hass.states.get = MagicMock(
             side_effect=make_hass_states(
@@ -330,8 +339,8 @@ class TestCoverIntegration:
         ):
             await coordinator._async_update_data()
 
-        # With temp=24, q_solar=0.8, linear fallback: 24 + 3.0*0.8*1.0 = 26.4
-        # excess = 26.4 - 21.0 = 5.4 > threshold 1.5 → deploy
+        # Linear fallback: 24 + 3.0*0.8*1.0 = 26.4
+        # excess = 26.4 - 24.0 (comfort_cool, #418) = 2.4 > threshold 1.5 → deploy
         cover_calls = [c for c in coordinator.hass.services.async_call.call_args_list if c[0][0] == "cover"]
         assert len(cover_calls) > 0, "Expected cover deploy via solar prediction"
 
@@ -400,12 +409,13 @@ class TestCoverIntegration:
         assert len(cover_calls) == 0, "No cover calls expected when override is active"
 
     @pytest.mark.asyncio
-    async def test_solar_overheating_deploys_in_cold_weather(self, coordinator, real_store):
+    @patch(_BUILD_SOLAR_SERIES, return_value=[0.9])
+    async def test_solar_overheating_deploys_in_cold_weather(self, _mock_solar, coordinator, real_store):
         """Covers deploy when solar overheats room, even if outdoor temp is 5C (cold-weather gate removed)."""
         await setup_room(real_store, ROOM_WITH_COVERS_AUTO)
         coordinator.hass.states.get = MagicMock(
             side_effect=make_hass_states(
-                temp="23.0",
+                temp="25.0",
                 outdoor_temp="5.0",
                 extra={
                     "cover.lr_blind": ("open", {"current_position": 100, "supported_features": 4}),
@@ -420,8 +430,10 @@ class TestCoverIntegration:
         ):
             await coordinator._async_update_data()
 
-        # Linear fallback: 23 + 3.0*0.9*1.0 = 25.7
-        # excess = 25.7 - 21.0 = 4.7 > threshold 1.5 → deploy
+        # Linear fallback: 25 + 3.0*0.9*1.0 = 27.7
+        # excess = 27.7 - 24.0 (comfort_cool, #418) = 3.7 → full close.
+        # Room temp raised from 23: against comfort_cool the old 23 only yields a
+        # ~9% move, which COVER_POS_DEADBAND suppresses — that would test nothing.
         # Old behavior would have blocked this (outdoor 5 < gate 10)
         cover_calls = [c for c in coordinator.hass.services.async_call.call_args_list if c[0][0] == "cover"]
         assert len(cover_calls) > 0, "Covers should deploy despite cold outdoor temp when solar causes overheating"

@@ -16,6 +16,7 @@ from ..const import (
     COVER_MIN_IDLE_FOR_LEARNED,
     COVER_PREDICTION_DT_MINUTES,
     COVER_SOLAR_MIN,
+    DEFAULT_COMFORT_COOL,
     MODE_COOLING,
     TargetTemps,
 )
@@ -129,13 +130,17 @@ class CoverOrchestrator:
             )
 
         # Block B: Cover target
-        cover_target = (
-            targets.cool
-            if mode == MODE_COOLING and targets.cool is not None
-            else targets.heat
-            if targets.heat is not None
-            else 22.0
-        )
+        # Shading attenuates solar gain, so it protects an upper bound. Outside
+        # active cooling there is no cooling setpoint to aim at, and comparing
+        # against targets.heat deployed ~3 C too early (#418) — in heat_only
+        # rooms permanently, since MODE_COOLING is unreachable there.
+        # targets.heat stays in the max() as a floor: a comfort_cool below the
+        # heating setpoint must not shade harder than before.
+        comfort_cool = room.get("comfort_cool", DEFAULT_COMFORT_COOL)
+        if mode == MODE_COOLING and targets.cool is not None:
+            cover_target = targets.cool
+        else:
+            cover_target = max([comfort_cool, *(t for t in (targets.cool, targets.heat) if t is not None)])
 
         # Block C: Forced position from schedule + night close
         _forced_position: int | None = None
