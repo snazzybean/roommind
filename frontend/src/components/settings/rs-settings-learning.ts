@@ -53,49 +53,55 @@ export class RsSettingsLearning extends RsSettingsBase {
             }}
           ></ha-switch>
         </div>
-        ${learningActive && configuredRooms.length > 0
-          ? html`
-              <button
-                class="exceptions-link"
-                @click=${() => {
-                  this._showLearningExceptions = !this._showLearningExceptions;
-                }}
-              >
-                <span
-                  >${disabledCount > 0
-                    ? `${disabledCount} ${localize(disabledCount === 1 ? "settings.learning_room_paused" : "settings.learning_rooms_paused", l)}`
-                    : localize("settings.learning_exceptions", l)}</span
+        ${
+          learningActive && configuredRooms.length > 0
+            ? html`
+                <button
+                  class="exceptions-link"
+                  @click=${() => {
+                    this._showLearningExceptions = !this._showLearningExceptions;
+                  }}
                 >
-                <ha-icon
-                  icon=${this._showLearningExceptions ? "mdi:chevron-up" : "mdi:chevron-down"}
-                  style="--mdc-icon-size: 16px"
-                ></ha-icon>
-              </button>
-              ${this._showLearningExceptions
-                ? html`
-                    <div class="room-toggles">
-                      ${configuredRooms.map(
-                        (room) => html`
-                          <div class="room-toggle-row">
-                            <span class="room-toggle-name">${room.name}</span>
-                            <ha-switch
-                              .checked=${!this.learningDisabledRooms.includes(room.areaId)}
-                              @change=${(e: Event) => {
-                                const disabled = !(e.target as HTMLInputElement).checked;
-                                const set = new Set(this.learningDisabledRooms);
-                                if (disabled) set.add(room.areaId);
-                                else set.delete(room.areaId);
-                                this._fire("learningDisabledRooms", [...set]);
-                              }}
-                            ></ha-switch>
-                          </div>
-                        `,
-                      )}
-                    </div>
-                  `
-                : nothing}
-            `
-          : nothing}
+                  <span
+                    >${
+                      disabledCount > 0
+                        ? `${disabledCount} ${localize(disabledCount === 1 ? "settings.learning_room_paused" : "settings.learning_rooms_paused", l)}`
+                        : localize("settings.learning_exceptions", l)
+                    }</span
+                  >
+                  <ha-icon
+                    icon=${this._showLearningExceptions ? "mdi:chevron-up" : "mdi:chevron-down"}
+                    style="--mdc-icon-size: 16px"
+                  ></ha-icon>
+                </button>
+                ${
+                  this._showLearningExceptions
+                    ? html`
+                        <div class="room-toggles">
+                          ${configuredRooms.map(
+                            (room) => html`
+                              <div class="room-toggle-row">
+                                <span class="room-toggle-name">${room.name}</span>
+                                <ha-switch
+                                  .checked=${!this.learningDisabledRooms.includes(room.areaId)}
+                                  @change=${(e: Event) => {
+                                    const disabled = !(e.target as HTMLInputElement).checked;
+                                    const set = new Set(this.learningDisabledRooms);
+                                    if (disabled) set.add(room.areaId);
+                                    else set.delete(room.areaId);
+                                    this._fire("learningDisabledRooms", [...set]);
+                                  }}
+                                ></ha-switch>
+                              </div>
+                            `,
+                          )}
+                        </div>
+                      `
+                    : nothing
+                }
+              `
+            : nothing
+        }
       </div>
 
       <!-- Boost learning -->
@@ -103,52 +109,60 @@ export class RsSettingsLearning extends RsSettingsBase {
         <span class="toggle-label">${localize("settings.boost_title", l)}</span>
         <p class="hint">${localize("settings.boost_hint", l)}</p>
 
-        ${configuredRooms.length > 0
-          ? html`
-              <div class="room-select-row">
-                <ha-select
-                  .value=${this._boostSelectedRoom}
-                  .label=${localize("settings.boost_room_select", l)}
-                  .options=${configuredRooms.map((room) => ({
-                    value: room.areaId,
-                    label: room.name,
-                  }))}
-                  fixedMenuPosition
-                  @selected=${(e: Event) => {
-                    this._boostSelectedRoom = getSelectValue(e);
-                  }}
-                  @closed=${(e: Event) => e.stopPropagation()}
-                >
-                  ${configuredRooms.map(
-                    (room) => html`<ha-list-item value=${room.areaId}>${room.name}</ha-list-item>`,
-                  )}
-                </ha-select>
-                ${this._boostSelectedRoom
-                  ? html`<ha-icon-button
-                      .path=${"M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z"}
-                      @click=${() => {
-                        this._boostSelectedRoom = "";
-                      }}
-                    ></ha-icon-button>`
-                  : nothing}
-                ${this._boostSelectedRoom && this._isCooldown(this._boostSelectedRoom)
-                  ? html`<span class="boost-status">
-                      <ha-icon icon="mdi:check-circle-outline"></ha-icon>
-                      ${localize("settings.boost_cooldown", l)}
-                    </span>`
-                  : html`<button
-                      class="boost-btn"
-                      ?disabled=${!this._boostSelectedRoom ||
-                      this._isCooldown(this._boostSelectedRoom)}
-                      @click=${() =>
-                        this._boostSelectedRoom && this._boostLearning(this._boostSelectedRoom)}
-                    >
-                      <ha-icon icon="mdi:lightning-bolt"></ha-icon>
-                      ${localize("settings.boost_btn", l)}
-                    </button>`}
-              </div>
-            `
-          : html`<p class="hint">${localize("settings.boost_no_rooms", l)}</p>`}
+        ${
+          configuredRooms.length > 0
+            ? html`
+                <div class="room-select-row">
+                  <ha-select
+                    .value=${this._boostSelectedRoom}
+                    .label=${localize("settings.boost_room_select", l)}
+                    .options=${configuredRooms.map((room) => ({
+                      value: room.areaId,
+                      label: room.name,
+                    }))}
+                    fixedMenuPosition
+                    @selected=${(e: Event) => {
+                      this._boostSelectedRoom = getSelectValue(e);
+                    }}
+                    @closed=${(e: Event) => e.stopPropagation()}
+                  >
+                    ${configuredRooms.map(
+                      (room) =>
+                        html`<ha-list-item value=${room.areaId}>${room.name}</ha-list-item>`,
+                    )}
+                  </ha-select>
+                  ${
+                    this._boostSelectedRoom
+                      ? html`<ha-icon-button
+                          .path=${"M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z"}
+                          @click=${() => {
+                            this._boostSelectedRoom = "";
+                          }}
+                        ></ha-icon-button>`
+                      : nothing
+                  }
+                  ${
+                    this._boostSelectedRoom && this._isCooldown(this._boostSelectedRoom)
+                      ? html`<span class="boost-status">
+                          <ha-icon icon="mdi:check-circle-outline"></ha-icon>
+                          ${localize("settings.boost_cooldown", l)}
+                        </span>`
+                      : html`<button
+                          class="boost-btn"
+                          ?disabled=${
+                            !this._boostSelectedRoom || this._isCooldown(this._boostSelectedRoom)
+                          }
+                          @click=${() =>
+                            this._boostSelectedRoom && this._boostLearning(this._boostSelectedRoom)}
+                        >
+                          <ha-icon icon="mdi:lightning-bolt"></ha-icon>
+                          ${localize("settings.boost_btn", l)}
+                        </button>`
+                  }
+                </div>
+              `
+            : html`<p class="hint">${localize("settings.boost_no_rooms", l)}</p>`
+        }
       </div>
     `;
   }

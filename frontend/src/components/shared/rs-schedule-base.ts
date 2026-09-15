@@ -313,28 +313,34 @@ export abstract class RsScheduleBase extends LitElement {
             onSelectorChanged(e.detail?.value ?? "");
           }}
         ></ha-entity-picker>
-        ${this.selectorEntity && selectorState
-          ? html`
-              <div class="selector-value">
-                ${this.selectorEntity.startsWith("input_boolean.")
-                  ? localize("schedule.selector_value_boolean", this.hass.language, {
-                      value: selectorState.state === "on" ? "On" : "Off",
-                    })
-                  : localize("schedule.selector_value_number", this.hass.language, {
-                      value: selectorState.state,
-                    })}
-              </div>
-            `
-          : nothing}
+        ${
+          this.selectorEntity && selectorState
+            ? html`
+                <div class="selector-value">
+                  ${
+                    this.selectorEntity.startsWith("input_boolean.")
+                      ? localize("schedule.selector_value_boolean", this.hass.language, {
+                          value: selectorState.state === "on" ? "On" : "Off",
+                        })
+                      : localize("schedule.selector_value_number", this.hass.language, {
+                          value: selectorState.state,
+                        })
+                  }
+                </div>
+              `
+            : nothing
+        }
         <div class="section-hint" style="margin-top:4px">${selectorHint}</div>
-        ${count > 1 && !this.selectorEntity
-          ? html`
-              <div class="selector-warning">
-                <ha-icon icon="mdi:alert-outline"></ha-icon>
-                ${selectorWarning}
-              </div>
-            `
-          : nothing}
+        ${
+          count > 1 && !this.selectorEntity
+            ? html`
+                <div class="selector-warning">
+                  <ha-icon icon="mdi:alert-outline"></ha-icon>
+                  ${selectorWarning}
+                </div>
+              `
+            : nothing
+        }
       </div>
     `;
   }
@@ -348,22 +354,26 @@ export abstract class RsScheduleBase extends LitElement {
     const hasMultiple = count >= 2;
     return html`
       <span class="schedule-controls">
-        ${hasMultiple && index > 0
-          ? html`
-              <ha-icon-button
-                .path=${RsScheduleBase.ICON_UP}
-                @click=${() => onMove(index, -1)}
-              ></ha-icon-button>
-            `
-          : nothing}
-        ${hasMultiple && index < count - 1
-          ? html`
-              <ha-icon-button
-                .path=${RsScheduleBase.ICON_DOWN}
-                @click=${() => onMove(index, 1)}
-              ></ha-icon-button>
-            `
-          : nothing}
+        ${
+          hasMultiple && index > 0
+            ? html`
+                <ha-icon-button
+                  .path=${RsScheduleBase.ICON_UP}
+                  @click=${() => onMove(index, -1)}
+                ></ha-icon-button>
+              `
+            : nothing
+        }
+        ${
+          hasMultiple && index < count - 1
+            ? html`
+                <ha-icon-button
+                  .path=${RsScheduleBase.ICON_DOWN}
+                  @click=${() => onMove(index, 1)}
+                ></ha-icon-button>
+              `
+            : nothing
+        }
         <ha-icon-button
           .path=${RsScheduleBase.ICON_CLOSE}
           @click=${() => onRemove(index)}

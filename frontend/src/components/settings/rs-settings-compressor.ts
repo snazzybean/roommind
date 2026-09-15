@@ -102,9 +102,11 @@ export class RsSettingsCompressor extends LitElement {
   render() {
     const l = this.hass.language;
     return html`
-      ${this.compressorGroups.length === 0
-        ? html`<div class="no-groups">${localize("compressor.no_groups", l)}</div>`
-        : this.compressorGroups.map((group, idx) => this._renderGroup(group, idx))}
+      ${
+        this.compressorGroups.length === 0
+          ? html`<div class="no-groups">${localize("compressor.no_groups", l)}</div>`
+          : this.compressorGroups.map((group, idx) => this._renderGroup(group, idx))
+      }
       <ha-button class="add-button" @click=${this._addGroup}>
         <ha-icon icon="mdi:plus" slot="icon"></ha-icon>
         ${localize("compressor.add_group", l)}
@@ -126,13 +128,15 @@ export class RsSettingsCompressor extends LitElement {
         ></ha-textfield>
 
         <div class="section-label">${localize("compressor.members", l)}</div>
-        ${group.members.length > 0
-          ? html`
-              <div class="member-list">
-                ${group.members.map((eid) => this._renderMember(eid, idx))}
-              </div>
-            `
-          : nothing}
+        ${
+          group.members.length > 0
+            ? html`
+                <div class="member-list">
+                  ${group.members.map((eid) => this._renderMember(eid, idx))}
+                </div>
+              `
+            : nothing
+        }
         <ha-entity-picker
           .hass=${this.hass}
           .value=${""}
@@ -213,43 +217,47 @@ export class RsSettingsCompressor extends LitElement {
           <div class="field-hint">${localize("compressor.enforce_uniform_mode_hint", l)}</div>
         </div>
 
-        ${group.master_entity || group.enforce_uniform_mode
-          ? html`
-              <div class="field-row">
-                <ha-select
-                  .label=${localize("compressor.conflict_resolution", l)}
-                  .value=${group.conflict_resolution || "heating_priority"}
-                  .options=${[
-                    {
-                      value: "heating_priority",
-                      label: localize("compressor.conflict_heating_priority", l),
-                    },
-                    {
-                      value: "cooling_priority",
-                      label: localize("compressor.conflict_cooling_priority", l),
-                    },
-                    {
-                      value: "majority",
-                      label: localize("compressor.conflict_majority", l),
-                    },
-                    {
-                      value: "outdoor_temp",
-                      label: localize("compressor.conflict_outdoor_temp", l),
-                    },
-                  ]}
-                  @selected=${(e: Event) => {
-                    const v = getSelectValue(e);
-                    if (v) this._updateGroup(idx, "conflict_resolution", v);
-                  }}
-                  @closed=${(e: Event) => e.stopPropagation()}
-                  fixedMenuPosition
-                  style="width: 100%;"
-                >
-                </ha-select>
-                <div class="field-hint">${localize("compressor.conflict_resolution_hint", l)}</div>
-              </div>
-            `
-          : nothing}
+        ${
+          group.master_entity || group.enforce_uniform_mode
+            ? html`
+                <div class="field-row">
+                  <ha-select
+                    .label=${localize("compressor.conflict_resolution", l)}
+                    .value=${group.conflict_resolution || "heating_priority"}
+                    .options=${[
+                      {
+                        value: "heating_priority",
+                        label: localize("compressor.conflict_heating_priority", l),
+                      },
+                      {
+                        value: "cooling_priority",
+                        label: localize("compressor.conflict_cooling_priority", l),
+                      },
+                      {
+                        value: "majority",
+                        label: localize("compressor.conflict_majority", l),
+                      },
+                      {
+                        value: "outdoor_temp",
+                        label: localize("compressor.conflict_outdoor_temp", l),
+                      },
+                    ]}
+                    @selected=${(e: Event) => {
+                      const v = getSelectValue(e);
+                      if (v) this._updateGroup(idx, "conflict_resolution", v);
+                    }}
+                    @closed=${(e: Event) => e.stopPropagation()}
+                    fixedMenuPosition
+                    style="width: 100%;"
+                  >
+                  </ha-select>
+                  <div class="field-hint">
+                    ${localize("compressor.conflict_resolution_hint", l)}
+                  </div>
+                </div>
+              `
+            : nothing
+        }
 
         <div class="field-row">
           <ha-entity-picker

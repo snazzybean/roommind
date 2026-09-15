@@ -72,92 +72,96 @@ export class RsSettingsCoilDry extends RsSettingsBase {
         ></ha-switch>
       </div>
 
-      ${this.coilDryEnabled
-        ? html`
-            <div class="threshold-grid" style="margin-top: 12px">
-              ${this._numberField(
-                "coilDryMinutes",
-                this.coilDryMinutes,
-                "coil_dry.duration_label",
-                "coil_dry.duration_suffix",
-                "coil_dry.duration_hint",
-                1,
-                60,
-              )}
-              ${this._numberField(
-                "coilDryMinCoolingMinutes",
-                this.coilDryMinCoolingMinutes,
-                "coil_dry.min_cooling_label",
-                "coil_dry.min_cooling_suffix",
-                "coil_dry.min_cooling_hint",
-                1,
-                240,
-              )}
-              ${this._numberField(
-                "coilDryDrainMinutes",
-                this.coilDryDrainMinutes,
-                "coil_dry.drain_label",
-                "coil_dry.drain_suffix",
-                "coil_dry.drain_hint",
-                0,
-                15,
-              )}
-            </div>
-
-            <div class="threshold-grid" style="margin-top: 12px">
-              <div class="threshold-field">
-                <ha-select
-                  .label=${localize("coil_dry.fan_mode_label", l)}
-                  .value=${this.coilDryFanMode === "" ? KEEP : this.coilDryFanMode}
-                  .options=${[
-                    { value: KEEP, label: localize("coil_dry.fan_mode_keep", l) },
-                    ...fanModes.map((fm) => ({ value: fm, label: fm })),
-                  ]}
-                  @selected=${(e: Event) => {
-                    const v = getSelectValue(e);
-                    const current = this.coilDryFanMode === "" ? KEEP : this.coilDryFanMode;
-                    if (v && v !== current) this._fire("coilDryFanMode", v === KEEP ? "" : v);
-                  }}
-                  @closed=${(e: Event) => e.stopPropagation()}
-                  fixedMenuPosition
-                >
-                  <ha-list-item value="${KEEP}"
-                    >${localize("coil_dry.fan_mode_keep", l)}</ha-list-item
-                  >
-                  ${fanModes.map((fm) => html`<ha-list-item value="${fm}">${fm}</ha-list-item>`)}
-                </ha-select>
-                <span class="field-hint">${localize("coil_dry.fan_mode_hint", l)}</span>
+      ${
+        this.coilDryEnabled
+          ? html`
+              <div class="threshold-grid" style="margin-top: 12px">
+                ${this._numberField(
+                  "coilDryMinutes",
+                  this.coilDryMinutes,
+                  "coil_dry.duration_label",
+                  "coil_dry.duration_suffix",
+                  "coil_dry.duration_hint",
+                  1,
+                  60,
+                )}
+                ${this._numberField(
+                  "coilDryMinCoolingMinutes",
+                  this.coilDryMinCoolingMinutes,
+                  "coil_dry.min_cooling_label",
+                  "coil_dry.min_cooling_suffix",
+                  "coil_dry.min_cooling_hint",
+                  1,
+                  240,
+                )}
+                ${this._numberField(
+                  "coilDryDrainMinutes",
+                  this.coilDryDrainMinutes,
+                  "coil_dry.drain_label",
+                  "coil_dry.drain_suffix",
+                  "coil_dry.drain_hint",
+                  0,
+                  15,
+                )}
               </div>
 
-              <div class="threshold-field">
-                <ha-select
-                  .label=${localize("coil_dry.mode_label", l)}
-                  .value=${this.coilDryMode}
-                  .options=${[
-                    { value: "fan_only", label: localize("coil_dry.mode_fan_only", l) },
-                    { value: "dry", label: localize("coil_dry.mode_dry", l) },
-                  ]}
-                  @selected=${(e: Event) => {
-                    const v = getSelectValue(e) as "fan_only" | "dry";
-                    if (v && v !== this.coilDryMode) this._fire("coilDryMode", v);
-                  }}
-                  @closed=${(e: Event) => e.stopPropagation()}
-                  fixedMenuPosition
-                >
-                  <ha-list-item value="fan_only"
-                    >${localize("coil_dry.mode_fan_only", l)}</ha-list-item
+              <div class="threshold-grid" style="margin-top: 12px">
+                <div class="threshold-field">
+                  <ha-select
+                    .label=${localize("coil_dry.fan_mode_label", l)}
+                    .value=${this.coilDryFanMode === "" ? KEEP : this.coilDryFanMode}
+                    .options=${[
+                      { value: KEEP, label: localize("coil_dry.fan_mode_keep", l) },
+                      ...fanModes.map((fm) => ({ value: fm, label: fm })),
+                    ]}
+                    @selected=${(e: Event) => {
+                      const v = getSelectValue(e);
+                      const current = this.coilDryFanMode === "" ? KEEP : this.coilDryFanMode;
+                      if (v && v !== current) this._fire("coilDryFanMode", v === KEEP ? "" : v);
+                    }}
+                    @closed=${(e: Event) => e.stopPropagation()}
+                    fixedMenuPosition
                   >
-                  <ha-list-item value="dry">${localize("coil_dry.mode_dry", l)}</ha-list-item>
-                </ha-select>
-                ${this.coilDryMode === "dry"
-                  ? html`<span class="field-hint warning"
-                      >${localize("coil_dry.mode_dry_warning", l)}</span
-                    >`
-                  : nothing}
+                    <ha-list-item value="${KEEP}"
+                      >${localize("coil_dry.fan_mode_keep", l)}</ha-list-item
+                    >
+                    ${fanModes.map((fm) => html`<ha-list-item value="${fm}">${fm}</ha-list-item>`)}
+                  </ha-select>
+                  <span class="field-hint">${localize("coil_dry.fan_mode_hint", l)}</span>
+                </div>
+
+                <div class="threshold-field">
+                  <ha-select
+                    .label=${localize("coil_dry.mode_label", l)}
+                    .value=${this.coilDryMode}
+                    .options=${[
+                      { value: "fan_only", label: localize("coil_dry.mode_fan_only", l) },
+                      { value: "dry", label: localize("coil_dry.mode_dry", l) },
+                    ]}
+                    @selected=${(e: Event) => {
+                      const v = getSelectValue(e) as "fan_only" | "dry";
+                      if (v && v !== this.coilDryMode) this._fire("coilDryMode", v);
+                    }}
+                    @closed=${(e: Event) => e.stopPropagation()}
+                    fixedMenuPosition
+                  >
+                    <ha-list-item value="fan_only"
+                      >${localize("coil_dry.mode_fan_only", l)}</ha-list-item
+                    >
+                    <ha-list-item value="dry">${localize("coil_dry.mode_dry", l)}</ha-list-item>
+                  </ha-select>
+                  ${
+                    this.coilDryMode === "dry"
+                      ? html`<span class="field-hint warning"
+                          >${localize("coil_dry.mode_dry_warning", l)}</span
+                        >`
+                      : nothing
+                  }
+                </div>
               </div>
-            </div>
-          `
-        : nothing}
+            `
+          : nothing
+      }
     `;
   }
 

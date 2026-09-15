@@ -20,9 +20,11 @@ export class RsSettingsPanel extends LitElement {
         <div slot="header" class="panel-header">
           <ha-icon .icon=${this.icon}></ha-icon>
           <span>${this.heading}</span>
-          ${this.badge
-            ? html`<rs-badge .label=${this.badge} .hint=${this.badgeHint}></rs-badge>`
-            : nothing}
+          ${
+            this.badge
+              ? html`<rs-badge .label=${this.badge} .hint=${this.badgeHint}></rs-badge>`
+              : nothing
+          }
         </div>
         <div class="panel-content">
           ${this.intro ? html`<p class="section-intro">${this.intro}</p>` : nothing}

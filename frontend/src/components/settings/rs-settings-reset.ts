@@ -43,46 +43,51 @@ export class RsSettingsReset extends RsSettingsBase {
           <span class="toggle-label">${localize("settings.reset_room_label", l)}</span>
           <span class="toggle-hint">${localize("settings.reset_room_hint", l)}</span>
         </div>
-        ${configuredRooms.length > 0
-          ? html`
-              <div class="reset-room-row">
-                <ha-select
-                  .value=${this._resetSelectedRoom}
-                  .label=${localize("settings.reset_room_select", l)}
-                  .options=${configuredRooms.map((room) => ({
-                    value: room.areaId,
-                    label: room.name,
-                  }))}
-                  fixedMenuPosition
-                  @selected=${(e: Event) => {
-                    this._resetSelectedRoom = getSelectValue(e);
-                  }}
-                  @closed=${(e: Event) => e.stopPropagation()}
-                >
-                  ${configuredRooms.map(
-                    (room) => html`<ha-list-item value=${room.areaId}>${room.name}</ha-list-item>`,
-                  )}
-                </ha-select>
-                ${this._resetSelectedRoom
-                  ? html`<ha-icon-button
-                      .path=${"M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z"}
-                      @click=${() => {
-                        this._resetSelectedRoom = "";
-                      }}
-                    ></ha-icon-button>`
-                  : nothing}
-                <button
-                  class="reset-btn"
-                  ?disabled=${!this._resetSelectedRoom}
-                  @click=${() =>
-                    this._resetSelectedRoom && this._resetRoomModel(this._resetSelectedRoom)}
-                >
-                  <ha-icon icon="mdi:restart"></ha-icon>
-                  ${localize("settings.reset_btn", l)}
-                </button>
-              </div>
-            `
-          : html`<p class="hint">${localize("settings.reset_no_rooms", l)}</p>`}
+        ${
+          configuredRooms.length > 0
+            ? html`
+                <div class="reset-room-row">
+                  <ha-select
+                    .value=${this._resetSelectedRoom}
+                    .label=${localize("settings.reset_room_select", l)}
+                    .options=${configuredRooms.map((room) => ({
+                      value: room.areaId,
+                      label: room.name,
+                    }))}
+                    fixedMenuPosition
+                    @selected=${(e: Event) => {
+                      this._resetSelectedRoom = getSelectValue(e);
+                    }}
+                    @closed=${(e: Event) => e.stopPropagation()}
+                  >
+                    ${configuredRooms.map(
+                      (room) =>
+                        html`<ha-list-item value=${room.areaId}>${room.name}</ha-list-item>`,
+                    )}
+                  </ha-select>
+                  ${
+                    this._resetSelectedRoom
+                      ? html`<ha-icon-button
+                          .path=${"M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z"}
+                          @click=${() => {
+                            this._resetSelectedRoom = "";
+                          }}
+                        ></ha-icon-button>`
+                      : nothing
+                  }
+                  <button
+                    class="reset-btn"
+                    ?disabled=${!this._resetSelectedRoom}
+                    @click=${() =>
+                      this._resetSelectedRoom && this._resetRoomModel(this._resetSelectedRoom)}
+                  >
+                    <ha-icon icon="mdi:restart"></ha-icon>
+                    ${localize("settings.reset_btn", l)}
+                  </button>
+                </div>
+              `
+            : html`<p class="hint">${localize("settings.reset_no_rooms", l)}</p>`
+        }
       </div>
     `;
   }

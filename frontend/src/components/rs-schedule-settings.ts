@@ -146,75 +146,83 @@ export class RsScheduleSettings extends RsScheduleBase {
     const hasMultiple = this.schedules.length >= 2;
 
     return html`
-      ${this.schedules.length > 0
-        ? html`
-            <div class="schedule-list">
-              ${this.schedules.map((schedule, index) => {
-                const state = this._getScheduleState(index, this.schedules.length);
-                return html`
-                  <div class="schedule-row ${state}">
-                    ${hasMultiple
-                      ? html`<span class="schedule-number">${index + 1}</span>`
-                      : nothing}
-                    <span class="schedule-status-dot"></span>
-                    <span
-                      class="schedule-name schedule-link"
-                      @click=${() => this._openEntityInfo(schedule.entity_id)}
-                      >${this._getFriendlyName(schedule.entity_id)}</span
-                    >
-                    <span class="schedule-status">${this._getStatusText(index, state)}</span>
-                  </div>
-                  ${this._renderRejectedTempWarning(state)}
-                `;
-              })}
-            </div>
-          `
-        : html`<div class="no-schedules">${localize("schedule.no_schedules", l)}</div>`}
-      ${this.climateMode === "auto"
-        ? html`
-            <div class="view-temps">
-              ${localize("schedule.view_heat", l, {
-                comfort: formatTemp(this.comfortHeat, this.hass),
-                eco: formatTemp(this.ecoHeat, this.hass),
-                unit: tempUnit(this.hass),
-              })}
-               · 
-              ${localize("schedule.view_cool", l, {
-                comfort: formatTemp(this.comfortCool, this.hass),
-                eco: formatTemp(this.ecoCool, this.hass),
-                unit: tempUnit(this.hass),
-              })}
-            </div>
-          `
-        : html`
-            <div class="view-temps">
-              ${localize("schedule.view_comfort", l, {
-                temp: formatTemp(
-                  this.climateMode === "cool_only" ? this.comfortCool : this.comfortHeat,
-                  this.hass,
-                ),
-                unit: tempUnit(this.hass),
-              })}
-               · 
-              ${localize("schedule.view_eco", l, {
-                temp: formatTemp(
-                  this.climateMode === "cool_only" ? this.ecoCool : this.ecoHeat,
-                  this.hass,
-                ),
-                unit: tempUnit(this.hass),
-              })}
-            </div>
-          `}
-      ${this.scheduleSelectorEntity
-        ? html`<div class="view-selector-info">
-            ${localize("schedule.view_selector_prefix", l)}
-            <span
-              class="schedule-link"
-              @click=${() => this._openEntityInfo(this.scheduleSelectorEntity!)}
-              >${this._getFriendlyName(this.scheduleSelectorEntity)}</span
-            >
-          </div>`
-        : nothing}
+      ${
+        this.schedules.length > 0
+          ? html`
+              <div class="schedule-list">
+                ${this.schedules.map((schedule, index) => {
+                  const state = this._getScheduleState(index, this.schedules.length);
+                  return html`
+                    <div class="schedule-row ${state}">
+                      ${
+                        hasMultiple
+                          ? html`<span class="schedule-number">${index + 1}</span>`
+                          : nothing
+                      }
+                      <span class="schedule-status-dot"></span>
+                      <span
+                        class="schedule-name schedule-link"
+                        @click=${() => this._openEntityInfo(schedule.entity_id)}
+                        >${this._getFriendlyName(schedule.entity_id)}</span
+                      >
+                      <span class="schedule-status">${this._getStatusText(index, state)}</span>
+                    </div>
+                    ${this._renderRejectedTempWarning(state)}
+                  `;
+                })}
+              </div>
+            `
+          : html`<div class="no-schedules">${localize("schedule.no_schedules", l)}</div>`
+      }
+      ${
+        this.climateMode === "auto"
+          ? html`
+              <div class="view-temps">
+                ${localize("schedule.view_heat", l, {
+                  comfort: formatTemp(this.comfortHeat, this.hass),
+                  eco: formatTemp(this.ecoHeat, this.hass),
+                  unit: tempUnit(this.hass),
+                })}
+                 · 
+                ${localize("schedule.view_cool", l, {
+                  comfort: formatTemp(this.comfortCool, this.hass),
+                  eco: formatTemp(this.ecoCool, this.hass),
+                  unit: tempUnit(this.hass),
+                })}
+              </div>
+            `
+          : html`
+              <div class="view-temps">
+                ${localize("schedule.view_comfort", l, {
+                  temp: formatTemp(
+                    this.climateMode === "cool_only" ? this.comfortCool : this.comfortHeat,
+                    this.hass,
+                  ),
+                  unit: tempUnit(this.hass),
+                })}
+                 · 
+                ${localize("schedule.view_eco", l, {
+                  temp: formatTemp(
+                    this.climateMode === "cool_only" ? this.ecoCool : this.ecoHeat,
+                    this.hass,
+                  ),
+                  unit: tempUnit(this.hass),
+                })}
+              </div>
+            `
+      }
+      ${
+        this.scheduleSelectorEntity
+          ? html`<div class="view-selector-info">
+              ${localize("schedule.view_selector_prefix", l)}
+              <span
+                class="schedule-link"
+                @click=${() => this._openEntityInfo(this.scheduleSelectorEntity!)}
+                >${this._getFriendlyName(this.scheduleSelectorEntity)}</span
+              >
+            </div>`
+          : nothing
+      }
     `;
   }
 
@@ -393,9 +401,11 @@ export class RsScheduleSettings extends RsScheduleBase {
             )}
             min=${tempRange(5, 35, this.hass).min}
             max=${tempRange(5, 35, this.hass).max}
-            @change=${this.climateMode === "cool_only"
-              ? this._onComfortCoolChange
-              : this._onComfortHeatChange}
+            @change=${
+              this.climateMode === "cool_only"
+                ? this._onComfortCoolChange
+                : this._onComfortHeatChange
+            }
           ></ha-textfield>
         </div>
         <div class="temp-input-group">
@@ -409,9 +419,9 @@ export class RsScheduleSettings extends RsScheduleBase {
             )}
             min=${tempRange(5, 35, this.hass).min}
             max=${tempRange(5, 35, this.hass).max}
-            @change=${this.climateMode === "cool_only"
-              ? this._onEcoCoolChange
-              : this._onEcoHeatChange}
+            @change=${
+              this.climateMode === "cool_only" ? this._onEcoCoolChange : this._onEcoHeatChange
+            }
           ></ha-textfield>
         </div>
       </div>

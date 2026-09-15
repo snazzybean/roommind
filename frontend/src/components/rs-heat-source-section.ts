@@ -150,42 +150,44 @@ export class RsHeatSourceSection extends LitElement {
         <ha-switch .checked=${this.enabled} @change=${this._onSwitchChange}></ha-switch>
       </div>
 
-      ${this.enabled
-        ? html`
-            <div class="thresholds">
-              ${this._renderThresholdCell({
-                label: localize("heat_source.primary_delta", lang),
-                hint: localize("heat_source.primary_delta_hint", lang),
-                suffix: localize("heat_source.primary_delta_suffix", lang),
-                value: this.primaryDelta,
-                min: 0.5,
-                max: 5.0,
-                step: 0.1,
-                key: "heat_source_primary_delta",
-              })}
-              ${this._renderThresholdCell({
-                label: localize("heat_source.outdoor_threshold", lang),
-                hint: localize("heat_source.outdoor_threshold_hint", lang),
-                suffix: localize("heat_source.outdoor_threshold_suffix", lang),
-                value: this.outdoorThreshold,
-                min: -20,
-                max: 25,
-                step: 1,
-                key: "heat_source_outdoor_threshold",
-              })}
-              ${this._renderThresholdCell({
-                label: localize("heat_source.ac_min_outdoor", lang),
-                hint: localize("heat_source.ac_min_outdoor_hint", lang),
-                suffix: localize("heat_source.ac_min_outdoor_suffix", lang),
-                value: this.acMinOutdoor,
-                min: -30,
-                max: 5,
-                step: 1,
-                key: "heat_source_ac_min_outdoor",
-              })}
-            </div>
-          `
-        : nothing}
+      ${
+        this.enabled
+          ? html`
+              <div class="thresholds">
+                ${this._renderThresholdCell({
+                  label: localize("heat_source.primary_delta", lang),
+                  hint: localize("heat_source.primary_delta_hint", lang),
+                  suffix: localize("heat_source.primary_delta_suffix", lang),
+                  value: this.primaryDelta,
+                  min: 0.5,
+                  max: 5.0,
+                  step: 0.1,
+                  key: "heat_source_primary_delta",
+                })}
+                ${this._renderThresholdCell({
+                  label: localize("heat_source.outdoor_threshold", lang),
+                  hint: localize("heat_source.outdoor_threshold_hint", lang),
+                  suffix: localize("heat_source.outdoor_threshold_suffix", lang),
+                  value: this.outdoorThreshold,
+                  min: -20,
+                  max: 25,
+                  step: 1,
+                  key: "heat_source_outdoor_threshold",
+                })}
+                ${this._renderThresholdCell({
+                  label: localize("heat_source.ac_min_outdoor", lang),
+                  hint: localize("heat_source.ac_min_outdoor_hint", lang),
+                  suffix: localize("heat_source.ac_min_outdoor_suffix", lang),
+                  value: this.acMinOutdoor,
+                  min: -30,
+                  max: 5,
+                  step: 1,
+                  key: "heat_source_ac_min_outdoor",
+                })}
+              </div>
+            `
+          : nothing
+      }
     `;
   }
 

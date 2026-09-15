@@ -118,16 +118,18 @@ export class RsInfoIcon extends LitElement {
       >
         <ha-icon .icon=${this.icon}></ha-icon>
       </button>
-      ${this._open
-        ? html`<div
-            class="tooltip"
-            role="tooltip"
-            style=${this._style}
-            @click=${(e: Event) => e.stopPropagation()}
-          >
-            ${this.text ? this.text : nothing}<slot></slot>
-          </div>`
-        : nothing}
+      ${
+        this._open
+          ? html`<div
+              class="tooltip"
+              role="tooltip"
+              style=${this._style}
+              @click=${(e: Event) => e.stopPropagation()}
+            >
+              ${this.text ? this.text : nothing}<slot></slot>
+            </div>`
+          : nothing
+      }
     `;
   }
 

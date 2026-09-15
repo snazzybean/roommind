@@ -89,10 +89,7 @@ export interface DeviceConfig {
 }
 
 export type ConflictResolution =
-  | "heating_priority"
-  | "cooling_priority"
-  | "majority"
-  | "outdoor_temp";
+  "heating_priority" | "cooling_priority" | "majority" | "outdoor_temp";
 
 export interface CompressorGroup {
   id: string;

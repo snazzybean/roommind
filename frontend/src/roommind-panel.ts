@@ -392,50 +392,63 @@ export class RoomMindPanel extends LitElement {
 
     return html`
       <div class="toolbar">
-        ${inDetail
-          ? html`<ha-icon-button
-              .path=${BACK_PATH}
-              @click=${this._onBackFromDetail}
-            ></ha-icon-button>`
-          : html`<ha-menu-button .hass=${this.hass} .narrow=${this.narrow}></ha-menu-button>`}
+        ${
+          inDetail
+            ? html`<ha-icon-button
+                .path=${BACK_PATH}
+                @click=${this._onBackFromDetail}
+              ></ha-icon-button>`
+            : html`<ha-menu-button .hass=${this.hass} .narrow=${this.narrow}></ha-menu-button>`
+        }
         <div class="title">
-          ${inDetail
-            ? this._rooms[this._selectedAreaId!]?.display_name || detailArea?.name || ""
-            : localize("panel.title", l)}
+          ${
+            inDetail
+              ? this._rooms[this._selectedAreaId!]?.display_name || detailArea?.name || ""
+              : localize("panel.title", l)
+          }
         </div>
         ${this._renderSaveIndicator()}
-        ${inDetail && this._rooms[this._selectedAreaId!]
-          ? html`<ha-icon-button
-                .path=${CHART_PATH}
-                @click=${this._onGoToAnalytics}
-              ></ha-icon-button
-              ><ha-icon-button .path=${DELETE_PATH} @click=${this._onDeleteRoom}></ha-icon-button>`
-          : nothing}
-        ${!inDetail && this._activeTab === "analytics" && this._analyticsRoom
-          ? html`<ha-icon-button
-              .path=${THERMOMETER_PATH}
-              @click=${this._onGoToRoomFromAnalytics}
-            ></ha-icon-button>`
-          : nothing}
+        ${
+          inDetail && this._rooms[this._selectedAreaId!]
+            ? html`<ha-icon-button
+                  .path=${CHART_PATH}
+                  @click=${this._onGoToAnalytics}
+                ></ha-icon-button
+                ><ha-icon-button
+                  .path=${DELETE_PATH}
+                  @click=${this._onDeleteRoom}
+                ></ha-icon-button>`
+            : nothing
+        }
+        ${
+          !inDetail && this._activeTab === "analytics" && this._analyticsRoom
+            ? html`<ha-icon-button
+                .path=${THERMOMETER_PATH}
+                @click=${this._onGoToRoomFromAnalytics}
+              ></ha-icon-button>`
+            : nothing
+        }
       </div>
 
-      ${!inDetail
-        ? html`
-            <div class="tabs">
-              ${(Object.keys(tabLabels) as TabId[]).map(
-                (tab) => html`
-                  <button
-                    class="tab"
-                    ?active=${this._activeTab === tab}
-                    @click=${() => this._onTabClicked(tab)}
-                  >
-                    ${tabLabels[tab]}
-                  </button>
-                `,
-              )}
-            </div>
-          `
-        : nothing}
+      ${
+        !inDetail
+          ? html`
+              <div class="tabs">
+                ${(Object.keys(tabLabels) as TabId[]).map(
+                  (tab) => html`
+                    <button
+                      class="tab"
+                      ?active=${this._activeTab === tab}
+                      @click=${() => this._onTabClicked(tab)}
+                    >
+                      ${tabLabels[tab]}
+                    </button>
+                  `,
+                )}
+              </div>
+            `
+          : nothing
+      }
 
       <div class="content">${this._renderTab()}</div>
     `;
@@ -521,105 +534,121 @@ export class RoomMindPanel extends LitElement {
     const l = this.hass.language;
 
     return html`
-      ${configuredCount > 0 || hiddenAreaInfos.length > 0
-        ? html`
-            <ha-card class="stats-bar">
-              ${configuredCount > 0
-                ? html`
-                    <div class="stat">
-                      <span class="stat-value">${configuredCount}</span>
-                      <span class="stat-label">${localize("panel.stat.rooms", l)}</span>
+      ${
+        configuredCount > 0 || hiddenAreaInfos.length > 0
+          ? html`
+              <ha-card class="stats-bar">
+                ${
+                  configuredCount > 0
+                    ? html`
+                        <div class="stat">
+                          <span class="stat-value">${configuredCount}</span>
+                          <span class="stat-label">${localize("panel.stat.rooms", l)}</span>
+                        </div>
+                        <div class="stat">
+                          <span class="stat-value" style="color: var(--warning-color, #ff9800)"
+                            >${heatingCount}</span
+                          >
+                          <span class="stat-label">${localize("panel.stat.heating", l)}</span>
+                        </div>
+                        <div class="stat">
+                          <span class="stat-value" style="color: var(--info-color, #2196f3)"
+                            >${coolingCount}</span
+                          >
+                          <span class="stat-label">${localize("panel.stat.cooling", l)}</span>
+                        </div>
+                      `
+                    : nothing
+                }
+                ${hasConditionalStats ? html`<div class="stats-separator"></div>` : nothing}
+                ${
+                  this._vacationActive
+                    ? html`
+                        <div class="stat">
+                          <span class="stat-value" style="color: var(--success-color, #4caf50)">
+                            <ha-icon icon="mdi:airplane"></ha-icon>
+                          </span>
+                          <span class="stat-label">${localize("panel.stat.vacation", l)}</span>
+                        </div>
+                      `
+                    : nothing
+                }
+                ${
+                  this._presenceEnabled && !this._anyoneHome
+                    ? html`
+                        <div class="stat">
+                          <span class="stat-value" style="color: var(--secondary-text-color)">
+                            <ha-icon icon="mdi:power"></ha-icon>
+                          </span>
+                          <span class="stat-label">${localize("panel.stat.away", l)}</span>
+                        </div>
+                      `
+                    : nothing
+                }
+                ${
+                  moldCount > 0
+                    ? html`
+                        <div class="stat">
+                          <span class="stat-value" style="color: var(--error-color, #f44336)"
+                            >${moldCount}</span
+                          >
+                          <span class="stat-label">${localize("panel.stat.mold", l)}</span>
+                        </div>
+                      `
+                    : nothing
+                }
+                <span class="stats-actions">
+                  ${
+                    hiddenAreaInfos.length > 0
+                      ? html`<ha-icon-button
+                          class="hidden-rooms-toggle"
+                          .path=${mdiEyeOff}
+                          @click=${() => {
+                            this._showHiddenRooms = !this._showHiddenRooms;
+                          }}
+                        ></ha-icon-button>`
+                      : nothing
+                  }
+                  ${
+                    this._reorderMode
+                      ? html`<ha-button class="reorder-done" @click=${this._onReorderDone}>
+                          ${localize("panel.reorder_done", l)}
+                        </ha-button>`
+                      : html`<ha-icon-button
+                          class="reorder-btn"
+                          .path=${"M9,3L5,7H8V14H10V7H13M16,17V10H14V17H11L15,21L19,17H16Z"}
+                          @click=${() => {
+                            this._reorderMode = true;
+                          }}
+                          title=${localize("panel.reorder", l)}
+                        ></ha-icon-button>`
+                  }
+                </span>
+              </ha-card>
+            `
+          : nothing
+      }
+      ${
+        this._showHiddenRooms && hiddenAreaInfos.length > 0
+          ? html`
+              <ha-card class="hidden-rooms-panel">
+                <div class="hidden-rooms-header">
+                  <span>${localize("panel.hidden_rooms", l)} (${hiddenAreaInfos.length})</span>
+                </div>
+                ${hiddenAreaInfos.map(
+                  (info) => html`
+                    <div class="hidden-room-row">
+                      <span class="hidden-room-name">${info.area.name}</span>
+                      <ha-button @click=${() => this._unhideRoom(info.area.area_id)}>
+                        ${localize("panel.unhide", l)}
+                      </ha-button>
                     </div>
-                    <div class="stat">
-                      <span class="stat-value" style="color: var(--warning-color, #ff9800)"
-                        >${heatingCount}</span
-                      >
-                      <span class="stat-label">${localize("panel.stat.heating", l)}</span>
-                    </div>
-                    <div class="stat">
-                      <span class="stat-value" style="color: var(--info-color, #2196f3)"
-                        >${coolingCount}</span
-                      >
-                      <span class="stat-label">${localize("panel.stat.cooling", l)}</span>
-                    </div>
-                  `
-                : nothing}
-              ${hasConditionalStats ? html`<div class="stats-separator"></div>` : nothing}
-              ${this._vacationActive
-                ? html`
-                    <div class="stat">
-                      <span class="stat-value" style="color: var(--success-color, #4caf50)">
-                        <ha-icon icon="mdi:airplane"></ha-icon>
-                      </span>
-                      <span class="stat-label">${localize("panel.stat.vacation", l)}</span>
-                    </div>
-                  `
-                : nothing}
-              ${this._presenceEnabled && !this._anyoneHome
-                ? html`
-                    <div class="stat">
-                      <span class="stat-value" style="color: var(--secondary-text-color)">
-                        <ha-icon icon="mdi:power"></ha-icon>
-                      </span>
-                      <span class="stat-label">${localize("panel.stat.away", l)}</span>
-                    </div>
-                  `
-                : nothing}
-              ${moldCount > 0
-                ? html`
-                    <div class="stat">
-                      <span class="stat-value" style="color: var(--error-color, #f44336)"
-                        >${moldCount}</span
-                      >
-                      <span class="stat-label">${localize("panel.stat.mold", l)}</span>
-                    </div>
-                  `
-                : nothing}
-              <span class="stats-actions">
-                ${hiddenAreaInfos.length > 0
-                  ? html`<ha-icon-button
-                      class="hidden-rooms-toggle"
-                      .path=${mdiEyeOff}
-                      @click=${() => {
-                        this._showHiddenRooms = !this._showHiddenRooms;
-                      }}
-                    ></ha-icon-button>`
-                  : nothing}
-                ${this._reorderMode
-                  ? html`<ha-button class="reorder-done" @click=${this._onReorderDone}>
-                      ${localize("panel.reorder_done", l)}
-                    </ha-button>`
-                  : html`<ha-icon-button
-                      class="reorder-btn"
-                      .path=${"M9,3L5,7H8V14H10V7H13M16,17V10H14V17H11L15,21L19,17H16Z"}
-                      @click=${() => {
-                        this._reorderMode = true;
-                      }}
-                      title=${localize("panel.reorder", l)}
-                    ></ha-icon-button>`}
-              </span>
-            </ha-card>
-          `
-        : nothing}
-      ${this._showHiddenRooms && hiddenAreaInfos.length > 0
-        ? html`
-            <ha-card class="hidden-rooms-panel">
-              <div class="hidden-rooms-header">
-                <span>${localize("panel.hidden_rooms", l)} (${hiddenAreaInfos.length})</span>
-              </div>
-              ${hiddenAreaInfos.map(
-                (info) => html`
-                  <div class="hidden-room-row">
-                    <span class="hidden-room-name">${info.area.name}</span>
-                    <ha-button @click=${() => this._unhideRoom(info.area.area_id)}>
-                      ${localize("panel.unhide", l)}
-                    </ha-button>
-                  </div>
-                `,
-              )}
-            </ha-card>
-          `
-        : nothing}
+                  `,
+                )}
+              </ha-card>
+            `
+          : nothing
+      }
       ${this._getFloorGroups(areaInfos).map(
         (group) => html`
           ${group.name ? html`<h4 class="floor-heading">${group.name}</h4>` : nothing}

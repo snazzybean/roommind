@@ -73,19 +73,23 @@ export class RsSectionCard extends LitElement {
         <div class="section-header">
           <ha-icon class="section-icon" icon=${this.icon}></ha-icon>
           <h3 class="section-title">${this.heading}</h3>
-          ${this.badge
-            ? html`<rs-badge .label=${this.badge} .hint=${this.badgeHint}></rs-badge>`
-            : nothing}
+          ${
+            this.badge
+              ? html`<rs-badge .label=${this.badge} .hint=${this.badgeHint}></rs-badge>`
+              : nothing
+          }
           <slot name="header-extras"></slot>
-          ${this.editable
-            ? html`
-                <ha-icon-button
-                  class="edit-btn"
-                  .path=${PENCIL_PATH}
-                  @click=${this._onEditClick}
-                ></ha-icon-button>
-              `
-            : nothing}
+          ${
+            this.editable
+              ? html`
+                  <ha-icon-button
+                    class="edit-btn"
+                    .path=${PENCIL_PATH}
+                    @click=${this._onEditClick}
+                  ></ha-icon-button>
+                `
+              : nothing
+          }
         </div>
         <div class="section-body">
           <slot></slot>

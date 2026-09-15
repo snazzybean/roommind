@@ -41,12 +41,15 @@ export class RsEntityPickerField extends LitElement {
         allow-custom-entity
         @value-changed=${this._onValueChanged}
       ></ha-entity-picker>
-      ${this.currentValue
-        ? html`<div class="current-value">
-            ${this.currentValueLabel ? html`${this.currentValueLabel}: ` : nothing}${this
-              .currentValue}
-          </div>`
-        : nothing}
+      ${
+        this.currentValue
+          ? html`<div class="current-value">
+              ${this.currentValueLabel ? html`${this.currentValueLabel}: ` : nothing}${
+                this.currentValue
+              }
+            </div>`
+          : nothing
+      }
     `;
   }
 

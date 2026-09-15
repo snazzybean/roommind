@@ -200,13 +200,15 @@ export class RsEditDialog extends LitElement {
           <div class="dialog-header">
             ${this.icon ? html`<ha-icon class="dialog-icon" icon=${this.icon}></ha-icon>` : nothing}
             <h3 class="dialog-title">${this.heading}</h3>
-            ${this.hasInfo
-              ? html`<ha-icon-button
-                  class="info-btn ${this._infoExpanded ? "active" : ""}"
-                  .path=${INFO_PATH}
-                  @click=${this._toggleInfo}
-                ></ha-icon-button>`
-              : nothing}
+            ${
+              this.hasInfo
+                ? html`<ha-icon-button
+                    class="info-btn ${this._infoExpanded ? "active" : ""}"
+                    .path=${INFO_PATH}
+                    @click=${this._toggleInfo}
+                  ></ha-icon-button>`
+                : nothing
+            }
             <ha-icon-button
               class="close-btn"
               .path=${CLOSE_PATH}
@@ -214,9 +216,11 @@ export class RsEditDialog extends LitElement {
             ></ha-icon-button>
           </div>
           <div class="dialog-body">
-            ${this.hasInfo && this._infoExpanded
-              ? html`<div class="info-panel"><slot name="info"></slot></div>`
-              : nothing}
+            ${
+              this.hasInfo && this._infoExpanded
+                ? html`<div class="info-panel"><slot name="info"></slot></div>`
+                : nothing
+            }
             <slot></slot>
           </div>
         </div>

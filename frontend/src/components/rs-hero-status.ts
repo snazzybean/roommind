@@ -391,18 +391,22 @@ export class RsHeroStatus extends LitElement {
             ${label} ${localize("hero.override", l)}
           </div>
           <div class="hero-target-value">
-            ${showOvRange
-              ? html`${formatTemp(ovHeat!, this.hass)} –
-                ${formatTemp(ovCool!, this.hass)}${tempUnit(this.hass)}`
-              : ovSingle !== null
-                ? html`${formatTemp(ovSingle, this.hass)}${tempUnit(this.hass)}`
-                : "--"}
+            ${
+              showOvRange
+                ? html`${formatTemp(ovHeat!, this.hass)} –
+                  ${formatTemp(ovCool!, this.hass)}${tempUnit(this.hass)}`
+                : ovSingle !== null
+                  ? html`${formatTemp(ovSingle, this.hass)}${tempUnit(this.hass)}`
+                  : "--"
+            }
           </div>
-          ${this._countdown
-            ? html`<div class="hero-target-countdown">
-                ${localize("hero.remaining", l, { time: this._countdown })}
-              </div>`
-            : nothing}
+          ${
+            this._countdown
+              ? html`<div class="hero-target-countdown">
+                  ${localize("hero.remaining", l, { time: this._countdown })}
+                </div>`
+              : nothing
+          }
         </div>
       `;
     }
@@ -493,210 +497,266 @@ export class RsHeroStatus extends LitElement {
       <ha-card>
         <div class="hero-accent ${accentClass}"></div>
         <div class="hero-header">
-          ${this._editingName
+          ${
+            this._editingName
+              ? html`
+                  <div class="name-edit-row">
+                    <input
+                      class="name-input"
+                      type="text"
+                      .value=${this._nameInput}
+                      placeholder=${localize("room.alias.placeholder", this.hass?.language ?? "en")}
+                      @input=${this._onNameInput}
+                      @keydown=${this._onNameKeydown}
+                    />
+                    <ha-icon-button
+                      class="name-done-btn"
+                      .path=${CHECK_PATH}
+                      @click=${this._onNameDone}
+                    ></ha-icon-button>
+                  </div>
+                  ${
+                    this.config?.display_name
+                      ? html`<button class="name-clear-btn" @click=${this._onNameClear}>
+                          ${localize("room.alias.clear", this.hass?.language ?? "en")}
+                        </button>`
+                      : nothing
+                  }
+                `
+              : html`
+                  <div class="name-row">
+                    <h2 class="area-name">${this.config?.display_name || this.area.name}</h2>
+                    <ha-icon-button
+                      class="name-edit-btn"
+                      .path=${PENCIL_PATH}
+                      @click=${this._onEditName}
+                    ></ha-icon-button>
+                  </div>
+                `
+          }
+          ${
+            !this.isOutdoor
+              ? html`
+                  <div class="hero-status-pills">
+                    ${
+                      live
+                        ? html`
+                            <span class="mode-pill ${getModeClass(live.mode)}">
+                              <span class="mode-dot"></span>
+                              ${formatMode(live.mode, this.hass?.language ?? "en")}${
+                                live.heating_power > 0 && live.heating_power < 100
+                                  ? html` ${live.heating_power}%`
+                                  : nothing
+                              }
+                            </span>
+                          `
+                        : nothing
+                    }
+                    ${
+                      this.config
+                        ? html`
+                            <span class="control-mode-badge" @click=${this._toggleControlModeInfo}>
+                              ${
+                                this.config.temperature_sensor
+                                  ? localize(
+                                      "room.control_mode.full_control",
+                                      this.hass?.language ?? "en",
+                                    )
+                                  : localize(
+                                      "room.control_mode.managed",
+                                      this.hass?.language ?? "en",
+                                    )
+                              }
+                              <ha-icon
+                                class="control-mode-info-icon ${
+                                  this._controlModeInfoExpanded ? "active" : ""
+                                }"
+                                icon="mdi:information-outline"
+                              ></ha-icon>
+                            </span>
+                          `
+                        : nothing
+                    }
+                  </div>
+                `
+              : nothing
+          }
+        </div>
+        ${
+          this._controlModeInfoExpanded && this.config && !this.isOutdoor
             ? html`
-                <div class="name-edit-row">
-                  <input
-                    class="name-input"
-                    type="text"
-                    .value=${this._nameInput}
-                    placeholder=${localize("room.alias.placeholder", this.hass?.language ?? "en")}
-                    @input=${this._onNameInput}
-                    @keydown=${this._onNameKeydown}
-                  />
-                  <ha-icon-button
-                    class="name-done-btn"
-                    .path=${CHECK_PATH}
-                    @click=${this._onNameDone}
-                  ></ha-icon-button>
+                <div class="control-mode-info-panel">
+                  ${
+                    this.config.temperature_sensor
+                      ? localize("room.control_mode.full_control_info", this.hass?.language ?? "en")
+                      : localize("room.control_mode.managed_info", this.hass?.language ?? "en")
+                  }
                 </div>
-                ${this.config?.display_name
-                  ? html`<button class="name-clear-btn" @click=${this._onNameClear}>
-                      ${localize("room.alias.clear", this.hass?.language ?? "en")}
-                    </button>`
-                  : nothing}
               `
-            : html`
-                <div class="name-row">
-                  <h2 class="area-name">${this.config?.display_name || this.area.name}</h2>
-                  <ha-icon-button
-                    class="name-edit-btn"
-                    .path=${PENCIL_PATH}
-                    @click=${this._onEditName}
-                  ></ha-icon-button>
-                </div>
-              `}
-          ${!this.isOutdoor
+            : nothing
+        }
+        ${
+          live
             ? html`
-                <div class="hero-status-pills">
-                  ${live
-                    ? html`
-                        <span class="mode-pill ${getModeClass(live.mode)}">
-                          <span class="mode-dot"></span>
-                          ${formatMode(
-                            live.mode,
-                            this.hass?.language ?? "en",
-                          )}${live.heating_power > 0 && live.heating_power < 100
-                            ? html` ${live.heating_power}%`
-                            : nothing}
-                        </span>
-                      `
-                    : nothing}
-                  ${this.config
-                    ? html`
-                        <span class="control-mode-badge" @click=${this._toggleControlModeInfo}>
-                          ${this.config.temperature_sensor
+                ${
+                  live.window_open && !this.isOutdoor
+                    ? html`<div class="hero-window-open">
+                        <ha-icon icon="mdi:window-open-variant"></ha-icon>
+                        ${localize("hero.window_open", this.hass?.language ?? "en")}
+                      </div>`
+                    : nothing
+                }
+                <div class="hero-temps">
+                  ${
+                    live.current_temp !== null
+                      ? html`
+                          <span class="hero-current"
+                            >${formatTemp(live.current_temp, this.hass)}</span
+                          >
+                          <span class="hero-unit">${tempUnit(this.hass)}</span>
+                        `
+                      : html`<span class="hero-current" style="opacity: 0.3">--</span>`
+                  }
+                  ${!this.isOutdoor ? this._renderTargetSection(live) : nothing}
+                </div>
+                ${
+                  live.current_humidity !== null
+                    ? html`<div class="hero-metric">
+                        <ha-icon icon="mdi:water-percent"></ha-icon>
+                        ${localize("hero.humidity", this.hass?.language ?? "en", {
+                          value: live.current_humidity.toFixed(0),
+                        })}
+                      </div>`
+                    : nothing
+                }
+                ${
+                  live.device_setpoint != null && !this.isOutdoor
+                    ? html`<div class="hero-metric">
+                        <ha-icon
+                          icon=${live.mode === "cooling" ? "mdi:snowflake" : "mdi:radiator"}
+                        ></ha-icon>
+                        ${localize("hero.device_setpoint", this.hass?.language ?? "en", {
+                          value: formatTemp(live.device_setpoint, this.hass),
+                          unit: tempUnit(this.hass),
+                        })}
+                      </div>`
+                    : nothing
+                }
+                ${
+                  live.active_heat_sources && live.active_heat_sources !== "none" && !this.isOutdoor
+                    ? html`<div class="hero-metric">
+                        <ha-icon icon="mdi:swap-horizontal"></ha-icon>
+                        ${
+                          live.active_heat_sources === "primary"
+                            ? localize("hero.heat_source_primary", this.hass?.language ?? "en")
+                            : live.active_heat_sources === "secondary"
+                              ? localize("hero.heat_source_secondary", this.hass?.language ?? "en")
+                              : localize("hero.heat_source_both", this.hass?.language ?? "en")
+                        }
+                      </div>`
+                    : nothing
+                }
+                ${
+                  live.compressor_protection_active && !this.isOutdoor
+                    ? html`<div class="hero-metric info">
+                        <ha-icon icon="mdi:timer-sand"></ha-icon>
+                        ${
+                          live.compressor_protection_reason === "min_run"
                             ? localize(
-                                "room.control_mode.full_control",
+                                "hero.compressor_protection_min_run",
                                 this.hass?.language ?? "en",
                               )
-                            : localize("room.control_mode.managed", this.hass?.language ?? "en")}
-                          <ha-icon
-                            class="control-mode-info-icon ${this._controlModeInfoExpanded
-                              ? "active"
-                              : ""}"
-                            icon="mdi:information-outline"
-                          ></ha-icon>
-                        </span>
-                      `
-                    : nothing}
-                </div>
+                            : localize(
+                                "hero.compressor_protection_min_off",
+                                this.hass?.language ?? "en",
+                              )
+                        }
+                        <rs-info-icon
+                          icon="mdi:information-outline"
+                          .text=${localize(
+                            "hero.compressor_protection_info",
+                            this.hass?.language ?? "en",
+                          )}
+                        ></rs-info-icon>
+                      </div>`
+                    : nothing
+                }
+                ${
+                  live.coil_dry_active && !this.isOutdoor
+                    ? html`<div class="hero-metric info">
+                        <ha-icon icon="mdi:air-filter"></ha-icon>
+                        ${localize(
+                          live.coil_dry_phase === "drain" ? "hero.coil_dry_drain" : "hero.coil_dry",
+                          this.hass?.language ?? "en",
+                          { minutes: this._coilDryMinutesLeft(live.coil_dry_until) },
+                        )}
+                        <rs-info-icon
+                          icon="mdi:information-outline"
+                          .text=${localize("hero.coil_dry_info", this.hass?.language ?? "en")}
+                        ></rs-info-icon>
+                      </div>`
+                    : nothing
+                }
+                ${
+                  live.mold_surface_rh != null && !this.isOutdoor
+                    ? html`<div
+                        class="hero-metric ${
+                          live.mold_risk_level === "critical"
+                            ? "critical"
+                            : live.mold_risk_level === "warning"
+                              ? "warning"
+                              : ""
+                        }"
+                      >
+                        <ha-icon icon="mdi:water-alert"></ha-icon>
+                        ${localize("room.mold_surface_rh", this.hass?.language ?? "en", {
+                          value: String(live.mold_surface_rh.toFixed(0)),
+                        })}
+                      </div>`
+                    : nothing
+                }
+                ${
+                  live.mold_prevention_active && !this.isOutdoor
+                    ? html`<div class="hero-metric info">
+                        <ha-icon icon="mdi:shield-check"></ha-icon>
+                        ${localize("card.mold_prevention", this.hass?.language ?? "en", {
+                          delta: toDisplayDelta(live.mold_prevention_delta, this.hass).toFixed(0),
+                          unit: tempUnit(this.hass),
+                        })}
+                      </div>`
+                    : nothing
+                }
+                ${
+                  live.learning_paused_reason === "outdoor_unavailable" && !this.isOutdoor
+                    ? html`<div class="hero-metric warning learning-paused">
+                        <ha-icon icon="mdi:school-outline"></ha-icon>
+                        ${localize("hero.mpc_learning_paused", this.hass?.language ?? "en")}
+                        <rs-info-icon
+                          icon="mdi:information-outline"
+                          .text=${localize(
+                            "hero.mpc_learning_paused.outdoor_unavailable",
+                            this.hass?.language ?? "en",
+                          )}
+                        ></rs-info-icon>
+                      </div>`
+                    : nothing
+                }
+                ${
+                  !this.climateControlActive && !this.isOutdoor
+                    ? html`<div class="uncontrolled-hint">
+                        ${localize("card.not_controlled", this.hass?.language ?? "en")}
+                      </div>`
+                    : nothing
+                }
               `
-            : nothing}
-        </div>
-        ${this._controlModeInfoExpanded && this.config && !this.isOutdoor
-          ? html`
-              <div class="control-mode-info-panel">
-                ${this.config.temperature_sensor
-                  ? localize("room.control_mode.full_control_info", this.hass?.language ?? "en")
-                  : localize("room.control_mode.managed_info", this.hass?.language ?? "en")}
-              </div>
-            `
-          : nothing}
-        ${live
-          ? html`
-              ${live.window_open && !this.isOutdoor
-                ? html`<div class="hero-window-open">
-                    <ha-icon icon="mdi:window-open-variant"></ha-icon>
-                    ${localize("hero.window_open", this.hass?.language ?? "en")}
-                  </div>`
-                : nothing}
-              <div class="hero-temps">
-                ${live.current_temp !== null
-                  ? html`
-                      <span class="hero-current">${formatTemp(live.current_temp, this.hass)}</span>
-                      <span class="hero-unit">${tempUnit(this.hass)}</span>
-                    `
-                  : html`<span class="hero-current" style="opacity: 0.3">--</span>`}
-                ${!this.isOutdoor ? this._renderTargetSection(live) : nothing}
-              </div>
-              ${live.current_humidity !== null
-                ? html`<div class="hero-metric">
-                    <ha-icon icon="mdi:water-percent"></ha-icon>
-                    ${localize("hero.humidity", this.hass?.language ?? "en", {
-                      value: live.current_humidity.toFixed(0),
-                    })}
-                  </div>`
-                : nothing}
-              ${live.device_setpoint != null && !this.isOutdoor
-                ? html`<div class="hero-metric">
-                    <ha-icon
-                      icon=${live.mode === "cooling" ? "mdi:snowflake" : "mdi:radiator"}
-                    ></ha-icon>
-                    ${localize("hero.device_setpoint", this.hass?.language ?? "en", {
-                      value: formatTemp(live.device_setpoint, this.hass),
-                      unit: tempUnit(this.hass),
-                    })}
-                  </div>`
-                : nothing}
-              ${live.active_heat_sources && live.active_heat_sources !== "none" && !this.isOutdoor
-                ? html`<div class="hero-metric">
-                    <ha-icon icon="mdi:swap-horizontal"></ha-icon>
-                    ${live.active_heat_sources === "primary"
-                      ? localize("hero.heat_source_primary", this.hass?.language ?? "en")
-                      : live.active_heat_sources === "secondary"
-                        ? localize("hero.heat_source_secondary", this.hass?.language ?? "en")
-                        : localize("hero.heat_source_both", this.hass?.language ?? "en")}
-                  </div>`
-                : nothing}
-              ${live.compressor_protection_active && !this.isOutdoor
-                ? html`<div class="hero-metric info">
-                    <ha-icon icon="mdi:timer-sand"></ha-icon>
-                    ${live.compressor_protection_reason === "min_run"
-                      ? localize("hero.compressor_protection_min_run", this.hass?.language ?? "en")
-                      : localize("hero.compressor_protection_min_off", this.hass?.language ?? "en")}
-                    <rs-info-icon
-                      icon="mdi:information-outline"
-                      .text=${localize(
-                        "hero.compressor_protection_info",
-                        this.hass?.language ?? "en",
-                      )}
-                    ></rs-info-icon>
-                  </div>`
-                : nothing}
-              ${live.coil_dry_active && !this.isOutdoor
-                ? html`<div class="hero-metric info">
-                    <ha-icon icon="mdi:air-filter"></ha-icon>
-                    ${localize(
-                      live.coil_dry_phase === "drain" ? "hero.coil_dry_drain" : "hero.coil_dry",
-                      this.hass?.language ?? "en",
-                      { minutes: this._coilDryMinutesLeft(live.coil_dry_until) },
-                    )}
-                    <rs-info-icon
-                      icon="mdi:information-outline"
-                      .text=${localize("hero.coil_dry_info", this.hass?.language ?? "en")}
-                    ></rs-info-icon>
-                  </div>`
-                : nothing}
-              ${live.mold_surface_rh != null && !this.isOutdoor
-                ? html`<div
-                    class="hero-metric ${live.mold_risk_level === "critical"
-                      ? "critical"
-                      : live.mold_risk_level === "warning"
-                        ? "warning"
-                        : ""}"
-                  >
-                    <ha-icon icon="mdi:water-alert"></ha-icon>
-                    ${localize("room.mold_surface_rh", this.hass?.language ?? "en", {
-                      value: String(live.mold_surface_rh.toFixed(0)),
-                    })}
-                  </div>`
-                : nothing}
-              ${live.mold_prevention_active && !this.isOutdoor
-                ? html`<div class="hero-metric info">
-                    <ha-icon icon="mdi:shield-check"></ha-icon>
-                    ${localize("card.mold_prevention", this.hass?.language ?? "en", {
-                      delta: toDisplayDelta(live.mold_prevention_delta, this.hass).toFixed(0),
-                      unit: tempUnit(this.hass),
-                    })}
-                  </div>`
-                : nothing}
-              ${live.learning_paused_reason === "outdoor_unavailable" && !this.isOutdoor
-                ? html`<div class="hero-metric warning learning-paused">
-                    <ha-icon icon="mdi:school-outline"></ha-icon>
-                    ${localize("hero.mpc_learning_paused", this.hass?.language ?? "en")}
-                    <rs-info-icon
-                      icon="mdi:information-outline"
-                      .text=${localize(
-                        "hero.mpc_learning_paused.outdoor_unavailable",
-                        this.hass?.language ?? "en",
-                      )}
-                    ></rs-info-icon>
-                  </div>`
-                : nothing}
-              ${!this.climateControlActive && !this.isOutdoor
-                ? html`<div class="uncontrolled-hint">
-                    ${localize("card.not_controlled", this.hass?.language ?? "en")}
-                  </div>`
-                : nothing}
-            `
-          : this.config
-            ? html`<div class="hero-no-data">
-                ${localize("hero.waiting", this.hass?.language ?? "en")}
-              </div>`
-            : html`<div class="hero-no-data">
-                ${localize("hero.not_configured", this.hass?.language ?? "en")}
-              </div>`}
+            : this.config
+              ? html`<div class="hero-no-data">
+                  ${localize("hero.waiting", this.hass?.language ?? "en")}
+                </div>`
+              : html`<div class="hero-no-data">
+                  ${localize("hero.not_configured", this.hass?.language ?? "en")}
+                </div>`
+        }
       </ha-card>
     `;
   }

@@ -88,13 +88,15 @@ export class RsCoverSchedule extends RsScheduleBase {
                 @click=${() => this._openEntityInfo(entry.entity_id)}
                 >${this._getFriendlyName(entry.entity_id)}</span
               >
-              ${isGate
-                ? html`<span class="gate-badge"
-                    >${localize("covers.schedule_mode_gate_short", l)}</span
-                  >`
-                : pos !== null
-                  ? html`<span class="pos-badge">${pos}%</span>`
-                  : nothing}
+              ${
+                isGate
+                  ? html`<span class="gate-badge"
+                      >${localize("covers.schedule_mode_gate_short", l)}</span
+                    >`
+                  : pos !== null
+                    ? html`<span class="pos-badge">${pos}%</span>`
+                    : nothing
+              }
               <span class="schedule-status">${this._statusText(state, l)}</span>
             </div>
           `;
@@ -109,68 +111,72 @@ export class RsCoverSchedule extends RsScheduleBase {
     const usedIds = new Set(this.schedules.map((s) => s.entity_id));
 
     return html`
-      ${count > 0
-        ? html`
-            <div class="schedule-list">
-              ${this.schedules.map((entry, index) => {
-                const state = this._getScheduleState(index, count);
-                return html`
-                  <div class="schedule-row ${state}">
-                    ${count >= 2
-                      ? html`<span class="schedule-number">${index + 1}</span>`
-                      : nothing}
-                    <span class="schedule-status-dot"></span>
-                    <span class="schedule-name">${this._getFriendlyName(entry.entity_id)}</span>
-                    <span class="schedule-status">${this._statusText(state, l)}</span>
-                    ${this._renderScheduleControls(
-                      index,
-                      count,
-                      (i, dir) => this._moveSchedule(i, dir),
-                      (i) => this._removeSchedule(i),
-                    )}
-                  </div>
-                  <div class="mode-row">
-                    <div
-                      class="mode-option ${(entry.mode ?? "force") === "force" ? "active" : ""}"
-                      role="radio"
-                      tabindex="0"
-                      aria-checked=${(entry.mode ?? "force") === "force"}
-                      @click=${() => this._updateMode(index, "force")}
-                      @keydown=${(e: KeyboardEvent) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                          e.preventDefault();
-                          this._updateMode(index, "force");
-                        }
-                      }}
-                    >
-                      <ha-radio
-                        .checked=${(entry.mode ?? "force") === "force"}
-                        tabindex="-1"
-                      ></ha-radio>
-                      ${localize("covers.schedule_mode_force", l)}
+      ${
+        count > 0
+          ? html`
+              <div class="schedule-list">
+                ${this.schedules.map((entry, index) => {
+                  const state = this._getScheduleState(index, count);
+                  return html`
+                    <div class="schedule-row ${state}">
+                      ${
+                        count >= 2
+                          ? html`<span class="schedule-number">${index + 1}</span>`
+                          : nothing
+                      }
+                      <span class="schedule-status-dot"></span>
+                      <span class="schedule-name">${this._getFriendlyName(entry.entity_id)}</span>
+                      <span class="schedule-status">${this._statusText(state, l)}</span>
+                      ${this._renderScheduleControls(
+                        index,
+                        count,
+                        (i, dir) => this._moveSchedule(i, dir),
+                        (i) => this._removeSchedule(i),
+                      )}
                     </div>
-                    <div
-                      class="mode-option ${entry.mode === "gate" ? "active" : ""}"
-                      role="radio"
-                      tabindex="0"
-                      aria-checked=${entry.mode === "gate"}
-                      @click=${() => this._updateMode(index, "gate")}
-                      @keydown=${(e: KeyboardEvent) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                          e.preventDefault();
-                          this._updateMode(index, "gate");
-                        }
-                      }}
-                    >
-                      <ha-radio .checked=${entry.mode === "gate"} tabindex="-1"></ha-radio>
-                      ${localize("covers.schedule_mode_gate", l)}
+                    <div class="mode-row">
+                      <div
+                        class="mode-option ${(entry.mode ?? "force") === "force" ? "active" : ""}"
+                        role="radio"
+                        tabindex="0"
+                        aria-checked=${(entry.mode ?? "force") === "force"}
+                        @click=${() => this._updateMode(index, "force")}
+                        @keydown=${(e: KeyboardEvent) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            this._updateMode(index, "force");
+                          }
+                        }}
+                      >
+                        <ha-radio
+                          .checked=${(entry.mode ?? "force") === "force"}
+                          tabindex="-1"
+                        ></ha-radio>
+                        ${localize("covers.schedule_mode_force", l)}
+                      </div>
+                      <div
+                        class="mode-option ${entry.mode === "gate" ? "active" : ""}"
+                        role="radio"
+                        tabindex="0"
+                        aria-checked=${entry.mode === "gate"}
+                        @click=${() => this._updateMode(index, "gate")}
+                        @keydown=${(e: KeyboardEvent) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            this._updateMode(index, "gate");
+                          }
+                        }}
+                      >
+                        <ha-radio .checked=${entry.mode === "gate"} tabindex="-1"></ha-radio>
+                        ${localize("covers.schedule_mode_gate", l)}
+                      </div>
                     </div>
-                  </div>
-                `;
-              })}
-            </div>
-          `
-        : nothing}
+                  `;
+                })}
+              </div>
+            `
+          : nothing
+      }
       ${this._renderAddRow(
         localize("covers.add_schedule", l),
         this._getAvailableEntities(usedIds),
