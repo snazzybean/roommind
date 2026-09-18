@@ -6,7 +6,7 @@ import math
 
 import pytest
 
-from custom_components.roommind.const import MIN_POWER_FRACTION, MODE_COOLING, MODE_HEATING
+from custom_components.roommind.const import MIN_POWER_FRACTION, MODE_COOLING, MODE_HEATING, MODE_IDLE
 from custom_components.roommind.control.mpc_optimizer import MPCOptimizer, MPCPlan
 from custom_components.roommind.control.thermal_model import RCModel
 
@@ -792,3 +792,173 @@ def test_approach_rate_widens_cooling_band_symmetrically():
     assert m1 == MODE_COOLING and m2 == MODE_COOLING
     assert pf_gentle < pf_full
     assert pf_gentle >= MIN_POWER_FRACTION
+
+
+# ---------------------------------------------------------------------------
+# Regulated cooling: a setpoint-following AC never drives past its own target
+# ---------------------------------------------------------------------------
+
+
+def _regulated_ac_optimizer(q_cool: float = 11.3) -> MPCOptimizer:
+    """Bedroom-like C=1 model: weak envelope, strong AC, warm outdoor load."""
+    model = RCModel(C=1.0, U=0.08, Q_heat=3.0, Q_cool=q_cool)
+    return MPCOptimizer(model, can_heat=False, can_cool=True, min_run_blocks=3)
+
+
+def _held_cooling_cost(q_cool: float) -> float:
+    """Cost of the COOLING hypothesis for a room already below its target."""
+    opt = _regulated_ac_optimizer(q_cool)
+    opt._lookahead_blocks = 24
+    return opt._evaluate_action(
+        MODE_COOLING,
+        T_room=21.4,
+        T_outdoor=26.0,
+        heat_target=5.0,
+        cool_target=21.5,
+        future_T_outdoor=[26.0] * 24,
+        future_heat_targets=[5.0] * 24,
+        future_cool_targets=[21.5] * 24,
+        dt_minutes=5.0,
+    )
+
+
+def test_cooling_plan_does_not_predict_overshoot_past_the_target():
+    """Once at target the forward simulation must follow drift, not full power.
+
+    A proportional AC closes its own valve at its setpoint, so predicting
+    MIN * Q_cool for every holding block forecasts a plunge the device would
+    never deliver — here a full degree below the 21.5 target.
+    """
+    plan = _regulated_ac_optimizer().optimize(
+        T_room=23.0,
+        T_outdoor_series=[26.0] * 24,
+        heat_target_series=[5.0] * 24,
+        cool_target_series=[21.5] * 24,
+        dt_minutes=5,
+    )
+    assert plan.actions[0] == MODE_COOLING
+    assert min(plan.temperatures) >= 21.2, plan.temperatures
+
+
+def test_held_cooling_hypothesis_is_independent_of_cooling_power():
+    """Below target, the hypothesis delivers nothing, so Q_cool cannot matter.
+
+    This is the invariant the duty-cycling bug violated: a stronger AC made
+    "keep cooling" look like a deeper (cheaper or costlier) excursion, even
+    though a regulated unit sitting at its setpoint delivers the same nothing
+    either way.
+    """
+    assert _held_cooling_cost(5.0) == pytest.approx(_held_cooling_cost(20.0))
+
+
+def test_heating_hypothesis_still_charges_past_the_target():
+    """Heating is deliberately left unregulated: UFH pre-heat is intentional.
+
+    Charging thermal mass beyond the current target is how a slow floor rides
+    out the next setback, so the heating hypothesis must keep simulating real
+    power — and therefore stay sensitive to Q_heat.
+    """
+
+    def cost(q_heat: float) -> float:
+        opt = MPCOptimizer(
+            RCModel(C=1.0, U=0.08, Q_heat=q_heat, Q_cool=11.3),
+            can_heat=True,
+            can_cool=False,
+            min_run_blocks=3,
+        )
+        opt._lookahead_blocks = 24
+        return opt._evaluate_action(
+            MODE_HEATING,
+            T_room=21.4,
+            T_outdoor=5.0,
+            heat_target=21.0,
+            cool_target=26.0,
+            future_T_outdoor=[5.0] * 24,
+            future_heat_targets=[21.0] * 24,
+            future_cool_targets=[26.0] * 24,
+            dt_minutes=5.0,
+        )
+
+    assert cost(3.0) != pytest.approx(cost(12.0))
+
+
+def test_simulate_plan_reproduces_a_plan_that_holds_at_target():
+    """The replay helper must mirror the regulated forward step, not full power.
+
+    simulate_plan() exists to answer "what would this plan have produced
+    without disturbance X", so it has to reproduce the plan exactly when
+    handed the plan's own inputs — including the blocks where the AC was
+    holding at its setpoint and delivering nothing.
+    """
+    opt = _regulated_ac_optimizer()
+    outdoor = [26.0] * 24
+    plan = opt.optimize(
+        T_room=23.0,
+        T_outdoor_series=outdoor,
+        heat_target_series=[5.0] * 24,
+        cool_target_series=[21.5] * 24,
+        dt_minutes=5,
+    )
+    # The scenario has to contain a hold for this to mean anything.
+    held = [i for i, a in enumerate(plan.actions) if a == MODE_COOLING and plan.temperatures[i] <= 21.5]
+    assert held, plan.actions
+
+    assert opt.simulate_plan(plan, 23.0, outdoor, 5) == plan.temperatures
+
+
+# ---------------------------------------------------------------------------
+# Starting a run costs something: steady-state cycling consolidates
+# ---------------------------------------------------------------------------
+
+
+def _cooling_runs(actions: list[str]) -> int:
+    """Number of separate cooling runs in a plan (a run is a C block group)."""
+    return sum(1 for i, a in enumerate(actions) if a == MODE_COOLING and (i == 0 or actions[i - 1] != MODE_COOLING))
+
+
+def _steady_state_plan(initial_mode: str, n: int = 48):
+    """Plan for a room sitting just above target under a persistent warm load."""
+    return _regulated_ac_optimizer().optimize(
+        T_room=21.6,
+        T_outdoor_series=[26.0] * n,
+        heat_target_series=[5.0] * n,
+        cool_target_series=[21.5] * n,
+        dt_minutes=5,
+        initial_mode=initial_mode,
+    )
+
+
+def test_continuing_the_running_mode_is_free():
+    """The same state continues a live run but would not start a fresh one.
+
+    Without initial_mode the optimizer assumed every plan began from idle, so
+    continuing a run was priced as if it were a restart.
+    """
+    assert _steady_state_plan(MODE_COOLING).actions[0] == MODE_COOLING
+    assert _steady_state_plan(MODE_IDLE).actions[0] == MODE_IDLE
+
+
+def test_start_penalty_consolidates_steady_state_cycling(monkeypatch):
+    """Near steady state, pricing starts stretches cycles instead of chattering.
+
+    Unpriced, a run that buys a few hundredths of a degree-squared starts
+    again as soon as the min-run floor allows -- forever. The room is allowed
+    to drift a little further instead, well inside the comfort band.
+    """
+    priced = _cooling_runs(_steady_state_plan(MODE_COOLING).actions)
+    monkeypatch.setattr("custom_components.roommind.control.mpc_optimizer.MODE_START_PENALTY", 0.0)
+    unpriced = _cooling_runs(_steady_state_plan(MODE_COOLING).actions)
+    assert priced < unpriced, f"priced {priced} runs, unpriced {unpriced}"
+
+
+def test_start_penalty_does_not_block_a_real_demand():
+    """A room well above target still starts cooling immediately."""
+    plan = _regulated_ac_optimizer().optimize(
+        T_room=23.0,
+        T_outdoor_series=[26.0] * 24,
+        heat_target_series=[5.0] * 24,
+        cool_target_series=[21.5] * 24,
+        dt_minutes=5,
+        initial_mode=MODE_IDLE,
+    )
+    assert plan.actions[0] == MODE_COOLING
