@@ -12,7 +12,7 @@
     "format:check": "prettier --check src/"
   },
   "dependencies": {
-    "home-assistant-js-websocket": "^9.4.0",
+    "home-assistant-js-websocket": "^9.7.0",
     "lit": "^3.3.3"
   },
   "devDependencies": {
