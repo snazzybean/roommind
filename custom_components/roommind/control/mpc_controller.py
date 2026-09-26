@@ -947,6 +947,7 @@ class MPCController:
             solar_series=solar_series,
             residual_series=residual_series,
             occupancy_series=occupancy_series,
+            initial_mode=self.previous_mode,
         )
         self.last_plan = plan
         # Shading can attenuate solar gain, never the body heat of whoever just
