@@ -560,5 +560,13 @@
   "heat_source.ac_min_outdoor": "Température extérieure min. pour la climatisation",
   "heat_source.ac_min_outdoor_hint": "Désactiver complètement la climatisation en dessous de cette température pour protéger le matériel de la pompe à chaleur.",
   "heat_source.ac_min_outdoor_suffix": "°C",
-  "heat_source.summary_disabled": "La sélection intelligente de la source est désactivée"
+  "heat_source.summary_disabled": "La sélection intelligente de la source est désactivée",
+  "schedule.learned_toggle": "Utiliser le programme d'occupation appris",
+  "schedule.learned_desc": "Piloter confort/éco selon l'occupation apprise par Area Occupancy Detection au lieu d'un programme manuel. La pièce est préconditionnée avant son occupation habituelle.",
+  "schedule.learned_active_banner": "Occupation apprise active — le programme manuel est ignoré.",
+  "schedule.learned_threshold_label": "Seuil de confort",
+  "schedule.learned_area_label": "Source de prédiction (zone Area Occupancy)",
+  "schedule.learned_view": "Occupation apprise · confort ≥ {pct}%",
+  "schedule.learned_area": "Source : {area}",
+  "schedule.learned_unavailable": "Nécessite l'intégration Area Occupancy Detection (service get_time_priors). Installez-la et redémarrez Home Assistant."
 }

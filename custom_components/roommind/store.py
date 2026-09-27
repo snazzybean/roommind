@@ -16,6 +16,7 @@ from .const import (
     DEFAULT_HEAT_SOURCE_AC_MIN_OUTDOOR,
     DEFAULT_HEAT_SOURCE_OUTDOOR_THRESHOLD,
     DEFAULT_HEAT_SOURCE_PRIMARY_DELTA,
+    DEFAULT_LEARNED_OCCUPANCY_THRESHOLD,
     DOMAIN,
 )
 from .utils.device_utils import (
@@ -264,6 +265,11 @@ class RoomMindStore:
             "covers_snap_deploy": config.get("covers_snap_deploy", False),
             "cover_min_positions": config.get("cover_min_positions", {}),
             "ignore_presence": config.get("ignore_presence", False),
+            "use_learned_schedule": config.get("use_learned_schedule", False),
+            "learned_occupancy_area_id": config.get("learned_occupancy_area_id", ""),
+            "learned_occupancy_threshold": config.get(
+                "learned_occupancy_threshold", DEFAULT_LEARNED_OCCUPANCY_THRESHOLD
+            ),
             "is_outdoor": config.get("is_outdoor", False),
             "valve_protection_exclude": config.get("valve_protection_exclude", []),
             "heat_source_orchestration": config.get("heat_source_orchestration", False),

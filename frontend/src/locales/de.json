@@ -560,5 +560,13 @@
   "heat_source.ac_min_outdoor": "Min. Außentemp. für AC-Heizen",
   "heat_source.ac_min_outdoor_hint": "AC-Heizen unter dieser Temperatur komplett deaktivieren, um die Wärmepumpen-Hardware zu schützen.",
   "heat_source.ac_min_outdoor_suffix": "°C",
-  "heat_source.summary_disabled": "Intelligente Quellenwahl ist aus"
+  "heat_source.summary_disabled": "Intelligente Quellenwahl ist aus",
+  "schedule.learned_toggle": "Gelernten Belegungszeitplan verwenden",
+  "schedule.learned_desc": "Komfort/Eco anhand der von Area Occupancy Detection gelernten Belegung statt eines manuellen Zeitplans steuern. Der Raum wird vor der gewohnten Belegung vorkonditioniert.",
+  "schedule.learned_active_banner": "Gelernte Belegung ist aktiv – der manuelle Zeitplan wird übergangen.",
+  "schedule.learned_threshold_label": "Komfortschwelle",
+  "schedule.learned_area_label": "Vorhersagequelle (Area-Occupancy-Bereich)",
+  "schedule.learned_view": "Gelernte Belegung · Komfort ≥ {pct}%",
+  "schedule.learned_area": "Quelle: {area}",
+  "schedule.learned_unavailable": "Erfordert die Integration Area Occupancy Detection (Dienst get_time_priors). Installieren und Home Assistant neu starten."
 }

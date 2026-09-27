@@ -42,6 +42,16 @@ export class RsScheduleSettings extends RsScheduleBase {
   @property({ type: Number }) public ecoCool = 27.0;
   @property({ type: String }) public climateMode: ClimateMode = "auto";
   @property({ attribute: false }) public scheduleTempWarnings: ScheduleTempWarning[] = [];
+  /** Learned-occupancy schedule (predictive, sourced from Area Occupancy Detection). */
+  @property({ type: Boolean }) public useLearnedSchedule = false;
+  @property({ type: Number }) public learnedThreshold = 0.5;
+  @property({ type: String }) public learnedAreaId = "";
+  /** Whether an occupancy provider (get_time_priors service) is installed. */
+  @property({ type: Boolean }) public learnedAvailable = false;
+  /** Area ids exposed by the occupancy provider, for per-room selection. */
+  @property({ attribute: false }) public learnedAreas: string[] = [];
+  /** This room's own HA area id, used as the default prediction source. */
+  @property({ type: String }) public roomAreaId = "";
 
   static styles = [
     RsScheduleBase.sharedStyles,
@@ -129,6 +139,70 @@ export class RsScheduleSettings extends RsScheduleBase {
           display: none;
         }
       }
+
+      .learned-banner {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 12px;
+        margin-bottom: 12px;
+        border-radius: 10px;
+        background: color-mix(in srgb, var(--primary-color) 12%, transparent);
+        border: 1px solid color-mix(in srgb, var(--primary-color) 40%, transparent);
+      }
+      .learned-banner ha-icon {
+        color: var(--primary-color);
+        flex-shrink: 0;
+      }
+      .learned-title {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--primary-text-color);
+      }
+      .learned-sub {
+        font-size: 11px;
+        color: var(--secondary-text-color);
+        font-family: var(--code-font-family, monospace);
+      }
+      .learned-edit {
+        margin-bottom: 12px;
+        padding-bottom: 12px;
+        border-bottom: 1px solid var(--divider-color, #eee);
+      }
+      .learned-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 14px;
+        font-weight: 500;
+      }
+      .learned-desc {
+        font-size: 12px;
+        color: var(--secondary-text-color);
+        margin: 6px 0 0 0;
+      }
+      .learned-controls {
+        margin-top: 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .learned-controls label {
+        font-size: 12px;
+        color: var(--secondary-text-color);
+      }
+      .learned-controls input[type="range"] {
+        width: 100%;
+        accent-color: var(--primary-color);
+      }
+      .learned-controls select {
+        padding: 8px 10px;
+        border-radius: 8px;
+        border: 1px solid var(--divider-color, #ccc);
+        background: var(--card-background-color, #fff);
+        color: var(--primary-text-color);
+        font: inherit;
+      }
     `,
   ];
 
@@ -141,11 +215,34 @@ export class RsScheduleSettings extends RsScheduleBase {
 
   // ─── View mode ─────────────────────────────────────────────────
 
+  private _renderLearnedBanner(l: string) {
+    return html`
+      <div class="learned-banner">
+        <ha-icon icon="mdi:brain"></ha-icon>
+        <div>
+          <div class="learned-title">
+            ${localize("schedule.learned_view", l, {
+              pct: String(Math.round(this.learnedThreshold * 100)),
+            })}
+          </div>
+          ${
+            this.learnedAreaId
+              ? html`<div class="learned-sub">
+                  ${localize("schedule.learned_area", l, { area: this.learnedAreaId })}
+                </div>`
+              : nothing
+          }
+        </div>
+      </div>
+    `;
+  }
+
   private _renderViewMode() {
     const l = this.hass.language;
     const hasMultiple = this.schedules.length >= 2;
 
     return html`
+      ${this.useLearnedSchedule ? this._renderLearnedBanner(l) : nothing}
       ${
         this.schedules.length > 0
           ? html`
@@ -234,22 +331,119 @@ export class RsScheduleSettings extends RsScheduleBase {
     const usedIds = new Set(this.schedules.map((s) => s.entity_id));
 
     return html`
-      ${this._renderScheduleList()}
-      ${this._renderAddRow(
-        localize("schedule.select_schedule", l),
-        this._getAvailableEntities(usedIds),
-        (eid) => this._addSchedule(eid),
-        localize("schedule.create_helper_hint", l),
-      )}
-      ${this._renderSelectorSection(
-        count,
-        localize("schedule.selector_label", l),
-        this.scheduleSelectorEntity ? this._getSelectorValueText(l) : "",
-        localize("schedule.selector_warning", l),
-        (value) => this._onSelectorEntityChange(value),
-      )}
+      ${this._renderLearnedEdit(l)}
+      ${
+        this.useLearnedSchedule
+          ? nothing
+          : html`
+              ${this._renderScheduleList()}
+              ${this._renderAddRow(
+                localize("schedule.select_schedule", l),
+                this._getAvailableEntities(usedIds),
+                (eid) => this._addSchedule(eid),
+                localize("schedule.create_helper_hint", l),
+              )}
+              ${this._renderSelectorSection(
+                count,
+                localize("schedule.selector_label", l),
+                this.scheduleSelectorEntity ? this._getSelectorValueText(l) : "",
+                localize("schedule.selector_warning", l),
+                (value) => this._onSelectorEntityChange(value),
+              )}
+            `
+      }
       ${this._renderTemperatureInputs(l)}
     `;
+  }
+
+  private _renderLearnedEdit(l: string) {
+    const pct = Math.round(this.learnedThreshold * 100);
+
+    // No occupancy provider installed → show the requirement, disable the toggle.
+    if (!this.learnedAvailable) {
+      return html`
+        <div class="learned-edit">
+          <label class="learned-row">
+            <ha-switch disabled></ha-switch>
+            <span>${localize("schedule.learned_toggle", l)}</span>
+          </label>
+          <p class="learned-desc">${localize("schedule.learned_unavailable", l)}</p>
+        </div>
+      `;
+    }
+
+    const areas =
+      this.learnedAreas.length > 0 ? this.learnedAreas : this.roomAreaId ? [this.roomAreaId] : [];
+    const selectedArea = this.learnedAreaId || this.roomAreaId;
+
+    return html`
+      <div class="learned-edit">
+        <label class="learned-row">
+          <ha-switch
+            .checked=${this.useLearnedSchedule}
+            @change=${this._onLearnedToggle}
+          ></ha-switch>
+          <span>${localize("schedule.learned_toggle", l)}</span>
+        </label>
+        <p class="learned-desc">${localize("schedule.learned_desc", l)}</p>
+        ${
+          this.useLearnedSchedule
+            ? html`
+                <div class="learned-controls">
+                  <label>${localize("schedule.learned_area_label", l)}</label>
+                  <select @change=${this._onLearnedAreaSelect}>
+                    ${areas.map(
+                      (a) => html`<option value=${a} ?selected=${a === selectedArea}>${a}</option>`,
+                    )}
+                  </select>
+                  <label>${localize("schedule.learned_threshold_label", l)}: ${pct}%</label>
+                  <input
+                    type="range"
+                    min="1"
+                    max="99"
+                    .value=${String(pct)}
+                    @input=${this._onLearnedThresholdInput}
+                  />
+                  <p class="learned-desc">${localize("schedule.learned_active_banner", l)}</p>
+                </div>
+              `
+            : nothing
+        }
+      </div>
+    `;
+  }
+
+  private _onLearnedToggle(e: Event) {
+    const checked = (e.target as HTMLInputElement).checked;
+    this.dispatchEvent(
+      new CustomEvent("learned-schedule-changed", {
+        detail: { value: checked },
+        bubbles: true,
+        composed: true,
+      }),
+    );
+  }
+
+  private _onLearnedThresholdInput(e: Event) {
+    const pct = parseInt((e.target as HTMLInputElement).value, 10);
+    this.dispatchEvent(
+      new CustomEvent("learned-threshold-changed", {
+        detail: { value: pct / 100 },
+        bubbles: true,
+        composed: true,
+      }),
+    );
+  }
+
+  private _onLearnedAreaSelect(e: Event) {
+    const value = (e.target as HTMLSelectElement).value;
+    this.dispatchEvent(
+      new CustomEvent("learned-area-changed", {
+        detail: { value },
+        bubbles: true,
+        composed: true,
+      }),
+    );
   }
 
   // ─── Schedule list ─────────────────────────────────────────────

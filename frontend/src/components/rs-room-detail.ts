@@ -65,6 +65,12 @@ export class RsRoomDetail extends LitElement {
   @state() private _comfortCool = 24.0;
   @state() private _ecoHeat = 17.0;
   @state() private _ecoCool = 27.0;
+  @state() private _useLearnedSchedule = false;
+  @state() private _learnedOccupancyAreaId = "";
+  @state() private _learnedOccupancyThreshold = 0.5;
+  @state() private _learnedAvailable = false;
+  @state() private _learnedAreas: string[] = [];
+  private _learnedLoaded = false;
   @state() private _error = "";
   @state() private _dirty = false;
   @state() private _editing: EditableSection | null = null;
@@ -217,6 +223,11 @@ export class RsRoomDetail extends LitElement {
   }
 
   updated(changedProps: Map<string, unknown>) {
+    if (this.hass && !this._learnedLoaded) {
+      this._learnedLoaded = true;
+      void this._loadLearnedAreas();
+    }
+
     const currentAreaId = this.config?.area_id ?? this.area?.area_id ?? null;
     const areaChanged = currentAreaId !== this._prevAreaId;
 
@@ -271,6 +282,9 @@ export class RsRoomDetail extends LitElement {
       this._comfortCool = this.config.comfort_cool ?? 24.0;
       this._ecoHeat = this.config.eco_heat ?? this.config.eco_temp ?? 17.0;
       this._ecoCool = this.config.eco_cool ?? 27.0;
+      this._useLearnedSchedule = this.config.use_learned_schedule ?? false;
+      this._learnedOccupancyAreaId = this.config.learned_occupancy_area_id ?? "";
+      this._learnedOccupancyThreshold = this.config.learned_occupancy_threshold ?? 0.5;
       this._selectedPresencePersons = this.config.presence_persons ?? [];
       this._displayName = this.config.display_name ?? "";
       this._selectedCovers = new Set(this.config.covers ?? []);
@@ -311,6 +325,9 @@ export class RsRoomDetail extends LitElement {
       this._comfortCool = 24.0;
       this._ecoHeat = 17.0;
       this._ecoCool = 27.0;
+      this._useLearnedSchedule = false;
+      this._learnedOccupancyAreaId = "";
+      this._learnedOccupancyThreshold = 0.5;
       this._selectedPresencePersons = [];
       this._displayName = "";
       this._selectedCovers = new Set();
@@ -444,6 +461,12 @@ export class RsRoomDetail extends LitElement {
                       .ecoCool=${this._ecoCool}
                       .climateMode=${this._climateMode}
                       .scheduleTempWarnings=${this.config?.live?.schedule_temp_warnings ?? []}
+                      .useLearnedSchedule=${this._useLearnedSchedule}
+                      .learnedThreshold=${this._learnedOccupancyThreshold}
+                      .learnedAreaId=${this._learnedOccupancyAreaId}
+                      .learnedAvailable=${this._learnedAvailable}
+                      .learnedAreas=${this._learnedAreas}
+                      .roomAreaId=${this.area.area_id}
                       .editing=${false}
                       @schedules-changed=${this._onSchedulesChanged}
                       @schedule-selector-changed=${this._onScheduleSelectorChanged}
@@ -451,6 +474,9 @@ export class RsRoomDetail extends LitElement {
                       @comfort-cool-changed=${this._onComfortCoolChanged}
                       @eco-heat-changed=${this._onEcoHeatChanged}
                       @eco-cool-changed=${this._onEcoCoolChanged}
+                      @learned-schedule-changed=${this._onLearnedScheduleChanged}
+                      @learned-threshold-changed=${this._onLearnedThresholdChanged}
+                      @learned-area-changed=${this._onLearnedAreaChanged}
                     ></rs-schedule-settings>
                     ${
                       this.config
@@ -705,6 +731,12 @@ export class RsRoomDetail extends LitElement {
             .ecoCool=${this._ecoCool}
             .climateMode=${this._climateMode}
             .scheduleTempWarnings=${this.config?.live?.schedule_temp_warnings ?? []}
+            .useLearnedSchedule=${this._useLearnedSchedule}
+            .learnedThreshold=${this._learnedOccupancyThreshold}
+            .learnedAreaId=${this._learnedOccupancyAreaId}
+            .learnedAvailable=${this._learnedAvailable}
+            .learnedAreas=${this._learnedAreas}
+            .roomAreaId=${this.area.area_id}
             .editing=${true}
             @schedules-changed=${this._onSchedulesChanged}
             @schedule-selector-changed=${this._onScheduleSelectorChanged}
@@ -712,6 +744,9 @@ export class RsRoomDetail extends LitElement {
             @comfort-cool-changed=${this._onComfortCoolChanged}
             @eco-heat-changed=${this._onEcoHeatChanged}
             @eco-cool-changed=${this._onEcoCoolChanged}
+            @learned-schedule-changed=${this._onLearnedScheduleChanged}
+            @learned-threshold-changed=${this._onLearnedThresholdChanged}
+            @learned-area-changed=${this._onLearnedAreaChanged}
           ></rs-schedule-settings>
         </rs-edit-dialog>`;
       case "devices":
@@ -909,6 +944,60 @@ export class RsRoomDetail extends LitElement {
 
   private _onScheduleSelectorChanged(e: CustomEvent<{ value: string }>) {
     this._scheduleSelectorEntity = e.detail.value;
+    this._autoSave();
+  }
+
+  /** Detect the occupancy provider (Area Occupancy get_time_priors) and load its areas. */
+  private async _loadLearnedAreas() {
+    const hass = this.hass as unknown as {
+      services?: Record<string, Record<string, unknown>>;
+      callService: (
+        d: string,
+        s: string,
+        data?: unknown,
+        target?: unknown,
+        notify?: boolean,
+        returnResponse?: boolean,
+      ) => Promise<{ response?: { areas?: Record<string, { area_id?: string }> } }>;
+    };
+    if (!hass?.services?.area_occupancy?.get_time_priors) {
+      this._learnedAvailable = false;
+      return;
+    }
+    this._learnedAvailable = true;
+    try {
+      const res = await hass.callService(
+        "area_occupancy",
+        "get_time_priors",
+        {},
+        undefined,
+        false,
+        true,
+      );
+      const areas = res?.response?.areas ?? {};
+      this._learnedAreas = Object.values(areas)
+        .map((a) => a?.area_id)
+        .filter((x): x is string => typeof x === "string");
+    } catch {
+      this._learnedAreas = [];
+    }
+  }
+
+  private _onLearnedScheduleChanged(e: CustomEvent<{ value: boolean }>) {
+    this._useLearnedSchedule = e.detail.value;
+    if (this._useLearnedSchedule && !this._learnedOccupancyAreaId) {
+      this._learnedOccupancyAreaId = this.area.area_id;
+    }
+    this._autoSave();
+  }
+
+  private _onLearnedThresholdChanged(e: CustomEvent<{ value: number }>) {
+    this._learnedOccupancyThreshold = e.detail.value;
+    this._autoSave();
+  }
+
+  private _onLearnedAreaChanged(e: CustomEvent<{ value: string }>) {
+    this._learnedOccupancyAreaId = e.detail.value;
     this._autoSave();
   }
 
@@ -1119,6 +1208,9 @@ export class RsRoomDetail extends LitElement {
         climate_mode: this._climateMode,
         schedules: this._schedules,
         schedule_selector_entity: this._scheduleSelectorEntity,
+        use_learned_schedule: this._useLearnedSchedule,
+        learned_occupancy_area_id: this._learnedOccupancyAreaId,
+        learned_occupancy_threshold: this._learnedOccupancyThreshold,
         comfort_heat: this._comfortHeat,
         comfort_cool: this._comfortCool,
         eco_heat: this._ecoHeat,

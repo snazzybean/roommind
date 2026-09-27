@@ -18,17 +18,21 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from .const import (
     AC_COOLING_BOOST_TARGET,
     AC_HEATING_BOOST_TARGET,
+    AOD_DOMAIN,
+    AOD_GET_TIME_PRIORS_SERVICE,
     CLIMATE_MODE_COOL_ONLY,
     CLIMATE_MODE_HEAT_ONLY,
     DEFAULT_COMFORT_COOL,
     DEFAULT_COMFORT_HEAT,
     DEFAULT_ECO_COOL,
     DEFAULT_ECO_HEAT,
+    DEFAULT_LEARNED_OCCUPANCY_THRESHOLD,
     DEFAULT_OUTDOOR_HEATING_MAX,
     DOMAIN,
     HEATING_BOOST_TARGET,
     HISTORY_ROTATE_CYCLES,
     HISTORY_WRITE_CYCLES,
+    LEARNED_PRIORS_TTL,
     MAX_PREDICTION_DELTA,
     MAX_SENSOR_STALENESS,
     MAX_TARGET_TEMP,
@@ -203,6 +207,9 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         self._climate_entity_areas: set[str] = set()
         # Per-entity cache of schedule blocks; fallback when schedule.get_schedule fails (#308)
         self._schedule_blocks_cache: dict[str, dict] = {}
+        # Cached Area Occupancy get_time_priors response (learned-occupancy schedule opt-in)
+        self._learned_priors_cache: dict | None = None
+        self._learned_priors_cache_ts: float = 0.0
         # Entity platform callbacks, set by platform async_setup_entry
         self.async_add_entities: Any = None
         self.async_add_switch_entities: Any = None
@@ -634,9 +641,36 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         # that schedule is picked.
         schedule_temp_warnings = find_rejected_block_temps(schedule_blocks, partial(ha_temp_to_celsius, self.hass))
 
+        # Predictive learned-occupancy schedule (opt-in per room). When enabled
+        # and the Area Occupancy prior is available it replaces the manual
+        # schedule window; otherwise learned_matrix stays None and everything
+        # below falls back to the manual schedule unchanged.
+        learned_matrix: dict[tuple[int, int], float] | None = None
+        learned_slot_minutes = 60
+        learned_threshold = room.get("learned_occupancy_threshold", DEFAULT_LEARNED_OCCUPANCY_THRESHOLD)
+        if room.get("use_learned_schedule") and room.get("learned_occupancy_area_id"):
+            learned_matrix, learned_slot_minutes = await self._get_learned_prior_matrix(
+                room["learned_occupancy_area_id"]
+            )
+            if learned_matrix is not None:
+                _LOGGER.debug(
+                    "room %s: consuming learned-occupancy prior (area=%s, %d slots)",
+                    room.get("area_id"),
+                    room["learned_occupancy_area_id"],
+                    len(learned_matrix),
+                )
+
         # Determine dual heat/cool target temperatures
         # Returns TargetTemps(heat, cool). None values mean "force off".
-        targets = self._resolve_target_temps(room, settings, schedule_blocks, schedule_entity_id)
+        targets = self._resolve_target_temps(
+            room,
+            settings,
+            schedule_blocks,
+            schedule_entity_id,
+            prior_matrix=learned_matrix,
+            prior_threshold=learned_threshold,
+            prior_slot_minutes=learned_slot_minutes,
+        )
 
         # Apply mold prevention temperature delta (heating target only).
         # Safety: mold prevention overrides "off" to prevent structural damage.
@@ -656,14 +690,27 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                     cool=targets.cool,
                 )
         presence_away = not room.get("ignore_presence", False) and self._is_presence_away(room, settings)
-        target_resolver = make_target_resolver(
-            schedule_blocks,
-            room,
-            settings,
-            hass=self.hass,
-            presence_away=presence_away,
-            mold_prevention_delta=mold_prevention_temp_delta,
-        )
+        if learned_matrix is not None:
+            from .utils.learned_schedule import make_learned_target_resolver
+
+            target_resolver = make_learned_target_resolver(
+                learned_matrix,
+                learned_threshold,
+                learned_slot_minutes,
+                room,
+                settings,
+                presence_away=presence_away,
+                mold_prevention_delta=mold_prevention_temp_delta,
+            )
+        else:
+            target_resolver = make_target_resolver(
+                schedule_blocks,
+                room,
+                settings,
+                hass=self.hass,
+                presence_away=presence_away,
+                mold_prevention_delta=mold_prevention_temp_delta,
+            )
 
         # --- Compute residual heat from previous cycle state ---
         system_type = room.get("heating_system_type", "")
@@ -1551,6 +1598,51 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 return True
         return False
 
+    async def _get_learned_priors(self) -> dict | None:
+        """Fetch and cache the Area Occupancy ``get_time_priors`` response.
+
+        Cached for ``LEARNED_PRIORS_TTL`` seconds (learned priors change slowly).
+        Returns None when the service is unavailable or errors — callers then
+        fall back to the manual schedule, so the feature is always fail-safe.
+        """
+        now = time.time()
+        if self._learned_priors_cache is not None and now - self._learned_priors_cache_ts < LEARNED_PRIORS_TTL:
+            return self._learned_priors_cache
+
+        result: dict | None = None
+        if self.hass.services.has_service(AOD_DOMAIN, AOD_GET_TIME_PRIORS_SERVICE):
+            try:
+                result = await self.hass.services.async_call(
+                    AOD_DOMAIN,
+                    AOD_GET_TIME_PRIORS_SERVICE,
+                    {},
+                    blocking=True,
+                    return_response=True,
+                )
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.warning(
+                    "area_occupancy.get_time_priors failed; falling back to manual schedule (%r)",
+                    err,
+                )
+                result = None
+        if isinstance(result, dict):
+            _LOGGER.debug(
+                "learned occupancy: fetched get_time_priors (%d areas)",
+                len(result.get("areas", {})),
+            )
+        self._learned_priors_cache = result
+        self._learned_priors_cache_ts = now
+        return result
+
+    async def _get_learned_prior_matrix(self, area_id: str) -> tuple[dict[tuple[int, int], float] | None, int]:
+        """Return ``(matrix, slot_minutes)`` of learned priors for an AOD area.
+
+        ``(None, 60)`` when unavailable — the caller then uses the manual schedule.
+        """
+        from .utils.learned_schedule import build_prior_matrix
+
+        return build_prior_matrix(await self._get_learned_priors(), area_id)
+
     def _is_presence_away(self, room: dict, settings: dict) -> bool:
         """Return True if presence detection says all relevant persons are away."""
         from .utils.presence_utils import is_presence_away
@@ -1592,6 +1684,10 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         settings: dict,
         schedule_blocks: dict | None = None,
         schedule_entity_id: str | None = None,
+        *,
+        prior_matrix: dict[tuple[int, int], float] | None = None,
+        prior_threshold: float = DEFAULT_LEARNED_OCCUPANCY_THRESHOLD,
+        prior_slot_minutes: int = 60,
     ) -> TargetTemps:
         """Resolve dual heat/cool target temperatures.
 
@@ -1662,6 +1758,24 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         comfort_cool = room.get("comfort_cool", DEFAULT_COMFORT_COOL)
         eco_heat = room.get("eco_heat", room.get("eco_temp", DEFAULT_ECO_HEAT))
         eco_cool = room.get("eco_cool", DEFAULT_ECO_COOL)
+
+        # 3(learned). When the room opts into the predictive learned-occupancy
+        # schedule and the Area Occupancy prior is available, the learned-prior
+        # window replaces the manual schedule window for the live target too.
+        if prior_matrix is not None:
+            from .utils.learned_schedule import resolve_prior_window
+
+            return resolve_prior_window(
+                time.time(),
+                prior_matrix,
+                prior_threshold,
+                prior_slot_minutes,
+                comfort_heat,
+                comfort_cool,
+                eco_heat,
+                eco_cool,
+                settings.get("schedule_off_action", "eco"),
+            )
 
         # schedule_entity_id is pre-resolved by the caller (_async_process_room) to avoid
         # a second resolve_schedule_index() call that could diverge if selector state changes.
