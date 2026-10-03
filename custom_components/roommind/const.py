@@ -76,6 +76,13 @@ HEATING_BOOST_TARGET = 30  # Fallback TRV heating boost (used when entity max_te
 AC_HEATING_BOOST_TARGET = 30  # Fallback AC heating boost (used when entity max_temp unavailable)
 AC_COOLING_BOOST_TARGET = 16  # Fallback AC cooling boost (used when entity min_temp unavailable)
 MIN_POWER_FRACTION = 0.15  # Minimum non-zero power fraction (prevents TRV dead zone)
+# Comfort-equivalent cost (°C² of deviation, integrated over the lookahead) of
+# STARTING a heating/cooling run. Without it a run that buys 0.05°C² of comfort
+# starts every 25 minutes forever: near steady state the optimizer duty-cycles
+# at whatever rate the min-run floor permits. Charging a start makes runs
+# consolidate — the room drifts a few tenths further and cycles stretch to
+# an hour-plus, trading a little deviation for far fewer compressor starts.
+MODE_START_PENALTY = 1.0
 DEFAULT_COMFORT_WEIGHT = 70  # Default comfort_weight slider value
 APPROACH_RATE_MIN = 0.2  # Gentlest gap fraction closed per block, at comfort_weight=0 (full efficiency)
 AC_BOOST_DELTA_MIN = 3.0  # Tightest AC setpoint cap (°C above/below target) at comfort_weight=0
