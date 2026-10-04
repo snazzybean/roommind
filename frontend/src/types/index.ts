@@ -117,6 +117,9 @@ export interface RoomConfig {
   climate_mode: ClimateMode;
   schedules: ScheduleEntry[];
   schedule_selector_entity: string;
+  use_learned_schedule?: boolean;
+  learned_occupancy_area_id?: string;
+  learned_occupancy_threshold?: number;
   comfort_temp?: number;
   eco_temp?: number;
   comfort_heat: number;

@@ -560,5 +560,13 @@
   "heat_source.ac_min_outdoor": "Min. outdoor temp for AC heating",
   "heat_source.ac_min_outdoor_hint": "Disable AC heating entirely below this temperature to protect the heat pump hardware.",
   "heat_source.ac_min_outdoor_suffix": "°C",
-  "heat_source.summary_disabled": "Smart source selection is off"
+  "heat_source.summary_disabled": "Smart source selection is off",
+  "schedule.learned_toggle": "Use learned occupancy schedule",
+  "schedule.learned_desc": "Drive comfort/eco from the occupancy learned by Area Occupancy Detection instead of a manual schedule. The room is pre-conditioned before its habitual occupancy.",
+  "schedule.learned_active_banner": "Learned occupancy is active — the manual schedule is bypassed.",
+  "schedule.learned_threshold_label": "Comfort threshold",
+  "schedule.learned_area_label": "Prediction source (Area Occupancy area)",
+  "schedule.learned_view": "Learned occupancy · comfort ≥ {pct}%",
+  "schedule.learned_area": "Source: {area}",
+  "schedule.learned_unavailable": "Requires the Area Occupancy Detection integration (get_time_priors service). Install it and restart Home Assistant."
 }

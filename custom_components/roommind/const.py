@@ -42,6 +42,13 @@ DEFAULT_COMFORT_COOL = 24.0
 DEFAULT_ECO_HEAT = 17.0
 DEFAULT_ECO_COOL = 27.0
 
+# Learned-occupancy schedule (predictive, sourced from the Area Occupancy
+# Detection integration's get_time_priors service). Opt-in per room.
+AOD_DOMAIN = "area_occupancy"
+AOD_GET_TIME_PRIORS_SERVICE = "get_time_priors"
+DEFAULT_LEARNED_OCCUPANCY_THRESHOLD = 0.5  # prior >= threshold → comfort window
+LEARNED_PRIORS_TTL = 900  # seconds; priors change slowly, cache the service response
+
 
 # Context identifier for RoomMind-initiated service calls.
 # Automations can check: trigger.context.parent_id == "roommind"
