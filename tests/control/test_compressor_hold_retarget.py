@@ -8,7 +8,7 @@ import pytest
 from homeassistant.const import UnitOfTemperature
 
 from custom_components.roommind.const import MODE_HEATING, MODE_IDLE, TargetTemps
-from custom_components.roommind.control.mpc_controller import MPCController
+from custom_components.roommind.control.mpc_controller import MPCController, _active_targets
 from custom_components.roommind.control.thermal_model import RoomModelManager
 from custom_components.roommind.managers.heat_source_orchestrator import DeviceCommand, HeatSourcePlan
 
@@ -52,9 +52,22 @@ def _sent(hass):
     return [c[0][2] for c in hass.services.async_call.call_args_list if c[0][1] == "set_temperature"]
 
 
+async def _run_active(hass, ctrl, mode, targets, **kwargs):
+    """An active cycle whose command really goes out: the device does not report the setpoint yet."""
+    state = hass.states.get(AC)
+    shown = None if state is None else state.attributes.get("temperature")
+    if state is not None:
+        state.attributes["temperature"] = None
+    try:
+        await ctrl.async_apply(mode, targets, power_fraction=1.0, **kwargs)
+    finally:
+        if state is not None:
+            state.attributes["temperature"] = shown
+
+
 async def _start_then_hold(hass, ctrl, held_targets, *, current_temp=22.5, started_with=COMFORT):
     """Heat with *started_with*, then hold for min-run with *held_targets*; returns what the hold sent."""
-    await ctrl.async_apply(MODE_HEATING, started_with, power_fraction=1.0, current_temp=19.0)
+    await _run_active(hass, ctrl, MODE_HEATING, started_with, current_temp=19.0)
     hass.services.async_call.reset_mock()
     await ctrl.async_apply(MODE_IDLE, held_targets, current_temp=current_temp, compressor_forced_on=HELD)
     return _sent(hass)
@@ -178,7 +191,7 @@ async def test_managed_mode_records_the_target_of_the_active_command():
 @pytest.mark.asyncio
 async def test_cooling_records_the_target_of_the_active_command():
     hass, ctrl = _setup(_state("cool", temperature=16.0))
-    await ctrl.async_apply("cooling", COMFORT, power_fraction=1.0, current_temp=29.0)
+    await _run_active(hass, ctrl, "cooling", COMFORT, current_temp=29.0)
     hass.services.async_call.reset_mock()
     await ctrl.async_apply(MODE_IDLE, TargetTemps(heat=21.0, cool=29.0), current_temp=28.0, compressor_forced_on=HELD)
     assert [c["temperature"] for c in _sent(hass)] == [29.0]
@@ -216,7 +229,7 @@ async def test_single_point_target_needs_the_margin_before_the_heating_hold_ends
 async def test_single_point_target_needs_the_margin_before_the_cooling_hold_ends(room_temp, sends):
     hass, ctrl = _setup(_state("cool", temperature=16.0))
     point = TargetTemps(heat=21.0, cool=21.0)
-    await ctrl.async_apply("cooling", point, power_fraction=1.0, current_temp=24.0)
+    await _run_active(hass, ctrl, "cooling", point, current_temp=24.0)
     hass.services.async_call.reset_mock()
     await ctrl.async_apply(MODE_IDLE, point, current_temp=room_temp, compressor_forced_on=HELD)
     assert [c["temperature"] for c in _sent(hass)] == ([21.0] if sends else [])
@@ -254,7 +267,7 @@ async def test_heating_hold_overshoot_is_sent_once():
 async def test_cooling_hold_ends_once_the_room_reaches_the_heat_target():
     hass, ctrl = _setup(_state("cool", temperature=16.0))
     band = TargetTemps(heat=21.0, cool=22.5)
-    await ctrl.async_apply("cooling", band, power_fraction=1.0, current_temp=24.0)
+    await _run_active(hass, ctrl, "cooling", band, current_temp=24.0)
     hass.services.async_call.reset_mock()
     await ctrl.async_apply(MODE_IDLE, band, current_temp=20.9, compressor_forced_on=HELD)
     assert [c["temperature"] for c in _sent(hass)] == [22.5]
@@ -273,7 +286,7 @@ async def test_cool_only_room_never_cares_about_the_heat_target():
     room = make_room(thermostats=[], acs=[AC], climate_mode="cool_only")
     hass, ctrl = _setup(_state("cool", temperature=16.0), room=room)
     band = TargetTemps(heat=21.0, cool=24.0)
-    await ctrl.async_apply("cooling", band, power_fraction=1.0, current_temp=26.0)
+    await _run_active(hass, ctrl, "cooling", band, current_temp=26.0)
     hass.services.async_call.reset_mock()
     await ctrl.async_apply(MODE_IDLE, band, current_temp=20.0, compressor_forced_on=HELD)
     assert _sent(hass) == []
@@ -385,9 +398,7 @@ def _active_plan():
 
 
 async def _orchestrated(hass, ctrl, held_targets):
-    await ctrl.async_apply(
-        MODE_HEATING, COMFORT, power_fraction=1.0, current_temp=19.0, heat_source_plan=_active_plan()
-    )
+    await _run_active(hass, ctrl, MODE_HEATING, COMFORT, current_temp=19.0, heat_source_plan=_active_plan())
     hass.services.async_call.reset_mock()
     await ctrl.async_apply(
         MODE_HEATING,
@@ -419,3 +430,90 @@ async def test_orchestrated_parked_ac_with_an_unchanged_target_gets_nothing():
 async def test_orchestrated_parked_ac_reporting_off_is_not_switched_on_again():
     hass, ctrl = _setup(_state("off"))
     assert await _orchestrated(hass, ctrl, TargetTemps(heat=17.0, cool=27.0)) == []
+
+
+# --- the reference moves only with a command that really went out (R2b) -----------------
+
+
+@pytest.mark.asyncio
+async def test_target_change_during_active_cycles_still_reaches_the_hold():
+    """Eco arrives while the unit still heats on its boost: no command goes out, so the hold must still send it."""
+    hass, ctrl = _setup(_state("heat"))
+    eco = TargetTemps(heat=17.0, cool=27.0)
+    await _run_active(hass, ctrl, MODE_HEATING, COMFORT, current_temp=19.0)
+    hass.services.async_call.reset_mock()
+    # unit already shows its boost setpoint, so the active cycle with the new target sends nothing
+    await ctrl.async_apply(MODE_HEATING, eco, power_fraction=1.0, current_temp=19.0)
+    assert _sent(hass) == []
+
+    await ctrl.async_apply(MODE_IDLE, eco, current_temp=19.5, compressor_forced_on=HELD)
+    assert [c["temperature"] for c in _sent(hass)] == [17.0]
+    hass.services.async_call.reset_mock()
+    hass.states.get = MagicMock(return_value=_state("heat", temperature=17.0))
+    await ctrl.async_apply(MODE_IDLE, eco, current_temp=19.4, compressor_forced_on=HELD)
+    assert _sent(hass) == []
+
+
+@pytest.mark.asyncio
+async def test_cool_side_change_during_active_cycles_still_reaches_the_hold():
+    hass, ctrl = _setup(_state("cool", temperature=16.0))
+    eco = TargetTemps(heat=17.0, cool=29.0)
+    await _run_active(hass, ctrl, "cooling", COMFORT, current_temp=28.0)
+    hass.services.async_call.reset_mock()
+    await ctrl.async_apply("cooling", eco, power_fraction=1.0, current_temp=28.0)
+    await ctrl.async_apply(MODE_IDLE, eco, current_temp=28.0, compressor_forced_on=HELD)
+    assert [c["temperature"] for c in _sent(hass)] == [29.0]
+
+
+@pytest.mark.asyncio
+async def test_failed_send_does_not_move_the_reference():
+    hass, ctrl = _setup(_state("heat"))
+    hass.services.async_call.side_effect = RuntimeError("device offline")
+    await _run_active(hass, ctrl, MODE_HEATING, COMFORT, current_temp=19.0)
+    assert AC not in _active_targets
+
+
+@pytest.mark.asyncio
+async def test_failed_hold_send_is_retried_once_per_cycle():
+    """Like before the hold: one attempt per cycle while it fails, a single send once it works."""
+    hass, ctrl = _setup(_state("heat"))
+    eco = TargetTemps(heat=17.0, cool=27.0)
+    await _run_active(hass, ctrl, MODE_HEATING, COMFORT, current_temp=19.0)
+    hass.services.async_call.reset_mock()
+    hass.services.async_call.side_effect = RuntimeError("device offline")
+    attempts = []
+    for _ in range(3):
+        hass.services.async_call.reset_mock()
+        await ctrl.async_apply(MODE_IDLE, eco, current_temp=19.5, compressor_forced_on=HELD)
+        attempts.append(len(_sent(hass)))
+    assert attempts == [1, 1, 1]
+
+    hass.services.async_call.side_effect = None
+    hass.services.async_call.reset_mock()
+    await ctrl.async_apply(MODE_IDLE, eco, current_temp=19.5, compressor_forced_on=HELD)
+    assert len(_sent(hass)) == 1
+    hass.services.async_call.reset_mock()
+    await ctrl.async_apply(MODE_IDLE, eco, current_temp=19.5, compressor_forced_on=HELD)
+    assert _sent(hass) == []
+
+
+@pytest.mark.asyncio
+async def test_reference_starts_from_a_running_unit_after_a_reload():
+    """The unit already shows its boost when the module state is fresh: confirmed ticks must still seed the reference."""
+    hass, ctrl = _setup(_state("heat"))
+    eco = TargetTemps(heat=17.0, cool=27.0)
+    await ctrl.async_apply(MODE_HEATING, COMFORT, power_fraction=1.0, current_temp=19.0)
+    assert _sent(hass) == []
+    await ctrl.async_apply(MODE_IDLE, COMFORT, current_temp=22.0, compressor_forced_on=HELD)
+    assert _sent(hass) == []
+    await ctrl.async_apply(MODE_IDLE, eco, current_temp=19.5, compressor_forced_on=HELD)
+    assert [c["temperature"] for c in _sent(hass)] == [17.0]
+
+
+@pytest.mark.asyncio
+async def test_seeding_never_replaces_a_remembered_reference():
+    hass, ctrl = _setup(_state("heat"))
+    eco = TargetTemps(heat=17.0, cool=27.0)
+    await _run_active(hass, ctrl, MODE_HEATING, COMFORT, current_temp=19.0)
+    await ctrl.async_apply(MODE_HEATING, eco, power_fraction=1.0, current_temp=19.0)  # confirmed, not sent
+    assert _active_targets[AC] == (21.0, 27.0)

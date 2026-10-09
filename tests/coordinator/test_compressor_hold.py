@@ -198,6 +198,40 @@ class TestHoldFollowsDeliberateTargetChange:
         assert _calls(hass, "set_hvac_mode") == []
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("name", list(SCENARIOS))
+    async def test_change_during_the_mode_minimum_run_reaches_the_hold(self, hass, mock_config_entry, name):
+        """The change arrives while the room is still in heating (mode min-run): the hold must still send it (R2b)."""
+        scenario, expected = self.SCENARIOS[name]
+        store = _make_store_mock({AREA: AC_ROOM}, settings={"compressor_groups": [GROUP]})
+        hass.data = {"roommind": {"store": store}}
+        hass.services.async_call = AsyncMock()
+        coordinator = _create_coordinator(hass, mock_config_entry)
+        ac = {"state": _ac_state("off", 16.0)}
+        _wire_states(hass, ac, temp="18.0")
+        await coordinator._async_update_data()
+        ac["state"] = _ac_state("heat", _calls(hass, "set_temperature")[-1][0][2]["temperature"])
+
+        store.get_rooms.return_value = {AREA: {**AC_ROOM, **scenario.get("room", {})}}
+        store.get_settings.return_value.update(scenario.get("settings", {}))
+        if scenario.get("presence"):
+            hass.states.get = MagicMock(
+                side_effect=lambda eid: ac["state"] if eid == AC else _presence_states_get()(eid)
+            )
+        else:
+            base = make_mock_states_get(temp="19.5", schedule_state=scenario.get("schedule_state", "on"))
+            hass.states.get = MagicMock(side_effect=lambda eid: ac["state"] if eid == AC else base(eid))
+
+        hass.services.async_call.reset_mock()
+        data = await coordinator._async_update_data()  # mode min-run: still heating, the boost is unchanged
+        assert data["rooms"][AREA]["mode"] == MODE_HEATING
+        assert _calls(hass, "set_temperature") == []
+
+        _age_mode(coordinator)
+        data = await coordinator._async_update_data()
+        assert data["rooms"][AREA]["mode"] == MODE_IDLE
+        assert [c[0][2]["temperature"] for c in _calls(hass, "set_temperature")] == [expected]
+
+    @pytest.mark.asyncio
     async def test_target_reached_without_a_change_still_sends_nothing(self, hass, mock_config_entry):
         room, sent, _ = await self._run_scenario(hass, mock_config_entry, {"temp": "22.5"}, ticks=2)
 
