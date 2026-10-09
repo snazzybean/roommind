@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import logging
 from unittest.mock import patch
 
+import pytest
+
+from custom_components.roommind.const import MAX_SENSOR_STALENESS
 from custom_components.roommind.managers.window_manager import WindowManager
 
 
@@ -283,3 +287,104 @@ def test_remove_room_resets_seen_state():
         mock_time.time.return_value = 2000.0
         result = mgr.update("living_room", raw_open=True, open_delay=60, close_delay=0)
         assert result is True  # immediate pause again
+
+
+SENSOR = "binary_sensor.window"
+OTHER = "binary_sensor.door"
+
+
+def test_resolve_raw_plain_states():
+    """Definitive readings map to open/closed; any open sensor wins."""
+    mgr = WindowManager()
+    assert mgr.resolve_raw("room", {SENSOR: "off", OTHER: "off"}) is False
+    assert mgr.resolve_raw("room", {SENSOR: "off", OTHER: "on"}) is True
+    assert mgr.is_pending("room") is False
+
+
+@pytest.mark.parametrize("state", ["unavailable", "unknown", None])
+def test_resolve_raw_unavailable_without_history_is_pending(state):
+    """Right after startup an unavailable sensor is neither open nor closed."""
+    mgr = WindowManager()
+    assert mgr.resolve_raw("room", {SENSOR: state}) is None
+    assert mgr.is_pending("room") is True
+
+
+def test_resolve_raw_pending_does_not_consume_first_observation():
+    """A pending cycle must leave the room unseen so an open window still skips open_delay."""
+    mgr = WindowManager()
+    assert mgr.resolve_raw("room", {SENSOR: "unavailable"}) is None
+    assert mgr.resolve_raw("room", {SENSOR: "on"}) is True
+    assert mgr.is_pending("room") is False
+    assert mgr.update("room", raw_open=True, open_delay=60, close_delay=0) is True
+
+
+def test_resolve_raw_holds_last_known_state():
+    """A sensor dropping out keeps its last reading within the grace period."""
+    mgr = WindowManager()
+    with patch("custom_components.roommind.managers.window_manager.time") as mock_time:
+        mock_time.time.return_value = 1000.0
+        assert mgr.resolve_raw("room", {SENSOR: "on"}) is True
+        mock_time.time.return_value = 1000.0 + MAX_SENSOR_STALENESS - 1
+        assert mgr.resolve_raw("room", {SENSOR: "unavailable"}) is True
+        assert mgr.resolve_raw("room", {SENSOR: "unknown"}) is True
+
+        mock_time.time.return_value = 5000.0
+        assert mgr.resolve_raw("room", {SENSOR: "off"}) is False
+        mock_time.time.return_value = 5001.0
+        assert mgr.resolve_raw("room", {SENSOR: "unavailable"}) is False
+
+
+def test_resolve_raw_hold_expires_and_warns_once(caplog):
+    """A sensor dead longer than the grace period counts as closed again, with one warning."""
+    mgr = WindowManager()
+    with patch("custom_components.roommind.managers.window_manager.time") as mock_time:
+        mock_time.time.return_value = 1000.0
+        assert mgr.resolve_raw("room", {SENSOR: "on"}) is True
+        mock_time.time.return_value = 2000.0
+        assert mgr.resolve_raw("room", {SENSOR: "unavailable"}) is True  # dropout starts
+        mock_time.time.return_value = 2000.0 + MAX_SENSOR_STALENESS
+        with caplog.at_level(logging.WARNING):
+            assert mgr.resolve_raw("room", {SENSOR: "unavailable"}) is False
+            assert mgr.resolve_raw("room", {SENSOR: "unavailable"}) is False
+    assert len([r for r in caplog.records if SENSOR in r.getMessage()]) == 1
+
+
+def test_resolve_raw_never_known_expires_to_closed():
+    """A sensor that never reports stops blocking control after the grace period."""
+    mgr = WindowManager()
+    with patch("custom_components.roommind.managers.window_manager.time") as mock_time:
+        mock_time.time.return_value = 1000.0
+        assert mgr.resolve_raw("room", {SENSOR: None}) is None
+        mock_time.time.return_value = 1000.0 + MAX_SENSOR_STALENESS
+        assert mgr.resolve_raw("room", {SENSOR: None}) is False
+    assert mgr.is_pending("room") is False
+
+
+def test_resolve_raw_mixed_sensors():
+    """Open wins over pending; pending wins over closed."""
+    mgr = WindowManager()
+    assert mgr.resolve_raw("room", {SENSOR: "off", OTHER: "unavailable"}) is None
+    assert mgr.resolve_raw("room", {SENSOR: "on", OTHER: "unavailable"}) is True
+    assert mgr.is_pending("room") is False
+
+
+def test_resolve_raw_forgets_removed_sensors():
+    """A sensor dropped from the config no longer holds or blocks anything."""
+    mgr = WindowManager()
+    assert mgr.resolve_raw("room", {SENSOR: "on", OTHER: "off"}) is True
+    assert mgr.resolve_raw("room", {OTHER: "off"}) is False
+    assert mgr.resolve_raw("room", {SENSOR: "unavailable", OTHER: "off"}) is None
+
+
+def test_remove_room_clears_resolve_state():
+    """remove_room drops held readings, pending flag and warning dedupe."""
+    mgr = WindowManager()
+    with patch("custom_components.roommind.managers.window_manager.time") as mock_time:
+        mock_time.time.return_value = 1000.0
+        mgr.resolve_raw("room", {SENSOR: "on"})
+        mgr.resolve_raw("room", {SENSOR: "unavailable", OTHER: "unavailable"})
+        mock_time.time.return_value = 1000.0 + MAX_SENSOR_STALENESS
+        mgr.resolve_raw("room", {SENSOR: "unavailable", OTHER: "unavailable"})
+    mgr.remove_room("room")
+    assert mgr.is_pending("room") is False
+    assert mgr.resolve_raw("room", {SENSOR: "unavailable"}) is None  # no held "on" any more

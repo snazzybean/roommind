@@ -236,3 +236,16 @@ def test_any_member_room_waiting_expires_with_grace_period(hass, mock_config_ent
 
     coordinator._startup_ts = time.monotonic() - MAX_SENSOR_STALENESS - 1
     assert coordinator._any_member_room_waiting(["climate.ac_living"], rooms) is False
+
+
+def test_any_member_room_waiting_counts_pending_window(hass, mock_config_entry):
+    """A room whose window state is unresolved keeps the master guard up, even without a temp sensor."""
+    coordinator = _create_coordinator(hass, mock_config_entry)
+    rooms = {"living": {**AC_ROOM, "area_id": "living", "temperature_sensor": ""}}
+    assert coordinator._any_member_room_waiting(["climate.ac_living"], rooms) is False
+
+    coordinator._window_manager.resolve_raw("living", {"binary_sensor.window": "unavailable"})
+    assert coordinator._any_member_room_waiting(["climate.ac_living"], rooms) is True
+
+    coordinator._window_manager.resolve_raw("living", {"binary_sensor.window": "off"})
+    assert coordinator._any_member_room_waiting(["climate.ac_living"], rooms) is False

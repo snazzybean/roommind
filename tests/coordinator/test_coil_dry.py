@@ -82,12 +82,13 @@ def _setup(hass, rooms, settings):
     return store
 
 
-async def _run_cycle(coordinator, temp, schedule_state="on", **kwargs):
+async def _run_cycle(coordinator, temp, schedule_state="on", window_sensors=None, **kwargs):
     """One coordinator cycle at the given room temperature."""
     coordinator.hass.states.get = make_mock_states_get(
         temp=None if temp is None else str(temp),
         outdoor_temp="28.0",
         schedule_state=schedule_state,
+        window_sensors=window_sensors,
         extra={AC_EID: _ac_entity_state(**kwargs)},
     )
     data = await coordinator._async_update_data()
@@ -153,7 +154,7 @@ async def test_coil_dry_runs_during_window_pause(hass, mock_config_entry, frozen
     _setup(hass, {"living_room": room}, dict(COIL_DRY_SETTINGS))
     coordinator = _create_coordinator(hass, mock_config_entry)
 
-    await _run_cycle(coordinator, COOLING_TEMP)
+    await _run_cycle(coordinator, COOLING_TEMP, window_sensors={"binary_sensor.living_window": "off"})
 
     frozen_time[0] += COOLING_RUN_SECONDS
     coordinator.hass.states.get = make_mock_states_get(
@@ -556,7 +557,12 @@ async def test_managed_mode_display_stays_idle_during_coil_dry(hass, mock_config
     _setup(hass, {"living_room": room}, dict(COIL_DRY_SETTINGS))
     coordinator = _create_coordinator(hass, mock_config_entry)
 
-    await _run_cycle(coordinator, None, current_temperature=COOLING_TEMP)
+    await _run_cycle(
+        coordinator,
+        None,
+        window_sensors={"binary_sensor.living_window": "off"},
+        current_temperature=COOLING_TEMP,
+    )
     frozen_time[0] += COOLING_RUN_SECONDS
 
     coordinator.hass.states.get = make_mock_states_get(

@@ -741,25 +741,35 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             self._prediction_forecasts.pop(area_id, None)
 
         # Pause climate control when any window/door is open (with configurable delays)
-        raw_open = self._is_window_open(room)
-        window_open = self._window_manager.update(
-            area_id,
-            raw_open,
-            room.get("window_open_delay", 0),
-            room.get("window_close_delay", 0),
-        )
-        if window_open:
+        raw_state = self._window_manager.resolve_raw(area_id, self._read_window_states(room))
+        # Pending: sensors unavailable and no state known yet (typically right after
+        # a restart).  Keep the current pause state and send no commands; update()
+        # is skipped so the first real reading still counts as the first observation.
+        window_pending = raw_state is None
+        if raw_state is None:
+            raw_open = True  # skips EKF training like an open_delay window
+            window_open = self._window_manager.is_paused(area_id)
+        else:
+            raw_open = raw_state
+            window_open = self._window_manager.update(
+                area_id,
+                raw_state,
+                room.get("window_open_delay", 0),
+                room.get("window_close_delay", 0),
+            )
+        if window_open or window_pending:
             mode = MODE_IDLE
             power_fraction = 0.0
 
         climate_active = settings.get("climate_control_active", True) and room.get("climate_control_enabled", True)
         # Startup guard: Full Control room without any temperature reading yet —
         # leave devices in their current state instead of idling them.
-        waiting_for_data = has_external_sensor and self._waiting_for_first_reading(area_id)
+        waiting_for_temp = has_external_sensor and self._waiting_for_first_reading(area_id)
+        waiting_for_data = waiting_for_temp or window_pending
         if (
             climate_active
             and has_external_sensor
-            and not waiting_for_data
+            and not waiting_for_temp
             and area_id not in self._had_valid_temp
             and area_id not in self._startup_guard_warned
         ):
@@ -911,7 +921,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             mode = MODE_IDLE
             power_fraction = 0.0
             _LOGGER.debug(
-                "Room '%s': no temperature reading since startup, skipping device control",
+                "Room '%s': waiting for first temperature reading or window state, skipping device control",
                 area_id,
             )
         else:
@@ -1543,13 +1553,13 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 continue
         return MODE_IDLE
 
-    def _is_window_open(self, room: dict) -> bool:
-        """Return True if any configured window/door sensor reports 'on' (open)."""
+    def _read_window_states(self, room: dict) -> dict[str, str | None]:
+        """Return the raw state of each configured window/door sensor (None if it has no state object)."""
+        states: dict[str, str | None] = {}
         for entity_id in room.get("window_sensors", []):
             state = self.hass.states.get(entity_id)
-            if state and state.state == "on":
-                return True
-        return False
+            states[entity_id] = state.state if state else None
+        return states
 
     def _is_presence_away(self, room: dict, settings: dict) -> bool:
         """Return True if presence detection says all relevant persons are away."""
@@ -1968,10 +1978,11 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         return area_id not in self._had_valid_temp and time.monotonic() - self._startup_ts < MAX_SENSOR_STALENESS
 
     def _any_member_room_waiting(self, members: list[str], rooms_config: dict[str, dict]) -> bool:
-        """Return True when a Full Control member room has no temperature reading yet."""
+        """Return True when a member room has no temperature reading or window state yet."""
         member_set = set(members)
         for area_id, room in rooms_config.items():
-            if not room.get("temperature_sensor") or not self._waiting_for_first_reading(area_id):
+            waiting_for_temp = bool(room.get("temperature_sensor")) and self._waiting_for_first_reading(area_id)
+            if not waiting_for_temp and not self._window_manager.is_pending(area_id):
                 continue
             if room.get("is_outdoor", False) or not room.get("climate_control_enabled", True):
                 continue
