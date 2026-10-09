@@ -66,6 +66,10 @@ _SENTINEL: object = object()  # default marker for backward-compat keyword detec
 # Persists across MPCController instances (created fresh each 30s cycle),
 # resets on integration reload (module reimport).
 _last_commands: dict[str, dict[str, Any]] = {}
+# Last successful command per (entity, service).  _last_commands keeps only the
+# newest command per entity, so set_hvac_mode and set_temperature would evict
+# each other and the IR fallback could never recognise a repeated pair (#416).
+_last_by_service: dict[tuple[str, str], dict[str, Any]] = {}
 _setpoint_override_warned: set[str] = set()
 # hvac states in which a lower setpoint means more cooling, not less output
 _COOLING_SIDE_STATES = ("cool", "heat_cool", "dry")
@@ -80,6 +84,34 @@ def _cache_entry(service: str, data: dict) -> dict[str, Any]:
         "target_temp_low": data.get("target_temp_low"),
         "target_temp_high": data.get("target_temp_high"),
     }
+
+
+def _note_applied(entity_id: str, service: str, data: dict) -> None:
+    """Record that the device is known to be in the state *data* describes."""
+    entry = _cache_entry(service, data)
+    if service == "set_hvac_mode":
+        previous = _last_by_service.get((entity_id, service))
+        if previous is None or previous.get("hvac_mode") != entry["hvac_mode"]:
+            # A mode change can reset the device's setpoint, so it must be sent again
+            _last_by_service.pop((entity_id, "set_temperature"), None)
+    _last_by_service[(entity_id, service)] = entry
+
+
+def _remember_command(entity_id: str, service: str, data: dict) -> None:
+    """Record a successfully sent command in both caches."""
+    if entity_id not in _last_commands:
+        for key in [k for k in _last_by_service if k[0] == entity_id]:
+            del _last_by_service[key]
+    _last_commands[entity_id] = _cache_entry(service, data)
+    _note_applied(entity_id, service, data)
+
+
+def _cached_command(entity_id: str, service: str) -> dict[str, Any] | None:
+    """Last command of *service* sent to the entity, if still believed to be in effect."""
+    latest = _last_commands.get(entity_id)
+    if latest is not None and latest.get("service") == service:
+        return latest
+    return _last_by_service.get((entity_id, service)) if latest is not None else None
 
 
 def _should_use_cache(state: Any) -> bool:
@@ -125,6 +157,7 @@ def _resolve_step(hass: HomeAssistant, attributes: Any) -> float | None:
 def clear_command_cache() -> None:
     """Clear the sent-command cache (for tests)."""
     _last_commands.clear()
+    _last_by_service.clear()
     _setpoint_override_warned.clear()
 
 
@@ -223,7 +256,7 @@ async def _send_idle_setpoint(
             blocking=True,
             context=make_roommind_context(),
         )
-        _last_commands[entity_id] = _cache_entry("set_temperature", {"temperature": setpoint})
+        _remember_command(entity_id, "set_temperature", {"temperature": setpoint})
     except Exception:  # noqa: BLE001
         _LOGGER.warning(
             "Area '%s': climate.set_temperature(%.1f) failed on '%s'",
@@ -299,7 +332,7 @@ async def async_turn_off_climate(
                 blocking=True,
                 context=make_roommind_context(),
             )
-            _last_commands[entity_id] = _cache_entry("set_hvac_mode", {"hvac_mode": "off"})
+            _remember_command(entity_id, "set_hvac_mode", {"hvac_mode": "off"})
         except Exception:  # noqa: BLE001
             _LOGGER.warning(
                 "Area '%s': climate.set_hvac_mode(off) failed on '%s'",
@@ -385,7 +418,7 @@ async def async_turn_off_climate(
             blocking=True,
             context=make_roommind_context(),
         )
-        _last_commands[entity_id] = _cache_entry("set_temperature", svc_data)
+        _remember_command(entity_id, "set_temperature", svc_data)
     except Exception:  # noqa: BLE001
         _LOGGER.warning(
             "Area '%s': climate.set_temperature(%s) fallback failed on '%s'",
@@ -523,7 +556,7 @@ async def async_idle_device(
                 blocking=True,
                 context=make_roommind_context(),
             )
-            _last_commands[entity_id] = _cache_entry("set_temperature", {"temperature": ha_t})
+            _remember_command(entity_id, "set_temperature", {"temperature": ha_t})
         except Exception:  # noqa: BLE001
             _LOGGER.warning(
                 "Area '%s': climate.set_temperature(%.1f) failed on '%s'",
@@ -572,7 +605,7 @@ async def async_idle_device(
             blocking=True,
             context=make_roommind_context(),
         )
-        _last_commands[entity_id] = _cache_entry("set_hvac_mode", {"hvac_mode": "fan_only"})
+        _remember_command(entity_id, "set_hvac_mode", {"hvac_mode": "fan_only"})
     except Exception:  # noqa: BLE001
         _LOGGER.warning(
             "Area '%s': climate.set_hvac_mode(fan_only) failed on '%s'",
@@ -1924,9 +1957,12 @@ class MPCController:
 
         # --- Redundancy: primary (device state) then fallback (sent cache) ---
         skip = False
+        # True when the skip proves the device already holds exactly this value
+        # (not merely within the proportional deadband)
+        confirmed = False
         if state:
             if service == "set_hvac_mode" and state.state == data.get("hvac_mode"):
-                skip = True
+                skip = confirmed = True
             elif service == "set_temperature":
                 # Dual-setpoint (range) devices: proportional deadband is intentionally
                 # NOT applied here — it only governs single-setpoint gentle-regime sends.
@@ -1943,7 +1979,7 @@ class MPCController:
                         and round(cur_low, 1) == round(des_low, 1)
                         and round(cur_high, 1) == round(des_high, 1)
                     ):
-                        skip = True
+                        skip = confirmed = True
                 else:
                     current = state.attributes.get("temperature")
                     desired = data.get("temperature")
@@ -1953,14 +1989,14 @@ class MPCController:
                             if abs(float(current) - float(desired)) < ha_deadband:
                                 skip = True
                         elif round(current, 1) == round(desired, 1):
-                            skip = True
+                            skip = confirmed = True
 
         # Fallback: check sent-command cache (for IR devices without state feedback).
         # Proportional deadband is intentionally NOT applied here — it is anchored to
         # live device state, while this branch handles IR/no-state devices via the cache.
         if not skip and eid and _should_use_cache(state):
-            cached = _last_commands.get(eid)
-            if cached is not None and cached.get("service") == service:
+            cached = _cached_command(eid, service)
+            if cached is not None:
                 if service == "set_hvac_mode":
                     if cached.get("hvac_mode") == data.get("hvac_mode"):
                         skip = True
@@ -1986,6 +2022,8 @@ class MPCController:
                             skip = True
 
         if skip:
+            if confirmed and eid:
+                _note_applied(eid, service, data)
             return
 
         try:
@@ -1997,7 +2035,7 @@ class MPCController:
                 context=make_roommind_context(),
             )
             if eid:
-                _last_commands[eid] = _cache_entry(service, data)
+                _remember_command(eid, service, data)
         except Exception:  # noqa: BLE001
             _LOGGER.warning(
                 "Area '%s': climate.%s failed on '%s'",
