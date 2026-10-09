@@ -2077,6 +2077,30 @@ class MPCController:
                         hi = dev_max
                     data = {**data, "target_temp_high": hi}
 
+        # Unusable state and no step to snap to: the sent-command cache only recognises
+        # identical values, so a proportional setpoint that drifts with the room
+        # temperature would go out every cycle or two. Quantize it to the unit the
+        # device can show anyway (#416). Direct targets and Managed Mode, which send the
+        # plain room target, keep their exact value.
+        if (
+            service == "set_temperature"
+            and "temperature" in data
+            and eid not in self._direct_eids
+            and self.has_external_sensor
+            and state
+            and _should_use_cache(state)
+            and _resolve_step(self.hass, state.attributes) is None
+        ):
+            unit_step = 1.0 if self.hass.config.units.temperature_unit == UnitOfTemperature.FAHRENHEIT else 0.5
+            t = _snap_to_step(data["temperature"], unit_step)
+            dev_min = state.attributes.get("min_temp")
+            dev_max = state.attributes.get("max_temp")
+            if dev_max is not None and t > dev_max:
+                t = dev_max
+            if dev_min is not None and t < dev_min:
+                t = dev_min
+            data = {**data, "temperature": t}
+
         # --- Redundancy: primary (device state) then fallback (sent cache) ---
         skip = False
         # True when the skip proves the device already holds exactly this value

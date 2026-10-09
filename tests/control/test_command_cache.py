@@ -5,6 +5,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import pytest
+from homeassistant.const import UnitOfTemperature
 
 from custom_components.roommind.const import (
     COMMAND_CACHE_REASSERT_SECONDS,
@@ -184,3 +185,106 @@ async def test_valid_state_devices_ignore_the_ttl():
         later = await _tick(hass, ctrl)
 
     assert first == later == []
+
+
+async def _drifting_room_sends(state, *, fahrenheit, direct=False):
+    """Setpoints sent while a room warms by 3 K in 30 min (one cycle per 30 s) next to a device without usable state."""
+    hass = build_hass()
+    if fahrenheit:
+        hass.config.units.temperature_unit = UnitOfTemperature.FAHRENHEIT
+    hass.states.get = MagicMock(return_value=state)
+    room = make_room(thermostats=[], acs=[AC])
+    if direct:
+        room["devices"][0]["setpoint_mode"] = "direct"
+    sent = []
+    for i in range(60):
+        ctrl = MPCController(
+            hass, room, model_manager=RoomModelManager(), outdoor_temp=5.0, settings={}, has_external_sensor=True
+        )
+        hass.services.async_call.reset_mock()
+        await ctrl.async_apply(
+            MODE_HEATING, TargetTemps(heat=21.0, cool=None), power_fraction=0.4, current_temp=18.0 + 0.05 * i
+        )
+        sent += [
+            c[0][2]["temperature"] for c in hass.services.async_call.call_args_list if c[0][1] == "set_temperature"
+        ]
+    return sent
+
+
+def _f_state(**extra):
+    state = _state("unknown")
+    state.attributes.update({"min_temp": 61.0, "max_temp": 86.0, **extra})
+    return state
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("extra", [{}, {"temperature": None}])
+async def test_drifting_setpoint_is_quantized_to_whole_degrees_fahrenheit(extra):
+    """No step, no state: a setpoint that drifts with the room must not go out every cycle or two (#416)."""
+    sent = await _drifting_room_sends(_f_state(**extra), fahrenheit=True)
+
+    assert sent
+    assert all(float(t).is_integer() for t in sent)
+    assert len(sent) <= 6
+
+
+@pytest.mark.asyncio
+async def test_drifting_setpoint_is_quantized_to_half_degrees_celsius():
+    sent = await _drifting_room_sends(_state("unknown"), fahrenheit=False)
+
+    assert sent
+    assert all(t * 2 == round(t * 2) for t in sent)
+    assert len(sent) <= 8
+
+
+@pytest.mark.asyncio
+async def test_quantized_setpoint_stays_inside_the_device_limits():
+    state = _state("unknown")
+    state.attributes.update({"min_temp": 16.2, "max_temp": 29.8})
+    sent = await _drifting_room_sends(state, fahrenheit=False)
+
+    assert sent
+    assert all(16.2 <= t <= 29.8 for t in sent)
+
+
+@pytest.mark.asyncio
+async def test_direct_target_is_not_quantized():
+    hass = build_hass()
+    hass.states.get = MagicMock(return_value=_state("unknown"))
+    room = make_room(thermostats=[], acs=[AC])
+    room["devices"][0]["setpoint_mode"] = "direct"
+    ctrl = MPCController(
+        hass, room, model_manager=RoomModelManager(), outdoor_temp=5.0, settings={}, has_external_sensor=True
+    )
+
+    await ctrl.async_apply(MODE_HEATING, TargetTemps(heat=21.3, cool=None), power_fraction=1.0, current_temp=18.0)
+
+    assert [t for _, _, t in _sent(hass) if t is not None] == [21.3]
+
+
+@pytest.mark.asyncio
+async def test_device_state_with_a_step_keeps_its_own_resolution():
+    """The quantization is for the cache path only: with a real state the value is compared against that state."""
+    state = _state("heat", 20.0)
+    sent = await _drifting_room_sends(state, fahrenheit=False)
+
+    assert any(t * 2 != round(t * 2) for t in sent)
+
+
+@pytest.mark.asyncio
+async def test_managed_mode_target_is_not_quantized():
+    """Managed Mode sends the plain room target; it does not drift, so it is not rounded."""
+    hass = build_hass()
+    hass.states.get = MagicMock(return_value=_state("unknown"))
+    ctrl = MPCController(
+        hass,
+        make_room(thermostats=[], acs=[AC]),
+        model_manager=RoomModelManager(),
+        outdoor_temp=5.0,
+        settings={},
+        has_external_sensor=False,
+    )
+
+    await ctrl.async_apply(MODE_HEATING, TargetTemps(heat=21.3, cool=None), power_fraction=1.0, current_temp=18.0)
+
+    assert [t for _, _, t in _sent(hass) if t is not None] == [21.3]
