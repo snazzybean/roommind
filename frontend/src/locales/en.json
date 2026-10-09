@@ -196,6 +196,8 @@
   "devices.setpoint_mode": "Setpoint mode",
   "devices.setpoint_mode_proportional": "Proportional (valve control)",
   "devices.setpoint_mode_direct": "Direct (device regulates)",
+  "devices.setpoint_offset": "Setpoint offset",
+  "devices.setpoint_offset_hint": "Use this if the device's own sensor reads differently from your room sensor. The offset is added to the room target before it is sent to the device, for heating and cooling. Example: while cooling, the device thinks the room is 2° colder than it is and stops too early – enter -2. 0 = no offset.",
   "devices.setpoint_mode_hint": "Direct sends the actual room target to the device — best for thermostats and space heaters that regulate themselves. Proportional sends a boosted setpoint toward the device max_temp — best for radiator valves (TRVs).",
   "devices.coil_dry": "Evaporator drying",
   "devices.coil_dry_inherit": "Use global setting",

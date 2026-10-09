@@ -43,6 +43,8 @@ from ..utils.device_utils import (
     get_ac_eids,
     get_direct_setpoint_eids,
     get_idle_action,
+    get_setpoint_offset,
+    get_setpoint_offsets,
     get_trv_eids,
     has_reliable_hvac_modes,
 )
@@ -442,11 +444,12 @@ async def async_idle_device(
             await async_turn_off_climate(hass, entity_id, area_id=area_id, fallback_setpoint=fallback_temp)
             return
 
-        # Compute setback temperature
+        # Compute setback temperature (direct devices keep their sensor offset (#369))
+        sensor_offset = get_setpoint_offset(devices, entity_id)
         if current_hvac == "heat" and targets.heat is not None:
-            setback_temp = targets.heat - DEFAULT_IDLE_SETBACK_OFFSET
+            setback_temp = targets.heat + sensor_offset - DEFAULT_IDLE_SETBACK_OFFSET
         elif current_hvac == "cool" and targets.cool is not None:
-            setback_temp = targets.cool + DEFAULT_IDLE_SETBACK_OFFSET
+            setback_temp = targets.cool + sensor_offset + DEFAULT_IDLE_SETBACK_OFFSET
         else:
             await async_turn_off_climate(hass, entity_id, area_id=area_id, fallback_setpoint=fallback_temp)
             return
@@ -764,6 +767,7 @@ class MPCController:
         self.acs: list[str] = get_ac_eids(room_config.get("devices", []))
         self._devices: list[dict] = room_config.get("devices", [])
         self._direct_eids: set[str] = get_direct_setpoint_eids(self._devices)
+        self._direct_offsets: dict[str, float] = get_setpoint_offsets(self._devices)
         self.climate_mode: str = room_config.get("climate_mode", "auto")
         self.outdoor_temp = outdoor_temp
         self.outdoor_forecast = outdoor_forecast or []
@@ -1714,13 +1718,18 @@ class MPCController:
                 )
 
     def _direct_setpoint_ha(self, eid: str, effective_target: float) -> float | None:
-        """HA-unit setpoint for a direct-mode device (the room target), None if not direct."""
+        """HA-unit setpoint for a direct-mode device: room target plus its offset, None if not direct.
+
+        The offset only makes sense against an external reference sensor, so
+        managed mode (the device's own reading drives control) ignores it.
+        """
         if eid not in self._direct_eids:
             return None
-        return celsius_to_ha_temp(self.hass, effective_target)
+        offset = self._direct_offsets.get(eid, 0.0) if self.has_external_sensor else 0.0
+        return celsius_to_ha_temp(self.hass, effective_target + offset)
 
     def _heating_setpoint_ha(self, eid: str, proportional_celsius: float, effective_target: float) -> float:
-        """HA-unit heating setpoint: direct target or the capped proportional boost."""
+        """HA-unit heating setpoint: direct target (+offset) or the capped proportional boost."""
         direct = self._direct_setpoint_ha(eid, effective_target)
         if direct is not None:
             return direct

@@ -38,6 +38,8 @@ from .utils.device_utils import (
     DEFAULT_COIL_DRY_FAN_MODE,
     DEFAULT_COIL_DRY_MIN_COOLING_MINUTES,
     DEFAULT_COIL_DRY_MINUTES,
+    SETPOINT_OFFSET_MAX,
+    SETPOINT_OFFSET_MIN,
 )
 from .utils.schedule_utils import mask_override_band, override_preset_band
 
@@ -355,6 +357,9 @@ async def websocket_list_rooms(
                     vol.Optional("idle_action", default="off"): vol.In(["off", "fan_only", "setback", "low"]),
                     vol.Optional("idle_fan_mode", default="low"): str,
                     vol.Optional("setpoint_mode", default="proportional"): vol.In(["proportional", "direct"]),
+                    vol.Optional("setpoint_offset", default=0.0): vol.All(
+                        vol.Coerce(float), vol.Range(min=SETPOINT_OFFSET_MIN, max=SETPOINT_OFFSET_MAX)
+                    ),
                     vol.Optional("coil_dry", default=COIL_DRY_INHERIT): vol.In(COIL_DRY_OVERRIDES),
                     vol.Optional("coil_dry_minutes", default=0): vol.All(vol.Coerce(int), vol.Range(min=0, max=60)),
                     vol.Optional("coil_dry_mode", default=""): vol.In(["", *COIL_DRY_MODES]),

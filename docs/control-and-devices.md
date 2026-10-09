@@ -61,6 +61,18 @@ Best for:
 - pellet stoves
 - devices with their own thermostat logic that should stay in control internally
 
+#### Setpoint offset
+
+Some devices measure the room differently than your room sensor (an AC mounted near the floor that cools its own sensor, for example). With `Direct` and an external room sensor, a `Setpoint offset` (-5 to +5 °C, step 0.5, default 0) is added to the room target before it is sent, for heating and cooling alike.
+
+Example: while cooling, the device reads 2° colder than the room and switches off too early. Set the offset to `-2`: with a room target of 24°C the device receives 22°C and keeps running until the room is really at 24°C. A device that reads warmer than the room gets a positive offset.
+
+The offset is applied before the device limits (`min_temp`/`max_temp`) and the step rounding. It is also kept for the `Setback` idle action. It has no effect in `Proportional` mode or in Managed rooms. On Fahrenheit systems the field is shown in °F and stored as a °C delta.
+
+#### Upper device limit
+
+In `Proportional` mode the boosted heating setpoint stays one step (`target_temp_step`, 0.5° if the device reports none) below the device's `max_temp`, and never below the room target. Some integrations reject exactly their own `max_temp`, which made the Dyson Heat/Cool purifier ignore the 37°C setpoint. The cooling floor (`min_temp`) is unchanged.
+
 ## Idle Behavior: Off, Fan Only, Setback
 
 `When idle` applies to `Climate Device` entries.

@@ -4,7 +4,7 @@ import type { HomeAssistant, HassArea, DeviceConfig, DeviceType } from "../types
 import { getEntitiesForArea } from "../utils/room-state";
 import { localize } from "../utils/localize";
 import { getSelectValue, openEntityInfo } from "../utils/events";
-import { tempUnit } from "../utils/temperature";
+import { tempUnit, toDisplayDelta, toCelsiusDelta, usesFahrenheit } from "../utils/temperature";
 import { resolveHeatingSystemType } from "../utils/device-utils";
 import { masterDetailStyles } from "../styles/master-detail-styles";
 import { inputStyles } from "../styles/input-styles";
@@ -981,6 +981,34 @@ export class RsDeviceSection extends LitElement {
                 </ha-select>
                 <rs-info-icon .text=${localize("devices.setpoint_mode_hint", lang)}></rs-info-icon>
               </div>
+              ${
+                device.setpoint_mode === "direct"
+                  ? html`
+                      <div class="detail-field with-info">
+                        <ha-textfield
+                          .label=${localize("devices.setpoint_offset", lang)}
+                          .suffix=${tempUnit(this.hass)}
+                          .value=${String(
+                            Math.round(
+                              toDisplayDelta(device.setpoint_offset ?? 0, this.hass) * 10,
+                            ) / 10,
+                          )}
+                          type="number"
+                          .step=${usesFahrenheit(this.hass) ? "1" : "0.5"}
+                          .min=${String(Math.round(toDisplayDelta(-5, this.hass)))}
+                          .max=${String(Math.round(toDisplayDelta(5, this.hass)))}
+                          @change=${(e: Event) => {
+                            const v = parseFloat((e.target as HTMLInputElement).value);
+                            if (!isNaN(v)) this._onSetpointOffsetChange(entityId, v);
+                          }}
+                        ></ha-textfield>
+                        <rs-info-icon
+                          .text=${localize("devices.setpoint_offset_hint", lang)}
+                        ></rs-info-icon>
+                      </div>
+                    `
+                  : nothing
+              }
             `
           : nothing
       }
@@ -1094,6 +1122,16 @@ export class RsDeviceSection extends LitElement {
       d.entity_id === entityId ? { ...d, setpoint_mode: mode as "proportional" | "direct" } : d,
     );
     this._fireDeviceChanged(newDevices);
+  }
+
+  private _onSetpointOffsetChange(entityId: string, displayValue: number): void {
+    const celsius = Math.max(
+      -5,
+      Math.min(5, Math.round(toCelsiusDelta(displayValue, this.hass) * 100) / 100),
+    );
+    this._fireDeviceChanged(
+      this.devices.map((d) => (d.entity_id === entityId ? { ...d, setpoint_offset: celsius } : d)),
+    );
   }
 
   /** Global fan mode as shown in the inherit option ("" means keep current). */

@@ -20,6 +20,10 @@ export function toDisplayDelta(celsiusDelta: number, hass: HomeAssistant): numbe
   return usesFahrenheit(hass) ? (celsiusDelta * 9) / 5 : celsiusDelta;
 }
 
+export function toCelsiusDelta(displayDelta: number, hass: HomeAssistant): number {
+  return usesFahrenheit(hass) ? (displayDelta * 5) / 9 : displayDelta;
+}
+
 export function formatTemp(celsius: number, hass: HomeAssistant, decimals = 1): string {
   return toDisplay(celsius, hass).toFixed(decimals);
 }

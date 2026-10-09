@@ -82,6 +82,7 @@ export interface DeviceConfig {
   idle_action?: "off" | "fan_only" | "setback" | "low"; // default "off"
   idle_fan_mode?: string; // default "low"
   setpoint_mode?: "proportional" | "direct"; // default "proportional"
+  setpoint_offset?: number; // °C added to the room target in direct mode, default 0
   coil_dry?: "inherit" | "on" | "off"; // default "inherit"
   coil_dry_minutes?: number; // 0 = inherit global
   coil_dry_mode?: "" | "fan_only" | "dry"; // "" = inherit global

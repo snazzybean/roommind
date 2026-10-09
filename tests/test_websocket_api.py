@@ -2904,6 +2904,25 @@ async def test_coil_dry_device_schema_defaults():
 
 
 @pytest.mark.asyncio
+async def test_setpoint_offset_schema_default_and_range():
+    """setpoint_offset defaults to 0.0 and is limited to -5..+5 (#369)."""
+    import voluptuous as vol
+
+    schema = websocket_save_room._ws_schema
+
+    def _validate(device):
+        return schema({"type": "roommind/rooms/save", "id": 1, "area_id": "lr", "devices": [device]})["devices"][0]
+
+    assert _validate({"entity_id": "climate.ac", "type": "ac"})["setpoint_offset"] == 0.0
+    assert _validate({"entity_id": "climate.ac", "type": "ac", "setpoint_offset": "1.5"})["setpoint_offset"] == 1.5
+    assert _validate({"entity_id": "climate.ac", "type": "ac", "setpoint_offset": -5})["setpoint_offset"] == -5.0
+    with pytest.raises(vol.Invalid):
+        _validate({"entity_id": "climate.ac", "type": "ac", "setpoint_offset": 5.5})
+    with pytest.raises(vol.Invalid):
+        _validate({"entity_id": "climate.ac", "type": "ac", "setpoint_offset": -6})
+
+
+@pytest.mark.asyncio
 async def test_coil_dry_rejects_on_for_trv():
     """A TRV has no evaporator coil."""
     import voluptuous as vol

@@ -31,6 +31,12 @@ DEFAULT_IDLE_SETBACK_OFFSET = 2.0
 SETPOINT_MODE_PROPORTIONAL = "proportional"
 SETPOINT_MODE_DIRECT = "direct"
 
+# Per-device offset (°C) added to the room target in direct mode, for devices
+# whose internal sensor reads differently from the room sensor (#369).
+SETPOINT_OFFSET_MIN = -5.0
+SETPOINT_OFFSET_MAX = 5.0
+SETPOINT_OFFSET_STEP = 0.5
+
 # --- Coil dry (evaporator anti-odour run) ---
 # These live here, not in const.py, because get_coil_dry_config() resolves them
 # and this module is deliberately free of HA / RoomMind imports.  Same
@@ -272,6 +278,26 @@ def get_idle_action(devices: list[dict], entity_id: str) -> tuple[str, str]:
 def get_direct_setpoint_eids(devices: list[dict]) -> set[str]:
     """Return entity IDs of devices with setpoint_mode='direct'."""
     return {d["entity_id"] for d in devices if d.get("entity_id") and d.get("setpoint_mode") == SETPOINT_MODE_DIRECT}
+
+
+def get_setpoint_offset(devices: list[dict], entity_id: str) -> float:
+    """Return the direct-mode setpoint offset (°C) of a device, 0.0 if unset, invalid or not direct."""
+    dev = get_device_by_eid(devices, entity_id)
+    if dev is None or dev.get("setpoint_mode") != SETPOINT_MODE_DIRECT:
+        return 0.0
+    try:
+        offset = float(dev.get("setpoint_offset") or 0.0)
+    except (TypeError, ValueError):
+        return 0.0
+    if offset != offset:  # NaN
+        return 0.0
+    return max(SETPOINT_OFFSET_MIN, min(SETPOINT_OFFSET_MAX, offset))
+
+
+def get_setpoint_offsets(devices: list[dict]) -> dict[str, float]:
+    """Return {entity_id: offset} for direct-mode devices with a non-zero offset."""
+    offsets = {d["entity_id"]: get_setpoint_offset(devices, d["entity_id"]) for d in devices if d.get("entity_id")}
+    return {eid: off for eid, off in offsets.items() if off}
 
 
 def build_rooms_devices_map(rooms: dict) -> dict[str, list[dict]]:

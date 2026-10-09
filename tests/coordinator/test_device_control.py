@@ -159,6 +159,19 @@ class TestComputeDeviceSetpoint:
         )
         assert result is None
 
+    def test_all_direct_adds_offset(self, hass, mock_config_entry):
+        coordinator = _create_coordinator(hass, mock_config_entry)
+        result = coordinator._compute_device_setpoint(
+            "heating",
+            1.0,
+            20.0,
+            21.0,
+            True,
+            all_direct=True,
+            direct_offset=1.5,
+        )
+        assert result == 22.5
+
 
 class TestComputeDeviceSetpointOrchestrated:
     """Tests for _compute_device_setpoint_orchestrated with direct_eids."""
@@ -219,6 +232,26 @@ class TestComputeDeviceSetpointOrchestrated:
             28.0,
         )
         assert result == 30.0
+
+    def test_direct_device_adds_offset(self, hass, mock_config_entry):
+        coordinator = _create_coordinator(hass, mock_config_entry)
+        cmd = MagicMock()
+        cmd.active = True
+        cmd.entity_id = "climate.heater"
+        cmd.device_type = "thermostat"
+        cmd.power_fraction = 1.0
+        plan = MagicMock()
+        plan.commands = [cmd]
+        result = coordinator._compute_device_setpoint_orchestrated(
+            plan,
+            20.0,
+            21.0,
+            30.0,
+            28.0,
+            direct_eids={"climate.heater"},
+            direct_offsets={"climate.heater": -1.0},
+        )
+        assert result == 20.0
 
 
 class TestReadDeviceTemp:

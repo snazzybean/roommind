@@ -196,6 +196,8 @@
   "devices.setpoint_mode": "Sollwert-Modus",
   "devices.setpoint_mode_proportional": "Proportional (Ventilsteuerung)",
   "devices.setpoint_mode_direct": "Direkt (Gerät regelt selbst)",
+  "devices.setpoint_offset": "Sollwert-Versatz",
+  "devices.setpoint_offset_hint": "Nutze das, wenn das Gerät die Temperatur anders misst als dein Raumsensor. Der Versatz wird zum Raumziel addiert, bevor es ans Gerät geht, beim Heizen und beim Kühlen. Beispiel: Das Gerät hält den Raum beim Kühlen für 2° kälter als er ist und schaltet zu früh ab – trag -2 ein. 0 = kein Versatz.",
   "devices.setpoint_mode_hint": "Direkt sendet die tatsächliche Raum-Zieltemperatur ans Gerät — geeignet für Thermostate und Heizlüfter mit eigener Regelung. Proportional sendet einen erhöhten Sollwert Richtung Geräte-max_temp — geeignet für Heizkörperventile (TRVs).",
   "devices.coil_dry": "Verdampfer-Trocknung",
   "devices.coil_dry_inherit": "Globale Einstellung nutzen",
