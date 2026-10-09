@@ -937,6 +937,44 @@ async def test_apply_orchestrated_forced_on_ac():
 
 
 @pytest.mark.asyncio
+async def test_apply_orchestrated_forced_on_running_ac_keeps_setpoint():
+    """A parked AC that is still running inside its min-run is left alone (#436)."""
+    from custom_components.roommind.managers.heat_source_orchestrator import (
+        DeviceCommand,
+        HeatSourcePlan,
+    )
+
+    _last_commands.clear()
+    hass = build_hass()
+    ac_state = MagicMock()
+    ac_state.state = "heat"
+    ac_state.attributes = {"hvac_modes": ["heat", "cool", "off"], "min_temp": 16.0, "temperature": 28.0}
+    hass.states.get = MagicMock(return_value=ac_state)
+
+    room = make_room(thermostats=[], acs=["climate.ac"])
+    ctrl = MPCController(
+        hass,
+        room,
+        model_manager=RoomModelManager(),
+        outdoor_temp=5.0,
+        settings={"heat_source_orchestration": True},
+        has_external_sensor=True,
+    )
+    plan = HeatSourcePlan(
+        commands=[DeviceCommand("climate.ac", "primary", "ac", False, 0.0, "test")],
+        active_sources="none",
+        reason="test",
+    )
+    await ctrl.async_apply(
+        "heating",
+        TargetTemps(heat=21.0, cool=24.0),
+        heat_source_plan=plan,
+        compressor_forced_on={"climate.ac"},
+    )
+    assert hass.services.async_call.call_args_list == []
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("hvac_modes", "expected_mode"),
     [

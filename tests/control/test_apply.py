@@ -3268,7 +3268,7 @@ async def test_managed_mode_mixed_room_outdoor_gated_ac_heats_correct_target():
 
 @pytest.mark.asyncio
 async def test_apply_idle_forced_on_keeps_device_active():
-    """In idle mode, forced_on sets device to target temp instead of turning off."""
+    """In idle mode, forced_on leaves the running device alone instead of turning it off (#436)."""
     hass = build_hass()
     trv_state = MagicMock()
     trv_state.state = "heat"
@@ -3299,10 +3299,8 @@ async def test_apply_idle_forced_on_keeps_device_active():
         and c[0][2].get("hvac_mode") == "off"
     ]
     assert len(off_calls) == 0
-    # set_temperature called with heat target
-    temp_calls = [c for c in calls if c[0][2].get("entity_id") == "climate.living_trv" and c[0][1] == "set_temperature"]
-    assert len(temp_calls) == 1
-    assert temp_calls[0][0][2]["temperature"] == 21.0
+    # The last active setpoint stays: no fall back to the room target
+    assert calls == []
 
 
 @pytest.mark.asyncio
@@ -3444,7 +3442,7 @@ async def test_apply_forced_on_and_off_empty_sets_no_effect():
 
 @pytest.mark.asyncio
 async def test_apply_idle_forced_on_cooling_ac():
-    """In idle mode, forced_on AC in cool mode gets cool target."""
+    """In idle mode, a forced_on AC in cool mode keeps its cooling setpoint (#436)."""
     hass = build_hass()
     ac_state = MagicMock()
     ac_state.state = "cool"
@@ -3465,19 +3463,12 @@ async def test_apply_idle_forced_on_cooling_ac():
         TargetTemps(heat=21.0, cool=24.0),
         compressor_forced_on={"climate.ac"},
     )
-    calls = hass.services.async_call.call_args_list
-    # set_temperature called with cool target
-    temp_calls = [c for c in calls if c[0][2].get("entity_id") == "climate.ac" and c[0][1] == "set_temperature"]
-    assert len(temp_calls) == 1
-    assert temp_calls[0][0][2]["temperature"] == 24.0
-    # No hvac_mode change (device already in cool mode)
-    mode_calls = [c for c in calls if c[0][2].get("entity_id") == "climate.ac" and c[0][1] == "set_hvac_mode"]
-    assert len(mode_calls) == 0
+    assert hass.services.async_call.call_args_list == []
 
 
 @pytest.mark.asyncio
 async def test_apply_idle_forced_on_heat_cool_device():
-    """In idle mode, forced_on device in heat_cool gets heat target via temp_intent."""
+    """In idle mode, a forced_on heat_cool device is left untouched (#436)."""
     hass = build_hass()
     ac_state = MagicMock()
     ac_state.state = "heat_cool"
@@ -3503,12 +3494,7 @@ async def test_apply_idle_forced_on_heat_cool_device():
         TargetTemps(heat=21.0, cool=24.0),
         compressor_forced_on={"climate.ac"},
     )
-    calls = hass.services.async_call.call_args_list
-    # set_temperature called with heat target (dual-setpoint handled by _call)
-    temp_calls = [c for c in calls if c[0][2].get("entity_id") == "climate.ac" and c[0][1] == "set_temperature"]
-    assert len(temp_calls) == 1
-    # _call converts to target_temp_low/high for dual-setpoint devices
-    assert temp_calls[0][0][2].get("target_temp_low") == 21.0
+    assert hass.services.async_call.call_args_list == []
 
 
 @pytest.mark.asyncio
@@ -3599,7 +3585,7 @@ async def test_apply_idle_forced_on_heat_cool_no_targets():
 
 @pytest.mark.asyncio
 async def test_apply_idle_forced_on_managed_mode():
-    """Forced_on in managed mode (no external sensor) sets target correctly."""
+    """Forced_on in managed mode (no external sensor) leaves the device untouched (#436)."""
     hass = build_hass()
     trv_state = MagicMock()
     trv_state.state = "heat"
@@ -3630,10 +3616,7 @@ async def test_apply_idle_forced_on_managed_mode():
         and c[0][2].get("hvac_mode") == "off"
     ]
     assert len(off_calls) == 0
-    # set_temperature called with heat target
-    temp_calls = [c for c in calls if c[0][2].get("entity_id") == "climate.living_trv" and c[0][1] == "set_temperature"]
-    assert len(temp_calls) == 1
-    assert temp_calls[0][0][2]["temperature"] == 21.0
+    assert calls == []
 
 
 # ---------------------------------------------------------------------------
@@ -4358,8 +4341,8 @@ async def test_managed_mode_heat_cool_range_includes_hvac_mode():
 
 
 @pytest.mark.asyncio
-async def test_apply_idle_forced_on_set_temperature_has_no_hvac_mode():
-    """Compressor forced_on idle: set_temperature must NOT carry hvac_mode."""
+async def test_apply_idle_forced_on_sends_no_setpoint_even_when_target_differs():
+    """Compressor forced_on idle: the device keeps its (boost) setpoint, nothing is sent (#436)."""
     hass = build_hass()
     ac_state = MagicMock()
     ac_state.state = "cool"
@@ -4382,9 +4365,7 @@ async def test_apply_idle_forced_on_set_temperature_has_no_hvac_mode():
         compressor_forced_on={"climate.ac"},
     )
 
-    temp_calls = _temp_calls(hass, "climate.ac")
-    assert temp_calls
-    assert "hvac_mode" not in temp_calls[0][0][2]
+    assert hass.services.async_call.call_args_list == []
 
 
 def _ac_room():
@@ -4669,72 +4650,23 @@ def _hold_ctrl(attrs, state="heat_cool"):
     return hass, ctrl
 
 
-def _hold_temp_calls(hass):
-    return [
-        c[0][2]
-        for c in hass.services.async_call.call_args_list
-        if c[0][2].get("entity_id") == "climate.ac" and c[0][1] == "set_temperature"
-    ]
-
-
 @pytest.mark.asyncio
 @pytest.mark.parametrize("state", ["heat_cool", "auto"])
-async def test_forced_on_hold_single_setpoint_inside_band_sends_nothing(state):
-    """ECO band 17-27, room at 21: a single setpoint of 17 would cool the room."""
+@pytest.mark.parametrize(
+    ("attrs", "targets", "current_temp"),
+    [
+        # ECO band 17-27, room at 21: sending the heat side alone would cool the room (#284)
+        ({"temperature": 30.0}, TargetTemps(heat=17.0, cool=27.0), 21.0),
+        ({"temperature": 30.0}, TargetTemps(heat=21.0, cool=27.0), 19.0),
+        ({"temperature": 16.0}, TargetTemps(heat=17.0, cool=25.0), 26.0),
+        ({"temperature": 30.0}, TargetTemps(heat=17.0, cool=27.0), None),
+        ({"target_temp_low": 20.0, "target_temp_high": 24.0}, TargetTemps(heat=17.0, cool=27.0), 21.0),
+        ({"target_temp_low": 20.0, "target_temp_high": 24.0}, TargetTemps(heat=17.0, cool=None), 21.0),
+    ],
+)
+async def test_forced_on_hold_never_steers_a_heat_cool_device(state, attrs, targets, current_temp):
+    """The hold leaves the device on its last setpoint, so it can never be pushed towards the wrong side (#284, #436)."""
     clear_command_cache()
-    hass, ctrl = _hold_ctrl({"temperature": 30.0}, state=state)
-    await ctrl.async_apply(
-        "idle", TargetTemps(heat=17.0, cool=27.0), current_temp=21.0, compressor_forced_on={"climate.ac"}
-    )
-    assert _hold_temp_calls(hass) == []
-
-
-@pytest.mark.asyncio
-async def test_forced_on_hold_single_setpoint_below_heat_target_sends_heat_target():
-    clear_command_cache()
-    hass, ctrl = _hold_ctrl({"temperature": 30.0})
-    await ctrl.async_apply(
-        "idle", TargetTemps(heat=21.0, cool=27.0), current_temp=19.0, compressor_forced_on={"climate.ac"}
-    )
-    assert [c["temperature"] for c in _hold_temp_calls(hass)] == [21.0]
-
-
-@pytest.mark.asyncio
-async def test_forced_on_hold_single_setpoint_above_cool_target_sends_cool_target():
-    clear_command_cache()
-    hass, ctrl = _hold_ctrl({"temperature": 16.0})
-    await ctrl.async_apply(
-        "idle", TargetTemps(heat=17.0, cool=25.0), current_temp=26.0, compressor_forced_on={"climate.ac"}
-    )
-    assert [c["temperature"] for c in _hold_temp_calls(hass)] == [25.0]
-
-
-@pytest.mark.asyncio
-async def test_forced_on_hold_single_setpoint_without_room_temp_sends_nothing():
-    clear_command_cache()
-    hass, ctrl = _hold_ctrl({"temperature": 30.0})
-    await ctrl.async_apply("idle", TargetTemps(heat=17.0, cool=27.0), compressor_forced_on={"climate.ac"})
-    assert _hold_temp_calls(hass) == []
-
-
-@pytest.mark.asyncio
-async def test_forced_on_hold_range_device_gets_the_band():
-    clear_command_cache()
-    hass, ctrl = _hold_ctrl({"target_temp_low": 20.0, "target_temp_high": 24.0})
-    await ctrl.async_apply(
-        "idle", TargetTemps(heat=17.0, cool=27.0), current_temp=21.0, compressor_forced_on={"climate.ac"}
-    )
-    (call,) = _hold_temp_calls(hass)
-    assert (call["target_temp_low"], call["target_temp_high"]) == (17.0, 27.0)
-    assert "temperature" not in call
-
-
-@pytest.mark.asyncio
-async def test_forced_on_hold_range_device_parks_missing_side_on_limit():
-    clear_command_cache()
-    hass, ctrl = _hold_ctrl({"target_temp_low": 20.0, "target_temp_high": 24.0})
-    await ctrl.async_apply(
-        "idle", TargetTemps(heat=17.0, cool=None), current_temp=21.0, compressor_forced_on={"climate.ac"}
-    )
-    (call,) = _hold_temp_calls(hass)
-    assert (call["target_temp_low"], call["target_temp_high"]) == (17.0, 30.0)
+    hass, ctrl = _hold_ctrl(attrs, state=state)
+    await ctrl.async_apply("idle", targets, current_temp=current_temp, compressor_forced_on={"climate.ac"})
+    assert hass.services.async_call.call_args_list == []

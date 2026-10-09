@@ -20,6 +20,7 @@ from .const import (
     AC_HEATING_BOOST_TARGET,
     CLIMATE_MODE_COOL_ONLY,
     CLIMATE_MODE_HEAT_ONLY,
+    COMPRESSOR_STATE_SETTLE_SECONDS,
     DEFAULT_COMFORT_COOL,
     DEFAULT_COMFORT_HEAT,
     DEFAULT_ECO_COOL,
@@ -845,6 +846,12 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         compressor_forced_off: set[str] = set()
         compressor_protection_reason: str | None = None
 
+        plan_parked_eids = (
+            {cmd.entity_id for cmd in heat_source_plan.commands if not cmd.active}
+            if heat_source_plan is not None and mode == MODE_HEATING
+            else set()
+        )
+
         if all_device_eids and climate_active and not window_open and not force_off:
             for eid in all_device_eids:
                 if self._compressor_manager.get_group_for_entity(eid) is None:
@@ -859,6 +866,10 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                                 mode == MODE_COOLING and enforced == "heat"
                             ):
                                 compressor_forced_off.add(eid)
+                    # The room still heats, but the heat-source plan parks this
+                    # device: for the compressor that is a stop like any other.
+                    if eid in plan_parked_eids and self._compressor_manager.check_must_stay_active(eid):
+                        compressor_forced_on.add(eid)
                 else:
                     if self._compressor_manager.check_must_stay_active(eid):
                         compressor_forced_on.add(eid)
@@ -959,16 +970,20 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                     # Verify device is actually running before tracking as active.
                     # If user manually turned it off, respect that.
                     dev_state = self.hass.states.get(eid)
-                    actually_on = dev_state is not None and dev_state.state not in (
-                        "off",
-                        "unavailable",
-                        "unknown",
-                    )
+                    actually_on = (
+                        dev_state is not None
+                        and dev_state.state
+                        not in (
+                            "off",
+                            "unavailable",
+                            "unknown",
+                        )
+                    ) or self._compressor_manager.recently_started(eid, COMPRESSOR_STATE_SETTLE_SECONDS)
                     self._compressor_manager.update_member(eid, actually_on)
                 elif eid in coil_dry.compressor_active_eids:
                     # coil_dry_mode="dry" really runs the compressor
                     self._compressor_manager.update_member(eid, True)
-                elif mode != MODE_IDLE:
+                elif mode != MODE_IDLE and eid not in plan_parked_eids:
                     self._compressor_manager.update_member(eid, True)
                 else:
                     self._compressor_manager.update_member(eid, False)

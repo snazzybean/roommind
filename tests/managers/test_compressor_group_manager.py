@@ -195,6 +195,38 @@ class TestCompressorGroupManager:
         assert mgr.check_must_stay_active("climate.ac1") is False
 
 
+class TestRecentlyStarted:
+    def test_true_right_after_start_false_later(self):
+        mgr = CompressorGroupManager()
+        mgr.load_groups([_make_group(members=["climate.ac1"])])
+        mgr.update_member("climate.ac1", True)
+        assert mgr.recently_started("climate.ac1", 120) is True
+        assert mgr.recently_started("climate.ac1", 0) is False
+
+    def test_repeated_update_does_not_restart_the_window(self):
+        mgr = CompressorGroupManager()
+        mgr.load_groups([_make_group(members=["climate.ac1"])])
+        mgr.update_member("climate.ac1", True)
+        started = mgr.get_state("g1").member_started_at["climate.ac1"]
+        mgr.update_member("climate.ac1", True)
+        assert mgr.get_state("g1").member_started_at["climate.ac1"] == started
+
+    def test_cleared_on_stop_and_for_unknown_entities(self):
+        mgr = CompressorGroupManager()
+        mgr.load_groups([_make_group(members=["climate.ac1"])])
+        mgr.update_member("climate.ac1", True)
+        mgr.update_member("climate.ac1", False)
+        assert mgr.recently_started("climate.ac1", 120) is False
+        assert mgr.recently_started("climate.other", 120) is False
+
+    def test_reload_drops_start_time_of_removed_member(self):
+        mgr = CompressorGroupManager()
+        mgr.load_groups([_make_group(members=["climate.ac1", "climate.ac2"])])
+        mgr.update_member("climate.ac2", True)
+        mgr.load_groups([_make_group(members=["climate.ac1"])])
+        assert "climate.ac2" not in mgr.get_state("g1").member_started_at
+
+
 class TestResolveMasterAction:
     def test_all_idle(self):
         assert resolve_master_action(["idle", "idle"], "heating_priority", None, 22) == "idle"

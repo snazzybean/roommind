@@ -44,6 +44,7 @@ class CompressorGroupState:
     master_action: str | None = None
     master_on_since: float | None = None
     master_off_since: float | None = None
+    member_started_at: dict[str, float] = field(default_factory=dict)
 
 
 class CompressorGroupManager:
@@ -76,7 +77,10 @@ class CompressorGroupManager:
             if gid not in self._states:
                 self._states[gid] = CompressorGroupState()
             else:
-                self._states[gid].active_members &= set(g.get("members", []))
+                state = self._states[gid]
+                state.active_members &= set(g.get("members", []))
+                for stale in set(state.member_started_at) - state.active_members:
+                    del state.member_started_at[stale]
         # Remove state for deleted groups
         for old_id in list(self._states):
             if old_id not in new_groups:
@@ -130,9 +134,12 @@ class CompressorGroupManager:
         state = self._states[group_id]
         was_running = len(state.active_members) > 0
         if is_active:
+            if entity_id not in state.active_members:
+                state.member_started_at[entity_id] = monotonic()
             state.active_members.add(entity_id)
         else:
             state.active_members.discard(entity_id)
+            state.member_started_at.pop(entity_id, None)
         is_running = len(state.active_members) > 0
         # Track transitions
         if not was_running and is_running:
@@ -141,6 +148,18 @@ class CompressorGroupManager:
         elif was_running and not is_running:
             state.compressor_off_since = monotonic()
             state.compressor_on_since = None
+
+    def recently_started(self, entity_id: str, within_seconds: float) -> bool:
+        """True if this member was marked active less than *within_seconds* ago.
+
+        Devices report their new state with a delay (polling integrations), so
+        an "off" reading right after a start is not a manual switch-off.
+        """
+        group_id = self._entity_to_group.get(entity_id)
+        if group_id is None:
+            return False
+        started = self._states[group_id].member_started_at.get(entity_id)
+        return started is not None and monotonic() - started < within_seconds
 
     def get_group_for_entity(self, entity_id: str) -> str | None:
         """Return group ID for an entity, or None."""
