@@ -4732,6 +4732,36 @@ async def test_turn_off_cooling_ac_skips_min_temp_setpoint(hvac_state):
 
 
 @pytest.mark.asyncio
+async def test_turn_off_ac_in_auto_skips_min_temp_setpoint():
+    """An AC in auto may be cooling: no min_temp frame ahead of 'off' either (#388)."""
+    hass = build_hass()
+    state = MagicMock()
+    state.state = "auto"
+    state.attributes = {"hvac_modes": ["off", "cool", "heat", "auto"], "min_temp": 17.0, "temperature": 24.0}
+    hass.states.get = MagicMock(return_value=state)
+
+    await async_turn_off_climate(hass, "climate.ac")
+
+    calls = [c[0][1] for c in hass.services.async_call.call_args_list]
+    assert calls == ["set_hvac_mode"]
+
+
+@pytest.mark.asyncio
+async def test_turn_off_trv_in_auto_keeps_min_temp_setpoint():
+    """A TRV in auto (own schedule) cannot cool, so it keeps the defense-in-depth frame (#388)."""
+    hass = build_hass()
+    state = MagicMock()
+    state.state = "auto"
+    state.attributes = {"hvac_modes": ["off", "heat", "auto"], "min_temp": 5.0, "temperature": 21.0}
+    hass.states.get = MagicMock(return_value=state)
+
+    await async_turn_off_climate(hass, "climate.trv")
+
+    calls = [c[0][1] for c in hass.services.async_call.call_args_list]
+    assert calls == ["set_temperature", "set_hvac_mode"]
+
+
+@pytest.mark.asyncio
 async def test_turn_off_heating_ac_still_lowers_setpoint_first():
     """A heat-pump AC in heat mode keeps the defense-in-depth setpoint: lower means less output."""
     hass = build_hass()
