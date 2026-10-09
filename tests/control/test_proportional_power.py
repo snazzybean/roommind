@@ -331,7 +331,7 @@ async def test_dynamic_heating_boost_trv_full_power():
     hass = build_hass()
     trv_state = MagicMock()
     trv_state.state = "off"
-    trv_state.attributes = {"hvac_modes": ["heat", "off"], "temperature": 20.0, "max_temp": 35.0}
+    trv_state.attributes = {"hvac_modes": ["heat", "off"], "temperature": 20.5, "max_temp": 35.0}
     hass.states.get = MagicMock(return_value=trv_state)
 
     room = make_room(thermostats=["climate.trv"], acs=[])
@@ -452,7 +452,7 @@ async def test_dynamic_ac_heating_boost():
     hass = build_hass()
     ac_state = MagicMock()
     ac_state.state = "off"
-    ac_state.attributes = {"hvac_modes": ["heat", "cool", "off"], "temperature": 20.0, "max_temp": 28.0}
+    ac_state.attributes = {"hvac_modes": ["heat", "cool", "off"], "temperature": 20.5, "max_temp": 28.0}
     hass.states.get = MagicMock(return_value=ac_state)
 
     room = make_room(thermostats=[], acs=["climate.ac"])
@@ -536,7 +536,7 @@ async def test_ac_boost_cap_does_not_apply_at_comfort():
     hass = build_hass()
     ac_state = MagicMock()
     ac_state.state = "heat"
-    ac_state.attributes = {"hvac_modes": ["heat", "off"], "temperature": 21.0, "min_temp": 16.0, "max_temp": 30.0}
+    ac_state.attributes = {"hvac_modes": ["heat", "off"], "temperature": 21.5, "min_temp": 16.0, "max_temp": 30.0}
     hass.states.get = MagicMock(return_value=ac_state)
 
     room = make_room(thermostats=[], acs=["climate.ac"])

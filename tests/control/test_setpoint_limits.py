@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from unittest.mock import MagicMock
 
 import pytest
@@ -76,6 +77,7 @@ async def test_boost_cap_uses_half_degree_without_step_attribute():
     hass = build_hass()
     state = _state(37.0)
     del state.attributes["target_temp_step"]
+    state.attributes["temperature"] = 20.5  # shows tenths
     hass.states.get = MagicMock(return_value=state)
     ctrl = _controller(hass, make_room(thermostats=["climate.purifier"]))
 
@@ -208,7 +210,9 @@ async def test_boost_cap_fahrenheit_uses_ha_units():
 async def test_boost_cap_zero_step_falls_back_to_half_degree():
     _last_commands.clear()
     hass = build_hass()
-    hass.states.get = MagicMock(return_value=_state(37.0, step=0))
+    state = _state(37.0, step=0)
+    state.attributes["temperature"] = 20.5  # shows tenths: keeps the 0.5 margin
+    hass.states.get = MagicMock(return_value=state)
     ctrl = _controller(hass, make_room(thermostats=["climate.purifier"]))
 
     await ctrl.async_apply(
@@ -252,3 +256,83 @@ async def test_boost_cap_fahrenheit_without_step_survives_whole_degree_snap():
     sent = _sent(hass, "climate.purifier")
     assert sent
     assert sent[0] == 85.0
+
+
+def _device_showing_whole_degrees(hass, state, rounding):
+    """Make the device read back every setpoint rounded to whole degrees, like an integration with PRECISION_WHOLE."""
+
+    async def _call(domain, service, data, **kwargs):
+        if service == "set_temperature":
+            state.attributes["temperature"] = float(rounding(data["temperature"]))
+
+    hass.services.async_call.side_effect = _call
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("rounding", "label"),
+    [
+        (lambda v: math.floor(v + 0.5), "half up"),
+        (math.floor, "down"),
+        (round, "banker"),
+        (lambda v: v, "tenths, sitting on a whole value"),
+    ],
+)
+async def test_boost_cap_without_step_on_a_whole_degree_device_does_not_resend(rounding, label):
+    """29.5 would read back as 30 (or 29) and mismatch every cycle; the cap must land on what the device shows (#396)."""
+    _last_commands.clear()
+    hass = build_hass()
+    state = _state(30.0, step=None)
+    del state.attributes["target_temp_step"]
+    state.attributes["temperature"] = 21.0
+    hass.states.get = MagicMock(return_value=state)
+    _device_showing_whole_degrees(hass, state, rounding)
+    sent = []
+    for _ in range(10):
+        ctrl = _controller(hass, make_room(thermostats=["climate.purifier"]))
+        hass.services.async_call.reset_mock()
+        await ctrl.async_apply(
+            MODE_HEATING,
+            TargetTemps(heat=21.0, cool=None),
+            power_fraction=1.0,
+            current_temp=15.0,
+            heating_boost_target=30.0,
+        )
+        sent += _sent(hass, "climate.purifier")
+
+    assert len(sent) == 1, f"{label}: {sent}"
+    assert sent[0] < 30.0
+    assert float(sent[0]).is_integer()
+
+
+@pytest.mark.asyncio
+async def test_boost_cap_without_step_on_a_tenth_device_keeps_the_half_degree_margin():
+    _last_commands.clear()
+    hass = build_hass()
+    state = _state(30.0)
+    del state.attributes["target_temp_step"]
+    state.attributes["temperature"] = 21.5
+    hass.states.get = MagicMock(return_value=state)
+
+    ctrl = _controller(hass, make_room(thermostats=["climate.purifier"]))
+    await ctrl.async_apply(
+        MODE_HEATING,
+        TargetTemps(heat=21.0, cool=None),
+        power_fraction=1.0,
+        current_temp=15.0,
+        heating_boost_target=30.0,
+    )
+
+    assert _sent(hass, "climate.purifier") == [29.5]
+
+
+@pytest.mark.asyncio
+async def test_boost_cap_whole_ceiling_never_drops_below_the_room_target():
+    hass = build_hass()
+    state = _state(22.0, step=None)
+    del state.attributes["target_temp_step"]
+    state.attributes["temperature"] = 21.0
+    hass.states.get = MagicMock(return_value=state)
+    ctrl = _controller(hass, make_room(thermostats=["climate.purifier"]))
+
+    assert ctrl._boost_setpoint_ha("climate.purifier", 22.0, 21.5) == 21.5

@@ -1921,7 +1921,9 @@ class MPCController:
         Some integrations validate the upper bound exclusively or after a
         unit round trip, so exactly max_temp can be rejected (#396). The cap
         only trims the top step of the boost and never goes below the room
-        target.
+        target. Without ``target_temp_step`` a device that shows whole degrees
+        gets a whole-degree ceiling, so what it reads back equals what was
+        sent; devices showing tenths keep the 0.5 K margin.
         """
         ha_t = celsius_to_ha_temp(self.hass, celsius)
         state = self.hass.states.get(eid)
@@ -1933,10 +1935,19 @@ class MPCController:
             step = float(state.attributes.get("target_temp_step") or 0.0)
         except (TypeError, ValueError):
             return ha_t
+        whole_ceiling = False
         if step <= 0:
             # In HA units so that a whole-degree snap on °F devices (no step reported) still lands below max_temp
             step = celsius_delta_to_ha(self.hass, BOOST_CAP_FALLBACK_STEP)
-        ceiling = max(max_t - step, celsius_to_ha_temp(self.hass, effective_target))
+            try:
+                whole_ceiling = float(state.attributes.get("temperature")).is_integer()
+            except (TypeError, ValueError):
+                pass
+        cap = max_t - step
+        if whole_ceiling:
+            # The device shows whole degrees: 29.5 would read back as 30 and be resent every cycle
+            cap = math.floor(cap)
+        ceiling = max(cap, celsius_to_ha_temp(self.hass, effective_target))
         return min(ha_t, ceiling)
 
     def _proportional_deadband(self, eid: str, current_temp: float | None, effective_target: float) -> float | None:

@@ -887,7 +887,7 @@ async def test_apply_heating_trv_still_gets_boost():
     hass = build_hass()
     trv_state = MagicMock()
     trv_state.state = "heat"
-    trv_state.attributes = {"hvac_modes": ["heat", "off"], "temperature": 21.0, "min_temp": 5.0, "max_temp": 30.0}
+    trv_state.attributes = {"hvac_modes": ["heat", "off"], "temperature": 21.5, "min_temp": 5.0, "max_temp": 30.0}
     hass.states.get = MagicMock(return_value=trv_state)
 
     room = make_room()  # thermostats=["climate.living_trv"]
@@ -972,13 +972,13 @@ async def test_apply_heating_mixed_trv_and_ac():
 
     trv_state = MagicMock()
     trv_state.state = "heat"
-    trv_state.attributes = {"hvac_modes": ["heat", "off"], "temperature": 21.0, "min_temp": 5.0, "max_temp": 30.0}
+    trv_state.attributes = {"hvac_modes": ["heat", "off"], "temperature": 21.5, "min_temp": 5.0, "max_temp": 30.0}
 
     ac_state = MagicMock()
     ac_state.state = "off"
     ac_state.attributes = {
         "hvac_modes": ["heat", "cool", "off"],
-        "temperature": 20.0,
+        "temperature": 20.5,
         "min_temp": 16.0,
         "max_temp": 30.0,
     }
