@@ -147,23 +147,27 @@ async def test_cached_command_is_reasserted_once_after_the_ttl():
 
 
 @pytest.mark.asyncio
-async def test_off_is_reasserted_after_the_ttl_for_a_device_without_state():
+@pytest.mark.parametrize(("state", "expected_frames"), [("unknown", 2), (None, 1)])
+async def test_off_is_sent_once_for_a_device_without_state_however_long_it_idles(state, expected_frames):
+    """Idle overnight: `off` is deduplicated for good, as before the cache got a TTL.
+
+    A repeated `off` would beep an IR unit every 30 min and switch off a unit that
+    was turned on by its remote.  An unknown state also gets the min_temp setpoint
+    ahead of `off` once, a missing state object does not.
+    """
     hass = build_hass()
-    hass.states.get = MagicMock(return_value=_state("unknown"))
+    hass.states.get = MagicMock(return_value=_state(state) if state else None)
     ctrl = _ctrl(hass)
     clock = {"t": 1000.0}
+    sent = []
 
     with patch("custom_components.roommind.control.mpc_controller._now", side_effect=lambda: clock["t"]):
-        first = await _tick(hass, ctrl, MODE_IDLE)
-        before = await _tick(hass, ctrl, MODE_IDLE)
-        clock["t"] += COMMAND_CACHE_REASSERT_SECONDS
-        expired = await _tick(hass, ctrl, MODE_IDLE)
-        after = await _tick(hass, ctrl, MODE_IDLE)
+        for _ in range(8 * 120):
+            sent += await _tick(hass, ctrl, MODE_IDLE)
+            clock["t"] += 30
 
-    assert ("set_hvac_mode", "off", None) in first
-    assert before == []
-    assert ("set_hvac_mode", "off", None) in expired
-    assert after == []
+    assert len(sent) == expected_frames
+    assert ("set_hvac_mode", "off", None) in sent
 
 
 @pytest.mark.asyncio

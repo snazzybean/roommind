@@ -336,12 +336,7 @@ async def async_turn_off_climate(
         # Cache fallback for IR devices (only when device has no reliable state)
         if _should_use_cache(state):
             cached = _last_commands.get(entity_id)
-            if (
-                cached
-                and cached.get("service") == "set_hvac_mode"
-                and cached.get("hvac_mode") == "off"
-                and not _cache_expired(entity_id, "set_hvac_mode")
-            ):
+            if cached and cached.get("service") == "set_hvac_mode" and cached.get("hvac_mode") == "off":
                 return
         # Defense-in-depth: lower setpoint to min_temp BEFORE sending "off".
         # Some devices (e.g. Wavin AHC9000) claim "off" support but only
