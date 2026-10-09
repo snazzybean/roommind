@@ -571,6 +571,11 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         """Forget the seed marker: the override now holds values the user chose."""
         self._override_seeded_at.pop(area_id, None)
 
+    def is_override_seed_pending(self, area_id: str) -> bool:
+        """Return True while a fresh seed is still masked (read-only, unlike the masking itself)."""
+        seeded_at = self._override_seeded_at.get(area_id)
+        return seeded_at is not None and time.monotonic() - seeded_at < OVERRIDE_TURN_ON_REFRESH_DELAY_S
+
     def _without_pending_override_seed(self, room: dict) -> dict:
         """Return *room* as if no override existed while a fresh seed is pending."""
         area_id = room.get("area_id", "unknown")

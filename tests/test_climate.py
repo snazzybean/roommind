@@ -27,6 +27,7 @@ def mock_coordinator():
     coordinator = MagicMock()
     coordinator.hass = MagicMock()
     coordinator.async_request_refresh = AsyncMock()
+    coordinator.is_override_seed_pending = MagicMock(return_value=False)
     store = MagicMock()
     coordinator.hass.data = {DOMAIN: {"store": store}}
     coordinator.data = {}
@@ -378,6 +379,39 @@ async def test_set_hvac_mode_noop_when_override_exists(mock_coordinator):
     entity = RoomMindOverrideClimate(coordinator, "living_room")
     await entity.async_set_hvac_mode(HVACMode.HEAT_COOL)
     store.async_update_room.assert_not_awaited()
+    coordinator.clear_override_seed.assert_called_once_with("living_room")
+    coordinator.async_request_refresh.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_repeated_turn_on_on_pending_seed_keeps_masking(mock_coordinator, call_later):
+    """A second turn_on while the fresh seed is masked neither unmasks nor refreshes nor re-arms the timer (#447)."""
+    coordinator, store = mock_coordinator
+    store.get_room.return_value = _active_auto_room()
+    store.async_update_room = AsyncMock()
+    coordinator.is_override_seed_pending.return_value = True
+    entity = RoomMindOverrideClimate(coordinator, "living_room")
+    await entity.async_set_hvac_mode(HVACMode.HEAT_COOL)
+
+    coordinator.is_override_seed_pending.assert_called_once_with("living_room")
+    coordinator.clear_override_seed.assert_not_called()
+    coordinator.note_override_seed.assert_not_called()
+    coordinator.async_request_refresh.assert_not_awaited()
+    store.async_update_room.assert_not_awaited()
+    call_later.assert_not_called()
+    call_later.cancel.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_turn_off_on_pending_seed_still_clears_and_refreshes(mock_coordinator):
+    coordinator, store = mock_coordinator
+    store.get_room.return_value = _active_auto_room()
+    store.async_update_room = AsyncMock()
+    coordinator.is_override_seed_pending.return_value = True
+    entity = RoomMindOverrideClimate(coordinator, "living_room")
+    await entity.async_set_hvac_mode(HVACMode.OFF)
+
+    coordinator.clear_override_seed.assert_called_once_with("living_room")
     coordinator.async_request_refresh.assert_awaited_once()
 
 

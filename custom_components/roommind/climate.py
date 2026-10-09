@@ -277,4 +277,8 @@ class RoomMindOverrideClimate(CoordinatorEntity, ClimateEntity):
                 self.coordinator.hass, OVERRIDE_TURN_ON_REFRESH_DELAY_S, self._refresh_after_deferral
             )
             return
+        elif self.coordinator.is_override_seed_pending(self._area_id):
+            # A repeated turn_on on the fresh seed must not lift the masking early (#447);
+            # the running timer refreshes once the grace period ends.
+            return
         await self._request_refresh()

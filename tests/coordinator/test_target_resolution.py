@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import time
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from homeassistant.components.climate import HVACMode
+
+from custom_components.roommind.climate import OVERRIDE_TURN_ON_REFRESH_DELAY_S, RoomMindOverrideClimate
 
 from .conftest import (
     SAMPLE_ROOM,
@@ -297,6 +300,56 @@ class TestPendingOverrideSeed:
         assert state["override_active"] is True
         assert (state["heat_target"], state["cool_target"]) == (22.5, 24.0)
         assert AC_ROOM_KEY not in coordinator._override_seeded_at
+
+    def test_is_override_seed_pending_is_read_only_and_time_bound(self, hass, mock_config_entry):
+        coordinator = _create_coordinator(hass, mock_config_entry)
+        assert coordinator.is_override_seed_pending(AC_ROOM_KEY) is False
+        coordinator.note_override_seed(AC_ROOM_KEY)
+        assert coordinator.is_override_seed_pending(AC_ROOM_KEY) is True
+        coordinator._override_seeded_at[AC_ROOM_KEY] = time.monotonic() - OVERRIDE_TURN_ON_REFRESH_DELAY_S - 0.1
+        assert coordinator.is_override_seed_pending(AC_ROOM_KEY) is False
+        assert AC_ROOM_KEY in coordinator._override_seeded_at
+
+    @staticmethod
+    def _entity_with_real_coordinator(hass, mock_config_entry):
+        room = {**AC_ROOM}
+        store = _make_store_mock({AC_ROOM_KEY: room})
+
+        async def update_room(_area, changes):
+            room.update(changes)
+            return room
+
+        store.async_update_room = AsyncMock(side_effect=update_room)
+        store.get_room = MagicMock(side_effect=lambda _a: room)
+        hass.data = {"roommind": {"store": store}}
+        coordinator = _create_coordinator(hass, mock_config_entry)
+        coordinator.async_request_refresh = AsyncMock()
+        coordinator.data = {"rooms": {AC_ROOM_KEY: {"heat_target": 19.0, "cool_target": 26.0}}}
+        entity = RoomMindOverrideClimate(coordinator, AC_ROOM_KEY)
+        entity.async_write_ha_state = MagicMock()
+        return coordinator, entity, room
+
+    @pytest.mark.asyncio
+    async def test_second_turn_on_within_grace_keeps_seed_masked(self, hass, mock_config_entry):
+        coordinator, entity, room = self._entity_with_real_coordinator(hass, mock_config_entry)
+        with patch("custom_components.roommind.climate.async_call_later", return_value=MagicMock()) as later:
+            await entity.async_set_hvac_mode(HVACMode.HEAT_COOL)
+            await entity.async_set_hvac_mode(HVACMode.HEAT_COOL)
+
+        assert later.call_count == 1
+        assert AC_ROOM_KEY in coordinator._override_seeded_at
+        assert coordinator._without_pending_override_seed(room)["override_heat"] is None
+        coordinator.async_request_refresh.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_turn_on_on_older_override_unmasks_and_refreshes(self, hass, mock_config_entry):
+        coordinator, entity, room = self._entity_with_real_coordinator(hass, mock_config_entry)
+        room.update(override_heat=21.0, override_cool=24.0, override_until=None, override_type="custom")
+        coordinator._override_seeded_at[AC_ROOM_KEY] = time.monotonic() - 60
+        await entity.async_set_hvac_mode(HVACMode.HEAT_COOL)
+
+        assert AC_ROOM_KEY not in coordinator._override_seeded_at
+        coordinator.async_request_refresh.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_note_and_removal(self, hass, mock_config_entry):
