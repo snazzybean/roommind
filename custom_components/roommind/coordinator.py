@@ -113,6 +113,8 @@ ROOM_ENTITY_SUFFIXES = (
 )
 # Suffixes only valid when the room has covers configured.
 COVER_ENTITY_SUFFIXES = ("_cover_auto", "_cover_paused")
+# Device states in which a compressor can be running (fan_only and off do not run it)
+_COMPRESSOR_STATES = ("heat", "cool", "heat_cool", "auto", "dry")
 
 
 def _match_room_entity(parts: str, rooms: dict) -> tuple[str, str] | None:
@@ -882,11 +884,14 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         compressor_forced_off: set[str] = set()
         compressor_protection_reason: str | None = None
 
-        plan_parked_eids = (
-            {cmd.entity_id for cmd in heat_source_plan.commands if not cmd.active}
-            if heat_source_plan is not None and mode == MODE_HEATING
-            else set()
-        )
+        # With a plan only devices with an active command run. Everything else is
+        # parked, also a device the plan leaves out altogether (unknown state,
+        # AC below its minimum outdoor temperature): async_apply never touches it.
+        plan_parked_eids: set[str] = set()
+        plan_unlisted_eids: set[str] = set()
+        if heat_source_plan is not None and mode == MODE_HEATING:
+            plan_parked_eids = set(all_device_eids) - {cmd.entity_id for cmd in heat_source_plan.commands if cmd.active}
+            plan_unlisted_eids = set(all_device_eids) - {cmd.entity_id for cmd in heat_source_plan.commands}
 
         if all_device_eids and climate_active and not window_open and not force_off:
             for eid in all_device_eids:
@@ -1019,7 +1024,13 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 elif eid in coil_dry.compressor_active_eids:
                     # coil_dry_mode="dry" really runs the compressor
                     self._compressor_manager.update_member(eid, True)
-                elif mode != MODE_IDLE and eid not in plan_parked_eids:
+                elif eid in plan_parked_eids:
+                    # A listed device is stopped by the plan; one the plan leaves out
+                    # keeps whatever it was doing, so it counts when it really runs.
+                    dev_state = self.hass.states.get(eid)
+                    runs = eid in plan_unlisted_eids and dev_state is not None and dev_state.state in _COMPRESSOR_STATES
+                    self._compressor_manager.update_member(eid, runs)
+                elif mode != MODE_IDLE:
                     self._compressor_manager.update_member(eid, True)
                 else:
                     self._compressor_manager.update_member(eid, False)

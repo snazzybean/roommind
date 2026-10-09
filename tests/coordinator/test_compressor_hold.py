@@ -402,3 +402,57 @@ class TestOrchestratedParkedAc:
 
         assert _calls(hass, "set_hvac_mode") == []
         assert _calls(hass, "set_temperature") == []
+
+
+AC2 = "climate.bedroom_ac"
+SHARED_GROUP = {"id": "group1", "name": "Outdoor", "members": [AC, AC2], "min_run_minutes": 15, "min_off_minutes": 5}
+
+
+class TestOrchestratedUnlistedAc:
+    """An AC the plan leaves out is not commanded; it counts as running only if it really does."""
+
+    @staticmethod
+    async def _tick_with_unlisted_ac(hass, mock_config_entry, ac_state: str):
+        from custom_components.roommind.managers.heat_source_orchestrator import DeviceCommand, HeatSourcePlan
+
+        room = {
+            **AC_ROOM,
+            "thermostats": ["climate.living_room"],
+            "devices": [
+                {"entity_id": "climate.living_room", "type": "trv", "role": "auto", "heating_system_type": ""},
+                {"entity_id": AC, "type": "ac", "role": "auto", "heating_system_type": ""},
+            ],
+            "heat_source_orchestration": True,
+        }
+        coordinator = await _setup(hass, mock_config_entry, room=room, groups=(SHARED_GROUP,))
+        ac = {"state": _ac_state(ac_state, 20.0)}
+        _wire_states(hass, ac, temp="18.0")
+        # a real AC in the neighbouring room on the same outdoor unit, running
+        coordinator._compressor_manager.load_groups([SHARED_GROUP])
+        coordinator._compressor_manager.update_member(AC2, True)
+        plan = HeatSourcePlan(
+            commands=[DeviceCommand("climate.living_room", "primary", "thermostat", True, 1.0, "t")],
+            active_sources="primary",
+            reason="t",
+        )
+        with patch("custom_components.roommind.coordinator.evaluate_heat_sources", return_value=plan):
+            data = await coordinator._async_update_data()
+        assert data["rooms"][AREA]["mode"] == MODE_HEATING
+        return coordinator
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("ac_state", ["unknown", "unavailable", "off", "fan_only"])
+    async def test_unlisted_ac_that_does_not_run_is_not_a_member(self, hass, mock_config_entry, ac_state):
+        """It must not take the neighbour's min-run protection away (#436)."""
+        coordinator = await self._tick_with_unlisted_ac(hass, mock_config_entry, ac_state)
+
+        assert coordinator._compressor_manager.get_state("group1").active_members == {AC2}
+        assert coordinator._compressor_manager.check_must_stay_active(AC2) is True
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("ac_state", ["heat", "cool", "heat_cool", "auto", "dry"])
+    async def test_unlisted_ac_that_really_runs_stays_a_member(self, hass, mock_config_entry, ac_state):
+        """Its compressor runs, so the other rooms must still see it for min-off and min-run."""
+        coordinator = await self._tick_with_unlisted_ac(hass, mock_config_entry, ac_state)
+
+        assert coordinator._compressor_manager.get_state("group1").active_members == {AC, AC2}
