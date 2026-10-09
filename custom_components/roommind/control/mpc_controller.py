@@ -1488,45 +1488,15 @@ class MPCController:
                 if cmd.entity_id in _exclude:
                     continue
                 if cmd.entity_id in _forced_on and not cmd.active:
-                    # Compressor protection: the plan parked a device that is
-                    # still inside its min-run. A running device keeps its
-                    # setpoint (#436); one that is not running yet is started
-                    # at the target.
-                    held = self.hass.states.get(cmd.entity_id)
-                    if held is not None and held.state in ("heat", "heat_cool", "auto"):
-                        continue
-                    if targets.heat is not None:
-                        ha_t = celsius_to_ha_temp(self.hass, targets.heat)
-                        if cmd.device_type == "thermostat":
-                            await self._call(
-                                "set_hvac_mode",
-                                {"entity_id": cmd.entity_id, "hvac_mode": "heat"},
-                            )
-                            await self._call(
-                                "set_temperature",
-                                {"entity_id": cmd.entity_id, "temperature": ha_t, "hvac_mode": "heat"},
-                                temp_intent="heat",
-                            )
-                        else:
-                            ac_state = self.hass.states.get(cmd.entity_id)
-                            ac_modes = _effective_ac_modes(ac_state)
-                            if "heat" in ac_modes:
-                                ac_mode = "heat"
-                            elif "heat_cool" in ac_modes:
-                                ac_mode = "heat_cool"
-                            elif "auto" in ac_modes:
-                                ac_mode = "auto"
-                            else:
-                                continue
-                            await self._call(
-                                "set_hvac_mode",
-                                {"entity_id": cmd.entity_id, "hvac_mode": ac_mode},
-                            )
-                            await self._call(
-                                "set_temperature",
-                                {"entity_id": cmd.entity_id, "temperature": ha_t, "hvac_mode": ac_mode},
-                                temp_intent="heat",
-                            )
+                    # Compressor min-run: the plan parked a device that must keep
+                    # running. Same rule as the idle hold: send nothing, the device
+                    # keeps its last setpoint (#436). A device that reports off
+                    # (state lag or switched off by hand) is not switched on again.
+                    _LOGGER.debug(
+                        "Area '%s': keeping '%s' active (compressor min-run protection)",
+                        self._area_id,
+                        cmd.entity_id,
+                    )
                     continue
                 if cmd.entity_id in _forced_off and cmd.active:
                     await async_idle_device(

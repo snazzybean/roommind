@@ -240,3 +240,44 @@ class TestOrchestratedParkedAc:
 
         assert [c for c in _calls(hass, "set_hvac_mode") if c[0][2]["hvac_mode"] == "off"] == []
         assert coordinator._compressor_manager.is_compressor_running("group1")
+
+    @pytest.mark.asyncio
+    async def test_parked_ac_reporting_off_is_not_commanded_during_min_run(self, hass, mock_config_entry):
+        """State lag (or a manual switch-off) on a parked AC: no mode or setpoint command goes out (#436)."""
+        from custom_components.roommind.managers.heat_source_orchestrator import DeviceCommand, HeatSourcePlan
+
+        room = {
+            **AC_ROOM,
+            "thermostats": ["climate.living_room"],
+            "devices": [
+                {"entity_id": "climate.living_room", "type": "trv", "role": "auto", "heating_system_type": ""},
+                {"entity_id": AC, "type": "ac", "role": "auto", "heating_system_type": ""},
+            ],
+            "heat_source_orchestration": True,
+        }
+        coordinator = await _setup(hass, mock_config_entry, room=room)
+        ac = {"state": _ac_state("off", 16.0)}
+        _wire_states(hass, ac, temp="18.0")
+        both = HeatSourcePlan(
+            commands=[
+                DeviceCommand("climate.living_room", "primary", "thermostat", True, 1.0, "t"),
+                DeviceCommand(AC, "secondary", "ac", True, 1.0, "t"),
+            ],
+            active_sources="both",
+            reason="t",
+        )
+        trv_only = HeatSourcePlan(
+            commands=[
+                DeviceCommand("climate.living_room", "primary", "thermostat", True, 1.0, "t"),
+                DeviceCommand(AC, "secondary", "ac", False, 0.0, "t"),
+            ],
+            active_sources="primary",
+            reason="t",
+        )
+        with patch("custom_components.roommind.coordinator.evaluate_heat_sources", side_effect=[both, trv_only]):
+            await coordinator._async_update_data()
+            hass.services.async_call.reset_mock()
+            await coordinator._async_update_data()  # AC state still "off"
+
+        assert _calls(hass, "set_hvac_mode") == []
+        assert _calls(hass, "set_temperature") == []
