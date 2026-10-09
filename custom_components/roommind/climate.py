@@ -19,14 +19,17 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
     DEFAULT_COMFORT_COOL,
-    DEFAULT_COMFORT_HEAT,
     DOMAIN,
     MAX_TARGET_TEMP,
     MIN_TARGET_TEMP,
+    MODE_COOLING,
+    MODE_HEATING,
+    OVERRIDE_BOOST,
     OVERRIDE_CUSTOM,
     is_override_active,
 )
 from .coordinator import RoomMindCoordinator
+from .utils.schedule_utils import mask_override_band, override_preset_band
 
 
 def _create_room_climates(
@@ -86,6 +89,36 @@ class RoomMindOverrideClimate(CoordinatorEntity, ClimateEntity):
         if room is None:
             return False
         return is_override_active(room)
+
+    def _current_band(self) -> tuple[float | None, float | None]:
+        """Return the (heat, cool) band currently in force for this room.
+
+        An active override wins. Otherwise it is the band the coordinator resolved
+        last cycle (minus mold prevention, which is not part of the user's band),
+        widened so the room stays where it is: an override lifts the outdoor gate,
+        so seeding a band the room currently sits outside of, while the gate holds
+        it idle, would start heating or cooling before the caller's real values
+        arrive (#447). Falls back to the comfort band when no live targets exist
+        yet or the room is forced off.
+        """
+        room = self._room() or {}
+        if is_override_active(room):
+            return room.get("override_heat"), room.get("override_cool")
+        live = ((self.coordinator.data or {}).get("rooms") or {}).get(self._area_id) or {}
+        heat = live.get("heat_target")
+        cool = live.get("cool_target")
+        if heat is None and cool is None:
+            heat, cool = override_preset_band(room, OVERRIDE_BOOST)
+        elif heat is not None and live.get("mold_prevention_active"):
+            heat -= live.get("mold_prevention_delta") or 0
+        temp = live.get("current_temp")
+        if isinstance(temp, (int, float)):
+            commanded = live.get("commanded_mode")
+            if cool is not None and temp > cool and commanded != MODE_COOLING:
+                cool = temp
+            if heat is not None and temp < heat and commanded != MODE_HEATING:
+                heat = temp
+        return heat, cool
 
     @property
     def supported_features(self) -> ClimateEntityFeature:
@@ -159,7 +192,17 @@ class RoomMindOverrideClimate(CoordinatorEntity, ClimateEntity):
         high = kwargs.get(ATTR_TARGET_TEMP_HIGH)
         single = kwargs.get(ATTR_TEMPERATURE)
         if low is not None or high is not None:
-            heat, cool = low, high
+            # A half-specified range keeps the other side of what is already in
+            # force instead of dropping it, so a follow-up call cannot open a
+            # one-sided band in between (#447).
+            cur_heat, cur_cool = self._current_band()
+            heat = low if low is not None else cur_heat
+            cool = high if high is not None else cur_cool
+            if (low is None) != (high is None) and heat is not None and cool is not None and cool < heat:
+                if high is None:
+                    cool = heat
+                else:
+                    heat = cool
         elif single is not None:
             room = self._room() or {}
             if mode == "cool_only":
@@ -199,10 +242,7 @@ class RoomMindOverrideClimate(CoordinatorEntity, ClimateEntity):
                 },
             )
         elif not self._is_override_active():
-            room = self._room() or {}
-            mode = self._climate_mode()
-            heat = room.get("comfort_heat", DEFAULT_COMFORT_HEAT) if mode != "cool_only" else None
-            cool = room.get("comfort_cool", DEFAULT_COMFORT_COOL) if mode != "heat_only" else None
+            heat, cool = mask_override_band(*self._current_band(), self._climate_mode())
             await store.async_update_room(
                 self._area_id,
                 {
