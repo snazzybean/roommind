@@ -13,14 +13,11 @@ from homeassistant.core import HomeAssistant, callback
 from .const import (
     CLIMATE_MODES,
     CONFLICT_RESOLUTIONS,
-    DEFAULT_COMFORT_COOL,
-    DEFAULT_COMFORT_HEAT,
     DEFAULT_COMPRESSOR_MIN_OFF_MINUTES,
     DEFAULT_COMPRESSOR_MIN_RUN_MINUTES,
     DEFAULT_CONFLICT_RESOLUTION,
-    DEFAULT_ECO_COOL,
-    DEFAULT_ECO_HEAT,
     DOMAIN,
+    OVERRIDE_CUSTOM,
     OVERRIDE_TYPES,
     build_override_live,
     is_override_suppressed,
@@ -42,6 +39,7 @@ from .utils.device_utils import (
     DEFAULT_COIL_DRY_MIN_COOLING_MINUTES,
     DEFAULT_COIL_DRY_MINUTES,
 )
+from .utils.schedule_utils import mask_override_band, override_preset_band
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -526,25 +524,16 @@ async def websocket_override_set(
         connection.send_error(msg["id"], "not_found", f"Room '{area_id}' not found")
         return
 
-    climate_mode = room.get("climate_mode", "auto")
-
-    if override_type == "boost":
-        heat = room.get("comfort_heat", room.get("comfort_temp", DEFAULT_COMFORT_HEAT))
-        cool = room.get("comfort_cool", DEFAULT_COMFORT_COOL)
-    elif override_type == "eco":
-        heat = room.get("eco_heat", room.get("eco_temp", DEFAULT_ECO_HEAT))
-        cool = room.get("eco_cool", DEFAULT_ECO_COOL)
-    else:  # custom
+    if override_type == OVERRIDE_CUSTOM:
         heat = msg.get("heat")
         cool = msg.get("cool")
         if heat is None and cool is None:
             connection.send_error(msg["id"], "invalid", "Custom override requires heat and/or cool")
             return
+    else:
+        heat, cool = override_preset_band(room, override_type)
 
-    if climate_mode == "heat_only":
-        cool = None
-    elif climate_mode == "cool_only":
-        heat = None
+    heat, cool = mask_override_band(heat, cool, room.get("climate_mode", "auto"))
 
     if heat is not None and cool is not None and cool < heat:
         connection.send_error(msg["id"], "invalid", "Cooling target must be >= heating target")

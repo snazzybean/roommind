@@ -13,12 +13,15 @@ if TYPE_CHECKING:
 from homeassistant.util import dt as dt_util
 
 from ..const import (
+    CLIMATE_MODE_COOL_ONLY,
+    CLIMATE_MODE_HEAT_ONLY,
     DEFAULT_COMFORT_COOL,
     DEFAULT_COMFORT_HEAT,
     DEFAULT_ECO_COOL,
     DEFAULT_ECO_HEAT,
     MAX_TARGET_TEMP,
     MIN_TARGET_TEMP,
+    OVERRIDE_ECO,
     TargetTemps,
 )
 
@@ -115,6 +118,32 @@ def find_rejected_block_temps(
                     }
                 )
     return rejected
+
+
+def override_preset_band(room: dict, override_type: str) -> tuple[float, float]:
+    """Return the (heat, cool) band a boost/eco override stands for.
+
+    Both presets are bands in auto rooms, never a single point: collapsing eco
+    to ``eco_heat`` on both sides makes an AC cool toward the heating target (#284).
+    """
+    if override_type == OVERRIDE_ECO:
+        return (
+            room.get("eco_heat", room.get("eco_temp", DEFAULT_ECO_HEAT)),
+            room.get("eco_cool", DEFAULT_ECO_COOL),
+        )
+    return (
+        room.get("comfort_heat", room.get("comfort_temp", DEFAULT_COMFORT_HEAT)),
+        room.get("comfort_cool", DEFAULT_COMFORT_COOL),
+    )
+
+
+def mask_override_band(heat: float | None, cool: float | None, climate_mode: str) -> tuple[float | None, float | None]:
+    """Drop the side a heat_only/cool_only room cannot act on."""
+    if climate_mode == CLIMATE_MODE_HEAT_ONLY:
+        return heat, None
+    if climate_mode == CLIMATE_MODE_COOL_ONLY:
+        return None, cool
+    return heat, cool
 
 
 def resolve_target_at_time(

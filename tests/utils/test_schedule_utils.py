@@ -17,6 +17,8 @@ from custom_components.roommind.utils.schedule_utils import (
     find_active_block,
     get_active_schedule_entity,
     make_target_resolver,
+    mask_override_band,
+    override_preset_band,
     read_schedule_blocks,
     resolve_schedule_index,
     resolve_target_at_time,
@@ -1754,3 +1756,40 @@ class TestFindRejectedBlockTemps:
         from custom_components.roommind.utils.schedule_utils import find_rejected_block_temps
 
         assert find_rejected_block_temps({"monday": None}) == []
+
+
+class TestOverrideBands:
+    """Override presets are bands, not single points (#284)."""
+
+    ROOM = {
+        "comfort_heat": 21.5,
+        "comfort_cool": 24.0,
+        "eco_heat": 17.0,
+        "eco_cool": 27.5,
+    }
+
+    def test_eco_preset_keeps_both_sides(self):
+        assert override_preset_band(self.ROOM, "eco") == (17.0, 27.5)
+
+    def test_boost_preset_is_comfort_band(self):
+        assert override_preset_band(self.ROOM, "boost") == (21.5, 24.0)
+
+    def test_legacy_single_temps_fall_back(self):
+        room = {"eco_temp": 16.0, "comfort_temp": 22.0}
+        assert override_preset_band(room, "eco") == (16.0, 27.0)
+        assert override_preset_band(room, "boost") == (22.0, 24.0)
+
+    @pytest.mark.parametrize(
+        ("mode", "expected"),
+        [("auto", (17.0, 27.5)), ("heat_only", (17.0, None)), ("cool_only", (None, 27.5))],
+    )
+    def test_mask_drops_unusable_side(self, mode, expected):
+        assert mask_override_band(17.0, 27.5, mode) == expected
+
+    def test_resolver_keeps_eco_override_band_over_horizon(self):
+        """The MPC forecast sees the same band the live path uses."""
+        room = {**self.ROOM, "override_heat": 17.0, "override_cool": 27.5, "override_until": None}
+        resolver = make_target_resolver(None, room, {})
+        for offset in (0, 1800, 7200):
+            t = resolver(time.time() + offset)
+            assert (t.heat, t.cool) == (17.0, 27.5)

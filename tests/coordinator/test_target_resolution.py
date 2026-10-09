@@ -43,6 +43,32 @@ class TestRoomMindCoordinator:
         assert room_state["override_type"] == "boost"
 
     @pytest.mark.asyncio
+    async def test_eco_override_in_auto_room_keeps_heat_cool_band(self, hass, mock_config_entry):
+        """ECO override resolves to eco_heat/eco_cool, so a 21 C room does not cool toward eco_heat (#284)."""
+        room = {
+            **SAMPLE_ROOM,
+            "climate_mode": "auto",
+            "eco_heat": 17.0,
+            "eco_cool": 27.0,
+            "override_heat": 17.0,
+            "override_cool": 27.0,
+            "override_until": None,
+            "override_type": "eco",
+        }
+        store = _make_store_mock({"living_room_abc12345": room})
+        hass.data = {"roommind": {"store": store}}
+        hass.states.get = MagicMock(side_effect=make_mock_states_get(temp=21.0, schedule_state="off"))
+        hass.services.async_call = AsyncMock()
+
+        coordinator = _create_coordinator(hass, mock_config_entry)
+        data = await coordinator._async_update_data()
+
+        room_state = data["rooms"]["living_room_abc12345"]
+        assert room_state["heat_target"] == 17.0
+        assert room_state["cool_target"] == 27.0
+        assert room_state["mode"] == "idle"
+
+    @pytest.mark.asyncio
     async def test_expired_override_falls_back_to_schedule(self, hass, mock_config_entry):
         """Test that an expired override reverts to normal schedule logic."""
         room_with_expired = {

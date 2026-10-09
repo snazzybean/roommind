@@ -1672,20 +1672,38 @@ class MPCController:
                             temp_intent="cool",
                         )
                     elif current_hvac in ("heat_cool", "auto"):
-                        if targets.heat is not None:
-                            ha_t = celsius_to_ha_temp(self.hass, targets.heat)
-                            await self._call(
-                                "set_temperature",
-                                {"entity_id": eid, "temperature": ha_t},
-                                temp_intent="heat",
-                            )
-                        elif targets.cool is not None:
-                            ha_t = celsius_to_ha_temp(self.hass, targets.cool)
-                            await self._call(
-                                "set_temperature",
-                                {"entity_id": eid, "temperature": ha_t},
-                                temp_intent="cool",
-                            )
+                        # heat_cool/auto regulate from both sides onto what they get, so a
+                        # single side's value would make the device chase it the wrong way
+                        # (heating target 17 °C under an ECO override cools a 21 °C room, #284).
+                        attrs = dev_state.attributes if dev_state else {}
+                        if attrs.get("target_temp_low") is not None:
+                            low = targets.heat if targets.heat is not None else attrs.get("min_temp")
+                            high = targets.cool if targets.cool is not None else attrs.get("max_temp")
+                            if low is not None and high is not None:
+                                await self._call(
+                                    "set_temperature",
+                                    {
+                                        "entity_id": eid,
+                                        "target_temp_low": celsius_to_ha_temp(self.hass, min(low, high)),
+                                        "target_temp_high": celsius_to_ha_temp(self.hass, max(low, high)),
+                                    },
+                                )
+                        elif current_temp is not None:
+                            # Single setpoint: only a side the room is already past is safe to send.
+                            if targets.heat is not None and current_temp <= targets.heat:
+                                ha_t = celsius_to_ha_temp(self.hass, targets.heat)
+                                await self._call(
+                                    "set_temperature",
+                                    {"entity_id": eid, "temperature": ha_t},
+                                    temp_intent="heat",
+                                )
+                            elif targets.cool is not None and current_temp >= targets.cool:
+                                ha_t = celsius_to_ha_temp(self.hass, targets.cool)
+                                await self._call(
+                                    "set_temperature",
+                                    {"entity_id": eid, "temperature": ha_t},
+                                    temp_intent="cool",
+                                )
                     _LOGGER.debug(
                         "Area '%s': keeping '%s' active (compressor min-run protection)",
                         self._area_id,

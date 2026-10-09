@@ -4638,3 +4638,102 @@ async def test_turn_off_heating_ac_still_lowers_setpoint_first():
 
     calls = [c[0][1] for c in hass.services.async_call.call_args_list]
     assert calls == ["set_temperature", "set_hvac_mode"]
+
+
+# ---------------------------------------------------------------------------
+# Compressor hold on a heat_cool/auto device must not chase one side (#284)
+# ---------------------------------------------------------------------------
+
+
+def _hold_ctrl(attrs, state="heat_cool"):
+    hass = build_hass()
+    ac_state = MagicMock()
+    ac_state.state = state
+    ac_state.attributes = {
+        "hvac_modes": ["heat_cool", "heat", "cool", "off"],
+        "min_temp": 16.0,
+        "max_temp": 30.0,
+        **attrs,
+    }
+    hass.states.get = MagicMock(return_value=ac_state)
+    room = make_room(thermostats=[], acs=["climate.ac"])
+    ctrl = MPCController(
+        hass,
+        room,
+        model_manager=RoomModelManager(),
+        outdoor_temp=5.0,
+        settings={},
+        has_external_sensor=True,
+    )
+    return hass, ctrl
+
+
+def _hold_temp_calls(hass):
+    return [
+        c[0][2]
+        for c in hass.services.async_call.call_args_list
+        if c[0][2].get("entity_id") == "climate.ac" and c[0][1] == "set_temperature"
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("state", ["heat_cool", "auto"])
+async def test_forced_on_hold_single_setpoint_inside_band_sends_nothing(state):
+    """ECO band 17-27, room at 21: a single setpoint of 17 would cool the room."""
+    clear_command_cache()
+    hass, ctrl = _hold_ctrl({"temperature": 30.0}, state=state)
+    await ctrl.async_apply(
+        "idle", TargetTemps(heat=17.0, cool=27.0), current_temp=21.0, compressor_forced_on={"climate.ac"}
+    )
+    assert _hold_temp_calls(hass) == []
+
+
+@pytest.mark.asyncio
+async def test_forced_on_hold_single_setpoint_below_heat_target_sends_heat_target():
+    clear_command_cache()
+    hass, ctrl = _hold_ctrl({"temperature": 30.0})
+    await ctrl.async_apply(
+        "idle", TargetTemps(heat=21.0, cool=27.0), current_temp=19.0, compressor_forced_on={"climate.ac"}
+    )
+    assert [c["temperature"] for c in _hold_temp_calls(hass)] == [21.0]
+
+
+@pytest.mark.asyncio
+async def test_forced_on_hold_single_setpoint_above_cool_target_sends_cool_target():
+    clear_command_cache()
+    hass, ctrl = _hold_ctrl({"temperature": 16.0})
+    await ctrl.async_apply(
+        "idle", TargetTemps(heat=17.0, cool=25.0), current_temp=26.0, compressor_forced_on={"climate.ac"}
+    )
+    assert [c["temperature"] for c in _hold_temp_calls(hass)] == [25.0]
+
+
+@pytest.mark.asyncio
+async def test_forced_on_hold_single_setpoint_without_room_temp_sends_nothing():
+    clear_command_cache()
+    hass, ctrl = _hold_ctrl({"temperature": 30.0})
+    await ctrl.async_apply("idle", TargetTemps(heat=17.0, cool=27.0), compressor_forced_on={"climate.ac"})
+    assert _hold_temp_calls(hass) == []
+
+
+@pytest.mark.asyncio
+async def test_forced_on_hold_range_device_gets_the_band():
+    clear_command_cache()
+    hass, ctrl = _hold_ctrl({"target_temp_low": 20.0, "target_temp_high": 24.0})
+    await ctrl.async_apply(
+        "idle", TargetTemps(heat=17.0, cool=27.0), current_temp=21.0, compressor_forced_on={"climate.ac"}
+    )
+    (call,) = _hold_temp_calls(hass)
+    assert (call["target_temp_low"], call["target_temp_high"]) == (17.0, 27.0)
+    assert "temperature" not in call
+
+
+@pytest.mark.asyncio
+async def test_forced_on_hold_range_device_parks_missing_side_on_limit():
+    clear_command_cache()
+    hass, ctrl = _hold_ctrl({"target_temp_low": 20.0, "target_temp_high": 24.0})
+    await ctrl.async_apply(
+        "idle", TargetTemps(heat=17.0, cool=None), current_temp=21.0, compressor_forced_on={"climate.ac"}
+    )
+    (call,) = _hold_temp_calls(hass)
+    assert (call["target_temp_low"], call["target_temp_high"]) == (17.0, 30.0)
