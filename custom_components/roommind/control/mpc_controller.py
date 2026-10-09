@@ -22,6 +22,7 @@ from ..const import (
     BOOST_CAP_FALLBACK_STEP,
     CLIMATE_MODE_COOL_ONLY,
     CLIMATE_MODE_HEAT_ONLY,
+    COMMAND_CACHE_REASSERT_SECONDS,
     DEFAULT_COMFORT_WEIGHT,
     DEFAULT_OUTDOOR_COOLING_MIN,
     DEFAULT_OUTDOOR_HEATING_MAX,
@@ -70,9 +71,16 @@ _last_commands: dict[str, dict[str, Any]] = {}
 # newest command per entity, so set_hvac_mode and set_temperature would evict
 # each other and the IR fallback could never recognise a repeated pair (#416).
 _last_by_service: dict[tuple[str, str], dict[str, Any]] = {}
+# When each (entity, service) entry was last sent or confirmed.  Kept apart from the
+# entries because those are exposed in diagnostics.
+_sent_at: dict[tuple[str, str], float] = {}
 _setpoint_override_warned: set[str] = set()
 # hvac states in which a lower setpoint means more cooling, not less output
 _COOLING_SIDE_STATES = ("cool", "heat_cool", "dry")
+
+
+def _now() -> float:
+    return time.monotonic()
 
 
 def _cache_entry(service: str, data: dict) -> dict[str, Any]:
@@ -94,7 +102,9 @@ def _note_applied(entity_id: str, service: str, data: dict) -> None:
         if previous is None or previous.get("hvac_mode") != entry["hvac_mode"]:
             # A mode change can reset the device's setpoint, so it must be sent again
             _last_by_service.pop((entity_id, "set_temperature"), None)
+            _sent_at.pop((entity_id, "set_temperature"), None)
     _last_by_service[(entity_id, service)] = entry
+    _sent_at[(entity_id, service)] = _now()
 
 
 def _remember_command(entity_id: str, service: str, data: dict) -> None:
@@ -102,6 +112,7 @@ def _remember_command(entity_id: str, service: str, data: dict) -> None:
     if entity_id not in _last_commands:
         for key in [k for k in _last_by_service if k[0] == entity_id]:
             del _last_by_service[key]
+            _sent_at.pop(key, None)
     _last_commands[entity_id] = _cache_entry(service, data)
     _note_applied(entity_id, service, data)
 
@@ -112,6 +123,18 @@ def _cached_command(entity_id: str, service: str) -> dict[str, Any] | None:
     if latest is not None and latest.get("service") == service:
         return latest
     return _last_by_service.get((entity_id, service)) if latest is not None else None
+
+
+def _cache_expired(entity_id: str, service: str) -> bool:
+    """True when the cached command is old enough to be sent once more.
+
+    Without state feedback the cache is all we know, so it can never notice a
+    lost IR frame, a change on the remote or a restarted device.  Re-asserting
+    now and then heals that; the interval is far above the 30 s cycle, so the
+    beep-every-cycle behaviour of #416 does not return.
+    """
+    sent = _sent_at.get((entity_id, service))
+    return sent is not None and _now() - sent >= COMMAND_CACHE_REASSERT_SECONDS
 
 
 def _should_use_cache(state: Any) -> bool:
@@ -158,6 +181,7 @@ def clear_command_cache() -> None:
     """Clear the sent-command cache (for tests)."""
     _last_commands.clear()
     _last_by_service.clear()
+    _sent_at.clear()
     _setpoint_override_warned.clear()
 
 
@@ -312,7 +336,12 @@ async def async_turn_off_climate(
         # Cache fallback for IR devices (only when device has no reliable state)
         if _should_use_cache(state):
             cached = _last_commands.get(entity_id)
-            if cached and cached.get("service") == "set_hvac_mode" and cached.get("hvac_mode") == "off":
+            if (
+                cached
+                and cached.get("service") == "set_hvac_mode"
+                and cached.get("hvac_mode") == "off"
+                and not _cache_expired(entity_id, "set_hvac_mode")
+            ):
                 return
         # Defense-in-depth: lower setpoint to min_temp BEFORE sending "off".
         # Some devices (e.g. Wavin AHC9000) claim "off" support but only
@@ -1996,7 +2025,7 @@ class MPCController:
         # live device state, while this branch handles IR/no-state devices via the cache.
         if not skip and eid and _should_use_cache(state):
             cached = _cached_command(eid, service)
-            if cached is not None:
+            if cached is not None and not _cache_expired(eid, service):
                 if service == "set_hvac_mode":
                     if cached.get("hvac_mode") == data.get("hvac_mode"):
                         skip = True

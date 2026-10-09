@@ -175,6 +175,10 @@ HEAT_SOURCE_SECONDARY_POWER_SCALE = 0.7  # throttle secondary when both active (
 # Compressor group defaults
 DEFAULT_COMPRESSOR_MIN_RUN_MINUTES = 15
 DEFAULT_COMPRESSOR_MIN_OFF_MINUTES = 5
+# Devices without usable state (IR blasters) get an unchanged command once more after this long.
+# Long enough that it is not audible as a beep pattern (#416), short enough to heal a lost frame,
+# a change on the remote or a restarted device within one comfortable stretch.
+COMMAND_CACHE_REASSERT_SECONDS = 1800
 COMPRESSOR_STATE_SETTLE_SECONDS = (
     120  # An "off" reading this soon after our own start is state lag, not a manual switch-off
 )

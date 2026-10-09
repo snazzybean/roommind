@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from custom_components.roommind.const import MODE_COOLING, MODE_HEATING, MODE_IDLE, TargetTemps
+from custom_components.roommind.const import (
+    COMMAND_CACHE_REASSERT_SECONDS,
+    MODE_COOLING,
+    MODE_HEATING,
+    MODE_IDLE,
+    TargetTemps,
+)
 from custom_components.roommind.control.mpc_controller import MPCController
 from custom_components.roommind.control.thermal_model import RoomModelManager
 
@@ -111,3 +117,66 @@ async def test_state_confirmed_value_replaces_a_stale_cache_entry():
     sent = await _tick(hass, ctrl, MODE_COOLING)  # must not be swallowed by the stale "cool"
 
     assert ("set_hvac_mode", "cool", None) in sent
+
+
+@pytest.mark.asyncio
+async def test_cached_command_is_reasserted_once_after_the_ttl():
+    """No state feedback: a lost frame or a change on the remote heals after the TTL, without beeping every cycle."""
+    hass = build_hass()
+    hass.states.get = MagicMock(return_value=_state("unknown"))
+    ctrl = _ctrl(hass)
+    module = "custom_components.roommind.control.mpc_controller._now"
+    clock = {"t": 1000.0}
+
+    with patch(module, side_effect=lambda: clock["t"]):
+        first = await _tick(hass, ctrl)
+        clock["t"] += COMMAND_CACHE_REASSERT_SECONDS - 1
+        before = await _tick(hass, ctrl)
+        clock["t"] += 1
+        expired = await _tick(hass, ctrl)
+        clock["t"] += 30
+        after = await _tick(hass, ctrl)
+        clock["t"] += COMMAND_CACHE_REASSERT_SECONDS
+        next_round = await _tick(hass, ctrl)
+
+    assert {s for s, _, _ in first} == {"set_hvac_mode", "set_temperature"}
+    assert before == []
+    assert {s for s, _, _ in expired} == {"set_hvac_mode", "set_temperature"}
+    assert after == []
+    assert {s for s, _, _ in next_round} == {"set_hvac_mode", "set_temperature"}
+
+
+@pytest.mark.asyncio
+async def test_off_is_reasserted_after_the_ttl_for_a_device_without_state():
+    hass = build_hass()
+    hass.states.get = MagicMock(return_value=_state("unknown"))
+    ctrl = _ctrl(hass)
+    clock = {"t": 1000.0}
+
+    with patch("custom_components.roommind.control.mpc_controller._now", side_effect=lambda: clock["t"]):
+        first = await _tick(hass, ctrl, MODE_IDLE)
+        before = await _tick(hass, ctrl, MODE_IDLE)
+        clock["t"] += COMMAND_CACHE_REASSERT_SECONDS
+        expired = await _tick(hass, ctrl, MODE_IDLE)
+        after = await _tick(hass, ctrl, MODE_IDLE)
+
+    assert ("set_hvac_mode", "off", None) in first
+    assert before == []
+    assert ("set_hvac_mode", "off", None) in expired
+    assert after == []
+
+
+@pytest.mark.asyncio
+async def test_valid_state_devices_ignore_the_ttl():
+    """The TTL only concerns the cache path; a device with a real state is compared against that state."""
+    hass = build_hass()
+    hass.states.get = MagicMock(return_value=_state("heat", 29.5))
+    ctrl = _ctrl(hass)
+    clock = {"t": 1000.0}
+
+    with patch("custom_components.roommind.control.mpc_controller._now", side_effect=lambda: clock["t"]):
+        first = await _tick(hass, ctrl)
+        clock["t"] += 10 * COMMAND_CACHE_REASSERT_SECONDS
+        later = await _tick(hass, ctrl)
+
+    assert first == later == []
