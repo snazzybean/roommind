@@ -30,7 +30,9 @@ def _trained_manager(model: RCModel) -> MagicMock:
     return mgr
 
 
-def _cool_only_controller(resolver=None, **room_overrides) -> MPCController:
+def _cool_only_controller(
+    resolver=None, *, model: RCModel | None = None, settings: dict | None = None, **room_overrides
+) -> MPCController:
     room = make_room(
         climate_mode="cool_only",
         thermostats=[],
@@ -43,9 +45,9 @@ def _cool_only_controller(resolver=None, **room_overrides) -> MPCController:
     return MPCController(
         build_hass(),
         room,
-        model_manager=_trained_manager(RCModel(C=1.0, U=0.0139, Q_heat=9.1, Q_cool=3.64)),
+        model_manager=_trained_manager(model or RCModel(C=1.0, U=0.0139, Q_heat=9.1, Q_cool=3.64)),
         outdoor_temp=28.0,
-        settings={},
+        settings=settings or {},
         has_external_sensor=True,
         target_resolver=resolver,
     )
@@ -84,6 +86,22 @@ class TestCoolingOnlyOverride:
     async def test_cools_without_resolver(self, current):
         ctrl = _cool_only_controller(resolver=None)
         mode, _ = await ctrl.async_evaluate(current, TargetTemps(heat=None, cool=24.0))
+        assert mode == MODE_COOLING
+
+    @pytest.mark.parametrize(
+        ("model", "current"),
+        [
+            (RCModel(C=1.0, U=0.0054, Q_heat=3.0, Q_cool=5.8), 25.0),
+            (RCModel(C=1.0, U=0.0084, Q_heat=3.0, Q_cool=0.99), 25.0),
+            (RCModel(C=1.0, U=0.0084, Q_heat=3.0, Q_cool=0.99), 26.0),
+        ],
+    )
+    @pytest.mark.asyncio
+    async def test_cools_with_energy_weighted_slow_models(self, model, current):
+        """Weak units and a low comfort weight (#408) still cool toward the override."""
+        targets = TargetTemps(heat=None, cool=24.0)
+        ctrl = _cool_only_controller(resolver=lambda _ts: targets, model=model, settings={"comfort_weight": 20})
+        mode, _ = await ctrl.async_evaluate(current, targets)
         assert mode == MODE_COOLING
 
     @pytest.mark.asyncio
