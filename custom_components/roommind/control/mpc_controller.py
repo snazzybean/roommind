@@ -680,6 +680,22 @@ def get_can_heat_cool(
     return can_heat, can_cool
 
 
+def fill_missing_targets(heat: float | None, cool: float | None, fallback: float) -> tuple[float, float]:
+    """Give the optimizer a numeric (heat, cool) pair for a possibly one-sided target.
+
+    ``None`` means "no demand on that side". With both sides missing the room is
+    held where it is (``fallback``). A missing heat target must not be filled with
+    a room temperature above the cool target: the optimizer raises the cool target
+    to at least the heat target, so a cooling-only override (``heat=None``) would
+    otherwise be lifted to the current room temperature and never cool (#388).
+    """
+    if cool is None:
+        return (fallback, fallback) if heat is None else (heat, fallback)
+    if heat is None:
+        return min(fallback, cool), cool
+    return heat, cool
+
+
 def is_mpc_active(
     model_manager: RoomModelManager,
     area_id: str,
@@ -906,17 +922,18 @@ class MPCController:
             raw_targets = [self._target_resolver(now + i * dt_seconds) for i in range(horizon_blocks)]
             # Extract separate heat and cool series from TargetTemps
             if raw_targets and isinstance(raw_targets[0], TargetTemps):
-                tt_targets = cast(list[TargetTemps], raw_targets)
-                heat_target_series = [t.heat if t.heat is not None else current_temp for t in tt_targets]
-                cool_target_series = [t.cool if t.cool is not None else current_temp for t in tt_targets]
+                filled = [
+                    fill_missing_targets(t.heat, t.cool, current_temp) for t in cast(list[TargetTemps], raw_targets)
+                ]
+                heat_target_series = [h for h, _ in filled]
+                cool_target_series = [c for _, c in filled]
             else:
                 # Legacy resolver returning float|None
                 float_targets = cast(list[float | None], raw_targets)
                 heat_target_series = [t if t is not None else current_temp for t in float_targets]
                 cool_target_series = list(heat_target_series)
         else:
-            fallback_h = targets.heat if targets.heat is not None else current_temp
-            fallback_c = targets.cool if targets.cool is not None else current_temp
+            fallback_h, fallback_c = fill_missing_targets(targets.heat, targets.cool, current_temp)
             heat_target_series = [fallback_h] * horizon_blocks
             cool_target_series = [fallback_c] * horizon_blocks
 

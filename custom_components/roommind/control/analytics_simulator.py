@@ -16,7 +16,7 @@ from ..const import (
     MODE_IDLE,
 )
 from ..utils.device_utils import get_ac_eids, get_trv_eids
-from .mpc_controller import get_can_heat_cool
+from .mpc_controller import fill_missing_targets, get_can_heat_cool
 from .mpc_optimizer import MPCOptimizer
 from .residual_heat import build_residual_series, get_min_run_blocks
 from .thermal_model import RCModel, ThermalEKF
@@ -272,14 +272,16 @@ def _simulate_mpc(
             pf = 1.0
         else:
             remaining_outdoor = outdoor_series[i:]
-            remaining_heat_targets = [
-                tf.get("heat_target", tf["target_temp"]) if tf.get("heat_target", tf["target_temp"]) is not None else T
+            filled = [
+                fill_missing_targets(
+                    tf.get("heat_target", tf["target_temp"]),
+                    tf.get("cool_target", tf["target_temp"]),
+                    T,
+                )
                 for tf in target_forecast[i:]
             ]
-            remaining_cool_targets = [
-                tf.get("cool_target", tf["target_temp"]) if tf.get("cool_target", tf["target_temp"]) is not None else T
-                for tf in target_forecast[i:]
-            ]
+            remaining_heat_targets = [h for h, _ in filled]
+            remaining_cool_targets = [c for _, c in filled]
             remaining_solar = solar_series[i:] if solar_series else None
             # Build residual series for remaining blocks
             remaining_residual = None
