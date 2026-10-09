@@ -4602,3 +4602,39 @@ async def test_managed_mode_range_device_parks_unused_side_on_its_limit():
     assert ranges, "range device must receive a band, not a single setpoint"
     assert ranges[-1]["target_temp_low"] == 21.0
     assert ranges[-1]["target_temp_high"] == 30.0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("hvac_state", ["cool", "heat_cool", "dry"])
+async def test_turn_off_cooling_ac_skips_min_temp_setpoint(hvac_state):
+    """A cooling AC must not be sent to min_temp first: it would ramp up before 'off' (#388)."""
+    hass = build_hass()
+    state = MagicMock()
+    state.state = hvac_state
+    state.attributes = {"hvac_modes": ["off", "cool", "heat_cool", "dry"], "min_temp": 17.0, "temperature": 24.0}
+    hass.states.get = MagicMock(return_value=state)
+
+    await async_turn_off_climate(hass, "climate.ac")
+
+    hass.services.async_call.assert_called_once_with(
+        "climate",
+        "set_hvac_mode",
+        {"entity_id": "climate.ac", "hvac_mode": "off"},
+        blocking=True,
+        context=ANY,
+    )
+
+
+@pytest.mark.asyncio
+async def test_turn_off_heating_ac_still_lowers_setpoint_first():
+    """A heat-pump AC in heat mode keeps the defense-in-depth setpoint: lower means less output."""
+    hass = build_hass()
+    state = MagicMock()
+    state.state = "heat"
+    state.attributes = {"hvac_modes": ["off", "cool", "heat"], "min_temp": 17.0, "temperature": 24.0}
+    hass.states.get = MagicMock(return_value=state)
+
+    await async_turn_off_climate(hass, "climate.ac")
+
+    calls = [c[0][1] for c in hass.services.async_call.call_args_list]
+    assert calls == ["set_temperature", "set_hvac_mode"]

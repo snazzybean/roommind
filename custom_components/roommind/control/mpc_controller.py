@@ -63,6 +63,8 @@ _SENTINEL: object = object()  # default marker for backward-compat keyword detec
 # resets on integration reload (module reimport).
 _last_commands: dict[str, dict[str, Any]] = {}
 _setpoint_override_warned: set[str] = set()
+# hvac states in which a lower setpoint means more cooling, not less output
+_COOLING_SIDE_STATES = ("cool", "heat_cool", "dry")
 
 
 def _cache_entry(service: str, data: dict) -> dict[str, Any]:
@@ -259,8 +261,10 @@ async def async_turn_off_climate(
         # Some devices (e.g. Wavin AHC9000) claim "off" support but only
         # process temperature changes when in "heat" mode.  Sending the setpoint
         # first (while the device is still active) ensures the valve closes even
-        # if set_hvac_mode(off) is later ignored.
-        if state and effective_setpoint is not None:
+        # if set_hvac_mode(off) is later ignored.  Skipped while the device is on
+        # the cooling side: min_temp there is the hardest cooling demand, so the
+        # unit would ramp up for the seconds before "off" arrives (#388).
+        if state and effective_setpoint is not None and state.state not in _COOLING_SIDE_STATES:
             await _send_idle_setpoint(hass, entity_id, state, effective_setpoint, area_id=area_id)
 
         try:
