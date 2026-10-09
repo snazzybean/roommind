@@ -1855,7 +1855,9 @@ class MPCController:
             cool_overshoot = current_temp is not None and current_temp <= limit
         if not (heat_moved or cool_moved or heat_overshoot or cool_overshoot):
             return
-        _active_targets[eid] = (targets.heat, targets.cool)
+        # Recorded only once something was passed on, so a change that could not be
+        # sent yet (single setpoint inside the band) is still pending next cycle.
+        new_record = (targets.heat, targets.cool)
 
         if hvac in ("heat", "cool"):
             target = targets.heat if hvac == "heat" else targets.cool
@@ -1865,6 +1867,7 @@ class MPCController:
                     {"entity_id": eid, "temperature": self._hold_setpoint_ha(eid, target)},
                     temp_intent=hvac,
                 )
+                _active_targets[eid] = new_record
             return
 
         # heat_cool/auto regulate from both sides onto what they get, so a single
@@ -1882,6 +1885,7 @@ class MPCController:
                 "set_temperature",
                 {"entity_id": eid, "target_temp_low": min(low, high), "target_temp_high": max(low, high)},
             )
+            _active_targets[eid] = new_record
         elif current_temp is not None:
             # Single setpoint: only a side the room is already past is safe to send.
             if targets.heat is not None and current_temp <= targets.heat:
@@ -1890,12 +1894,14 @@ class MPCController:
                     {"entity_id": eid, "temperature": self._hold_setpoint_ha(eid, targets.heat)},
                     temp_intent="heat",
                 )
+                _active_targets[eid] = new_record
             elif targets.cool is not None and current_temp >= targets.cool:
                 await self._call(
                     "set_temperature",
                     {"entity_id": eid, "temperature": self._hold_setpoint_ha(eid, targets.cool)},
                     temp_intent="cool",
                 )
+                _active_targets[eid] = new_record
 
     def _direct_setpoint_ha(self, eid: str, effective_target: float) -> float | None:
         """HA-unit setpoint for a direct-mode device: room target plus its offset, None if not direct.

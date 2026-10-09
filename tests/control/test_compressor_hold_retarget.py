@@ -291,6 +291,30 @@ async def test_single_setpoint_inside_the_new_band_sends_nothing(hvac):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("hvac", ["heat_cool", "auto"])
+@pytest.mark.parametrize(("later_temp", "expected"), [(16.5, 17.0), (27.5, 27.0)])
+async def test_unsent_change_stays_pending_for_a_single_setpoint_device(hvac, later_temp, expected):
+    """Eco 17/27 with the room inside: nothing can be sent yet, but the change must not count as delivered (#436)."""
+    hass, ctrl = _setup(_state(hvac))
+    eco = TargetTemps(heat=17.0, cool=27.0)
+    assert await _start_then_hold(hass, ctrl, eco, current_temp=21.5) == []
+    hass.services.async_call.reset_mock()
+    await ctrl.async_apply(MODE_IDLE, eco, current_temp=later_temp, compressor_forced_on=HELD)
+    assert [c["temperature"] for c in _sent(hass)] == [expected]
+
+
+@pytest.mark.asyncio
+async def test_delivered_single_setpoint_change_is_not_sent_twice():
+    hass, ctrl = _setup(_state("heat_cool"))
+    eco = TargetTemps(heat=17.0, cool=27.0)
+    assert len(await _start_then_hold(hass, ctrl, eco, current_temp=16.5)) == 1
+    hass.services.async_call.reset_mock()
+    hass.states.get = MagicMock(return_value=_state("heat_cool", temperature=17.0))
+    await ctrl.async_apply(MODE_IDLE, eco, current_temp=16.4, compressor_forced_on=HELD)
+    assert _sent(hass) == []
+
+
+@pytest.mark.asyncio
 async def test_single_setpoint_below_the_new_heat_target_sends_it():
     hass, ctrl = _setup(_state("heat_cool"))
     (call,) = await _start_then_hold(hass, ctrl, TargetTemps(heat=23.0, cool=27.0), current_temp=20.0)
