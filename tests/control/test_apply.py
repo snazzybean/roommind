@@ -213,7 +213,7 @@ async def test_apply_clamps_to_device_max_temp():
     set_temp_calls = [c for c in hass.services.async_call.call_args_list if c[0][1] == "set_temperature"]
     assert set_temp_calls
     temp_arg = set_temp_calls[0][0][2]["temperature"]
-    assert temp_arg == 25.0  # clamped to device max
+    assert temp_arg == 24.5  # one fallback step below the device max (#396)
 
 
 @pytest.mark.asyncio
@@ -782,7 +782,8 @@ async def test_apply_heating_trv_still_gets_boost():
     calls = hass.services.async_call.call_args_list
     temp_calls = [c for c in calls if c[0][1] == "set_temperature"]
     assert temp_calls
-    assert temp_calls[0][0][2]["temperature"] == HEATING_BOOST_TARGET
+    # Boost stops one fallback step below max_temp (#396)
+    assert temp_calls[0][0][2]["temperature"] == HEATING_BOOST_TARGET - 0.5
 
 
 @pytest.mark.asyncio
@@ -885,12 +886,12 @@ async def test_apply_heating_mixed_trv_and_ac():
         c for c in calls if c[0][1] == "set_temperature" and c[0][2].get("entity_id") == "climate.living_trv"
     ]
     assert trv_temp_calls
-    assert trv_temp_calls[0][0][2]["temperature"] == HEATING_BOOST_TARGET
+    assert trv_temp_calls[0][0][2]["temperature"] == HEATING_BOOST_TARGET - 0.5
 
-    # AC should get proportional boost: 18 + 1.0*(30-18) = 30.0
+    # AC gets the proportional boost (18 + 1.0*(30-18) = 30.0), capped below max_temp (#396)
     ac_temp_calls = [c for c in calls if c[0][1] == "set_temperature" and c[0][2].get("entity_id") == "climate.hp"]
     assert ac_temp_calls
-    assert ac_temp_calls[0][0][2]["temperature"] == 30.0
+    assert ac_temp_calls[0][0][2]["temperature"] == 29.5
 
     # AC should be in heat mode, not off
     ac_hvac_calls = [c for c in calls if c[0][1] == "set_hvac_mode" and c[0][2].get("entity_id") == "climate.hp"]

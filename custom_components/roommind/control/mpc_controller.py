@@ -18,6 +18,7 @@ from ..const import (
     APPROACH_RATE_MIN,
     BANGBANG_COOL_HYSTERESIS,
     BANGBANG_HEAT_HYSTERESIS,
+    BOOST_CAP_FALLBACK_STEP,
     CLIMATE_MODE_COOL_ONLY,
     CLIMATE_MODE_HEAT_ONLY,
     DEFAULT_COMFORT_WEIGHT,
@@ -1495,8 +1496,7 @@ class MPCController:
                             t = min(trv_heat_boost, t)
                         else:
                             t = trv_heat_boost if self.has_external_sensor else effective_target
-                        t_final = effective_target if cmd.entity_id in self._direct_eids else t
-                        ha_t = celsius_to_ha_temp(self.hass, t_final)
+                        ha_t = self._heating_setpoint_ha(cmd.entity_id, t, effective_target)
                         await self._call("set_hvac_mode", {"entity_id": cmd.entity_id, "hvac_mode": "heat"})
                         await self._call(
                             "set_temperature",
@@ -1514,8 +1514,7 @@ class MPCController:
                             t = min(ac_heat_boost, effective_target + self._ac_boost_delta, t)
                         else:
                             t = effective_target
-                        t_final = effective_target if cmd.entity_id in self._direct_eids else t
-                        ha_t = celsius_to_ha_temp(self.hass, t_final)
+                        ha_t = self._heating_setpoint_ha(cmd.entity_id, t, effective_target)
                         ac_state = self.hass.states.get(cmd.entity_id)
                         ac_modes = _effective_ac_modes(ac_state)
                         if "heat" in ac_modes:
@@ -1570,13 +1569,11 @@ class MPCController:
                 trv_target = min(trv_heat_boost, trv_target)
             else:
                 trv_target = trv_heat_boost if self.has_external_sensor else effective_target
-            ha_trv = celsius_to_ha_temp(self.hass, trv_target)
-            ha_trv_direct = celsius_to_ha_temp(self.hass, effective_target)
             for eid in thermostats:
                 if eid in _forced_off:
                     await async_idle_device(self.hass, eid, self._devices, area_id=self._area_id, targets=targets)
                     continue
-                ha_t = ha_trv_direct if eid in self._direct_eids else ha_trv
+                ha_t = self._heating_setpoint_ha(eid, trv_target, effective_target)
                 await self._call("set_hvac_mode", {"entity_id": eid, "hvac_mode": "heat"})
                 await self._call(
                     "set_temperature",
@@ -1594,13 +1591,11 @@ class MPCController:
                 ac_heat_target = min(ac_heat_boost, effective_target + self._ac_boost_delta, ac_heat_target)
             else:
                 ac_heat_target = effective_target
-            ha_ac_target = celsius_to_ha_temp(self.hass, ac_heat_target)
-            ha_ac_direct = celsius_to_ha_temp(self.hass, effective_target)
             for eid in acs:
                 if eid in _forced_off:
                     await async_idle_device(self.hass, eid, self._devices, area_id=self._area_id, targets=targets)
                     continue
-                ha_t = ha_ac_direct if eid in self._direct_eids else ha_ac_target
+                ha_t = self._heating_setpoint_ha(eid, ac_heat_target, effective_target)
                 ac_state = self.hass.states.get(eid)
                 ac_modes = _effective_ac_modes(ac_state)
                 if "heat" in ac_modes:
@@ -1631,13 +1626,12 @@ class MPCController:
                 ac_cool_target = min(effective_target, ac_cool_target)
             else:
                 ac_cool_target = effective_target
-            ha_target = celsius_to_ha_temp(self.hass, ac_cool_target)
-            ha_cool_direct = celsius_to_ha_temp(self.hass, effective_target)
             for eid in acs:
                 if eid in _forced_off:
                     await async_idle_device(self.hass, eid, self._devices, area_id=self._area_id, targets=targets)
                     continue
-                ha_t = ha_cool_direct if eid in self._direct_eids else ha_target
+                direct_t = self._direct_setpoint_ha(eid, effective_target)
+                ha_t = direct_t if direct_t is not None else celsius_to_ha_temp(self.hass, ac_cool_target)
                 await self._call("set_hvac_mode", {"entity_id": eid, "hvac_mode": "cool"})
                 await self._call(
                     "set_temperature",
@@ -1718,6 +1712,42 @@ class MPCController:
                     targets=targets,
                     force_off=force_off,
                 )
+
+    def _direct_setpoint_ha(self, eid: str, effective_target: float) -> float | None:
+        """HA-unit setpoint for a direct-mode device (the room target), None if not direct."""
+        if eid not in self._direct_eids:
+            return None
+        return celsius_to_ha_temp(self.hass, effective_target)
+
+    def _heating_setpoint_ha(self, eid: str, proportional_celsius: float, effective_target: float) -> float:
+        """HA-unit heating setpoint: direct target or the capped proportional boost."""
+        direct = self._direct_setpoint_ha(eid, effective_target)
+        if direct is not None:
+            return direct
+        return self._boost_setpoint_ha(eid, proportional_celsius, effective_target)
+
+    def _boost_setpoint_ha(self, eid: str, celsius: float, effective_target: float) -> float:
+        """HA-unit proportional heating setpoint, kept one step below the device's max_temp.
+
+        Some integrations validate the upper bound exclusively or after a
+        unit round trip, so exactly max_temp can be rejected (#396). The cap
+        only trims the top step of the boost and never goes below the room
+        target.
+        """
+        ha_t = celsius_to_ha_temp(self.hass, celsius)
+        state = self.hass.states.get(eid)
+        raw_max = state.attributes.get("max_temp") if state else None
+        if raw_max is None:
+            return ha_t
+        try:
+            max_t = float(raw_max)
+            step = float(state.attributes.get("target_temp_step") or BOOST_CAP_FALLBACK_STEP)
+        except (TypeError, ValueError):
+            return ha_t
+        if step <= 0:
+            step = BOOST_CAP_FALLBACK_STEP
+        ceiling = max(max_t - step, celsius_to_ha_temp(self.hass, effective_target))
+        return min(ha_t, ceiling)
 
     def _proportional_deadband(self, eid: str, current_temp: float | None, effective_target: float) -> float | None:
         """Deadband threshold for a proportional setpoint send, or None to disable.

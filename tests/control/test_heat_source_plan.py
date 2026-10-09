@@ -444,7 +444,7 @@ async def test_heat_source_plan_both_active_different_fractions():
 
     trv_temp = [c for c in calls if c[0][1] == "set_temperature" and c[0][2]["entity_id"] == "climate.trv1"]
     assert len(trv_temp) == 1
-    assert trv_temp[0][0][2]["temperature"] == 30.0
+    assert trv_temp[0][0][2]["temperature"] == 29.5
 
     ac_temp = [c for c in calls if c[0][1] == "set_temperature" and c[0][2]["entity_id"] == "climate.ac1"]
     assert len(ac_temp) == 1

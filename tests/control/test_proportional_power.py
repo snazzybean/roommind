@@ -346,7 +346,7 @@ async def test_dynamic_heating_boost_trv_full_power():
     await ctrl.async_apply("heating", 21.0, power_fraction=1.0, current_temp=20.0, heating_boost_target=35.0)
 
     temp_calls = [c for c in hass.services.async_call.call_args_list if c[0][1] == "set_temperature"]
-    assert any(c[0][2]["temperature"] == 35.0 for c in temp_calls)
+    assert any(c[0][2]["temperature"] == 34.5 for c in temp_calls)
 
 
 @pytest.mark.asyncio
@@ -467,7 +467,7 @@ async def test_dynamic_ac_heating_boost():
     await ctrl.async_apply("heating", 21.0, power_fraction=1.0, current_temp=20.0, ac_heating_boost_target=28.0)
 
     temp_calls = [c for c in hass.services.async_call.call_args_list if c[0][1] == "set_temperature"]
-    assert any(c[0][2]["temperature"] == 28.0 for c in temp_calls)
+    assert any(c[0][2]["temperature"] == 27.5 for c in temp_calls)
 
 
 def _ctrl_with_cw(cw):
@@ -551,7 +551,7 @@ async def test_ac_boost_cap_does_not_apply_at_comfort():
     await ctrl.async_apply("heating", 21.0, power_fraction=1.0, current_temp=18.0)
     set_temp = [c for c in hass.services.async_call.call_args_list if c[0][1] == "set_temperature"]
     assert set_temp
-    assert set_temp[-1][0][2]["temperature"] == 30.0
+    assert set_temp[-1][0][2]["temperature"] == 29.5
 
 
 @pytest.mark.asyncio
