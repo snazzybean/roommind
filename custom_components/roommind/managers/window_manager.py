@@ -35,7 +35,12 @@ class WindowManager:
         """Return True while the window state is unresolved (sensors unavailable, no known state yet)."""
         return area_id in self._pending
 
-    def resolve_raw(self, area_id: str, sensor_states: dict[str, str | None]) -> bool | None:
+    def resolve_raw(
+        self,
+        area_id: str,
+        sensor_states: dict[str, str | None],
+        missing: frozenset[str] = frozenset(),
+    ) -> bool | None:
         """Aggregate sensor states into a raw open flag, tolerating transient dropouts.
 
         Right after an HA restart sensors are briefly ``unavailable``/``unknown``
@@ -44,6 +49,10 @@ class WindowManager:
         must neither start climate control nor call ``update()``.  After
         ``MAX_SENSOR_STALENESS`` of continuous dropout the sensor counts as
         closed again, so a dead sensor cannot block control forever.
+
+        *missing* lists sensors the caller knows no longer exist (no state and no
+        registry entry once HA has finished starting).  They count as closed
+        right away instead of waiting out the staleness cap.
         """
         now = time.time()
         last = self._last_known.setdefault(area_id, {})
@@ -57,6 +66,14 @@ class WindowManager:
         any_open = False
         any_pending = False
         for entity_id, state in sensor_states.items():
+            if entity_id in missing:
+                last.pop(entity_id, None)
+                since.pop(entity_id, None)
+                if (area_id, entity_id) not in self._warned:
+                    self._warned.add((area_id, entity_id))
+                    _LOGGER.warning("Window sensor %s does not exist, treating as closed", entity_id)
+                continue
+
             if state not in _UNAVAILABLE_STATES:
                 is_open = state == "on"
                 last[entity_id] = is_open

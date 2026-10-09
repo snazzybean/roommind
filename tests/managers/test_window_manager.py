@@ -388,3 +388,32 @@ def test_remove_room_clears_resolve_state():
     mgr.remove_room("room")
     assert mgr.is_pending("room") is False
     assert mgr.resolve_raw("room", {SENSOR: "unavailable"}) is None  # no held "on" any more
+
+
+def test_resolve_raw_missing_sensor_counts_as_closed_immediately(caplog):
+    """A sensor the caller reports as gone is closed at once, with a single warning (#437)."""
+    mgr = WindowManager()
+    with caplog.at_level(logging.WARNING):
+        assert mgr.resolve_raw("room", {SENSOR: None}, frozenset({SENSOR})) is False
+        assert mgr.resolve_raw("room", {SENSOR: None}, frozenset({SENSOR})) is False
+    assert mgr.is_pending("room") is False
+    assert [r.getMessage() for r in caplog.records].count(
+        f"Window sensor {SENSOR} does not exist, treating as closed"
+    ) == 1
+
+
+def test_resolve_raw_missing_sensor_drops_held_reading_but_open_sibling_wins():
+    mgr = WindowManager()
+    assert mgr.resolve_raw("room", {SENSOR: "on", OTHER: "off"}) is True
+    assert mgr.resolve_raw("room", {SENSOR: None, OTHER: "off"}, frozenset({SENSOR})) is False
+    assert mgr.resolve_raw("room", {SENSOR: None, OTHER: "on"}, frozenset({SENSOR})) is True
+    assert mgr.resolve_raw("room", {SENSOR: None}) is None  # no stale "on" survives once it reappears without state
+
+
+def test_resolve_raw_missing_sensor_warns_again_after_it_returned(caplog):
+    mgr = WindowManager()
+    with caplog.at_level(logging.WARNING):
+        mgr.resolve_raw("room", {SENSOR: None}, frozenset({SENSOR}))
+        mgr.resolve_raw("room", {SENSOR: "off"})
+        mgr.resolve_raw("room", {SENSOR: None}, frozenset({SENSOR}))
+    assert sum("does not exist" in r.getMessage() for r in caplog.records) == 2

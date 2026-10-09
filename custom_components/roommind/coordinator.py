@@ -11,7 +11,7 @@ from typing import Any
 from homeassistant.components.persistent_notification import async_create as async_create_notification
 from homeassistant.components.persistent_notification import async_dismiss as async_dismiss_notification
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import CoreState, HomeAssistant
 from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
@@ -776,7 +776,10 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             self._prediction_forecasts.pop(area_id, None)
 
         # Pause climate control when any window/door is open (with configurable delays)
-        raw_state = self._window_manager.resolve_raw(area_id, self._read_window_states(room))
+        window_states = self._read_window_states(room)
+        raw_state = self._window_manager.resolve_raw(
+            area_id, window_states, self._missing_window_sensors(window_states)
+        )
         # Pending: sensors unavailable and no state known yet (typically right after
         # a restart).  Keep the current pause state and send no commands; update()
         # is skipped so the first real reading still counts as the first observation.
@@ -1617,6 +1620,20 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             state = self.hass.states.get(entity_id)
             states[entity_id] = state.state if state else None
         return states
+
+    def _missing_window_sensors(self, states: dict[str, str | None]) -> frozenset[str]:
+        """Return sensors without a state that HA also does not know in the entity registry.
+
+        Only once HA is fully running: while it is still starting, entities may
+        not be loaded yet, so a missing state means "not yet", not "gone".
+        """
+        stateless = [entity_id for entity_id, state in states.items() if state is None]
+        if not stateless or self.hass.state is not CoreState.running:
+            return frozenset()
+        from homeassistant.helpers import entity_registry as er
+
+        registry = er.async_get(self.hass)
+        return frozenset(entity_id for entity_id in stateless if registry.async_get(entity_id) is None)
 
     def _is_presence_away(self, room: dict, settings: dict) -> bool:
         """Return True if presence detection says all relevant persons are away."""

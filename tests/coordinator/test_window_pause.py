@@ -6,6 +6,7 @@ import time
 from unittest.mock import ANY, AsyncMock, MagicMock, call, patch
 
 import pytest
+from homeassistant.core import CoreState
 
 from custom_components.roommind.const import MAX_SENSOR_STALENESS, MODE_IDLE
 
@@ -192,6 +193,74 @@ class TestRoomMindCoordinator:
         data = await coordinator._async_update_data()
 
         assert data["rooms"]["living_room_abc12345"]["window_open"] is True
+
+    @staticmethod
+    def _climate_calls(hass):
+        return [c for c in hass.services.async_call.call_args_list if c.args[0] == "climate"]
+
+    @staticmethod
+    async def _tick_with_stateless_sensor(request, hass, mock_config_entry, core_state, registered):
+        room_with_window = {
+            **SAMPLE_ROOM,
+            "window_sensors": ["binary_sensor.living_room_window"],
+            "window_open_delay": 60,
+        }
+        store = _make_store_mock({"living_room_abc12345": room_with_window})
+        hass.data = {"roommind": {"store": store}}
+        hass.state = core_state
+        hass.services.async_call = AsyncMock()
+        hass.states.get = MagicMock(side_effect=make_mock_states_get())
+        registry = MagicMock()
+        registry.async_get = MagicMock(return_value=MagicMock() if registered else None)
+
+        coordinator = _create_coordinator(hass, mock_config_entry)
+        patcher = patch("homeassistant.helpers.entity_registry.async_get", return_value=registry)
+        patcher.start()
+        request.addfinalizer(patcher.stop)
+        data = await coordinator._async_update_data()
+        return data["rooms"]["living_room_abc12345"], coordinator
+
+    @pytest.mark.asyncio
+    async def test_deleted_window_sensor_after_startup_counts_as_closed(self, request, hass, mock_config_entry):
+        """No state and no registry entry once HA runs: closed at once, the room keeps heating (#437)."""
+        room_state, coordinator = await self._tick_with_stateless_sensor(
+            request, hass, mock_config_entry, CoreState.running, registered=False
+        )
+        assert room_state["mode"] == "heating"
+        assert room_state["window_open"] is False
+        assert coordinator._window_manager.is_pending("living_room_abc12345") is False
+        assert self._climate_calls(hass) != []
+
+    @pytest.mark.asyncio
+    async def test_missing_window_sensor_while_ha_starts_stays_pending(self, request, hass, mock_config_entry):
+        """Entities may still be loading while HA starts: keep the pending behaviour."""
+        room_state, coordinator = await self._tick_with_stateless_sensor(
+            request, hass, mock_config_entry, CoreState.starting, registered=False
+        )
+        assert room_state["mode"] == "idle"
+        assert coordinator._window_manager.is_pending("living_room_abc12345") is True
+        assert self._climate_calls(hass) == []
+
+    @pytest.mark.asyncio
+    async def test_registered_window_sensor_without_state_stays_pending(self, request, hass, mock_config_entry):
+        """The entity exists (registry entry), only its state is missing: wait for the staleness cap."""
+        room_state, coordinator = await self._tick_with_stateless_sensor(
+            request, hass, mock_config_entry, CoreState.running, registered=True
+        )
+        assert room_state["mode"] == "idle"
+        assert coordinator._window_manager.is_pending("living_room_abc12345") is True
+        assert self._climate_calls(hass) == []
+
+    @pytest.mark.asyncio
+    async def test_registered_window_sensor_without_state_expires_after_cap(self, request, hass, mock_config_entry):
+        room_state, coordinator = await self._tick_with_stateless_sensor(
+            request, hass, mock_config_entry, CoreState.running, registered=True
+        )
+        with patch("custom_components.roommind.managers.window_manager.time") as mock_time:
+            mock_time.time.return_value = time.time() + MAX_SENSOR_STALENESS + 1
+            data = await coordinator._async_update_data()
+        assert coordinator._window_manager.is_pending("living_room_abc12345") is False
+        assert data["rooms"]["living_room_abc12345"]["window_open"] is False
 
     @pytest.mark.asyncio
     async def test_window_pending_skips_ekf_training(self, hass, mock_config_entry):
