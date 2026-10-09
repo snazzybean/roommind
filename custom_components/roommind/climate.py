@@ -26,12 +26,11 @@ from .const import (
     MIN_TARGET_TEMP,
     OVERRIDE_BOOST,
     OVERRIDE_CUSTOM,
+    OVERRIDE_TURN_ON_REFRESH_DELAY_S,
     is_override_active,
 )
 from .coordinator import RoomMindCoordinator
 from .utils.schedule_utils import mask_override_band, override_preset_band
-
-OVERRIDE_TURN_ON_REFRESH_DELAY_S = 3.0
 
 
 def _create_room_climates(
@@ -89,10 +88,13 @@ class RoomMindOverrideClimate(CoordinatorEntity, ClimateEntity):
 
     async def _refresh_after_deferral(self, _now: Any) -> None:
         self._cancel_deferred_refresh = None
+        self.coordinator.clear_override_seed(self._area_id)
         await self.coordinator.async_request_refresh()
 
     async def _request_refresh(self) -> None:
+        """Refresh now; the stored override holds the caller's values, not a seed."""
         self._drop_deferred_refresh()
+        self.coordinator.clear_override_seed(self._area_id)
         await self.coordinator.async_request_refresh()
 
     def _room(self) -> dict | None:
@@ -253,6 +255,8 @@ class RoomMindOverrideClimate(CoordinatorEntity, ClimateEntity):
             )
         elif not self._is_override_active():
             heat, cool = mask_override_band(*self._current_band(), self._climate_mode())
+            # Marked before the write so a coordinator tick can never see the seed unflagged.
+            self.coordinator.note_override_seed(self._area_id)
             await store.async_update_room(
                 self._area_id,
                 {

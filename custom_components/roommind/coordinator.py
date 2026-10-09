@@ -39,6 +39,7 @@ from .const import (
     MODE_IDLE,
     OUTDOOR_UNAVAILABLE_NOTIFICATION_ID,
     OUTDOOR_UNAVAILABLE_NOTIFY_CYCLES,
+    OVERRIDE_TURN_ON_REFRESH_DELAY_S,
     SCHEDULE_STATE_ON,
     THERMAL_SAVE_CYCLES,
     UPDATE_INTERVAL,
@@ -199,6 +200,8 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         # Keyed by (area_id, field, raw value) so the coordinator's 30s cycle
         # does not flood the log with the same typo.
         self._block_temp_warned: set[tuple[str, str, str]] = set()
+        # monotonic time at which the override entity seeded an override per room (#447)
+        self._override_seeded_at: dict[str, float] = {}
         self._switch_entity_areas: set[str] = set()
         self._climate_control_switch_areas: set[str] = set()
         self._binary_sensor_entity_areas: set[str] = set()
@@ -555,8 +558,33 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         )
         return mold.risk_level, mold.surface_rh, mold.prevention_active, mold.prevention_delta
 
+    def note_override_seed(self, area_id: str) -> None:
+        """Mark an override just seeded by switching the override entity on.
+
+        Until the caller's real targets arrive (or the grace period ends) the seed
+        is not evaluated: an override lifts the outdoor gate, so acting on a
+        placeholder band can start the AC against it (#447). In memory only.
+        """
+        self._override_seeded_at[area_id] = time.monotonic()
+
+    def clear_override_seed(self, area_id: str) -> None:
+        """Forget the seed marker: the override now holds values the user chose."""
+        self._override_seeded_at.pop(area_id, None)
+
+    def _without_pending_override_seed(self, room: dict) -> dict:
+        """Return *room* as if no override existed while a fresh seed is pending."""
+        area_id = room.get("area_id", "unknown")
+        seeded_at = self._override_seeded_at.get(area_id)
+        if seeded_at is None:
+            return room
+        if time.monotonic() - seeded_at >= OVERRIDE_TURN_ON_REFRESH_DELAY_S:
+            del self._override_seeded_at[area_id]
+            return room
+        return {**room, "override_heat": None, "override_cool": None, "override_until": None, "override_type": None}
+
     async def _async_process_room(self, room: dict, settings: dict, outdoor_forecast: list[dict]) -> dict:
         """Process a single room: read sensor, evaluate schedule, apply control."""
+        room = self._without_pending_override_seed(room)
         area_id = room.get("area_id", "unknown")
 
         current_temp, current_temp_raw, current_humidity, has_external_sensor = self._read_room_sensors(room, area_id)
@@ -1848,6 +1876,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         # Clean up in-memory state
         self._window_manager.remove_room(area_id)
         self._previous_modes.pop(area_id, None)
+        self._override_seeded_at.pop(area_id, None)
         self._last_valid_temps.pop(area_id, None)
         self._had_valid_temp.discard(area_id)
         self._startup_guard_warned.discard(area_id)

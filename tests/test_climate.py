@@ -587,11 +587,13 @@ async def test_turn_on_defers_refresh_and_updates_entity_state(mock_coordinator,
     await entity.async_set_hvac_mode(HVACMode.HEAT_COOL)
 
     entity.async_write_ha_state.assert_called_once()
+    coordinator.note_override_seed.assert_called_once_with("living_room")
     coordinator.async_request_refresh.assert_not_awaited()
     call_later.assert_called_once()
     assert call_later.call_args[0][1] == OVERRIDE_TURN_ON_REFRESH_DELAY_S
 
     await call_later.call_args[0][2](None)
+    coordinator.clear_override_seed.assert_called_once_with("living_room")
     coordinator.async_request_refresh.assert_awaited_once()
     entity._drop_deferred_refresh()
     call_later.cancel.assert_not_called()
@@ -616,6 +618,7 @@ async def test_turn_on_then_set_temperature_refreshes_once_with_final_values(moc
     await entity.async_set_temperature(target_temp_low=24.0, target_temp_high=28.5)
 
     coordinator.async_request_refresh.assert_awaited_once()
+    coordinator.clear_override_seed.assert_called_with("living_room")
     call_later.cancel.assert_called_once()
     assert (rooms["override_heat"], rooms["override_cool"]) == (24.0, 28.5)
 

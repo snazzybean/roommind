@@ -1994,6 +1994,7 @@ async def test_override_set_triggers_coordinator_refresh(ws_hass, store, connect
     await _override_set(ws_hass, connection, msg)
 
     mock_coordinator.async_request_refresh.assert_called_once()
+    mock_coordinator.clear_override_seed.assert_called_once_with("kitchen")
 
 
 @pytest.mark.asyncio
@@ -2022,6 +2023,7 @@ async def test_override_clear_triggers_coordinator_refresh(ws_hass, store, conne
     await _override_clear(ws_hass, connection, msg)
 
     mock_coordinator.async_request_refresh.assert_called_once()
+    mock_coordinator.clear_override_seed.assert_called_once_with("hall")
 
 
 # ---------------------------------------------------------------------------

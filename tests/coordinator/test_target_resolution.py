@@ -239,3 +239,76 @@ class TestSplitOverrideResolution:
         targets = coordinator._resolve_target_temps(room, {}, None, None)
         assert targets.heat is None
         assert targets.cool == 24.0
+
+
+AC_ROOM_KEY = "living_room_abc12345"
+AC_ROOM = {
+    **SAMPLE_ROOM,
+    "thermostats": [],
+    "acs": ["climate.living_room"],
+    "devices": [{"entity_id": "climate.living_room", "type": "ac", "role": "auto", "heating_system_type": ""}],
+    "schedules": [],
+}
+
+
+class TestPendingOverrideSeed:
+    """A just-seeded override (entity turned on) is not evaluated until the real values arrive (#447)."""
+
+    @staticmethod
+    async def _tick(hass, mock_config_entry, room, seeded_age=None):
+        store = _make_store_mock({AC_ROOM_KEY: room}, settings={"outdoor_cooling_min": 10})
+        hass.data = {"roommind": {"store": store}}
+        hass.states.get = MagicMock(side_effect=make_mock_states_get(temp=24.6, outdoor_temp=8.0, schedule_state="off"))
+        hass.services.async_call = AsyncMock()
+        coordinator = _create_coordinator(hass, mock_config_entry)
+        if seeded_age is not None:
+            coordinator._override_seeded_at[AC_ROOM_KEY] = time.monotonic() - seeded_age
+        data = await coordinator._async_update_data()
+        return coordinator, data["rooms"][AC_ROOM_KEY]
+
+    SEED = {
+        "override_heat": 22.5,
+        "override_cool": 24.0,
+        "override_until": None,
+        "override_type": "custom",
+    }
+
+    @pytest.mark.asyncio
+    async def test_tick_before_real_values_ignores_seed_and_keeps_gate(self, hass, mock_config_entry):
+        _, state = await self._tick(hass, mock_config_entry, {**AC_ROOM, **self.SEED}, seeded_age=0.5)
+        assert state["override_active"] is False
+        assert state["mode"] == "idle"
+        assert state["commanded_mode"] == "idle"
+
+    @pytest.mark.asyncio
+    async def test_after_real_values_override_is_evaluated(self, hass, mock_config_entry):
+        room = {**AC_ROOM, **self.SEED, "override_heat": 24.0, "override_cool": 28.5}
+        coordinator, state = await self._tick(hass, mock_config_entry, room, seeded_age=0.5)
+        coordinator.clear_override_seed(AC_ROOM_KEY)
+        data = await coordinator._async_update_data()
+        state = data["rooms"][AC_ROOM_KEY]
+        assert state["override_active"] is True
+        assert (state["heat_target"], state["cool_target"]) == (24.0, 28.5)
+        assert state["mode"] == "idle"
+
+    @pytest.mark.asyncio
+    async def test_bare_turn_on_evaluates_seed_after_grace_period(self, hass, mock_config_entry):
+        coordinator, state = await self._tick(hass, mock_config_entry, {**AC_ROOM, **self.SEED}, seeded_age=10.0)
+        assert state["override_active"] is True
+        assert (state["heat_target"], state["cool_target"]) == (22.5, 24.0)
+        assert AC_ROOM_KEY not in coordinator._override_seeded_at
+
+    @pytest.mark.asyncio
+    async def test_note_and_removal(self, hass, mock_config_entry):
+        coordinator = _create_coordinator(hass, mock_config_entry)
+        coordinator.note_override_seed(AC_ROOM_KEY)
+        assert AC_ROOM_KEY in coordinator._override_seeded_at
+        coordinator.clear_override_seed(AC_ROOM_KEY)
+        assert AC_ROOM_KEY not in coordinator._override_seeded_at
+        coordinator.note_override_seed(AC_ROOM_KEY)
+        coordinator.async_request_refresh = AsyncMock()
+        hass.data = {"roommind": {"store": _make_store_mock()}}
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr("homeassistant.helpers.entity_registry.async_get", lambda _h: MagicMock(entities={}))
+            await coordinator.async_room_removed(AC_ROOM_KEY)
+        assert AC_ROOM_KEY not in coordinator._override_seeded_at

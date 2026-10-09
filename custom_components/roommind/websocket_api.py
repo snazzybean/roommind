@@ -558,6 +558,7 @@ async def websocket_override_set(
 
     coordinator = _get_coordinator(hass)
     if coordinator:
+        coordinator.clear_override_seed(area_id)
         await coordinator.async_request_refresh()
 
     connection.send_result(msg["id"], {"success": True})
@@ -601,6 +602,7 @@ async def websocket_override_clear(
 
     coordinator = _get_coordinator(hass)
     if coordinator:
+        coordinator.clear_override_seed(area_id)
         await coordinator.async_request_refresh()
 
     connection.send_result(msg["id"], {"success": True})
