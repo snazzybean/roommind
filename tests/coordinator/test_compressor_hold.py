@@ -221,6 +221,33 @@ class TestHoldFollowsDeliberateTargetChange:
         assert [c[0][2]["hvac_mode"] for c in _calls(hass, "set_hvac_mode")] == ["off"]
 
 
+class TestHoldPastTheBand:
+    @pytest.mark.asyncio
+    async def test_room_over_the_cool_target_does_not_keep_boosting(self, hass, mock_config_entry):
+        """Auto room with a narrow band: the held boost must not carry the room over the cooling target (#436)."""
+        room = {**AC_ROOM, "climate_mode": "auto", "comfort_heat": 21.0, "comfort_cool": 22.5}
+        coordinator = await _setup(hass, mock_config_entry, room=room)
+        ac = {"state": _ac_state("off", 16.0)}
+
+        _wire_states(hass, ac, temp="18.0")
+        data = await coordinator._async_update_data()
+        assert data["rooms"][AREA]["mode"] == MODE_HEATING
+        boost = _calls(hass, "set_temperature")[-1][0][2]["temperature"]
+        ac["state"] = _ac_state("heat", boost)
+
+        hass.services.async_call.reset_mock()
+        _wire_states(hass, ac, temp="21.8")
+        _age_mode(coordinator)
+        await coordinator._async_update_data()
+        assert _calls(hass, "set_temperature") == []  # inside the band: boost held
+
+        _wire_states(hass, ac, temp="22.6")
+        data = await coordinator._async_update_data()
+        assert data["rooms"][AREA]["compressor_protection_reason"] == "min_run"
+        assert [c[0][2]["temperature"] for c in _calls(hass, "set_temperature")] == [21.0]
+        assert _calls(hass, "set_hvac_mode") == []
+
+
 class TestHoldSurvivesStateLag:
     @pytest.mark.asyncio
     async def test_device_still_reporting_off_right_after_start(self, hass, mock_config_entry):

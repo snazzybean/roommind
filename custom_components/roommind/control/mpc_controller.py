@@ -1822,15 +1822,38 @@ class MPCController:
         raises the heating target in steps and with hysteresis, so it counts as
         any other change.  The device stays in its mode; one that is off, or has
         no state, is left alone.
+
+        A room that has run past the far side of its band (heating unit, room at or
+        above the cooling target) is handled as before the hold: the target goes
+        out and the unit stops heating, so the boost cannot flip it to cooling.
+        This applies to units in plain ``heat`` or ``cool`` only.
         """
         state = self.hass.states.get(eid)
         hvac = state.state if state else None
-        previous = _active_targets.get(eid)
-        if state is None or hvac not in ("heat", "cool", "heat_cool", "auto") or previous is None:
+        if state is None or hvac not in ("heat", "cool", "heat_cool", "auto"):
             return
-        heat_moved = hvac != "cool" and _target_moved(previous[0], targets.heat)
-        cool_moved = hvac != "heat" and _target_moved(previous[1], targets.cool)
-        if not heat_moved and not cool_moved:
+        previous = _active_targets.get(eid)
+        heat_moved = previous is not None and hvac != "cool" and _target_moved(previous[0], targets.heat)
+        cool_moved = previous is not None and hvac != "heat" and _target_moved(previous[1], targets.cool)
+        # Past the far side of the band the boost would carry the room over it and
+        # flip the unit to the other mode right after the min-run. Only a room that
+        # can switch sides cares; heat-only rooms never cool. A heat_cool/auto unit
+        # picks its side itself and is left to the rule below.
+        heat_overshoot = (
+            hvac == "heat"
+            and self.climate_mode != CLIMATE_MODE_HEAT_ONLY
+            and current_temp is not None
+            and targets.cool is not None
+            and current_temp >= targets.cool
+        )
+        cool_overshoot = (
+            hvac == "cool"
+            and self.climate_mode != CLIMATE_MODE_COOL_ONLY
+            and current_temp is not None
+            and targets.heat is not None
+            and current_temp <= targets.heat
+        )
+        if not (heat_moved or cool_moved or heat_overshoot or cool_overshoot):
             return
         _active_targets[eid] = (targets.heat, targets.cool)
 
