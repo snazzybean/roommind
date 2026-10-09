@@ -532,7 +532,7 @@ async def test_ac_boost_cap_limits_setpoint_at_efficiency():
 
 @pytest.mark.asyncio
 async def test_ac_boost_cap_does_not_apply_at_comfort():
-    """At comfort/default the cap is unbounded; AC reaches boost as today."""
+    """At comfort/default the efficiency cap does not bind; the boost is only trimmed one step below max_temp (#396)."""
     hass = build_hass()
     ac_state = MagicMock()
     ac_state.state = "heat"

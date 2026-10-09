@@ -767,8 +767,8 @@ async def test_apply_orchestrated_forced_on_overrides_inactive():
 
     hass = build_hass()
     trv_state = MagicMock()
-    trv_state.state = "off"  # lagging or switched off by hand: still not switched on again
-    trv_state.attributes = {"hvac_modes": ["heat", "off"], "min_temp": 5.0}
+    trv_state.state = "heat"  # running on its last setpoint: without the hold it would be idled
+    trv_state.attributes = {"hvac_modes": ["heat", "off"], "min_temp": 5.0, "temperature": 28.0}
     hass.states.get = MagicMock(return_value=trv_state)
 
     room = make_room()
@@ -861,7 +861,7 @@ async def test_apply_orchestrated_forced_off_overrides_active():
 
 @pytest.mark.asyncio
 async def test_apply_orchestrated_forced_on_ac():
-    """Orchestrated forced_on AC reporting off is neither switched on nor given a bare target (#436)."""
+    """A running AC the plan parked inside its min-run is neither turned off nor given a bare target (#436)."""
     from custom_components.roommind.managers.heat_source_orchestrator import (
         DeviceCommand,
         HeatSourcePlan,
@@ -869,8 +869,8 @@ async def test_apply_orchestrated_forced_on_ac():
 
     hass = build_hass()
     ac_state = MagicMock()
-    ac_state.state = "off"
-    ac_state.attributes = {"hvac_modes": ["heat", "cool", "off"], "min_temp": 16.0}
+    ac_state.state = "heat"
+    ac_state.attributes = {"hvac_modes": ["heat", "cool", "off"], "min_temp": 16.0, "temperature": 28.0}
     hass.states.get = MagicMock(return_value=ac_state)
 
     room = make_room(thermostats=[], acs=["climate.ac"])
@@ -957,8 +957,8 @@ async def test_apply_orchestrated_forced_on_ac_sends_nothing_for_any_mode_set(hv
     _last_commands.clear()
     hass = build_hass()
     ac_state = MagicMock()
-    ac_state.state = "off"
-    ac_state.attributes = {"hvac_modes": hvac_modes, "min_temp": 16.0}
+    ac_state.state = hvac_modes[0]  # a running device in whatever mode it offers
+    ac_state.attributes = {"hvac_modes": hvac_modes, "min_temp": 16.0, "temperature": 28.0}
     hass.states.get = MagicMock(return_value=ac_state)
 
     ctrl = MPCController(
