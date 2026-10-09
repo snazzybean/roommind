@@ -258,3 +258,31 @@ async def test_fahrenheit_offset_is_applied_before_the_whole_degree_snap():
     await ctrl.async_apply(MODE_COOLING, TargetTemps(heat=None, cool=24.4), current_temp=26.0)
 
     assert _sent(hass) == [78.0]
+
+
+@pytest.mark.asyncio
+async def test_setback_ignores_offset_without_external_sensor():
+    """A stale offset must not shift the setback in Managed mode (no reference sensor)."""
+    _last_commands.clear()
+    hass = build_hass()
+    hass.states.get = MagicMock(return_value=_state(hvac="cool", step=0.5, temperature=24.0))
+    room = _room(offset=1.0, idle_action="setback", climate_mode="cool_only")
+    ctrl = _controller(hass, room, has_external_sensor=False)
+
+    await ctrl.async_apply("idle", TargetTemps(heat=None, cool=24.0))
+
+    # cool target 24 + setback 2, no offset
+    assert _sent(hass) == [26.0]
+
+
+@pytest.mark.asyncio
+async def test_setback_keeps_offset_with_external_sensor_via_controller():
+    _last_commands.clear()
+    hass = build_hass()
+    hass.states.get = MagicMock(return_value=_state(hvac="cool", step=0.5, temperature=24.0))
+    room = _room(offset=1.0, idle_action="setback", climate_mode="cool_only")
+    ctrl = _controller(hass, room)
+
+    await ctrl.async_apply("idle", TargetTemps(heat=None, cool=24.0))
+
+    assert _sent(hass) == [27.0]

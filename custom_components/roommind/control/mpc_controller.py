@@ -404,6 +404,7 @@ async def async_idle_device(
     area_id: str = "unknown",
     targets: TargetTemps | None = None,
     force_off: bool = False,
+    use_setpoint_offset: bool = True,
 ) -> None:
     """Idle a climate device per its configured idle_action.
 
@@ -412,6 +413,9 @@ async def async_idle_device(
     "setback"  -> keep current hvac_mode, shift target by offset
     "low"      -> lower setpoint to device min_temp, never send set_hvac_mode(off)
     Falls back to off when the configured action is not applicable.
+
+    ``use_setpoint_offset`` lets the setback keep a direct device's sensor
+    offset (#369); the controller turns it off in Managed mode.
 
     ``force_off`` marks an explicit user request to shut the room down
     (schedule_off_action / presence_away_action = "off").  It outranks the
@@ -465,8 +469,9 @@ async def async_idle_device(
             await async_turn_off_climate(hass, entity_id, area_id=area_id, fallback_setpoint=fallback_temp)
             return
 
-        # Compute setback temperature (direct devices keep their sensor offset (#369))
-        sensor_offset = get_setpoint_offset(devices, entity_id)
+        # Direct devices keep their sensor offset (#369), but only where the active
+        # path applies it too (Full Control).
+        sensor_offset = get_setpoint_offset(devices, entity_id) if use_setpoint_offset else 0.0
         if current_hvac == "heat" and targets.heat is not None:
             setback_temp = targets.heat + sensor_offset - DEFAULT_IDLE_SETBACK_OFFSET
         elif current_hvac == "cool" and targets.cool is not None:
@@ -1364,7 +1369,14 @@ class MPCController:
             ha_cool_target = celsius_to_ha_temp(self.hass, targets.cool) if targets.cool is not None else None
             for eid in thermostats:
                 if eid in _forced_off:
-                    await async_idle_device(self.hass, eid, self._devices, area_id=self._area_id, targets=targets)
+                    await async_idle_device(
+                        self.hass,
+                        eid,
+                        self._devices,
+                        area_id=self._area_id,
+                        targets=targets,
+                        use_setpoint_offset=self.has_external_sensor,
+                    )
                     continue
                 if can_heat and ha_heat_target is not None:
                     await self._call("set_hvac_mode", {"entity_id": eid, "hvac_mode": "heat"})
@@ -1377,7 +1389,14 @@ class MPCController:
                     await self._call("set_hvac_mode", {"entity_id": eid, "hvac_mode": "off"})
             for eid in acs:
                 if eid in _forced_off:
-                    await async_idle_device(self.hass, eid, self._devices, area_id=self._area_id, targets=targets)
+                    await async_idle_device(
+                        self.hass,
+                        eid,
+                        self._devices,
+                        area_id=self._area_id,
+                        targets=targets,
+                        use_setpoint_offset=self.has_external_sensor,
+                    )
                     continue
                 ac_state = self.hass.states.get(eid)
                 ac_modes = _effective_ac_modes(ac_state)
@@ -1511,7 +1530,12 @@ class MPCController:
                     continue
                 if cmd.entity_id in _forced_off and cmd.active:
                     await async_idle_device(
-                        self.hass, cmd.entity_id, self._devices, area_id=self._area_id, targets=targets
+                        self.hass,
+                        cmd.entity_id,
+                        self._devices,
+                        area_id=self._area_id,
+                        targets=targets,
+                        use_setpoint_offset=self.has_external_sensor,
                     )
                     continue
                 if cmd.active:
@@ -1579,6 +1603,7 @@ class MPCController:
                             self._devices,
                             area_id=self._area_id,
                             targets=targets,
+                            use_setpoint_offset=self.has_external_sensor,
                         )
                     else:
                         # ACs can be turned off without boiler cycling concerns
@@ -1600,7 +1625,14 @@ class MPCController:
                 trv_target = trv_heat_boost if self.has_external_sensor else effective_target
             for eid in thermostats:
                 if eid in _forced_off:
-                    await async_idle_device(self.hass, eid, self._devices, area_id=self._area_id, targets=targets)
+                    await async_idle_device(
+                        self.hass,
+                        eid,
+                        self._devices,
+                        area_id=self._area_id,
+                        targets=targets,
+                        use_setpoint_offset=self.has_external_sensor,
+                    )
                     continue
                 ha_t = self._heating_setpoint_ha(eid, trv_target, effective_target)
                 await self._call("set_hvac_mode", {"entity_id": eid, "hvac_mode": "heat"})
@@ -1622,7 +1654,14 @@ class MPCController:
                 ac_heat_target = effective_target
             for eid in acs:
                 if eid in _forced_off:
-                    await async_idle_device(self.hass, eid, self._devices, area_id=self._area_id, targets=targets)
+                    await async_idle_device(
+                        self.hass,
+                        eid,
+                        self._devices,
+                        area_id=self._area_id,
+                        targets=targets,
+                        use_setpoint_offset=self.has_external_sensor,
+                    )
                     continue
                 ha_t = self._heating_setpoint_ha(eid, ac_heat_target, effective_target)
                 ac_state = self.hass.states.get(eid)
@@ -1657,7 +1696,14 @@ class MPCController:
                 ac_cool_target = effective_target
             for eid in acs:
                 if eid in _forced_off:
-                    await async_idle_device(self.hass, eid, self._devices, area_id=self._area_id, targets=targets)
+                    await async_idle_device(
+                        self.hass,
+                        eid,
+                        self._devices,
+                        area_id=self._area_id,
+                        targets=targets,
+                        use_setpoint_offset=self.has_external_sensor,
+                    )
                     continue
                 direct_t = self._direct_setpoint_ha(eid, effective_target)
                 ha_t = direct_t if direct_t is not None else celsius_to_ha_temp(self.hass, ac_cool_target)
@@ -1670,7 +1716,14 @@ class MPCController:
                 )
             for eid in thermostats:
                 if eid in _forced_off:
-                    await async_idle_device(self.hass, eid, self._devices, area_id=self._area_id, targets=targets)
+                    await async_idle_device(
+                        self.hass,
+                        eid,
+                        self._devices,
+                        area_id=self._area_id,
+                        targets=targets,
+                        use_setpoint_offset=self.has_external_sensor,
+                    )
                     continue
                 await self._call("set_hvac_mode", {"entity_id": eid, "hvac_mode": "off"})
         elif mode == MODE_IDLE:
@@ -1692,6 +1745,7 @@ class MPCController:
                     self._devices,
                     area_id=self._area_id,
                     targets=targets,
+                    use_setpoint_offset=self.has_external_sensor,
                     force_off=force_off,
                 )
 
@@ -1764,6 +1818,7 @@ class MPCController:
                 self._devices,
                 area_id=self._area_id,
                 targets=self._idle_targets,
+                use_setpoint_offset=self.has_external_sensor,
                 force_off=self._force_off,
             )
             return

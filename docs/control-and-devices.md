@@ -63,11 +63,14 @@ Best for:
 
 #### Setpoint offset
 
-Some devices measure the room differently than your room sensor (an AC mounted near the floor that cools its own sensor, for example). With `Direct` and an external room sensor, a `Setpoint offset` (-5 to +5 °C, step 0.5, default 0) is added to the room target before it is sent, for heating and cooling alike.
+Some devices measure the room differently than your room sensor, for example an AC mounted near the floor that cools its own sensor. With `Direct` and an external room sensor you can set a `Setpoint offset` (-5 to +5 °C, step 0.5, default 0). It is added to the room target before the target is sent to the device, for heating and cooling alike.
 
-Example: while cooling, the device reads 2° colder than the room and switches off too early. Set the offset to `-2`: with a room target of 24°C the device receives 22°C and keeps running until the room is really at 24°C. A device that reads warmer than the room gets a positive offset.
+- Device reads **colder** than the room: use a **negative** value.
+- Device reads **warmer** than the room: use a **positive** value.
 
-The offset is applied before the device limits (`min_temp`/`max_temp`) and the step rounding. It is also kept for the `Setback` idle action. It has no effect in `Proportional` mode, and the field is only offered in rooms with an external room sensor (Managed rooms have no reference to correct against). On Fahrenheit systems the field is shown in °F and stored as a °C delta.
+Example: the room target is 24°C. While cooling, the device thinks the room is 2° colder than it is and switches off too early. Set the offset to `-2`: the device receives 22°C and keeps running until the room is really at 24°C.
+
+The offset is applied before the device limits (`min_temp`/`max_temp`) and the step rounding, and it is kept for the `Setback` idle action. It has no effect in `Proportional` mode. The field is only offered in rooms with an external room sensor, because Managed rooms have no reference to correct against; an old value stays ignored there. On Fahrenheit systems the field is shown in °F.
 
 #### Upper device limit
 

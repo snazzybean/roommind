@@ -197,7 +197,7 @@
   "devices.setpoint_mode_proportional": "Proportionnel (contrôle de vanne)",
   "devices.setpoint_mode_direct": "Direct (l'appareil régule)",
   "devices.setpoint_offset": "Décalage de consigne",
-  "devices.setpoint_offset_hint": "À utiliser si le capteur interne de l'appareil mesure autrement que votre capteur de pièce. Le décalage est ajouté à la cible de la pièce avant l'envoi à l'appareil, en chauffage comme en refroidissement. Exemple : en refroidissement, l'appareil croit la pièce 2° plus froide qu'elle ne l'est et s'arrête trop tôt – saisissez -2. 0 = aucun décalage.",
+  "devices.setpoint_offset_hint": "À utiliser si le capteur interne de l'appareil mesure autrement que votre capteur de pièce. Le décalage est ajouté à la cible de la pièce avant l'envoi à l'appareil (chauffage et refroidissement). L'appareil mesure plus froid que la pièce : valeur négative. Il mesure plus chaud : valeur positive. Exemple : vous voulez 24°, mais en refroidissement l'appareil croit la pièce 2° plus froide qu'elle ne l'est et s'arrête trop tôt. Saisissez -2 : l'appareil reçoit 22° et continue jusqu'à ce que la pièce soit vraiment à 24°. 0 = aucun décalage.",
   "devices.setpoint_mode_hint": "Direct envoie la cible réelle de la pièce à l'appareil — idéal pour les thermostats et les chauffages d'appoint qui se régulent eux-mêmes. Proportionnel envoie une consigne renforcée vers la température maximale de l'appareil — idéal pour les vannes de radiateur (TRV).",
   "devices.coil_dry": "Séchage de l'évaporateur",
   "devices.coil_dry_inherit": "Utiliser le réglage global",
