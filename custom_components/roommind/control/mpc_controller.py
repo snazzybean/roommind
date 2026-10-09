@@ -8,6 +8,7 @@ import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, cast
 
+from homeassistant.const import UnitOfTemperature
 from homeassistant.core import HomeAssistant
 
 from ..const import (
@@ -99,6 +100,26 @@ def _snap_to_step(value: float, step: float | None) -> float:
     if step is None or step <= 0:
         return value
     return round(round(value / step) * step, 2)
+
+
+def _resolve_step(hass: HomeAssistant, attributes: Any) -> float | None:
+    """Setpoint step of a device: its ``target_temp_step`` or a °F whole-degree fallback.
+
+    HA reports °F setpoints in whole degrees unless an entity overrides its
+    precision, and entities without ``target_temp_step`` give no other hint.
+    An unsnapped 75.9 then never equals the displayed 76 and is resent every
+    cycle (#416).  The fallback applies only while the device shows a whole
+    number, so entities that report tenths keep their resolution.
+    """
+    step = attributes.get("target_temp_step")
+    if step is not None:
+        return float(step)
+    if hass.config.units.temperature_unit != UnitOfTemperature.FAHRENHEIT:
+        return None
+    try:
+        return 1.0 if float(attributes.get("temperature")).is_integer() else None
+    except (TypeError, ValueError):
+        return None
 
 
 def clear_command_cache() -> None:
@@ -463,9 +484,9 @@ async def async_idle_device(
             ha_t = max(ha_t, float(min_t))
         if max_t is not None:
             ha_t = min(ha_t, float(max_t))
-        step = state.attributes.get("target_temp_step")
+        step = _resolve_step(hass, state.attributes)
         if step is not None:
-            ha_t = _snap_to_step(ha_t, float(step))
+            ha_t = _snap_to_step(ha_t, step)
             if min_t is not None:
                 ha_t = max(ha_t, float(min_t))
             if max_t is not None:
@@ -1854,9 +1875,8 @@ class MPCController:
 
         # Snap to device's target_temp_step (e.g. 1.0 for ACs that only accept integers)
         if service == "set_temperature" and state:
-            step = state.attributes.get("target_temp_step")
+            step = _resolve_step(self.hass, state.attributes)
             if step is not None:
-                step = float(step)
                 dev_min = state.attributes.get("min_temp")
                 dev_max = state.attributes.get("max_temp")
                 if "temperature" in data:

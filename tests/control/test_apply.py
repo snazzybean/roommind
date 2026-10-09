@@ -183,6 +183,130 @@ async def test_mpc_apply_cooling_fahrenheit():
     assert temp_arg == pytest.approx(expected_f)
 
 
+@pytest.mark.asyncio
+async def test_fahrenheit_setpoint_matching_whole_degree_device_is_not_resent():
+    """°F device without target_temp_step reports whole degrees; 75.9 vs 76 must not resend every cycle (#416)."""
+    from homeassistant.const import UnitOfTemperature
+
+    hass = build_hass()
+    hass.config.units.temperature_unit = UnitOfTemperature.FAHRENHEIT
+    ac_state = MagicMock()
+    ac_state.state = "cool"
+    ac_state.attributes = {"hvac_modes": ["cool", "off"], "min_temp": 61, "max_temp": 86, "temperature": 76}
+    hass.states.get = MagicMock(return_value=ac_state)
+
+    room = make_room(thermostats=[], acs=["climate.ac"])
+    ctrl = MPCController(
+        hass,
+        room,
+        model_manager=RoomModelManager(),
+        outdoor_temp=30.0,
+        settings={},
+        has_external_sensor=True,
+    )
+    # 24.4 °C is 75.92 °F, which the device shows as 76
+    await ctrl.async_apply("cooling", TargetTemps(heat=None, cool=24.4), power_fraction=0.0, current_temp=24.4)
+
+    assert hass.services.async_call.call_args_list == []
+
+
+@pytest.mark.asyncio
+async def test_fahrenheit_setpoint_is_snapped_to_whole_degrees_without_step():
+    """Without target_temp_step the °F setpoint goes out as a whole degree, matching what the entity can show (#416)."""
+    from homeassistant.const import UnitOfTemperature
+
+    hass = build_hass()
+    hass.config.units.temperature_unit = UnitOfTemperature.FAHRENHEIT
+    ac_state = MagicMock()
+    ac_state.state = "cool"
+    ac_state.attributes = {"hvac_modes": ["cool", "off"], "min_temp": 61, "max_temp": 86, "temperature": 70}
+    hass.states.get = MagicMock(return_value=ac_state)
+
+    room = make_room(thermostats=[], acs=["climate.ac"])
+    ctrl = MPCController(
+        hass,
+        room,
+        model_manager=RoomModelManager(),
+        outdoor_temp=30.0,
+        settings={},
+        has_external_sensor=True,
+    )
+    await ctrl.async_apply("cooling", TargetTemps(heat=None, cool=24.4), power_fraction=0.0, current_temp=24.4)
+
+    (call,) = hass.services.async_call.call_args_list
+    assert call[0][2]["temperature"] == 76.0
+
+
+@pytest.mark.asyncio
+async def test_fahrenheit_device_reporting_tenths_keeps_its_resolution():
+    """A °F entity that shows tenths is not forced to whole degrees."""
+    from homeassistant.const import UnitOfTemperature
+
+    hass = build_hass()
+    hass.config.units.temperature_unit = UnitOfTemperature.FAHRENHEIT
+    ac_state = MagicMock()
+    ac_state.state = "cool"
+    ac_state.attributes = {"hvac_modes": ["cool", "off"], "min_temp": 61, "max_temp": 86, "temperature": 70.5}
+    hass.states.get = MagicMock(return_value=ac_state)
+
+    ctrl = MPCController(
+        hass,
+        make_room(thermostats=[], acs=["climate.ac"]),
+        model_manager=RoomModelManager(),
+        outdoor_temp=30.0,
+        settings={},
+        has_external_sensor=True,
+    )
+    await ctrl.async_apply("cooling", TargetTemps(heat=None, cool=24.4), power_fraction=0.0, current_temp=24.4)
+
+    (call,) = hass.services.async_call.call_args_list
+    assert call[0][2]["temperature"] == pytest.approx(75.92)
+
+
+@pytest.mark.asyncio
+async def test_fahrenheit_device_without_setpoint_attribute_is_not_snapped():
+    from homeassistant.const import UnitOfTemperature
+
+    hass = build_hass()
+    hass.config.units.temperature_unit = UnitOfTemperature.FAHRENHEIT
+    ac_state = MagicMock()
+    ac_state.state = "cool"
+    ac_state.attributes = {"hvac_modes": ["cool", "off"], "min_temp": 61, "max_temp": 86, "temperature": None}
+    hass.states.get = MagicMock(return_value=ac_state)
+
+    ctrl = MPCController(
+        hass,
+        make_room(thermostats=[], acs=["climate.ac"]),
+        model_manager=RoomModelManager(),
+        outdoor_temp=30.0,
+        settings={},
+        has_external_sensor=True,
+    )
+    await ctrl.async_apply("cooling", TargetTemps(heat=None, cool=24.4), power_fraction=0.0, current_temp=24.4)
+
+    (call,) = hass.services.async_call.call_args_list
+    assert call[0][2]["temperature"] == pytest.approx(75.92)
+
+
+@pytest.mark.asyncio
+async def test_fahrenheit_setback_matching_whole_degree_device_is_not_resent():
+    """Same rounding trap in the idle_action="setback" path (#416)."""
+    from homeassistant.const import UnitOfTemperature
+
+    hass = build_hass()
+    hass.config.units.temperature_unit = UnitOfTemperature.FAHRENHEIT
+    ac_state = MagicMock()
+    ac_state.state = "cool"
+    # cool target 24.4 + 2.0 setback = 26.4 °C = 79.52 °F, shown as 80
+    ac_state.attributes = {"hvac_modes": ["cool", "off"], "min_temp": 61, "max_temp": 86, "temperature": 80}
+    hass.states.get = MagicMock(return_value=ac_state)
+    devices = [{"entity_id": "climate.ac", "type": "ac", "role": "auto", "idle_action": "setback"}]
+
+    await async_idle_device(hass, "climate.ac", devices, targets=TargetTemps(heat=None, cool=24.4))
+
+    assert hass.services.async_call.call_args_list == []
+
+
 # ---------------------------------------------------------------------------
 # Device min/max temperature clamping
 # ---------------------------------------------------------------------------

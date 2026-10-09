@@ -232,7 +232,7 @@ def test_boost_cap_ignores_unparsable_limits():
 
 @pytest.mark.asyncio
 async def test_boost_cap_fahrenheit_without_step_survives_whole_degree_snap():
-    """Without target_temp_step the cap is 0.5 °C (0.9 °F): even a 1 °F snap stays below max_temp."""
+    """Without target_temp_step the cap is 0.5 °C (0.9 °F) and the whole-degree °F snap (#416) stays below max_temp."""
     _last_commands.clear()
     hass = build_hass()
     hass.config.units.temperature_unit = UnitOfTemperature.FAHRENHEIT
@@ -251,5 +251,4 @@ async def test_boost_cap_fahrenheit_without_step_survives_whole_degree_snap():
 
     sent = _sent(hass, "climate.purifier")
     assert sent
-    assert round(sent[0]) < 86.0
-    assert sent[0] == pytest.approx(85.1)
+    assert sent[0] == 85.0

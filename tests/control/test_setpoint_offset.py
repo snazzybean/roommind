@@ -242,3 +242,19 @@ async def test_setback_keeps_offset_for_direct_device():
 
     # cool target 24 + offset 1 + setback 2 = 27
     assert _sent(hass) == [27.0]
+
+
+@pytest.mark.asyncio
+async def test_fahrenheit_offset_is_applied_before_the_whole_degree_snap():
+    """Offset -> convert -> clamp -> °F whole-degree snap (#369, #416): 24.4 + 1 K = 77.72 °F, sent as 78."""
+    _last_commands.clear()
+    hass = build_hass()
+    hass.config.units.temperature_unit = UnitOfTemperature.FAHRENHEIT
+    state = _state(min_temp=61.0, max_temp=86.0, temperature=70.0)
+    del state.attributes["target_temp_step"]
+    hass.states.get = MagicMock(return_value=state)
+    ctrl = _controller(hass, _room(offset=1.0))
+
+    await ctrl.async_apply(MODE_COOLING, TargetTemps(heat=None, cool=24.4), current_temp=26.0)
+
+    assert _sent(hass) == [78.0]
