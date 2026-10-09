@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -12,6 +13,7 @@ from .conftest import (
     SAMPLE_ROOM,
     _create_coordinator,
     _make_store_mock,
+    _presence_states_get,
     make_mock_states_get,
 )
 
@@ -125,6 +127,98 @@ class TestHoldKeepsSetpoint:
 
         assert modes == [MODE_HEATING, MODE_IDLE, MODE_HEATING, MODE_IDLE, MODE_HEATING]
         assert len(sent) == 1, f"setpoint pendulums: {sent}"
+
+
+class TestHoldFollowsDeliberateTargetChange:
+    """A target that changed on purpose reaches the unit during min-run, as before the hold (#436)."""
+
+    SCENARIOS = {
+        "eco_override": (
+            {
+                "room": {
+                    "override_heat": 17.0,
+                    "override_cool": 27.0,
+                    "override_until": time.time() + 3600,
+                    "override_type": "eco",
+                }
+            },
+            17.0,
+        ),
+        "vacation": ({"settings": {"vacation_temp": 15.0, "vacation_until": time.time() + 86400}}, 16.0),
+        "schedule_off_eco": ({"schedule_state": "off", "settings": {"schedule_off_action": "eco"}}, 17.0),
+        "presence_away_eco": (
+            {"settings": {"presence_enabled": True, "presence_persons": ["person.kevin"]}, "presence": True},
+            17.0,
+        ),
+    }
+
+    @staticmethod
+    async def _run_scenario(hass, mock_config_entry, scenario: dict, ticks: int = 1):
+        store = _make_store_mock({AREA: AC_ROOM}, settings={"compressor_groups": [GROUP]})
+        hass.data = {"roommind": {"store": store}}
+        hass.services.async_call = AsyncMock()
+        coordinator = _create_coordinator(hass, mock_config_entry)
+        ac = {"state": _ac_state("off", 16.0)}
+
+        _wire_states(hass, ac, temp="18.0")
+        data = await coordinator._async_update_data()
+        assert data["rooms"][AREA]["mode"] == MODE_HEATING
+        boost = _calls(hass, "set_temperature")[-1][0][2]["temperature"]
+        ac["state"] = _ac_state("heat", boost)
+
+        store.get_rooms.return_value = {AREA: {**AC_ROOM, **scenario.get("room", {})}}
+        store.get_settings.return_value.update(scenario.get("settings", {}))
+        if scenario.get("presence"):
+            hass.states.get = MagicMock(
+                side_effect=lambda eid: ac["state"] if eid == AC else _presence_states_get()(eid)
+            )
+        else:
+            base = make_mock_states_get(
+                temp=scenario.get("temp", "19.5"), schedule_state=scenario.get("schedule_state", "on")
+            )
+            hass.states.get = MagicMock(side_effect=lambda eid: ac["state"] if eid == AC else base(eid))
+
+        # The device keeps reporting the boost setpoint: only the remembered target can stop a second send
+        sent: list[list[float]] = []
+        for _ in range(ticks):
+            hass.services.async_call.reset_mock()
+            _age_mode(coordinator)
+            data = await coordinator._async_update_data()
+            sent.append([c[0][2]["temperature"] for c in _calls(hass, "set_temperature")])
+        return data["rooms"][AREA], sent, boost
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("name", list(SCENARIOS))
+    async def test_lowered_target_is_sent_once_and_the_device_stays_on(self, hass, mock_config_entry, name):
+        scenario, expected = self.SCENARIOS[name]
+        room, sent, boost = await self._run_scenario(hass, mock_config_entry, scenario, ticks=3)
+
+        assert room["compressor_protection_reason"] == "min_run"
+        assert sent == [[expected], [], []], f"boost was {boost}"
+        assert _calls(hass, "set_hvac_mode") == []
+
+    @pytest.mark.asyncio
+    async def test_target_reached_without_a_change_still_sends_nothing(self, hass, mock_config_entry):
+        room, sent, _ = await self._run_scenario(hass, mock_config_entry, {"temp": "22.5"}, ticks=2)
+
+        assert room["compressor_protection_reason"] == "min_run"
+        assert sent == [[], []]
+
+    @pytest.mark.asyncio
+    async def test_window_pause_still_switches_the_device_off(self, hass, mock_config_entry):
+        coordinator = await _setup(hass, mock_config_entry, room={**AC_ROOM, "window_sensors": ["binary_sensor.win"]})
+        ac = {"state": _ac_state("off", 16.0)}
+        base_closed = make_mock_states_get(temp="18.0", window_sensors={"binary_sensor.win": "off"})
+        hass.states.get = MagicMock(side_effect=lambda eid: ac["state"] if eid == AC else base_closed(eid))
+        await coordinator._async_update_data()
+        ac["state"] = _ac_state("heat", 29.5)
+        base_open = make_mock_states_get(temp="18.0", window_sensors={"binary_sensor.win": "on"})
+        hass.states.get = MagicMock(side_effect=lambda eid: ac["state"] if eid == AC else base_open(eid))
+        hass.services.async_call.reset_mock()
+        _age_mode(coordinator)
+        await coordinator._async_update_data()
+
+        assert [c[0][2]["hvac_mode"] for c in _calls(hass, "set_hvac_mode")] == ["off"]
 
 
 class TestHoldSurvivesStateLag:
