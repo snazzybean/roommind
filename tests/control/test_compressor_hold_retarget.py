@@ -130,11 +130,30 @@ async def test_cooling_unit_follows_the_cool_side_only():
 
 
 @pytest.mark.asyncio
-async def test_mold_prevention_raise_counts_as_a_change():
-    """The delta is stepped and has hysteresis, so it is passed on like any other change."""
+async def test_mold_prevention_drop_counts_as_a_change():
+    """The delta is stepped and has hysteresis, so its removal is passed on like any other lowered target."""
     hass, ctrl = _setup(_state())
-    (call,) = await _start_then_hold(hass, ctrl, TargetTemps(heat=22.0, cool=27.0), current_temp=22.5)
-    assert call["temperature"] == 22.0
+    raised = TargetTemps(heat=22.0, cool=27.0)
+    (call,) = await _start_then_hold(hass, ctrl, COMFORT, current_temp=22.5, started_with=raised)
+    assert call["temperature"] == 21.0
+
+
+@pytest.mark.asyncio
+async def test_raised_heating_target_is_not_sent_when_the_room_arrives():
+    """Target 21 -> 22 while the unit heats on a saturated boost: sending 22.0 at 22.2 would stop it at once (#436)."""
+    hass, ctrl = _setup(_state())
+    assert await _start_then_hold(hass, ctrl, TargetTemps(heat=22.0, cool=27.0), current_temp=22.2) == []
+
+
+@pytest.mark.asyncio
+async def test_raised_cooling_target_counts_for_a_cooling_unit_and_a_lowered_one_does_not():
+    hass, ctrl = _setup(_state("cool", temperature=16.0))
+    await _run_active(hass, ctrl, "cooling", COMFORT, current_temp=29.0)
+    hass.services.async_call.reset_mock()
+    await ctrl.async_apply(MODE_IDLE, TargetTemps(heat=21.0, cool=26.0), current_temp=25.0, compressor_forced_on=HELD)
+    assert _sent(hass) == []
+    await ctrl.async_apply(MODE_IDLE, TargetTemps(heat=21.0, cool=29.0), current_temp=25.0, compressor_forced_on=HELD)
+    assert [c["temperature"] for c in _sent(hass)] == [29.0]
 
 
 @pytest.mark.asyncio
@@ -328,10 +347,10 @@ async def test_delivered_single_setpoint_change_is_not_sent_twice():
 
 
 @pytest.mark.asyncio
-async def test_single_setpoint_below_the_new_heat_target_sends_it():
+async def test_single_setpoint_below_the_lowered_heat_target_sends_it():
     hass, ctrl = _setup(_state("heat_cool"))
-    (call,) = await _start_then_hold(hass, ctrl, TargetTemps(heat=23.0, cool=27.0), current_temp=20.0)
-    assert call["temperature"] == 23.0
+    (call,) = await _start_then_hold(hass, ctrl, TargetTemps(heat=19.0, cool=27.0), current_temp=18.5)
+    assert call["temperature"] == 19.0
 
 
 @pytest.mark.asyncio
@@ -517,3 +536,64 @@ async def test_seeding_never_replaces_a_remembered_reference():
     await _run_active(hass, ctrl, MODE_HEATING, COMFORT, current_temp=19.0)
     await ctrl.async_apply(MODE_HEATING, eco, power_fraction=1.0, current_temp=19.0)  # confirmed, not sent
     assert _active_targets[AC] == (21.0, 27.0)
+
+
+# --- reload in the middle of the hold (K5) and the once-per-hold overshoot send (K7) ----
+
+
+@pytest.mark.asyncio
+async def test_reload_in_the_middle_of_the_hold_seeds_the_reference_then_follows_eco():
+    hass, ctrl = _setup(_state("heat"))
+    eco = TargetTemps(heat=17.0, cool=27.0)
+    await ctrl.async_apply(MODE_IDLE, COMFORT, current_temp=22.0, compressor_forced_on=HELD)  # nothing remembered
+    assert _sent(hass) == []
+    await ctrl.async_apply(MODE_IDLE, eco, current_temp=19.5, compressor_forced_on=HELD)
+    assert [c["temperature"] for c in _sent(hass)] == [17.0]
+    hass.services.async_call.reset_mock()
+    await ctrl.async_apply(MODE_IDLE, eco, current_temp=19.5, compressor_forced_on=HELD)
+    assert _sent(hass) == []
+
+
+@pytest.mark.asyncio
+async def test_overshoot_is_sent_once_per_hold_for_a_device_that_does_not_take_it():
+    hass, ctrl = _setup(_state("heat"))  # the state never changes: the unit does not confirm
+    band = TargetTemps(heat=21.0, cool=22.5)
+    await _run_active(hass, ctrl, MODE_HEATING, band, current_temp=19.0)
+    counts = []
+    for _ in range(4):
+        hass.services.async_call.reset_mock()
+        await ctrl.async_apply(MODE_IDLE, band, current_temp=22.8, compressor_forced_on=HELD)
+        counts.append(len(_sent(hass)))
+    assert counts == [1, 0, 0, 0]
+
+
+@pytest.mark.asyncio
+async def test_overshoot_may_be_sent_again_in_the_next_hold():
+    hass, ctrl = _setup(_state("heat"))
+    band = TargetTemps(heat=21.0, cool=22.5)
+    await _run_active(hass, ctrl, MODE_HEATING, band, current_temp=19.0)
+    await ctrl.async_apply(MODE_IDLE, band, current_temp=22.8, compressor_forced_on=HELD)
+    # the unit is driven again, then held again
+    await _run_active(hass, ctrl, MODE_HEATING, band, current_temp=19.0)
+    hass.services.async_call.reset_mock()
+    await ctrl.async_apply(MODE_IDLE, band, current_temp=22.8, compressor_forced_on=HELD)
+    assert len(_sent(hass)) == 1
+
+
+@pytest.mark.asyncio
+async def test_failed_overshoot_send_is_retried_once_per_cycle():
+    hass, ctrl = _setup(_state("heat"))
+    band = TargetTemps(heat=21.0, cool=22.5)
+    await _run_active(hass, ctrl, MODE_HEATING, band, current_temp=19.0)
+    hass.services.async_call.side_effect = RuntimeError("device offline")
+    for _ in range(3):
+        hass.services.async_call.reset_mock()
+        await ctrl.async_apply(MODE_IDLE, band, current_temp=22.8, compressor_forced_on=HELD)
+        assert len(_sent(hass)) == 1
+    hass.services.async_call.side_effect = None
+    hass.services.async_call.reset_mock()
+    await ctrl.async_apply(MODE_IDLE, band, current_temp=22.8, compressor_forced_on=HELD)
+    assert len(_sent(hass)) == 1
+    hass.services.async_call.reset_mock()
+    await ctrl.async_apply(MODE_IDLE, band, current_temp=22.8, compressor_forced_on=HELD)
+    assert _sent(hass) == []

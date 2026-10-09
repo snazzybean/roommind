@@ -80,6 +80,9 @@ _setpoint_override_warned: set[str] = set()
 # Resolved (heat, cool) targets at each device's last active command, so the compressor
 # hold can tell a deliberate target change from a room that merely reached its target.
 _active_targets: dict[str, tuple[float | None, float | None]] = {}
+# Devices whose overshoot target the hold already passed on; one send per hold, so a device
+# that does not take the value is not commanded every cycle until the min-run ends.
+_overshoot_sent: set[str] = set()
 # hvac states in which a lower setpoint means more cooling, not less output
 # Outcome of MPCController._call
 _CALL_SENT = "sent"  # a command went to the device
@@ -169,6 +172,15 @@ def _target_moved(previous: float | None, current: float | None) -> bool:
     return abs(previous - current) > COMPRESSOR_HOLD_RETARGET_TOLERANCE
 
 
+def _demand_lowered(previous: float | None, current: float | None, *, heating: bool) -> bool:
+    """True when the target moved so that the unit has less to do (heat target down, cool target up)."""
+    if previous is None:
+        return False
+    if current is None:
+        return True
+    return (previous - current if heating else current - previous) > COMPRESSOR_HOLD_RETARGET_TOLERANCE
+
+
 def _snap_to_step(value: float, step: float | None) -> float:
     if step is None or step <= 0:
         return value
@@ -202,6 +214,7 @@ def clear_command_cache() -> None:
     _sent_at.clear()
     _setpoint_override_warned.clear()
     _active_targets.clear()
+    _overshoot_sent.clear()
 
 
 def _resolve_idle_setpoint(
@@ -1407,6 +1420,9 @@ class MPCController:
         # after backward-compat conversion so legacy callers get a TargetTemps.
         self._idle_targets = targets
         self._force_off = force_off
+        for eid in self.thermostats + self.acs:
+            if eid not in _forced_on:
+                _overshoot_sent.discard(eid)
 
         # Resolve effective target_temp for the current mode
         if mode == MODE_HEATING:
@@ -1805,10 +1821,12 @@ class MPCController:
 
     async def _call_and_record(
         self, eid: str, record: tuple[float | None, float | None], *args: Any, **kwargs: Any
-    ) -> None:
+    ) -> str:
         """``_call`` for the hold: a delivered change, or one the device already shows, is used up."""
-        if await self._call(*args, **kwargs) == _CALL_CONFIRMED:
+        result = await self._call(*args, **kwargs)
+        if result == _CALL_CONFIRMED:
             _active_targets[eid] = record
+        return result
 
     def _hold_setpoint_ha(self, eid: str, target: float) -> float:
         """HA-unit setpoint for a held device: direct target (+offset) or the plain room target."""
@@ -1842,8 +1860,19 @@ class MPCController:
         if state is None or hvac not in ("heat", "cool", "heat_cool", "auto"):
             return
         previous = _active_targets.get(eid)
-        heat_moved = previous is not None and hvac != "cool" and _target_moved(previous[0], targets.heat)
-        cool_moved = previous is not None and hvac != "heat" and _target_moved(previous[1], targets.cool)
+        if previous is None:
+            # Nothing remembered (reload in the middle of the hold): the current targets become the
+            # reference, so that a later reduction is passed on
+            _active_targets[eid] = (targets.heat, targets.cool)
+        # Only a change that lowers the demand matters: a raised heating target while the unit
+        # already heats at full tilt needs no command, and sending the bare target when the room
+        # arrives would stop the unit at once (#436).
+        heat_moved = (
+            previous is not None and hvac != "cool" and _demand_lowered(previous[0], targets.heat, heating=True)
+        )
+        cool_moved = (
+            previous is not None and hvac != "heat" and _demand_lowered(previous[1], targets.cool, heating=False)
+        )
         # Past the far side of the band the boost would carry the room over it and
         # flip the unit to the other mode right after the min-run. Only a room that
         # can switch sides cares; heat-only rooms never cool. A heat_cool/auto unit
@@ -1856,7 +1885,8 @@ class MPCController:
         if hvac == "cool" and self.climate_mode != CLIMATE_MODE_COOL_ONLY and targets.heat is not None:
             limit = targets.heat if targets.cool is None else min(targets.heat, targets.cool - HOLD_OVERSHOOT_MARGIN)
             cool_overshoot = current_temp is not None and current_temp <= limit
-        if not (heat_moved or cool_moved or heat_overshoot or cool_overshoot):
+        overshoot = (heat_overshoot or cool_overshoot) and eid not in _overshoot_sent
+        if not (heat_moved or cool_moved or overshoot):
             return
         # Recorded only once something was passed on, so a change that could not be
         # sent yet (single setpoint inside the band) is still pending next cycle.
@@ -1865,13 +1895,15 @@ class MPCController:
         if hvac in ("heat", "cool"):
             target = targets.heat if hvac == "heat" else targets.cool
             if target is not None:
-                await self._call_and_record(
+                result = await self._call_and_record(
                     eid,
                     new_record,
                     "set_temperature",
                     {"entity_id": eid, "temperature": self._hold_setpoint_ha(eid, target)},
                     temp_intent=hvac,
                 )
+                if overshoot and result != _CALL_FAILED:
+                    _overshoot_sent.add(eid)
             return
 
         # heat_cool/auto regulate from both sides onto what they get, so a single
