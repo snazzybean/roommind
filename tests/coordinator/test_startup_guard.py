@@ -249,3 +249,44 @@ def test_any_member_room_waiting_counts_pending_window(hass, mock_config_entry):
 
     coordinator._window_manager.resolve_raw("living", {"binary_sensor.window": "off"})
     assert coordinator._any_member_room_waiting(["climate.ac_living"], rooms) is False
+
+
+@pytest.mark.asyncio
+async def test_managed_mode_waits_for_unavailable_window_sensor(hass, mock_config_entry):
+    """Managed Mode: an unavailable window sensor after startup holds all device commands until it reports."""
+    managed_room = {
+        **MANAGED_ROOM,
+        "area_id": "living_room_abc12345",
+        "window_sensors": ["binary_sensor.living_room_window"],
+    }
+    store = _make_store_mock({"living_room_abc12345": managed_room})
+    hass.data = {"roommind": {"store": store}}
+
+    climate_attrs = {
+        "hvac_modes": ["off", "heat"],
+        "current_temperature": 19.0,
+        "temperature": 18.0,
+        "min_temp": 5,
+        "max_temp": 30,
+    }
+
+    def _set_window(state):
+        hass.states.get = MagicMock(
+            side_effect=make_mock_states_get(
+                temp=None,
+                window_sensors={"binary_sensor.living_room_window": state},
+                extra={"climate.living_room": ("heat", climate_attrs)},
+            )
+        )
+
+    hass.services.async_call = AsyncMock()
+    coordinator = _create_coordinator(hass, mock_config_entry)
+
+    _set_window("unavailable")
+    result = await coordinator._async_update_data()
+    assert result["rooms"]["living_room_abc12345"]["mode"] == MODE_IDLE
+    assert _climate_calls(hass) == []
+
+    _set_window("off")
+    await coordinator._async_update_data()
+    assert len(_climate_calls(hass, "climate.living_room")) >= 1
