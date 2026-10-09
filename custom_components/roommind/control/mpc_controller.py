@@ -80,7 +80,9 @@ _setpoint_override_warned: set[str] = set()
 # hold can tell a deliberate target change from a room that merely reached its target.
 _active_targets: dict[str, tuple[float | None, float | None]] = {}
 # hvac states in which a lower setpoint means more cooling, not less output
-_COOLING_SIDE_STATES = ("cool", "heat_cool", "dry")
+_COOLING_SIDE_STATES = ("cool", "dry")
+# states that cool only on devices which offer "cool" (a TRV in them is a heating device)
+_COOLING_CAPABLE_STATES = ("heat_cool", "auto")
 
 
 def _now() -> float:
@@ -355,10 +357,10 @@ async def async_turn_off_climate(
         # first (while the device is still active) ensures the valve closes even
         # if set_hvac_mode(off) is later ignored.  Skipped while the device is on
         # the cooling side: min_temp there is the hardest cooling demand, so the
-        # unit would ramp up for the seconds before "off" arrives (#388). "auto" counts
-        # when the device can cool; a TRV in "auto" (own schedule) keeps the frame.
+        # unit would ramp up for the seconds before "off" arrives (#388). "heat_cool" and
+        # "auto" count when the device can cool; a TRV in them (own schedule) keeps the frame.
         on_cooling_side = state is not None and (
-            state.state in _COOLING_SIDE_STATES or (state.state == "auto" and "cool" in hvac_modes)
+            state.state in _COOLING_SIDE_STATES or (state.state in _COOLING_CAPABLE_STATES and "cool" in hvac_modes)
         )
         if state and effective_setpoint is not None and not on_cooling_side:
             await _send_idle_setpoint(hass, entity_id, state, effective_setpoint, area_id=area_id)

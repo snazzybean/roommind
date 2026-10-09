@@ -4747,11 +4747,12 @@ async def test_turn_off_ac_in_auto_skips_min_temp_setpoint():
 
 
 @pytest.mark.asyncio
-async def test_turn_off_trv_in_auto_keeps_min_temp_setpoint():
-    """A TRV in auto (own schedule) cannot cool, so it keeps the defense-in-depth frame (#388)."""
+@pytest.mark.parametrize("hvac_state", ["auto", "heat_cool"])
+async def test_turn_off_trv_in_auto_keeps_min_temp_setpoint(hvac_state):
+    """A TRV in auto/heat_cool (own schedule) cannot cool, so it keeps the defense-in-depth frame (#388)."""
     hass = build_hass()
     state = MagicMock()
-    state.state = "auto"
+    state.state = hvac_state
     state.attributes = {"hvac_modes": ["off", "heat", "auto"], "min_temp": 5.0, "temperature": 21.0}
     hass.states.get = MagicMock(return_value=state)
 
