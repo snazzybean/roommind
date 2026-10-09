@@ -248,6 +248,26 @@ class TestHoldPastTheBand:
         assert _calls(hass, "set_hvac_mode") == []
 
 
+class TestHoldWithSinglePointTarget:
+    @pytest.mark.asyncio
+    async def test_target_reached_keeps_the_boost_in_an_auto_room(self, hass, mock_config_entry):
+        """One temperature per block gives heat == cool; #436 must still hold the boost at 'target reached'."""
+        room = {**AC_ROOM, "climate_mode": "auto", "comfort_heat": 21.0, "comfort_cool": 21.0}
+        coordinator = await _setup(hass, mock_config_entry, room=room)
+        ac = {"state": _ac_state("off", 16.0)}
+
+        _wire_states(hass, ac, temp="18.0")
+        await coordinator._async_update_data()
+        ac["state"] = _ac_state("heat", _calls(hass, "set_temperature")[-1][0][2]["temperature"])
+
+        hass.services.async_call.reset_mock()
+        _age_mode(coordinator)
+        _wire_states(hass, ac, temp="21.2")
+        data = await coordinator._async_update_data()
+        assert data["rooms"][AREA]["compressor_protection_reason"] == "min_run"
+        assert _calls(hass, "set_temperature") == []
+
+
 class TestHoldSurvivesStateLag:
     @pytest.mark.asyncio
     async def test_device_still_reporting_off_right_after_start(self, hass, mock_config_entry):

@@ -184,6 +184,10 @@ DEFAULT_COMPRESSOR_MIN_OFF_MINUTES = 5
 COMMAND_CACHE_REASSERT_SECONDS = 1800
 # A resolved target that moved by more than this since the last active command is a deliberate change (°C)
 COMPRESSOR_HOLD_RETARGET_TOLERANCE = 0.05
+# Compressor hold: a heating unit keeps its boost until the room is this far above the heating target
+# (and at least at the cooling target), the cooling side mirrored. With single-point targets (heat == cool)
+# the margin keeps "target reached" from ending the hold; 0.5 K is a typical sensor/setpoint resolution.
+HOLD_OVERSHOOT_MARGIN = 0.5
 COMPRESSOR_STATE_SETTLE_SECONDS = (
     120  # An "off" reading this soon after our own start is state lag, not a manual switch-off
 )

@@ -198,6 +198,41 @@ async def test_heating_hold_ends_once_the_room_reaches_the_cool_target():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("room_temp", "sends"), [(21.0, False), (21.2, False), (21.4, False), (21.5, True), (22.0, True)]
+)
+async def test_single_point_target_needs_the_margin_before_the_heating_hold_ends(room_temp, sends):
+    """heat == cool (schedule block with one temperature): reaching the target is not an overshoot (#436)."""
+    hass, ctrl = _setup(_state("heat"))
+    point = TargetTemps(heat=21.0, cool=21.0)
+    calls = await _start_then_hold(hass, ctrl, point, current_temp=room_temp, started_with=point)
+    assert [c["temperature"] for c in calls] == ([21.0] if sends else [])
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("room_temp", "sends"), [(21.0, False), (20.8, False), (20.6, False), (20.5, True), (20.0, True)]
+)
+async def test_single_point_target_needs_the_margin_before_the_cooling_hold_ends(room_temp, sends):
+    hass, ctrl = _setup(_state("cool", temperature=16.0))
+    point = TargetTemps(heat=21.0, cool=21.0)
+    await ctrl.async_apply("cooling", point, power_fraction=1.0, current_temp=24.0)
+    hass.services.async_call.reset_mock()
+    await ctrl.async_apply(MODE_IDLE, point, current_temp=room_temp, compressor_forced_on=HELD)
+    assert [c["temperature"] for c in _sent(hass)] == ([21.0] if sends else [])
+
+
+@pytest.mark.asyncio
+async def test_band_wider_than_the_margin_still_ends_at_the_cool_target():
+    hass, ctrl = _setup(_state("heat"))
+    band = TargetTemps(heat=21.0, cool=22.5)
+    assert await _start_then_hold(hass, ctrl, band, current_temp=22.4, started_with=band) == []
+    hass.services.async_call.reset_mock()
+    await ctrl.async_apply(MODE_IDLE, band, current_temp=22.5, compressor_forced_on=HELD)
+    assert [c["temperature"] for c in _sent(hass)] == [21.0]
+
+
+@pytest.mark.asyncio
 async def test_heating_hold_keeps_the_boost_inside_the_band():
     hass, ctrl = _setup(_state("heat"))
     band = TargetTemps(heat=21.0, cool=22.5)

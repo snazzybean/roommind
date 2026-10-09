@@ -28,6 +28,7 @@ from ..const import (
     DEFAULT_OUTDOOR_COOLING_MIN,
     DEFAULT_OUTDOOR_HEATING_MAX,
     HEATING_BOOST_TARGET,
+    HOLD_OVERSHOOT_MARGIN,
     MODE_COOLING,
     MODE_HEATING,
     MODE_IDLE,
@@ -1828,7 +1829,10 @@ class MPCController:
         A room that has run past the far side of its band (heating unit, room at or
         above the cooling target) is handled as before the hold: the target goes
         out and the unit stops heating, so the boost cannot flip it to cooling.
-        This applies to units in plain ``heat`` or ``cool`` only.
+        This applies to units in plain ``heat`` or ``cool`` only. "Past" means
+        beyond the far target and at least ``HOLD_OVERSHOOT_MARGIN`` from the near
+        one, so a single-point target (heat == cool) does not end the hold the
+        moment the room reaches it.
         """
         state = self.hass.states.get(eid)
         hvac = state.state if state else None
@@ -1841,20 +1845,14 @@ class MPCController:
         # flip the unit to the other mode right after the min-run. Only a room that
         # can switch sides cares; heat-only rooms never cool. A heat_cool/auto unit
         # picks its side itself and is left to the rule below.
-        heat_overshoot = (
-            hvac == "heat"
-            and self.climate_mode != CLIMATE_MODE_HEAT_ONLY
-            and current_temp is not None
-            and targets.cool is not None
-            and current_temp >= targets.cool
-        )
-        cool_overshoot = (
-            hvac == "cool"
-            and self.climate_mode != CLIMATE_MODE_COOL_ONLY
-            and current_temp is not None
-            and targets.heat is not None
-            and current_temp <= targets.heat
-        )
+        heat_overshoot = False
+        if hvac == "heat" and self.climate_mode != CLIMATE_MODE_HEAT_ONLY and targets.cool is not None:
+            limit = targets.cool if targets.heat is None else max(targets.cool, targets.heat + HOLD_OVERSHOOT_MARGIN)
+            heat_overshoot = current_temp is not None and current_temp >= limit
+        cool_overshoot = False
+        if hvac == "cool" and self.climate_mode != CLIMATE_MODE_COOL_ONLY and targets.heat is not None:
+            limit = targets.heat if targets.cool is None else min(targets.heat, targets.cool - HOLD_OVERSHOOT_MARGIN)
+            cool_overshoot = current_temp is not None and current_temp <= limit
         if not (heat_moved or cool_moved or heat_overshoot or cool_overshoot):
             return
         _active_targets[eid] = (targets.heat, targets.cool)
