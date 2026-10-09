@@ -228,3 +228,28 @@ def test_boost_cap_ignores_unparsable_limits():
     ctrl = _controller(hass, make_room(thermostats=["climate.trv"]))
 
     assert ctrl._boost_setpoint_ha("climate.trv", 30.0, 21.0) == 30.0
+
+
+@pytest.mark.asyncio
+async def test_boost_cap_fahrenheit_without_step_survives_whole_degree_snap():
+    """Without target_temp_step the cap is 0.5 °C (0.9 °F): even a 1 °F snap stays below max_temp."""
+    _last_commands.clear()
+    hass = build_hass()
+    hass.config.units.temperature_unit = UnitOfTemperature.FAHRENHEIT
+    state = _state(86.0, min_temp=34.0)
+    del state.attributes["target_temp_step"]
+    hass.states.get = MagicMock(return_value=state)
+    ctrl = _controller(hass, make_room(thermostats=["climate.purifier"]))
+
+    await ctrl.async_apply(
+        MODE_HEATING,
+        TargetTemps(heat=21.0, cool=None),
+        power_fraction=1.0,
+        current_temp=15.0,
+        heating_boost_target=30.0,
+    )
+
+    sent = _sent(hass, "climate.purifier")
+    assert sent
+    assert round(sent[0]) < 86.0
+    assert sent[0] == pytest.approx(85.1)

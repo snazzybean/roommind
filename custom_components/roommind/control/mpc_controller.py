@@ -1750,11 +1750,12 @@ class MPCController:
             return ha_t
         try:
             max_t = float(raw_max)
-            step = float(state.attributes.get("target_temp_step") or BOOST_CAP_FALLBACK_STEP)
+            step = float(state.attributes.get("target_temp_step") or 0.0)
         except (TypeError, ValueError):
             return ha_t
         if step <= 0:
-            step = BOOST_CAP_FALLBACK_STEP
+            # In HA units so that a whole-degree snap on °F devices (no step reported) still lands below max_temp
+            step = celsius_delta_to_ha(self.hass, BOOST_CAP_FALLBACK_STEP)
         ceiling = max(max_t - step, celsius_to_ha_temp(self.hass, effective_target))
         return min(ha_t, ceiling)
 
