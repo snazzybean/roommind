@@ -271,15 +271,18 @@ class TestRoomMindCoordinator:
 
         # Create mock entity registry entries for this room
         entity1 = MagicMock()
+        entity1.platform = "roommind"
         entity1.unique_id = f"roommind_{room_id}_target_temp"
         entity1.entity_id = f"sensor.{room_id}_target_temp"
 
         entity2 = MagicMock()
+        entity2.platform = "roommind"
         entity2.unique_id = f"roommind_{room_id}_mode"
         entity2.entity_id = f"sensor.{room_id}_mode"
 
         # Also include an entity for a different room (should NOT be removed)
         other_entity = MagicMock()
+        other_entity.platform = "roommind"
         other_entity.unique_id = "roommind_other_room_99999_target_temp"
         other_entity.entity_id = "sensor.other_room_target_temp"
 
