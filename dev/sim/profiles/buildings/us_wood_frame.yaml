@@ -1,0 +1,8 @@
+description: North American wood-frame house, light, moderately insulated.
+extends: altbau_unsaniert
+height_m: 2.4
+u_wall: 0.45
+u_window: 2.0
+ach_infiltration: 0.6
+mass_kj_per_m2: 110
+h_air_mass_w_per_m2: 20

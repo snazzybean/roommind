@@ -1,0 +1,5 @@
+description: Daikin split with state lag after commands (cloud/onecta-like).
+extends: generic_split_ac
+capabilities: {target_temp_step: 0.5, min_temp: 10, max_temp: 32}
+quirks:
+  - {type: state_lag, seconds: 45}

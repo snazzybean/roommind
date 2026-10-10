@@ -1,0 +1,4 @@
+description: Aqara/Xiaomi Zigbee T/H sensor, coarse reporting (0.5 K or hourly).
+extends: default_temperature
+resolution: 0.01
+report: {min_delta: 0.5, heartbeat_s: 3600, min_interval_s: 10}

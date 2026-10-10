@@ -1,0 +1,6 @@
+description: Modern well-insulated new build, medium-heavy, airtight.
+extends: altbau_unsaniert
+u_wall: 0.2
+u_window: 0.95
+ach_infiltration: 0.3
+mass_kj_per_m2: 165

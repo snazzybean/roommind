@@ -1,0 +1,25 @@
+description: Inverter split AC (heat/cool) with return-air sensor and own hysteresis.
+model: ac
+capabilities:
+  hvac_modes: ["off", "heat", "cool", "dry", "fan_only", "heat_cool"]
+  fan_modes: ["auto", "low", "medium", "high"]
+  min_temp: 16
+  max_temp: 30
+  target_temp_step: 1
+  unit: C
+params:
+  heat_capacity_w: 3500        # at 7 °C outdoor
+  heat_derate_per_k: 0.02      # capacity loss per K below 7 °C
+  cool_capacity_w: 3500
+  min_modulation: 0.3
+  kp: 0.6                      # modulation per K error
+  deadband_k: 0.5              # compressor off this far past the setpoint (on the device sensor)
+  restart_k: 0.5               # back on this far on the demand side
+  sensor_offset_heat_k: 1.5    # return-air sensor near the ceiling reads warmer while heating
+  sensor_offset_cool_k: 0.0
+  internal_min_run_s: 180
+  cop_heat: [3.2, 0.06]        # cop = a + b * T_out
+  eer: 3.5
+  shr: 0.75                    # sensible heat ratio while cooling (rest dehumidifies)
+  radiant_fraction: 0.0
+quirks: []

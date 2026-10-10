@@ -1,0 +1,6 @@
+description: Passive house with heat recovery; very slow, tiny losses.
+extends: altbau_unsaniert
+u_wall: 0.12
+u_window: 0.8
+ach_infiltration: 0.1
+mass_kj_per_m2: 165

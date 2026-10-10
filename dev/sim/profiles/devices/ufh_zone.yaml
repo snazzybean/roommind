@@ -1,0 +1,18 @@
+description: Underfloor heating zone (wall thermostat + actuator), screed slab with hours of lag.
+model: ufh
+capabilities:
+  hvac_modes: ["off", "heat"]
+  min_temp: 5
+  max_temp: 30
+  target_temp_step: 0.5
+  unit: C
+params:
+  slab_capacity_kj_k_per_m2: 90  # 5 cm screed
+  h_slab_air_w_per_m2k: 10.8
+  h_slab_ground_w_per_m2k: 0.5
+  flow_w_per_m2k: 8              # water -> slab at open actuator
+  supply_temp_c: 35
+  hysteresis_k: 0.3
+  sensor_bias_k: 0.0
+  radiant_fraction: 0.6
+quirks: []

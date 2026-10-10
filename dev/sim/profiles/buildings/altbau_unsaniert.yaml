@@ -1,0 +1,11 @@
+description: Unrenovated pre-1970 masonry, heavy, leaky. Time constant ~1 day.
+floor_area_m2: 20
+height_m: 2.6
+exterior_wall_m2: 12
+u_wall: 1.4            # W/m²K, conducts through the mass node
+u_window: 2.8          # W/m²K, applied to window area on the air node
+ach_infiltration: 0.8  # air changes per hour
+air_capacity_factor: 4 # air + furniture lumped into the air node (x pure air capacity)
+mass_kj_per_m2: 260    # ISO 13790 "heavy"
+h_air_mass_w_per_m2: 25
+coupling_w_k: {open_door: 60, closed_door: 15, wall: 8}

@@ -1,0 +1,7 @@
+description: Alternating night shifts, sleeps during the day.
+presence:
+  weekday: ["away@00:00", "home@07:00", "away@21:30"]
+  weekend: ["home@00:00"]
+rooms:
+  sleeping: "08:00-15:00"
+  living: default

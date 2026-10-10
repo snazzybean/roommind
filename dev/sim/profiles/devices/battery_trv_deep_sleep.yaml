@@ -1,0 +1,4 @@
+description: Battery Zigbee TRV that drops offline when held in "off" (#183).
+extends: generic_trv
+quirks:
+  - {type: availability, offline_when_off_after_s: 1800}

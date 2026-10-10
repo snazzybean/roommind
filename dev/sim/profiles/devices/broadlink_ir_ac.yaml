@@ -1,0 +1,4 @@
+description: IR-controlled AC (Broadlink/SmartIR); no real feedback, every frame beeps (#416, #298).
+extends: generic_split_ac
+quirks:
+  - {type: no_state_feedback, beep_per_command: true}

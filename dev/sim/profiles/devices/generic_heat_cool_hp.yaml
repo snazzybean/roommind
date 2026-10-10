@@ -1,0 +1,4 @@
+description: Air-to-air heat pump with a heat_cool range setpoint.
+extends: ecobee
+capabilities: {min_temp: 7, max_temp: 33, target_temp_step: 0.5, unit: C}
+quirks: []

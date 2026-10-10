@@ -1,0 +1,13 @@
+description: Gas boiler / central heat source exposed as climate; supplies radiators in its group.
+model: boiler
+capabilities:
+  hvac_modes: ["off", "heat"]
+  min_temp: 5
+  max_temp: 30
+  target_temp_step: 0.5
+  unit: C
+params:
+  supply_temp_c: 60
+  serves: all                    # or a list of device entity_ids
+  warmup_s: 120                  # supply ramps up after switching on
+quirks: []

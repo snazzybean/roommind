@@ -1,0 +1,4 @@
+description: Roller shutter, position only (100 = open).
+travel_s: 25
+tilt: false
+max_shading: 0.9

@@ -1,0 +1,2 @@
+description: PIR/mmWave occupancy sensor with off delay.
+off_delay_s: 120

@@ -1,0 +1,7 @@
+description: Works away on weekdays, home evenings and weekends.
+presence:
+  weekday: ["home@00:00", "away@07:30", "home@17:30"]
+  weekend: ["home@00:00"]
+rooms:                 # role -> time window; roles map to rooms via people[].rooms
+  sleeping: "22:30-06:45"
+  living: default

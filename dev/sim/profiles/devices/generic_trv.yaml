@@ -1,0 +1,18 @@
+description: Thermostatic radiator valve on a hot-water radiator with its own P controller.
+model: trv
+capabilities:
+  hvac_modes: ["off", "heat"]
+  min_temp: 5
+  max_temp: 30
+  target_temp_step: 0.5
+  unit: C
+params:
+  radiator_capacity_kj_k: 30   # water + steel; with h_radiator_w_k gives tau ~10 min
+  h_radiator_w_k: 40           # radiator -> room at full surface temperature difference
+  flow_w_k: 200                # water heat flow at fully open valve
+  supply_temp_c: 55            # used when no boiler master serves this device
+  radiant_fraction: 0.3        # share of output going to the mass node
+  sensor_bias: 0.15            # TRV head sees air + bias * (radiator - air)
+  p_band_k: 1.0                # valve fully open this far below setpoint
+  report_interval_s: 60
+quirks: []

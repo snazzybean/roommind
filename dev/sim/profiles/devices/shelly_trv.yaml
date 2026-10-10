@@ -1,0 +1,5 @@
+description: Shelly TRV; no "off" mode, set_hvac_mode off fails (#199).
+extends: generic_trv
+capabilities: {hvac_modes: ["heat"], min_temp: 4, max_temp: 31}
+quirks:
+  - {type: off_unsupported}

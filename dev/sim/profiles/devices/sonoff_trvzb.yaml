@@ -1,0 +1,6 @@
+description: SONOFF TRVZB via Zigbee2MQTT; rejects 0 as a setpoint (#162).
+extends: generic_trv
+capabilities: {min_temp: 4, max_temp: 35}
+quirks:
+  - {type: reject_values, values: [0], message: "Invalid value 0 for timer_mode_target_temp"}
+  - {type: availability, unavailable_after_start_s: 40}

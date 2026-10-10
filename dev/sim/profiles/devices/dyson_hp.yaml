@@ -1,0 +1,16 @@
+description: Dyson Pure Hot+Cool (hass-dyson); validates 274..310 K and rejects its own max_temp 37 (#396).
+model: heater
+capabilities:
+  hvac_modes: ["off", "heat", "cool"]
+  min_temp: 1
+  max_temp: 37
+  target_temp_step: 1
+  unit: C
+params:
+  power_w: 2000
+  hysteresis_k: 0.5
+  sensor_bias_k: 0.3
+  capacity_kj_k: 5
+  radiant_fraction: 0.1
+quirks:
+  - {type: reject_values, kelvin_range: [274, 310], message: "temperature out of range (274-310 K)"}

@@ -1,0 +1,6 @@
+description: Typical partly renovated existing building (new windows, some insulation).
+extends: altbau_unsaniert
+u_wall: 0.6
+u_window: 1.3
+ach_infiltration: 0.5
+mass_kj_per_m2: 200

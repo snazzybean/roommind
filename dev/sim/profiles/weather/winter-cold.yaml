@@ -1,0 +1,4 @@
+description: Hard frost period.
+extends: temperate
+monthly_mean_c: [-8, -7, -2, 6, 12, 16, 18, 18, 13, 7, 0, -6]
+mean_cloud: [40, 45, 55, 55, 55, 55, 50, 50, 55, 65, 70, 50]

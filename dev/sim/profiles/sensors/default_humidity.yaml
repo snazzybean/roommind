@@ -1,0 +1,5 @@
+description: Generic humidity sensor.
+noise: 0.5
+resolution: 1
+offset: 0.0
+report: {min_delta: 1, heartbeat_s: 600, min_interval_s: 10}

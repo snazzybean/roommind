@@ -1,0 +1,5 @@
+description: Homematic IP TRV; 1 % radio duty cycle limits commands (#317).
+extends: generic_trv
+capabilities: {min_temp: 5, max_temp: 30.5}
+quirks:
+  - {type: duty_cycle, budget_per_hour: 30, reject_message: "DUTY_CYCLE exhausted"}

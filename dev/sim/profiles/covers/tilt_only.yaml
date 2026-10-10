@@ -1,0 +1,5 @@
+description: Tilt-only blind (#191), no position.
+tilt: true
+tilt_only: true
+tilt_travel_s: 3
+max_shading: 0.7

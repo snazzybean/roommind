@@ -1,0 +1,5 @@
+description: Midea via midea_ac_lan; set_temperature right after set_hvac_mode turns the unit off (#337).
+extends: generic_split_ac
+capabilities: {target_temp_step: 0.5}
+quirks:
+  - {type: command_side_effect, after: set_hvac_mode, then: set_temperature, within_s: 2, effect: turn_off}

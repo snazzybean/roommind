@@ -1,0 +1,8 @@
+description: Works from home in an office room on weekdays.
+presence:
+  weekday: ["home@00:00"]
+  weekend: ["home@00:00", "away@10:00", "home@16:00"]
+rooms:
+  sleeping: "23:00-07:00"
+  office: "08:30-17:00"
+  living: default

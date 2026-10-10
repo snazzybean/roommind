@@ -1,0 +1,15 @@
+description: Electric panel heater with its own on/off thermostat.
+model: heater
+capabilities:
+  hvac_modes: ["off", "heat"]
+  min_temp: 5
+  max_temp: 30
+  target_temp_step: 0.5
+  unit: C
+params:
+  power_w: 1500
+  hysteresis_k: 0.4
+  sensor_bias_k: 0.5
+  capacity_kj_k: 15
+  radiant_fraction: 0.3
+quirks: []
