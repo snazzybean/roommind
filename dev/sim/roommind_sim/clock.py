@@ -196,6 +196,13 @@ class VDate(_dt.date):
         return cls.fromtimestamp(_clock().wall())
 
 
+# Code generators (mashumaro, pickle) resolve types by module + name; after the patch
+# datetime.datetime *is* VDatetime, so pose as the original.
+for _cls, _name in ((VDatetime, "datetime"), (VDate, "date")):
+    _cls.__name__ = _cls.__qualname__ = _name
+    _cls.__module__ = "datetime"
+
+
 def install(
     epoch_start: float,
     mode: str = TURBO,

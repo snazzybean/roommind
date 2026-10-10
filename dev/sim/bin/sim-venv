@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# Manage Home Assistant venvs for the simulation: add <version> | list | prune <version>
+set -euo pipefail
+ROOMMIND_SIM_HOME="${ROOMMIND_SIM_HOME:-$HOME/.roommind-sim}"
+VENVS="$ROOMMIND_SIM_HOME/venvs"
+mkdir -p "$VENVS"
+# Requirements of the integrations the sim loads that HA would otherwise pip-install at
+# startup (or fail on, like analytics importing hassio).
+EXTRA=(aiohasupervisor pytest ruff)
+
+case "${1:-}" in
+  add)
+    version="${2:?usage: sim venv add <version>}"
+    command -v uv >/dev/null || { echo "uv is required (https://docs.astral.sh/uv/)" >&2; exit 1; }
+    pyreq="$(curl -fsSL "https://pypi.org/pypi/homeassistant/$version/json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["info"]["requires_python"])')"
+    pyver="$(python3 -c "import re,sys; m=re.search(r'(\d+\.\d+)', sys.argv[1]); print(m.group(1))" "$pyreq")"
+    echo "HA $version needs Python $pyreq -> using $pyver"
+    uv python install "$pyver"
+    uv venv --python "$pyver" "$VENVS/ha-$version"
+    uv pip install --python "$VENVS/ha-$version/bin/python" "homeassistant==$version" "${EXTRA[@]}"
+    echo "ok: $VENVS/ha-$version"
+    ;;
+  list)
+    for d in "$VENVS"/ha-*; do [[ -d "$d" ]] && echo "$(basename "$d" | sed 's/^ha-//')  $(du -sh "$d" | cut -f1)"; done
+    ;;
+  prune)
+    version="${2:?usage: sim venv prune <version>}"
+    rm -rf "${VENVS:?}/ha-$version"
+    echo "removed ha-$version"
+    ;;
+  *)
+    echo "usage: sim venv add <version> | list | prune <version>" >&2
+    exit 2
+    ;;
+esac

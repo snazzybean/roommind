@@ -64,8 +64,7 @@ def main(argv: list[str] | None = None) -> int:
         "1",
     ]
     exit_code = ha_main.main()
-    state_file.parent.mkdir(parents=True, exist_ok=True)
-    state_file.write_text(json.dumps(clk.state()))
+    _write_raw(state_file, json.dumps(clk.state()))
     if exit_code == RESTART_EXIT_CODE:
         os.execv(
             sys.executable,
@@ -96,6 +95,16 @@ def apply_start_args(
         if then == "stop" and target is not None:
             clk.on_target = None
             clk.then_action = "stop-now"
+
+
+def _write_raw(path: Path, text: str) -> None:
+    # HA's blocking-I/O detector still wraps open()/Path.write_text after shutdown.
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644)
+    try:
+        os.write(fd, text.encode())
+    finally:
+        os.close(fd)
 
 
 def _on_target(clk: clockmod.Clock) -> None:

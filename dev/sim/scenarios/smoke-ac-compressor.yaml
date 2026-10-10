@@ -1,0 +1,54 @@
+name: smoke-ac-compressor
+description: >
+  One room, one split AC in a single-member compressor group (min run 15 min).
+  Smoke test for the whole chain and the #436 canary: every compressor run must last
+  at least 15 simulated minutes.
+refs: [436]
+tags: [smoke]
+start: 2026-01-12T00:00
+duration: 2d
+location: {latitude: 52.5, longitude: 13.4, time_zone: Europe/Berlin}
+weather: {profile: temperate}
+house:
+  building: bestand_teilsaniert
+  outdoor:
+    sensors:
+      temperature: sensor.aussen_temp
+  rooms:
+    wohnzimmer:
+      name: Wohnzimmer
+      floor_area_m2: 25
+      initial: {temperature: 19.0}
+      windows:
+        - {orientation: S, area_m2: 3, sensor: binary_sensor.wohnzimmer_fenster}
+      devices:
+        - {entity_id: climate.wohnzimmer_ac, profile: generic_split_ac}
+      sensors:
+        temperature: {entity_id: sensor.wohnzimmer_temp}
+        humidity: {entity_id: sensor.wohnzimmer_feuchte}
+helpers:
+  schedule:
+    wohnzimmer_plan: {daily: ["06:00-22:00"]}
+roommind:
+  settings:
+    outdoor_temp_sensor: sensor.aussen_temp
+    weather_entity: weather.simhome
+    compressor_groups:
+      - {id: g1, name: Aussengeraet, members: [climate.wohnzimmer_ac], min_run_minutes: 15, min_off_minutes: 5}
+  rooms:
+    wohnzimmer:
+      devices:
+        - {entity_id: climate.wohnzimmer_ac, type: ac}
+      temperature_sensor: sensor.wohnzimmer_temp
+      humidity_sensor: sensor.wohnzimmer_feuchte
+      window_sensors: [binary_sensor.wohnzimmer_fenster]
+      climate_mode: heat_only
+      schedules: [{entity_id: schedule.wohnzimmer_plan}]
+      comfort_temp: 21.0
+      eco_temp: 18.0
+timeline:
+  - {at: "2026-01-12T18:00", do: window.open, entity_id: binary_sensor.wohnzimmer_fenster, for: 10m}
+  - {at: "+1d", do: mark, label: day two}
+expect:
+  - {invariant: min_run_respected}
+  - {invariant: target_never_empty}

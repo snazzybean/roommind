@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Entry point for the RoomMind simulation environment. See dev/sim/README.md.
+set -euo pipefail
+SIM_ROOT="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
+export ROOMMIND_SIM_HOME="${ROOMMIND_SIM_HOME:-$HOME/.roommind-sim}"
+HA_VERSION="${ROOMMIND_SIM_HA:-2026.10.0}"
+PY="$ROOMMIND_SIM_HOME/venvs/ha-$HA_VERSION/bin/python"
+
+if [[ "${1:-}" == "venv" ]]; then
+  shift
+  exec "$SIM_ROOT/bin/sim-venv" "$@"
+fi
+if [[ ! -x "$PY" ]]; then
+  echo "Home Assistant $HA_VERSION venv missing, creating it (needs uv) ..." >&2
+  "$SIM_ROOT/bin/sim-venv" add "$HA_VERSION" >&2
+fi
+export PYTHONPATH="$SIM_ROOT${PYTHONPATH:+:$PYTHONPATH}"
+exec "$PY" -m roommind_sim.cli "$@"

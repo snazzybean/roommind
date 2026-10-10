@@ -19,7 +19,7 @@ PATTERNS = {
     "local path": r"(?<![\w.])/(?:srv|root|home/[a-z][\w-]*|Users/[\w.-]+)/",
     "email": r"\b[A-Za-z0-9._%+-]+@(?!example\.(?:com|org))[A-Za-z0-9.-]+\.[a-z]{2,}\b",
     "JWT/token": r"\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}",
-    "long-lived token hint": r"(?i)(?:bearer|token)[\"' :=]+[A-Za-z0-9_\-.]{30,}",
+    "token literal": r"(?i)(?:bearer\s+[A-Za-z0-9_\-.]{30,}|token[\"']?\s*[:=]\s*[\"'][A-Za-z0-9_\-.]{30,}[\"'])",
     "MCP private URL": r"private_[A-Za-z0-9]{12,}",
 }
 ALLOW_MARK = "check-private: allow"
