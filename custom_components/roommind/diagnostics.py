@@ -24,7 +24,10 @@ _ROOM_ENTITY_KEYS = (
     "schedule_selector_entity",
     "cover_schedule_selector_entity",
 )
-_ROOM_ENTITY_LIST_KEYS = ("window_sensors", "occupancy_sensors", "covers", "presence_persons")
+# Exports end up in public issues: no person entities, no timing of occupancy.
+_ROOM_ENTITY_LIST_KEYS = ("window_sensors", "occupancy_sensors", "covers")
+_PRIVATE_DEVICE_CLASSES = ("occupancy", "presence", "motion")
+HISTORY_48H_FIELDS = [f for f in DETAIL_FIELDS if f != "occupancy"]
 
 
 def _build_model_info(estimator: Any) -> dict[str, Any]:
@@ -127,12 +130,15 @@ def _build_entity_states(hass: HomeAssistant, config: dict) -> dict[str, dict[st
         if state is None:
             result[eid] = {"state": "not_found"}
             continue
-        result[eid] = {
+        device_class = state.attributes.get("device_class")
+        entry = {
             "state": state.state,
             "unit": state.attributes.get("unit_of_measurement"),
-            "device_class": state.attributes.get("device_class"),
-            "age_s": round(now - state.last_changed.timestamp()),
+            "device_class": device_class,
         }
+        if device_class not in _PRIVATE_DEVICE_CLASSES:
+            entry["age_s"] = round(now - state.last_changed.timestamp())
+        result[eid] = entry
     return result
 
 
@@ -376,7 +382,7 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, config_entry: 
             try:
                 rows = await hass.async_add_executor_job(coordinator._history_store.read_detail, area_id, 48 * 3600)
                 history_48h[area_id] = [
-                    {field: row.get(field, "") for field in DETAIL_FIELDS} for row in rows[-HISTORY_48H_MAX_ROWS:]
+                    {field: row.get(field, "") for field in HISTORY_48H_FIELDS} for row in rows[-HISTORY_48H_MAX_ROWS:]
                 ]
             except Exception:  # noqa: BLE001
                 history_48h[area_id] = []

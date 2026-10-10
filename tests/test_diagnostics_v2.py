@@ -83,13 +83,15 @@ def test_entity_states_cover_every_referenced_entity(hass):
         "sensor.t": _state("21.3", unit_of_measurement="°C", device_class="temperature"),
         "binary_sensor.win": _state("off", device_class="window"),
         "schedule.plan": _state("on"),
+        "binary_sensor.motion": _state("on", device_class="occupancy"),
     }
     hass.states.get = MagicMock(side_effect=states.get)
     room = {
         "temperature_sensor": "sensor.t",
         "humidity_sensor": "",
         "window_sensors": ["binary_sensor.win"],
-        "occupancy_sensors": ["binary_sensor.gone"],
+        "occupancy_sensors": ["binary_sensor.gone", "binary_sensor.motion"],
+        "presence_persons": ["person.someone"],
         "schedules": [{"entity_id": "schedule.plan"}],
     }
     with patch("custom_components.roommind.diagnostics.time.time", return_value=1060.0):
@@ -99,6 +101,8 @@ def test_entity_states_cover_every_referenced_entity(hass):
     assert result["binary_sensor.gone"] == {"state": "not_found"}
     assert "schedule.plan" in result
     assert "" not in result
+    assert "age_s" not in result["binary_sensor.motion"]  # no occupancy timing in public exports
+    assert "person.someone" not in result
 
 
 @pytest.mark.asyncio
@@ -124,7 +128,10 @@ async def test_room_has_full_model_schedule_blocks_and_entities(hass, mock_confi
 
 @pytest.mark.asyncio
 async def test_history_48h_has_all_columns_and_is_capped(hass, mock_config_entry):
-    rows = [{"timestamp": str(i), "room_temp": "20.0", "mode": "idle", "device_setpoint": "21"} for i in range(1500)]
+    rows = [
+        {"timestamp": str(i), "room_temp": "20.0", "mode": "idle", "device_setpoint": "21", "occupancy": "True"}
+        for i in range(1500)
+    ]
     history = MagicMock()
     history.read_detail = MagicMock(return_value=rows)
     coordinator = _make_coordinator(history_store=history)
@@ -134,6 +141,7 @@ async def test_history_48h_has_all_columns_and_is_capped(hass, mock_config_entry
     assert len(hist) == 1000
     assert hist[-1]["timestamp"] == "1499"
     assert hist[0]["device_setpoint"] == "21"
+    assert "occupancy" not in hist[0]
     assert len(result["recent_history"]["room_a"]) == 240  # v1 field unchanged
 
 
