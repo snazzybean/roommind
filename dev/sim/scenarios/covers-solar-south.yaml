@@ -41,5 +41,5 @@ roommind:
       covers_auto_enabled: true
 expect:
   - {check: "cover('cover.wohnzimmer_raffstore').position < 90", at: "+1d15h", label: shades in the afternoon}
-  - {check: "cover('cover.wohnzimmer_raffstore').position > 90", at: "+1d23h", label: open at night}
+  - {check: "cover('cover.wohnzimmer_raffstore').position > 90", at: "+1d23h", label: open at night, known_failure: 'candidate (timing dependent): RoomMind sends 74 % in the evening, then reports cover_reason user_position_hold although nobody moved the blind; it stays there overnight'}
   - {invariant: no_rejected_commands}

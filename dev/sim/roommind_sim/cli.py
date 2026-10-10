@@ -285,8 +285,13 @@ def cmd_suite(args: argparse.Namespace) -> int:
     from .scenario.loader import SCENARIO_DIR
 
     names = []
+    invalid = []
     for path in sorted(SCENARIO_DIR.glob("*.yaml")):
-        data = yaml.safe_load(path.read_text()) or {}
+        try:
+            data = yaml.safe_load(path.read_text()) or {}
+        except yaml.YAMLError as err:
+            invalid.append((path.stem, str(err).splitlines()[0]))
+            continue
         tags = set(data.get("tags") or [])
         if args.tag and not set(args.tag) & tags:
             continue
@@ -308,7 +313,9 @@ def cmd_suite(args: argparse.Namespace) -> int:
         return name, res.returncode, run_dir, time.time() - t0
 
     print(f"suite: {len(names)} scenario(s), {args.jobs} parallel")
-    results = []
+    results = [(name, "INVALID", f"YAML: {err}", 0.0) for name, err in invalid]
+    for name, status, detail, _secs in results:
+        print(f"  {status:7} {name:40}      -  {detail}", flush=True)
     with ThreadPoolExecutor(max_workers=args.jobs) as pool:
         for name, code, run_dir, secs in pool.map(one, names):
             summary_file = inst_mod.sim_home() / "runs" / run_dir / "summary.json"
