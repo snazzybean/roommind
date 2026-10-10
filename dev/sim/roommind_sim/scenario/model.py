@@ -80,6 +80,7 @@ class PersonSpec:
     name: str
     tracker: str
     plan: dict[str, Any] = field(default_factory=dict)
+    rooms: dict[str, str] = field(default_factory=dict)  # role (sleeping, living, ...) -> area_id
 
 
 @dataclass

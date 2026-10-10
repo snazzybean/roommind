@@ -300,7 +300,8 @@ def _person(i: int, pdata: dict[str, Any]) -> PersonSpec:
     plan = deep_merge(plan, pdata.get("plan") or {})
     tracker = pdata.get("tracker", f"device_tracker.{pid}_phone")
     _check_entity_id(tracker, "device_tracker", where)
-    return PersonSpec(id=pid, name=pdata.get("name", pid.title()), tracker=tracker, plan=plan)
+    rooms = {str(k): str(v) for k, v in (pdata.get("rooms") or {}).items()}
+    return PersonSpec(id=pid, name=pdata.get("name", pid.title()), tracker=tracker, plan=plan, rooms=rooms)
 
 
 def _timeline_item(i: int, item: dict[str, Any], start: float, tz: str) -> TimelineItem:
@@ -389,6 +390,10 @@ def _validate(scn: Scenario) -> None:
             raise ScenarioError(
                 f"time {item.at:.0f}s lies outside the scenario (0..{scn.duration:.0f}s)", f"timeline[{item.index}]"
             )
+    for person in scn.people:
+        for role, area in person.rooms.items():
+            if area not in scn.rooms:
+                raise ScenarioError(f"role {role!r} maps to unknown room {area!r}", f"people.{person.id}.rooms")
     for room in scn.rooms.values():
         for other in room.neighbors:
             if other not in scn.rooms:

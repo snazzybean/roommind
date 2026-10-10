@@ -14,6 +14,7 @@ import sys
 import threading
 import time as _time
 import traceback
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 _real_monotonic = _time.monotonic
@@ -52,10 +53,13 @@ class Clock:
     _r: float = field(default_factory=_real_monotonic)
     target: float | None = None
     then_mode: tuple[str, float] = (SCALED, 1.0)
+    then_action: str | None = None  # opaque marker for the on_target hook (e.g. "stop")
     pending_exec: int = 0
     jumps: int = 0
     _stall_since: float | None = None
     _stall_warned: bool = False
+    # Called (inside the selector, keep it tiny) when a run_until target is reached.
+    on_target: Callable[[], None] | None = None
 
     def mono(self) -> float:
         if self.mode == SCALED:
@@ -94,6 +98,7 @@ class Clock:
             "factor": self.factor,
             "target": self.target,
             "then_mode": list(self.then_mode),
+            "then_action": self.then_action,
         }
 
     def restore(self, state: dict) -> None:
@@ -105,6 +110,7 @@ class Clock:
         self.target = state.get("target")
         then = state.get("then_mode") or [SCALED, 1.0]
         self.then_mode = (then[0], float(then[1]))
+        self.then_action = state.get("then_action")
 
     # --- selector integration -------------------------------------------------
 
@@ -128,6 +134,8 @@ class Clock:
             self.advance(self.target - self.mono())
             self.target = None
             self.set_mode(*self.then_mode)
+            if self.on_target is not None:
+                self.on_target()
             return []
         self.advance(timeout)
         return []
