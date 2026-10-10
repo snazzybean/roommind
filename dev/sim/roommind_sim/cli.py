@@ -81,6 +81,29 @@ def _prepare(inst: Instance, scn: Scenario, port: int, recorder: bool, rm_src: P
         trusted_cidrs=cidrs,
         recorder=recorder,
     )
+    _apply_seed(inst, scn)
+
+
+def _apply_seed(inst: Instance, scn: Scenario) -> None:
+    """Imported setups: pre-load RoomMind's EKF state and history before the first start."""
+    seed = scn.raw.get("seed_data") or {}
+    storage = inst.config_dir / ".storage"
+    target = storage / "roommind"
+    if seed.get("thermal_data") and not target.exists():
+        thermal = json.loads(Path(seed["thermal_data"]).read_text())
+        payload = {
+            "version": 1,
+            "minor_version": 1,
+            "key": "roommind",
+            "data": {"rooms": {}, "settings": {}, "thermal_data": thermal},
+        }
+        target.write_text(json.dumps(payload))
+    if seed.get("history_dir"):
+        dest = storage / "roommind_history"
+        dest.mkdir(parents=True, exist_ok=True)
+        for csv_file in Path(seed["history_dir"]).glob("*.csv"):
+            if not (dest / csv_file.name).exists():
+                (dest / csv_file.name).write_bytes(csv_file.read_bytes())
 
 
 def _python(version: str) -> Path:
@@ -499,6 +522,28 @@ def cmd_shot(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_import(args: argparse.Namespace) -> int:
+    from .importer.diag import import_diagnostics
+
+    path = import_diagnostics(
+        Path(args.diagnostics),
+        [Path(h) for h in args.history],
+        name=args.name,
+        mode=args.mode,
+        duration=args.duration,
+    )
+    scenario = yaml.safe_load(path.read_text())
+    print(f"scenario: {path}")
+    print(
+        f"  {len(scenario['house']['rooms'])} room(s), start {scenario['start']}, duration {scenario['duration']}, mode {args.mode}"
+    )
+    print("assumptions:")
+    for a in scenario.get("assumptions", []):
+        print(f"  - {a}")
+    print(f"next: sim run {path}   or   sim up <name> --scenario {path}")
+    return 0
+
+
 def cmd_report(args: argparse.Namespace) -> int:
     from .analysis import evaluate_run
 
@@ -636,6 +681,16 @@ def _parser() -> argparse.ArgumentParser:
     prune.add_argument("--older-than", help="only delete runs older than this, e.g. 7d")
     prune.add_argument("--keep-shots", type=int, default=30)
     prune.set_defaults(func=cmd_prune)
+
+    imp = sub.add_parser(
+        "import", help="diagnostics export (+ history CSVs) -> scenario under $ROOMMIND_SIM_HOME/imports"
+    )
+    imp.add_argument("diagnostics")
+    imp.add_argument("--history", action="append", default=[], help="roommind_<room>_*.csv from the analytics export")
+    imp.add_argument("--name")
+    imp.add_argument("--mode", choices=["closed", "replay"], default="closed")
+    imp.add_argument("--duration", default="2d", help="closed mode: how long to continue after the export")
+    imp.set_defaults(func=cmd_import)
 
     report = sub.add_parser("report", help="re-evaluate a run (name, path or 'last')")
     report.add_argument("run", nargs="?", default="last")

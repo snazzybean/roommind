@@ -23,6 +23,31 @@ from .sensors import SimOccupancy, SimSensor
 from .weather import Outdoor, WeatherModel
 
 
+def _load_replay(path: str) -> list[tuple[float, float]]:
+    import csv
+
+    with open(path) as fh:
+        rows = [
+            (float(r["timestamp"]), float(r["room_temp"]))
+            for r in csv.DictReader(fh)
+            if r.get("room_temp") not in (None, "")
+        ]
+    rows.sort()
+    return rows
+
+
+def _replay_value(rows: list[tuple[float, float]] | None, t: float) -> float | None:
+    if not rows or t < rows[0][0] or t > rows[-1][0]:
+        return None
+    from bisect import bisect_left
+
+    i = bisect_left(rows, (t, float("-inf")))
+    if i == 0:
+        return rows[0][1]
+    (t0, v0), (t1, v1) = rows[i - 1], rows[min(i, len(rows) - 1)]
+    return v0 if t1 <= t0 else v0 + (v1 - v0) * (t - t0) / (t1 - t0)
+
+
 class WorldError(ValueError):
     """Invalid world action (unknown entity, wrong arguments)."""
 
@@ -64,6 +89,12 @@ class World:
         self.occupancy_force: dict[str, tuple[int, float | None]] = {}
         self.moisture_events: list[tuple[str, float, float]] = []  # (room, until, kg/s)
         self.marks: list[tuple[float, str]] = []
+        anchor = scenario.weather.get("anchor_temperature")
+        if anchor is not None:
+            # Imported setups: keep the profile's shape, but start at the reporter's outdoor temperature.
+            delta = float(anchor) - self.weather.at(scenario.start).temp_c
+            self.weather.set_override(scenario.start, None, {"temperature_delta": delta})
+        self.replay = {area: _load_replay(path) for area, path in (scenario.replay.get("rooms") or {}).items()}
         self.outdoor: Outdoor = self.weather.at(scenario.start)
         self.now = scenario.start
         self.occupants: dict[str, int] = {}
@@ -181,6 +212,11 @@ class World:
         x_out = out.x
         for area, zone in self.zones.items():
             zone.step(dt, out.temp_c, x_out, gains[area], flows[area])
+            recorded = _replay_value(self.replay.get(area), now)
+            if recorded is not None:
+                # Open-loop replay: the reporter's room temperature wins over the physics.
+                zone.t_mass += recorded - zone.t_air
+                zone.t_air = recorded
 
         for sensor in self.sensors.values():
             if self._sensor_update(sensor, now):
