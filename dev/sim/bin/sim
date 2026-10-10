@@ -2,6 +2,14 @@
 # Entry point for the RoomMind simulation environment. See dev/sim/README.md.
 set -euo pipefail
 SIM_ROOT="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
+# Called through a global symlink from inside another checkout/worktree: use that
+# checkout's sim (and therefore its RoomMind code), not the one the symlink points to.
+if [[ -z "${ROOMMIND_SIM_NO_REEXEC:-}" ]]; then
+  top="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+  if [[ -n "$top" && -x "$top/dev/sim/bin/sim" && "$(cd "$top/dev/sim" && pwd -P)" != "$(cd "$SIM_ROOT" && pwd -P)" ]]; then
+    ROOMMIND_SIM_NO_REEXEC=1 exec "$top/dev/sim/bin/sim" "$@"
+  fi
+fi
 export ROOMMIND_SIM_HOME="${ROOMMIND_SIM_HOME:-$HOME/.roommind-sim}"
 HA_VERSION="${ROOMMIND_SIM_HA:-2026.10.0}"
 PY="$ROOMMIND_SIM_HOME/venvs/ha-$HA_VERSION/bin/python"

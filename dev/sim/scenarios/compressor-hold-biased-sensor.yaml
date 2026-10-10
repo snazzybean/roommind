@@ -1,0 +1,17 @@
+name: compressor-hold-biased-sensor
+extends: smoke-ac-compressor
+description: >
+  Same room as the smoke test, but checks the physical compressor: while the group's
+  minimum run is enforced, the compressor itself must keep running. A split AC whose
+  return-air sensor reads 1.5 K warm while heating stops on its own once its sensor
+  passes the setpoint, even though the mode stays "heat".
+  Against v1.7.7 this reproduces #436 (10-14 min runs); since 1.7.8 the runs that
+  remain are ~3 min long: the hold keeps the last proportional setpoint, which the
+  unit already satisfies.
+refs: [436]
+tags: [compressor, ac]
+known_failure: "#436 follow-up candidate: hold setpoint too close to target for ACs with a biased return-air sensor"
+expect:
+  - {invariant: min_run_respected}
+  - {invariant: min_run_commanded}
+  - {metric: device.starts_per_day, entity_id: climate.wohnzimmer_ac, max: 30}

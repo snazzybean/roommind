@@ -132,11 +132,16 @@ def _port_free(port: int) -> bool:
 
 
 def allocate_port(name: str, batch: bool = False) -> int:
-    """Stable port per live instance (``main`` = 8130); batch runs get any free port."""
+    """Stable port per live instance (``main`` = 8130); batch runs lease one until released."""
     with _ports_lock() as data:
+        for key, entry in list(data.items()):
+            pid = entry.get("pid") if isinstance(entry, dict) else None
+            if pid and not _pid_alive(int(pid)):
+                del data[key]  # lease of a crashed run
         if not batch and name in data:
-            return int(data[name])
-        taken = {int(p) for p in data.values()}
+            entry = data[name]
+            return int(entry["port"] if isinstance(entry, dict) else entry)
+        taken = {int(e["port"] if isinstance(e, dict) else e) for e in data.values()}
         if not batch and name == "main":
             candidates = [MAIN_PORT]
         else:
@@ -144,8 +149,7 @@ def allocate_port(name: str, batch: bool = False) -> int:
             candidates = [p for p in pool if p not in taken and p != MAIN_PORT]
         for port in candidates:
             if _port_free(port):
-                if not batch:
-                    data[name] = port
+                data[name] = {"port": port, "pid": os.getpid() if batch else None}
                 return port
     raise RuntimeError(f"no free port for {name} in {'batch' if batch else 'live'} range")
 

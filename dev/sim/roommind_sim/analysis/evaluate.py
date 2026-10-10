@@ -25,10 +25,14 @@ def evaluate_run(run_dir: Path, write_report: bool = True) -> dict[str, Any]:
         found = INVARIANTS[name](run)
         if found:
             warnings.append({"invariant": name, "violations": [v.as_dict() for v in found[:10]], "count": len(found)})
+    broken = _broken(run)
+    if broken:
+        results.insert(0, {"label": "run sanity", "passed": False, "detail": broken})
     failed = [r for r in results if not r["passed"]]
     known = run.scenario.known_failure
     for r in failed:
-        r["known_failure"] = known
+        if r["label"] != "run sanity":
+            r["known_failure"] = known
     summary = {
         "scenario": run.scenario.name,
         "refs": run.scenario.refs,
@@ -37,10 +41,11 @@ def evaluate_run(run_dir: Path, write_report: bool = True) -> dict[str, Any]:
         "expectations": results,
         "warnings": warnings,
         "known_failure": known,
-        "passed": not failed or bool(known),
+        "passed": not failed or (bool(known) and not broken),
         "unexpected_pass": bool(known) and not failed and bool(results),
         "lines": _lines(metrics, warnings),
         "real_seconds": run.meta.get("real_seconds"),
+        "source": run.meta.get("source"),
     }
     (run_dir / "summary.json").write_text(json.dumps(summary, indent=2, default=str))
     if write_report:
@@ -48,6 +53,21 @@ def evaluate_run(run_dir: Path, write_report: bool = True) -> dict[str, Any]:
 
         _write(run, summary)
     return summary
+
+
+def _broken(run: RunData) -> str | None:
+    """A run that never controlled anything must not pass silently."""
+    code = run.meta.get("exit_code")
+    if code not in (None, 0):
+        return f"HA exited with code {code}"
+    if not any(e.get("type") == "ha" and e.get("what") == "provisioned" for e in run.events):
+        return "RoomMind was never provisioned (see logs/home-assistant.log)"
+    if not run.observer:
+        return "no RoomMind state observed"
+    expected = (run.end - run.start) / max(run.scenario.sample_interval, 1)
+    if len(run.samples) < 0.9 * expected:
+        return f"only {len(run.samples)} of ~{expected:.0f} samples"
+    return None
 
 
 def _evaluate(run: RunData, metrics: dict[str, Any], exp: dict[str, Any]) -> dict[str, Any]:

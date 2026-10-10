@@ -17,7 +17,7 @@ import yaml
 from . import instance as inst_mod
 from .haconfig import write_ha_config
 from .instance import Instance
-from .paths import DEFAULT_HA_VERSION, REPO_ROOT, SIM_ROOT, roommind_src, simhome_src, venv_python
+from .paths import DEFAULT_HA_VERSION, REPO_ROOT, SIM_ROOT, roommind_src, simhome_src, source_info, venv_python
 from .scenario import Scenario, ScenarioError, load_scenario
 from .scenario.timespec import format_offset, parse_duration
 
@@ -65,7 +65,7 @@ def _scenario_json(scn: Scenario) -> dict[str, Any]:
     return data
 
 
-def _prepare(inst: Instance, scn: Scenario, port: int, recorder: bool) -> None:
+def _prepare(inst: Instance, scn: Scenario, port: int, recorder: bool, rm_src: Path | None = None) -> None:
     inst.create_dirs()
     inst.scenario_path.write_text(json.dumps(_scenario_json(scn), indent=2, default=str))
     cidrs = ["127.0.0.1/32", "::1/128"]
@@ -76,7 +76,7 @@ def _prepare(inst: Instance, scn: Scenario, port: int, recorder: bool) -> None:
         scn,
         instance=inst.name,
         port=port,
-        roommind_src=roommind_src(),
+        roommind_src=rm_src or roommind_src(),
         simhome_src=simhome_src(),
         trusted_cidrs=cidrs,
         recorder=recorder,
@@ -154,18 +154,21 @@ def cmd_run(args: argparse.Namespace) -> int:
     _check_frontend() if args.ui else None
     inst = Instance.run(scn.name)
     port = inst_mod.allocate_port(inst.name, batch=True)
-    _prepare(inst, scn, port, args.recorder)
+    rm_src = roommind_src(override=args.roommind_src)
+    _prepare(inst, scn, port, args.recorder, rm_src)
+    src = source_info(rm_src)
     inst.write_meta(
         name=inst.name,
         kind="run",
         port=port,
         ha_version=args.ha,
-        source=str(REPO_ROOT),
+        source=src,
         scenario=scn.name,
         created=time.time(),
     )
     py = _python(args.ha)
     print(f"run {inst.dir.name}: {scn.name}, {format_offset(scn.duration)} simulated", flush=True)
+    print(f"  RoomMind {src.get('git', '?')} ({src['path']})", flush=True)
     t0 = time.time()
     with (inst.logs_dir / "boot.log").open("ab") as log:
         proc = subprocess.Popen(
@@ -194,6 +197,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                     proc.kill()
                 break
     print()
+    inst_mod.release_port(inst.name)
     real = time.time() - t0
     code = proc.returncode
     inst.write_meta(finished=time.time(), exit_code=code, real_seconds=round(real, 1))
@@ -262,11 +266,13 @@ def cmd_up(args: argparse.Namespace) -> int:
         scn = load_scenario_dict(json.loads(inst.scenario_path.read_text()))
     if args.from_run:
         _seed_from_run(inst, Path(args.from_run))
-    _check_frontend()
+    rm_src = roommind_src(override=args.roommind_src)
+    if not args.roommind_src:
+        _check_frontend()
     port = inst_mod.allocate_port(args.name)
-    _prepare(inst, scn, port, args.recorder)
+    _prepare(inst, scn, port, args.recorder, rm_src)
     inst.write_meta(
-        name=args.name, kind="live", port=port, ha_version=args.ha, source=str(REPO_ROOT), scenario=scn.name
+        name=args.name, kind="live", port=port, ha_version=args.ha, source=source_info(rm_src), scenario=scn.name
     )
     boot_args = ["--until", "catch-up" if args.catch_up else "none", "--then", "pause" if args.paused else "realtime"]
     if args.speed and not args.catch_up:
@@ -323,7 +329,9 @@ def cmd_ps(args: argparse.Namespace) -> int:
                 "running" if inst.is_running() else "stopped",
                 str(meta.get("port", "")),
                 meta.get("scenario", ""),
-                meta.get("source", ""),
+                str((meta.get("source") or {}).get("git", meta.get("source", "")))
+                if isinstance(meta.get("source"), dict)
+                else meta.get("source", ""),
             )
         )
     if not rows:
@@ -458,6 +466,9 @@ def _parser() -> argparse.ArgumentParser:
     run.add_argument("--set", action="append", default=[], metavar="KEY=VALUE")
     run.add_argument("--until", help="override duration, e.g. 3d")
     run.add_argument("--ha", default=DEFAULT_HA_VERSION)
+    run.add_argument(
+        "--roommind-src", help="RoomMind code to test: path or git ref (e.g. v1.7.7); default: this checkout"
+    )
     run.add_argument("--recorder", action="store_true")
     run.add_argument("--keep", action="store_true", help="keep the full HA config dir")
     run.add_argument(
@@ -483,6 +494,7 @@ def _parser() -> argparse.ArgumentParser:
     up.add_argument("--speed", type=float, help="time-lapse factor")
     up.add_argument("--ttl", default="4h", help="auto-stop after this real time")
     up.add_argument("--ha", default=DEFAULT_HA_VERSION)
+    up.add_argument("--roommind-src", help="RoomMind code: path or git ref; default: this checkout")
     up.add_argument("--recorder", action="store_true")
     up.set_defaults(func=cmd_up)
 

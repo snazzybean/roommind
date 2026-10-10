@@ -161,3 +161,15 @@ except c.ClockError as err:
 """
     )
     assert res.stdout.startswith("refused")
+
+
+def test_isinstance_works_with_real_and_patched_objects():
+    out = _run(
+        """
+import datetime as d
+real = c._real_datetime(2020, 1, 1)
+print(isinstance(d.datetime.now().date(), d.date), isinstance(real, d.datetime), isinstance(d.datetime.min, d.datetime),
+      isinstance(d.datetime.now(), d.date), issubclass(c._real_datetime, d.datetime), d.datetime.__name__)
+"""
+    )
+    assert out == "True True True True True datetime"

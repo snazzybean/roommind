@@ -1,8 +1,8 @@
 name: smoke-ac-compressor
 description: >
   One room, one split AC in a single-member compressor group (min run 15 min).
-  Smoke test for the whole chain and the #436 canary: every compressor run must last
-  at least 15 simulated minutes.
+  Smoke test for the whole chain: RoomMind keeps the AC commanded on for the 15 min
+  minimum run. The physical compressor check lives in compressor-hold-biased-sensor.
 refs: [436]
 tags: [smoke]
 start: 2026-01-12T00:00
@@ -50,5 +50,5 @@ timeline:
   - {at: "2026-01-12T18:00", do: window.open, entity_id: binary_sensor.wohnzimmer_fenster, for: 10m}
   - {at: "+1d", do: mark, label: day two}
 expect:
-  - {invariant: min_run_respected}
+  - {invariant: min_run_commanded}
   - {invariant: target_never_empty}

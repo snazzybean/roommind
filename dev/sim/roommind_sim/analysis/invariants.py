@@ -49,8 +49,40 @@ def _exempt(run: RunData, area: str | None, t: float, windows: dict[str, list[In
     return None
 
 
-def min_run_respected(run: RunData, tolerance_s: float = 45.0) -> list[Violation]:
-    """Members of a compressor group run at least ``min_run_minutes`` (#436)."""
+def min_run_respected(run: RunData, tolerance_s: float = 75.0) -> list[Violation]:
+    """The shared compressor physically runs at least ``min_run_minutes`` (#436).
+
+    Uses the ground truth (any member's compressor active), not the commanded mode: in
+    #436 the mode stayed "heat" while the unit's own controller stopped the compressor.
+    Samples are 1 min apart, hence the tolerance.
+    """
+    out: list[Violation] = []
+    windows = run.window_open_intervals()
+    for group in _groups(run):
+        min_run = float(group.get("min_run_minutes", 15)) * 60
+        members = list(group.get("members", []))
+        rooms = {m: _room_of(run, m) for m in members}
+        since: float | None = None
+        for s in run.samples:
+            on = any(s["devices"].get(m, {}).get("active") for m in members)
+            if on and since is None:
+                since = s["t"]
+            elif not on and since is not None:
+                length = s["t"] - since
+                exempt = any(_exempt(run, rooms[m], s["t"], windows) for m in members)
+                if length + tolerance_s < min_run and not exempt:
+                    out.append(
+                        Violation(
+                            since,
+                            f"group {group.get('id')}: compressor ran {length / 60:.0f} min < min_run {min_run / 60:.0f} min",
+                        )
+                    )
+                since = None
+    return out
+
+
+def min_run_commanded(run: RunData, tolerance_s: float = 45.0) -> list[Violation]:
+    """RoomMind keeps every group member in an active mode for ``min_run_minutes``."""
     out: list[Violation] = []
     windows = run.window_open_intervals()
     for group in _groups(run):
@@ -218,6 +250,7 @@ INVARIANTS: dict[str, Callable[..., list[Violation]]] = {
     f.__name__: f
     for f in (
         min_run_respected,
+        min_run_commanded,
         min_off_respected,
         target_never_empty,
         no_cooling_below_outdoor_min,

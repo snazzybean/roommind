@@ -176,7 +176,25 @@ def _clock() -> Clock:
     return CLOCK
 
 
-class VDatetime(_dt.datetime):
+_real_datetime = _dt.datetime
+_real_date = _dt.date
+
+
+class _PoseAs(type):
+    """isinstance/issubclass against the patched names behave like the originals."""
+
+    _real: type
+
+    def __instancecheck__(cls, obj: object) -> bool:
+        return isinstance(obj, cls._real)
+
+    def __subclasscheck__(cls, sub: type) -> bool:
+        return issubclass(sub, cls._real)
+
+
+class VDatetime(_dt.datetime, metaclass=_PoseAs):
+    _real = _real_datetime
+
     @classmethod
     def now(cls, tz: _dt.tzinfo | None = None) -> VDatetime:  # type: ignore[override]
         return cls.fromtimestamp(_clock().wall(), tz)
@@ -190,7 +208,9 @@ class VDatetime(_dt.datetime):
         return cls.fromtimestamp(_clock().wall())
 
 
-class VDate(_dt.date):
+class VDate(_dt.date, metaclass=_PoseAs):
+    _real = _real_date
+
     @classmethod
     def today(cls) -> VDate:  # type: ignore[override]
         return cls.fromtimestamp(_clock().wall())
@@ -201,6 +221,22 @@ class VDate(_dt.date):
 for _cls, _name in ((VDatetime, "datetime"), (VDate, "date")):
     _cls.__name__ = _cls.__qualname__ = _name
     _cls.__module__ = "datetime"
+
+
+def self_test(clock: Clock) -> None:
+    """Fail fast if the patched time sources disagree (e.g. after a Python/HA change)."""
+    now = _dt.datetime.now(_dt.UTC)
+    problems = []
+    if abs(now.timestamp() - clock.wall()) > 1:
+        problems.append("datetime.now() != clock")
+    if abs(_time.time() - clock.wall()) > 1:
+        problems.append("time.time() != clock")
+    if not isinstance(now.date(), _dt.date) or not isinstance(_real_datetime(2020, 1, 1), _dt.datetime):
+        problems.append("isinstance on patched datetime classes")
+    if not isinstance(_dt.datetime.min, _dt.date) or not issubclass(_real_datetime, _dt.date):
+        problems.append("datetime is not a date")
+    if problems:
+        raise ClockError("clock self-test failed: " + ", ".join(problems))
 
 
 def install(
@@ -231,6 +267,7 @@ def install(
     _time.ctime = lambda secs=None: _real_ctime(clock.wall() if secs is None else secs)
     _dt.datetime = VDatetime  # type: ignore[misc]
     _dt.date = VDate  # type: ignore[misc]
+    self_test(clock)
 
     base = asyncio.EventLoop
 
