@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from datetime import time as dt_time
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
@@ -97,6 +98,17 @@ def _build_device_states(hass: HomeAssistant, devices: list[dict]) -> list[dict[
             entry["active_target"] = list(_active_targets[eid])
         result.append(entry)
     return result
+
+
+def _plain(value: Any) -> Any:
+    """Schedule blocks hold datetime.time objects; export them as "HH:MM:SS" strings."""
+    if isinstance(value, dict):
+        return {k: _plain(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_plain(v) for v in value]
+    if isinstance(value, dt_time):
+        return value.isoformat()
+    return value
 
 
 def _build_entity_states(hass: HomeAssistant, config: dict) -> dict[str, dict[str, Any]]:
@@ -305,7 +317,7 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, config_entry: 
                 room_diag["model_state"] = mgr._estimators[area_id].to_dict()
             cache = getattr(coordinator, "_schedule_blocks_cache", None) or {}
             blocks = {
-                s["entity_id"]: cache[s["entity_id"]]
+                s["entity_id"]: _plain(cache[s["entity_id"]])
                 for s in config.get("schedules") or []
                 if s.get("entity_id") in cache
             }

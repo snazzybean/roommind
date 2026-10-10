@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import time as dt_time
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -105,13 +106,19 @@ async def test_room_has_full_model_schedule_blocks_and_entities(hass, mock_confi
     est = _make_estimator()
     est.to_dict.return_value = {"x": [20.0, 0.5], "P": [[1.0]], "n_updates": 200}
     coordinator = _make_coordinator(estimators={"room_a": est})
-    coordinator._schedule_blocks_cache = {"schedule.plan": {"monday": [{"from": "06:00:00", "to": "22:00:00"}]}}
+    coordinator._schedule_blocks_cache = {
+        "schedule.plan": {"monday": [{"from": dt_time(6, 0), "to": dt_time(22, 0), "data": {"temperature": 21}}]}
+    }
     room = {"temperature_sensor": "sensor.t", "schedules": [{"entity_id": "schedule.plan"}]}
     _setup(hass, {"room_a": room}, coordinator, {"sensor.t": _state("20.5")})
     result = await async_get_config_entry_diagnostics(hass, mock_config_entry)
     diag = result["rooms"]["room_a"]
     assert diag["model_state"] == {"x": [20.0, 0.5], "P": [[1.0]], "n_updates": 200}
-    assert diag["schedule_blocks"]["schedule.plan"]["monday"][0]["from"] == "06:00:00"
+    assert diag["schedule_blocks"]["schedule.plan"]["monday"][0] == {
+        "from": "06:00:00",
+        "to": "22:00:00",
+        "data": {"temperature": 21},
+    }
     assert diag["entities"]["sensor.t"]["state"] == "20.5"
 
 
