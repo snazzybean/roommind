@@ -1,0 +1,33 @@
+name: dyson-boost-cap
+description: >
+  Dyson Hot+Cool (hass-dyson) as heater with a proportional setpoint. The integration
+  validates 274..310 K and rejects its own max_temp of 37 °C; the boost must stay below (#396).
+refs: [396]
+tags: [heater, setpoint]
+start: 2026-01-12T00:00
+duration: 2d
+location: {latitude: 52.5, longitude: 13.4, time_zone: Europe/Berlin}
+weather: {profile: winter-cold}
+house:
+  building: altbau_unsaniert
+  outdoor: {sensors: {temperature: sensor.aussen_temp}}
+  rooms:
+    arbeitszimmer:
+      floor_area_m2: 12
+      initial: {temperature: 16.0}
+      windows: [{orientation: E, area_m2: 1.5}]
+      devices: [{entity_id: climate.dyson, profile: dyson_hp}]
+      sensors: {temperature: {entity_id: sensor.az_temp}}
+roommind:
+  settings:
+    outdoor_temp_sensor: sensor.aussen_temp
+    control_mode: mpc
+  rooms:
+    arbeitszimmer:
+      devices: [{entity_id: climate.dyson, type: ac}]
+      temperature_sensor: sensor.az_temp
+      climate_mode: heat_only
+      comfort_temp: 21.0
+expect:
+  - {invariant: no_rejected_commands}
+  - {invariant: setpoints_within_device_range}

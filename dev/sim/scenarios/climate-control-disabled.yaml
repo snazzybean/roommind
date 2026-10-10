@@ -1,0 +1,32 @@
+name: climate-control-disabled
+description: >
+  Global climate control off: RoomMind only observes (and learns), it must not send a
+  single command to the devices (#36, #74, #365).
+refs: [36, 74, 365]
+tags: [settings]
+start: 2026-01-12T00:00
+duration: 2d
+location: {latitude: 52.5, longitude: 13.4, time_zone: Europe/Berlin}
+weather: {profile: temperate}
+house:
+  building: bestand_teilsaniert
+  outdoor: {sensors: {temperature: sensor.aussen_temp}}
+  rooms:
+    wohnzimmer:
+      floor_area_m2: 22
+      initial: {temperature: 19.0}
+      devices: [{entity_id: climate.wz_trv, profile: generic_trv, initial_mode: heat, initial_target_c: 21}]
+      sensors: {temperature: {entity_id: sensor.wz_temp}}
+roommind:
+  settings:
+    outdoor_temp_sensor: sensor.aussen_temp
+    climate_control_active: false
+  rooms:
+    wohnzimmer:
+      devices: [{entity_id: climate.wz_trv, type: trv, heating_system_type: radiator}]
+      temperature_sensor: sensor.wz_temp
+      climate_mode: heat_only
+      comfort_temp: 21.0
+expect:
+  - {invariant: no_commands_when_climate_off}
+  - {check: "true_temp('wohnzimmer') > 20.0", at: "+1d", label: TRV keeps heating on its own}

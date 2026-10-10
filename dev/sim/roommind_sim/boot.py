@@ -68,10 +68,10 @@ def main(argv: list[str] | None = None) -> int:
     plan_file = state_file.with_name("clock_plan.json")
     if plan_file.is_file():
         # simhome switched to real time for the shutdown; continue with the plan it saved.
-        plan = json.loads(plan_file.read_text())
+        plan = json.loads(_read_raw(plan_file))
         for key in ("mode", "factor", "target", "then_mode", "then_action"):
             state[key] = plan.get(key)
-        plan_file.unlink()
+        os.unlink(plan_file)
     _write_raw(state_file, json.dumps(state))
     if exit_code == RESTART_EXIT_CODE:
         os.execv(
@@ -103,6 +103,14 @@ def apply_start_args(
         if then == "stop" and target is not None:
             clk.on_target = None
             clk.then_action = "stop-now"
+
+
+def _read_raw(path: Path) -> str:
+    fd = os.open(path, os.O_RDONLY)
+    try:
+        return os.read(fd, 1 << 20).decode()
+    finally:
+        os.close(fd)
 
 
 def _write_raw(path: Path, text: str) -> None:

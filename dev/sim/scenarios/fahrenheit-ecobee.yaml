@@ -1,0 +1,39 @@
+name: fahrenheit-ecobee
+description: >
+  US house in °F with an Ecobee-like heat_cool thermostat (whole degrees, range
+  setpoint) in direct mode. No out-of-range or rejected setpoints, no flapping (#22, #277, #117).
+refs: [22, 277, 117]
+tags: [fahrenheit, heat-pump]
+start: 2026-01-12T00:00
+duration: 3d
+location: {latitude: 40.7, longitude: -74.0, time_zone: America/New_York, unit_system: us_customary, country: US}
+weather: {profile: temperate}
+known_failure: "candidate: same 30 s heat/off flip-flop as ir-ac-no-feedback; room stays below target"
+house:
+  building: us_wood_frame
+  outdoor: {sensors: {temperature: sensor.outdoor_temp}}
+  rooms:
+    living_room:
+      floor_area_m2: 45
+      exterior_wall_m2: 25
+      initial: {temperature: 19.0}
+      windows: [{orientation: S, area_m2: 4}]
+      devices: [{entity_id: climate.ecobee, profile: ecobee, heat_capacity_w: 6000, cool_capacity_w: 5000}]
+      sensors: {temperature: {entity_id: sensor.living_room_temp}}
+roommind:
+  settings:
+    outdoor_temp_sensor: sensor.outdoor_temp
+  rooms:
+    living_room:
+      devices: [{entity_id: climate.ecobee, type: ac, setpoint_mode: direct}]
+      temperature_sensor: sensor.living_room_temp
+      climate_mode: auto
+      comfort_heat: 21.0
+      comfort_cool: 24.5
+      eco_heat: 17.0
+      eco_cool: 27.0
+expect:
+  - {invariant: no_rejected_commands}
+  - {invariant: setpoints_within_device_range}
+  - {invariant: max_commands_per_hour, entity_id: climate.ecobee, limit: 8}
+  - {metric: comfort.in_band_pct, room: living_room, min: 85}

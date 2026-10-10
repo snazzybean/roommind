@@ -1,0 +1,70 @@
+name: multisplit-compressor
+description: >
+  Three indoor units on one outdoor unit (compressor group, min run 15 / min off 5).
+  One unit reports its state with a delay. RoomMind must keep the group running for
+  the minimum time and never heat and cool at once (#436, #79, #128).
+refs: [436, 79, 128]
+tags: [compressor, ac]
+start: 2026-01-12T00:00
+duration: 3d
+location: {latitude: 52.5, longitude: 13.4, time_zone: Europe/Berlin}
+weather: {profile: temperate}
+known_failure: "candidate: MPC heats a 10 m2 office at 25 C with target 20.5 (same pattern as ir-ac-no-feedback); command bursts follow"
+house:
+  building: bestand_teilsaniert
+  outdoor: {sensors: {temperature: sensor.aussen_temp}}
+  rooms:
+    wohnzimmer:
+      floor_area_m2: 25
+      initial: {temperature: 19.0}
+      windows: [{orientation: S, area_m2: 3}]
+      devices: [{entity_id: climate.wz_split, profile: generic_split_ac}]
+      sensors: {temperature: {entity_id: sensor.wz_temp}}
+    schlafzimmer:
+      floor_area_m2: 14
+      initial: {temperature: 18.0}
+      windows: [{orientation: N, area_m2: 1.5}]
+      devices: [{entity_id: climate.sz_split, profile: daikin_ac}]
+      sensors: {temperature: {entity_id: sensor.sz_temp}}
+    buero:
+      floor_area_m2: 10
+      initial: {temperature: 18.5}
+      windows: [{orientation: W, area_m2: 1.4}]
+      devices: [{entity_id: climate.buero_split, profile: generic_split_ac}]
+      sensors: {temperature: {entity_id: sensor.buero_temp}}
+helpers:
+  schedule:
+    tag: {daily: ["06:30-22:30"]}
+roommind:
+  settings:
+    outdoor_temp_sensor: sensor.aussen_temp
+    weather_entity: weather.simhome
+    control_mode: mpc
+    compressor_groups:
+      - {id: aussen, name: Aussengeraet, members: [climate.wz_split, climate.sz_split, climate.buero_split], min_run_minutes: 15, min_off_minutes: 5}
+  rooms:
+    wohnzimmer:
+      devices: [{entity_id: climate.wz_split, type: ac}]
+      temperature_sensor: sensor.wz_temp
+      climate_mode: heat_only
+      schedules: [{entity_id: schedule.tag}]
+      comfort_temp: 21.0
+      eco_temp: 18.0
+    schlafzimmer:
+      devices: [{entity_id: climate.sz_split, type: ac}]
+      temperature_sensor: sensor.sz_temp
+      climate_mode: heat_only
+      schedules: [{entity_id: schedule.tag}]
+      comfort_temp: 19.0
+      eco_temp: 17.0
+    buero:
+      devices: [{entity_id: climate.buero_split, type: ac}]
+      temperature_sensor: sensor.buero_temp
+      climate_mode: heat_only
+      schedules: [{entity_id: schedule.tag}]
+      comfort_temp: 20.5
+      eco_temp: 17.5
+expect:
+  - {invariant: min_run_commanded}
+  - {invariant: no_heat_and_cool_same_group}
+  - {invariant: max_commands_per_hour, limit: 12}

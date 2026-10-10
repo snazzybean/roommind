@@ -1,0 +1,43 @@
+name: override-cool-only-outdoor-gate
+description: >
+  Early summer, cool_only room with an AC. Nights drop below outdoor_cooling_min (16 °C):
+  without override no cooling; a custom cooling override bypasses the gate by design
+  (#198) and must actually cool (#447, #388, #408).
+refs: [447, 388, 408, 198]
+tags: [ac, override, outdoor-gate]
+start: 2026-06-15T00:00
+duration: 3d
+location: {latitude: 52.5, longitude: 13.4, time_zone: Europe/Berlin}
+weather: {profile: temperate}
+known_failure: "candidate: during a cooling override MPC goes idle 1.2 K above the cool target"
+house:
+  building: neubau_kfw55
+  outdoor: {sensors: {temperature: sensor.aussen_temp}}
+  rooms:
+    dachzimmer:
+      floor_area_m2: 18
+      initial: {temperature: 26.0, mass_temperature: 26.0}
+      windows: [{orientation: SW, area_m2: 3}]
+      devices: [{entity_id: climate.dach_ac, profile: generic_split_ac}]
+      sensors: {temperature: {entity_id: sensor.dach_temp}}
+roommind:
+  settings:
+    outdoor_temp_sensor: sensor.aussen_temp
+    weather_entity: weather.simhome
+    control_mode: mpc
+    outdoor_cooling_min: 16
+  rooms:
+    dachzimmer:
+      devices: [{entity_id: climate.dach_ac, type: ac}]
+      temperature_sensor: sensor.dach_temp
+      climate_mode: cool_only
+      comfort_temp: 24.0
+      eco_temp: 27.0
+timeline:
+  - {at: "+1d01h", do: roommind.ws, type: roommind/override/set, area_id: dachzimmer, override_type: custom, cool: 21.0, duration: 3}
+expect:
+  - {invariant: no_cooling_below_outdoor_min}
+  - {invariant: target_never_empty}
+  - {check: "room.dachzimmer.override_active == true", at: "+1d01h10m", label: override active}
+  - {check: "room.dachzimmer.mode == 'cooling'", at: "+1d01h10m", label: override cools despite the outdoor gate}
+  - {check: "room.dachzimmer.mode == 'cooling' or room.dachzimmer.current_temp <= 21.5", at: "+1d01h40m", label: override keeps cooling until near its target}

@@ -1,0 +1,45 @@
+name: covers-solar-south
+description: >
+  Summer, south-facing living room with an exterior venetian blind under automatic
+  control and a cooling AC. The blind shades on hot sunny afternoons and opens again
+  in the evening; someone working in the room must not trigger shading on its own (#418, #325).
+refs: [418, 325]
+tags: [covers, solar, ac]
+start: 2026-07-06T00:00
+duration: 3d
+location: {latitude: 52.5, longitude: 13.4, time_zone: Europe/Berlin}
+weather: {profile: hot-summer}
+house:
+  building: bestand_teilsaniert
+  outdoor: {sensors: {temperature: sensor.aussen_temp}}
+  rooms:
+    wohnzimmer:
+      floor_area_m2: 26
+      initial: {temperature: 25.0, mass_temperature: 25.0}
+      windows: [{orientation: S, area_m2: 6, g_value: 0.6}]
+      covers: [{entity_id: cover.wohnzimmer_raffstore, profile: venetian_blind}]
+      devices: [{entity_id: climate.wz_ac, profile: generic_split_ac}]
+      sensors:
+        temperature: {entity_id: sensor.wz_temp}
+        occupancy: {entity_id: binary_sensor.wz_praesenz}
+people:
+  - {id: ben, profile: home_office, rooms: {office: wohnzimmer, living: wohnzimmer}}
+roommind:
+  settings:
+    outdoor_temp_sensor: sensor.aussen_temp
+    weather_entity: weather.simhome
+    control_mode: mpc
+  rooms:
+    wohnzimmer:
+      devices: [{entity_id: climate.wz_ac, type: ac}]
+      temperature_sensor: sensor.wz_temp
+      occupancy_sensors: [binary_sensor.wz_praesenz]
+      climate_mode: cool_only
+      comfort_temp: 24.5
+      eco_temp: 27.0
+      covers: [cover.wohnzimmer_raffstore]
+      covers_auto_enabled: true
+expect:
+  - {check: "cover('cover.wohnzimmer_raffstore').position < 90", at: "+1d15h", label: shades in the afternoon}
+  - {check: "cover('cover.wohnzimmer_raffstore').position > 90", at: "+1d23h", label: open at night}
+  - {invariant: no_rejected_commands}

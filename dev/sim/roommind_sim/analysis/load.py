@@ -116,12 +116,13 @@ class RunData:
 
 
 def _read_jsonl(path: Path) -> list[dict[str, Any]]:
+    """Read ``x.jsonl.gz`` (finished part) and ``x.jsonl`` (appended live afterwards)."""
+    lines: list[str] = []
+    gz = path.with_suffix(".jsonl.gz")
+    if gz.exists():
+        lines += gzip.decompress(gz.read_bytes()).decode().splitlines()
     if path.exists():
-        lines = path.read_text().splitlines()
-    elif path.with_suffix(".jsonl.gz").exists():
-        lines = gzip.decompress(path.with_suffix(".jsonl.gz").read_bytes()).decode().splitlines()
-    else:
-        return []
+        lines += path.read_text().splitlines()
     out = []
     for line in lines:
         if line.strip():

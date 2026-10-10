@@ -1,0 +1,49 @@
+name: mold-bathroom
+description: >
+  Small north-facing bathroom, daily showers, cold outside. Mold detection must raise
+  the risk after showers and prevention must lift the target temperature.
+tags: [mold, humidity]
+start: 2026-01-12T00:00
+duration: 3d
+location: {latitude: 52.5, longitude: 13.4, time_zone: Europe/Berlin}
+weather: {profile: winter-cold}
+house:
+  building: altbau_unsaniert
+  outdoor:
+    sensors: {temperature: sensor.aussen_temp, humidity: sensor.aussen_feuchte}
+  rooms:
+    bad:
+      name: Bad
+      floor_area_m2: 6
+      exterior_wall_m2: 7
+      initial: {temperature: 20.0, humidity: 60}
+      windows: [{orientation: N, area_m2: 0.6, sensor: binary_sensor.bad_fenster}]
+      devices: [{entity_id: climate.bad_trv, profile: generic_trv}]
+      sensors:
+        temperature: {entity_id: sensor.bad_temp}
+        humidity: {entity_id: sensor.bad_feuchte}
+roommind:
+  settings:
+    outdoor_temp_sensor: sensor.aussen_temp
+    outdoor_humidity_sensor: sensor.aussen_feuchte
+    mold_detection_enabled: true
+    mold_prevention_enabled: true
+    mold_prevention_intensity: medium
+  rooms:
+    bad:
+      devices: [{entity_id: climate.bad_trv, type: trv, heating_system_type: radiator}]
+      temperature_sensor: sensor.bad_temp
+      humidity_sensor: sensor.bad_feuchte
+      window_sensors: [binary_sensor.bad_fenster]
+      climate_mode: heat_only
+      comfort_temp: 21.0
+      eco_temp: 19.0
+timeline:
+  - {at: "+0d07h", do: humidity.event, room: bad, grams: 450, for: 15m}
+  - {at: "+1d07h", do: humidity.event, room: bad, grams: 450, for: 15m}
+  - {at: "+1d07h20m", do: window.open, entity_id: binary_sensor.bad_fenster, for: 10m}
+  - {at: "+2d07h", do: humidity.event, room: bad, grams: 450, for: 15m}
+expect:
+  - {check: "room.bad.mold_risk_level != 'ok'", at: "+0d07h45m", label: risk raised after shower}
+  - {check: "room.bad.mold_prevention_active == true", at: "+0d07h25m", label: prevention active after the first shower}
+  - {check: "room.bad.mold_prevention_active == true or room.bad.mold_surface_rh < 65", at: "+0d07h50m", label: prevention keeps its 5 % hysteresis}

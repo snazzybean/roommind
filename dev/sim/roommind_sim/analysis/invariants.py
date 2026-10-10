@@ -82,19 +82,40 @@ def min_run_respected(run: RunData, tolerance_s: float = 75.0) -> list[Violation
 
 
 def min_run_commanded(run: RunData, tolerance_s: float = 45.0) -> list[Violation]:
-    """RoomMind keeps every group member in an active mode for ``min_run_minutes``."""
+    """RoomMind keeps the group commanded on for ``min_run_minutes``.
+
+    The minimum run protects the shared compressor, so it counts per group: a member
+    may stop early while another member keeps the compressor running.
+    """
     out: list[Violation] = []
     windows = run.window_open_intervals()
     for group in _groups(run):
         min_run = float(group.get("min_run_minutes", 15)) * 60
-        for eid in group.get("members", []):
-            area = _room_of(run, eid)
+        members = list(group.get("members", []))
+        edges: list[tuple[float, int, str]] = []
+        for eid in members:
             for iv in run.commanded_modes(eid):
-                if iv.value not in ACTIVE_MODES or iv.end >= run.end - 1:
-                    continue
-                if iv.duration + tolerance_s < min_run and not _exempt(run, area, iv.end, windows):
+                if iv.value in ACTIVE_MODES:
+                    edges.append((iv.start, 1, eid))
+                    edges.append((iv.end, -1, eid))
+        edges.sort(key=lambda e: (e[0], -e[1]))
+        active = 0
+        since = 0.0
+        for t, delta, eid in edges:
+            if delta > 0:
+                if active == 0:
+                    since = t
+                active += 1
+                continue
+            active -= 1
+            if active == 0 and t < run.end - 1:
+                length = t - since
+                if length + tolerance_s < min_run and not _exempt(run, _room_of(run, eid), t, windows):
                     out.append(
-                        Violation(iv.start, f"{eid} ran {iv.duration / 60:.1f} min < min_run {min_run / 60:.0f} min")
+                        Violation(
+                            since,
+                            f"group {group.get('id')}: commanded on for {length / 60:.1f} min < min_run {min_run / 60:.0f} min (last off: {eid})",
+                        )
                     )
     return out
 
@@ -138,9 +159,13 @@ def target_never_empty(run: RunData) -> list[Violation]:
     return out
 
 
-def no_cooling_below_outdoor_min(run: RunData) -> list[Violation]:
-    """No cooling while outdoor < outdoor_cooling_min unless an override is active (#447, #295)."""
-    limit = float(run.settings().get("outdoor_cooling_min", 16))
+def no_cooling_below_outdoor_min(run: RunData, tolerance_k: float = 0.3) -> list[Violation]:
+    """No cooling while outdoor < outdoor_cooling_min unless an override is active (#447, #295).
+
+    RoomMind sees a rounded, noisy sensor; the tolerance keeps the true value at the
+    threshold from counting.
+    """
+    limit = float(run.settings().get("outdoor_cooling_min", 16)) - tolerance_k
     out: list[Violation] = []
     for o in run.observer:
         s = run.sample_at(o["t"])

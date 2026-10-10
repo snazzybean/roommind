@@ -22,6 +22,7 @@ from .const import DOMAIN, PLATFORMS
 from .runtime import SimRuntime
 
 _LOGGER = logging.getLogger(__name__)
+PROVISION_FAILED_EXIT_CODE = 4
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
@@ -36,7 +37,16 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
     async def _started(_event: Any) -> None:
         await runtime.async_ensure_user()
-        await runtime.async_provision()
+        try:
+            await runtime.async_provision()
+        except Exception as err:  # noqa: BLE001
+            # A scenario RoomMind rejects is useless to simulate; stop instead of
+            # running days of turbo without control.
+            _LOGGER.error("provisioning RoomMind failed, stopping: %s", err)
+            runtime.event("ha", {"what": "provision_failed", "error": str(err)})
+            await runtime.async_flush()
+            hass.async_create_task(hass.async_stop(PROVISION_FAILED_EXIT_CODE))
+            return
         runtime.schedule_timeline()
 
     hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _started)

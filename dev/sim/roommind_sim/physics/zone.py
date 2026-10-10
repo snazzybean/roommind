@@ -32,6 +32,7 @@ class ZoneParams:
     base_internal_w: float
     moisture_buffer: float  # effective moisture capacity as a multiple of the air mass
     infiltration_kg_s: float
+    base_moisture_kg_s: float = 0.0  # background moisture load (cooking, plants, drying laundry)
 
     @classmethod
     def from_thermal(cls, thermal: dict[str, Any], window_area_m2: float) -> ZoneParams:
@@ -53,6 +54,7 @@ class ZoneParams:
             base_internal_w=float(thermal.get("base_internal_w_per_m2", 2.0)) * area,
             moisture_buffer=float(thermal.get("moisture_buffer", 4.0)),
             infiltration_kg_s=ach * volume * AIR_DENSITY / 3600.0,
+            base_moisture_kg_s=float(thermal.get("base_moisture_g_h_per_m2", 3.0)) * area / 3.6e6,
         )
 
     def equivalent_first_order(self) -> dict[str, float]:
@@ -124,7 +126,9 @@ class Zone:
             )
             self.t_air += h * q_air / p.c_air
             self.t_mass += h * q_mass / p.c_mass
-            dx = ((p.infiltration_kg_s + vent_kg_s) * (x_out - self.x) + gains.moisture_kg_s) / air_kg
+            dx = (
+                (p.infiltration_kg_s + vent_kg_s) * (x_out - self.x) + gains.moisture_kg_s + p.base_moisture_kg_s
+            ) / air_kg
             self.x = max(0.0, self.x + h * dx)
 
     def snapshot(self) -> dict[str, float]:

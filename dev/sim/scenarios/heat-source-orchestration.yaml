@@ -1,0 +1,46 @@
+name: heat-source-orchestration
+description: >
+  Living room with a radiator (boiler) and a split AC. With orchestration, small gaps
+  are closed by the AC, large gaps use both; the AC never heats below its outdoor limit (#84, #168).
+refs: [84, 168, 187]
+tags: [orchestration, trv, ac]
+start: 2026-01-12T00:00
+duration: 3d
+location: {latitude: 52.5, longitude: 13.4, time_zone: Europe/Berlin}
+weather: {profile: temperate}
+house:
+  building: bestand_teilsaniert
+  outdoor: {sensors: {temperature: sensor.aussen_temp}}
+  rooms:
+    wohnzimmer:
+      floor_area_m2: 30
+      initial: {temperature: 18.5}
+      windows: [{orientation: S, area_m2: 4}]
+      devices:
+        - {entity_id: climate.wz_trv, profile: generic_trv}
+        - {entity_id: climate.wz_split, profile: generic_split_ac}
+        - {entity_id: climate.kessel, profile: generic_boiler, initial_mode: heat}
+      sensors: {temperature: {entity_id: sensor.wz_temp}}
+helpers:
+  schedule:
+    tag: {daily: ["06:00-22:30"]}
+roommind:
+  settings:
+    outdoor_temp_sensor: sensor.aussen_temp
+    weather_entity: weather.simhome
+    control_mode: mpc
+  rooms:
+    wohnzimmer:
+      devices:
+        - {entity_id: climate.wz_trv, type: trv, heating_system_type: radiator, role: primary}
+        - {entity_id: climate.wz_split, type: ac, role: secondary}
+      temperature_sensor: sensor.wz_temp
+      climate_mode: heat_only
+      schedules: [{entity_id: schedule.tag}]
+      comfort_temp: 21.0
+      eco_temp: 18.0
+      heat_source_orchestration: true
+expect:
+  - {invariant: target_never_empty}
+  - {invariant: no_rejected_commands}
+  - {metric: comfort.in_band_pct, room: wohnzimmer, min: 85}

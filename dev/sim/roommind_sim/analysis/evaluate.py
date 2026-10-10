@@ -60,6 +60,9 @@ def _broken(run: RunData) -> str | None:
     code = run.meta.get("exit_code")
     if code not in (None, 0):
         return f"HA exited with code {code}"
+    failed = next((e for e in run.events if e.get("type") == "ha" and e.get("what") == "provision_failed"), None)
+    if failed:
+        return f"RoomMind rejected the scenario config: {failed.get('error')}"
     if not any(e.get("type") == "ha" and e.get("what") == "provisioned" for e in run.events):
         return "RoomMind was never provisioned (see logs/home-assistant.log)"
     if not run.observer:
@@ -153,6 +156,10 @@ def _check(run: RunData, exp: dict[str, Any]) -> dict[str, Any]:
     env = {
         "room": _ns(obs["rooms"]),
         "world": _ns(sample),
+        "dev": lambda eid: _ns(sample["devices"].get(eid) or {}),
+        "cover": lambda eid: _ns(sample.get("covers", {}).get(eid) or {}),
+        "true_temp": lambda area: sample["rooms"][area]["t_air"],
+        "outdoor": _ns(sample.get("outdoor") or {}),
         "true": True,
         "false": False,
         "null": None,
@@ -177,7 +184,7 @@ def _lines(metrics: dict[str, Any], warnings: list[dict[str, Any]]) -> list[str]
     lines = []
     for area, m in metrics["rooms"].items():
         lines.append(
-            f"room {area}: {m['temp_min']}..{m['temp_max']} °C, under {m['undershoot_kh']} Kh, over {m['overshoot_kh']} Kh, in band {m['in_band_pct']}%"
+            f"room {area}: {m['temp_min']}..{m['temp_max']} °C, under {m['undershoot_kh']} Kh, over heat+0.5 {m['heat_overshoot_kh']} Kh, over cool {m['overshoot_kh']} Kh, in band {m['in_band_pct']}%"
             + (f", pred MAE {m['prediction_mae_30m']} K" if m.get("prediction_mae_30m") is not None else "")
         )
     for eid, m in metrics["devices"].items():

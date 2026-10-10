@@ -1,0 +1,40 @@
+name: ir-ac-no-feedback
+description: >
+  IR-controlled split AC without state feedback. Every frame beeps, so RoomMind must
+  not resend unchanged commands (#416, #298).
+refs: [416, 298]
+tags: [ac, commands]
+start: 2026-01-12T00:00
+duration: 2d
+location: {latitude: 52.5, longitude: 13.4, time_zone: Europe/Berlin}
+weather: {profile: temperate}
+known_failure: "candidate: MPC flips heating 100% / idle every 30 s on sensor noise around 1 K above target (no hold without a compressor group); every flip is a beep"
+house:
+  building: bestand_teilsaniert
+  outdoor: {sensors: {temperature: sensor.aussen_temp}}
+  rooms:
+    wohnzimmer:
+      floor_area_m2: 24
+      initial: {temperature: 19.0}
+      windows: [{orientation: S, area_m2: 3}]
+      devices: [{entity_id: climate.wz_ir_ac, profile: broadlink_ir_ac}]
+      sensors: {temperature: {entity_id: sensor.wz_temp}}
+helpers:
+  schedule:
+    tag: {daily: ["06:30-22:30"]}
+roommind:
+  settings:
+    outdoor_temp_sensor: sensor.aussen_temp
+    control_mode: mpc
+  rooms:
+    wohnzimmer:
+      devices: [{entity_id: climate.wz_ir_ac, type: ac}]
+      temperature_sensor: sensor.wz_temp
+      climate_mode: heat_only
+      schedules: [{entity_id: schedule.tag}]
+      comfort_temp: 21.0
+      eco_temp: 18.0
+expect:
+  - {metric: device.commands_per_hour, entity_id: climate.wz_ir_ac, max: 3}
+  - {metric: device.redundant_commands, entity_id: climate.wz_ir_ac, max: 0}
+  - {invariant: max_commands_per_hour, entity_id: climate.wz_ir_ac, limit: 10}

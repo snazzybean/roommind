@@ -1,4 +1,4 @@
-description: Homematic IP TRV; 1 % radio duty cycle limits commands (#317).
+description: Homematic IP TRV; 1 % radio duty cycle limits commands (#317). The budget of 30 frames/h is an assumption, not a measured value.
 extends: generic_trv
 capabilities: {min_temp: 5, max_temp: 30.5}
 quirks:

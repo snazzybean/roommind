@@ -241,11 +241,81 @@ def _print_summary(summary: dict[str, Any], real: float) -> None:
 
 
 def _shrink_run(inst: Instance) -> None:
-    """Drop the HA config copy of finished runs except storage RoomMind wrote."""
+    """Compress timelines and drop HA caches of a finished run (disk is scarce)."""
+    import gzip
+
     for name in ("deps", "tts", "blueprints"):
         path = inst.config_dir / name
         if path.is_dir():
             subprocess.run(["rm", "-rf", str(path)], check=False)
+    for path in inst.timeline_dir.glob("*.jsonl"):
+        path.with_suffix(".jsonl.gz").write_bytes(gzip.compress(path.read_bytes(), compresslevel=6))
+        path.unlink()
+
+
+def cmd_suite(args: argparse.Namespace) -> int:
+    from concurrent.futures import ThreadPoolExecutor
+
+    from .scenario.loader import SCENARIO_DIR
+
+    names = []
+    for path in sorted(SCENARIO_DIR.glob("*.yaml")):
+        data = yaml.safe_load(path.read_text()) or {}
+        tags = set(data.get("tags") or [])
+        if args.tag and not set(args.tag) & tags:
+            continue
+        if args.skip_tag and set(args.skip_tag) & tags:
+            continue
+        if data.get("abstract"):
+            continue
+        names.append(path.stem)
+    if not names:
+        print("no scenarios match")
+        return 2
+    sim = SIM_ROOT / "bin" / "sim"
+    extra = ["--roommind-src", args.roommind_src] if args.roommind_src else []
+
+    def one(name: str) -> tuple[str, int, str, float]:
+        t0 = time.time()
+        res = subprocess.run([str(sim), "run", name, "-q", *extra], capture_output=True, text=True, check=False)
+        run_dir = next((line.split()[1].rstrip(":") for line in res.stdout.splitlines() if line.startswith("run ")), "")
+        return name, res.returncode, run_dir, time.time() - t0
+
+    print(f"suite: {len(names)} scenario(s), {args.jobs} parallel")
+    results = []
+    with ThreadPoolExecutor(max_workers=args.jobs) as pool:
+        for name, code, run_dir, secs in pool.map(one, names):
+            summary_file = inst_mod.sim_home() / "runs" / run_dir / "summary.json"
+            summary = json.loads(summary_file.read_text()) if run_dir and summary_file.exists() else {}
+            xfail = any(not e["passed"] and e.get("known_failure") for e in summary.get("expectations", []))
+            status = {0: "XFAIL" if xfail else "PASS", 1: "FAIL", 2: "INVALID", 3: "BROKEN"}.get(code, f"EXIT {code}")
+            if summary.get("unexpected_pass"):
+                status = "XPASS"
+            results.append((name, status, run_dir, secs))
+            print(f"  {status:7} {name:40} {secs:6.0f}s  {run_dir}", flush=True)
+    bad = [r for r in results if r[1] in ("FAIL", "INVALID", "BROKEN") or r[1].startswith("EXIT")]
+    print(f"suite: {len(results) - len(bad)}/{len(results)} ok")
+    return 1 if bad else 0
+
+
+def cmd_prune(args: argparse.Namespace) -> int:
+    runs_dir = inst_mod.sim_home() / "runs"
+    runs = sorted(p for p in runs_dir.iterdir() if p.is_dir()) if runs_dir.is_dir() else []
+    keep = set(runs[-args.keep :]) if args.keep else set()
+    cutoff = time.time() - parse_duration(args.older_than) if args.older_than else None
+    removed = 0
+    for run in runs:
+        if run in keep or (cutoff is not None and run.stat().st_mtime > cutoff):
+            continue
+        subprocess.run(["rm", "-rf", str(run)], check=True)
+        removed += 1
+    shots = 0
+    for inst in inst_mod.list_instances():
+        for shot in sorted((inst.dir / "shots").glob("*.png"))[: -args.keep_shots or None]:
+            shot.unlink()
+            shots += 1
+    print(f"removed {removed} run(s) and {shots} screenshot(s); kept {len(runs) - removed} run(s)")
+    return 0
 
 
 def cmd_up(args: argparse.Namespace) -> int:
@@ -553,6 +623,19 @@ def _parser() -> argparse.ArgumentParser:
     shot.add_argument("--do", action="append", default=[], help="click:<text> | wait:<ms> | scroll:<px>, repeatable")
     shot.add_argument("--out")
     shot.set_defaults(func=cmd_shot)
+
+    suite = sub.add_parser("suite", help="run all library scenarios (or by tag) in parallel")
+    suite.add_argument("--tag", action="append", default=[])
+    suite.add_argument("--skip-tag", action="append", default=[])
+    suite.add_argument("-j", "--jobs", type=int, default=3)
+    suite.add_argument("--roommind-src")
+    suite.set_defaults(func=cmd_suite)
+
+    prune = sub.add_parser("prune", help="delete old runs and screenshots")
+    prune.add_argument("--keep", type=int, default=20, help="keep the newest N runs")
+    prune.add_argument("--older-than", help="only delete runs older than this, e.g. 7d")
+    prune.add_argument("--keep-shots", type=int, default=30)
+    prune.set_defaults(func=cmd_prune)
 
     report = sub.add_parser("report", help="re-evaluate a run (name, path or 'last')")
     report.add_argument("run", nargs="?", default="last")

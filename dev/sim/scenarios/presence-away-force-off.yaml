@@ -1,0 +1,39 @@
+name: presence-away-force-off
+description: >
+  AC with idle_action fan_only, presence_away_action off. When everybody leaves the
+  device must be switched off, not parked in fan_only (#368, #306).
+refs: [368, 306]
+tags: [ac, presence]
+start: 2026-01-12T00:00
+duration: 2d
+location: {latitude: 52.5, longitude: 13.4, time_zone: Europe/Berlin}
+weather: {profile: temperate}
+house:
+  building: bestand_teilsaniert
+  outdoor: {sensors: {temperature: sensor.aussen_temp}}
+  rooms:
+    wohnzimmer:
+      floor_area_m2: 24
+      initial: {temperature: 20.0}
+      windows: [{orientation: S, area_m2: 3}]
+      devices: [{entity_id: climate.wz_ac, profile: generic_split_ac}]
+      sensors: {temperature: {entity_id: sensor.wz_temp}}
+people:
+  - {id: anna, profile: commuter, rooms: {living: wohnzimmer}}
+roommind:
+  settings:
+    outdoor_temp_sensor: sensor.aussen_temp
+    presence_enabled: true
+    presence_persons: [person.anna]
+    presence_away_action: "off"
+  rooms:
+    wohnzimmer:
+      devices: [{entity_id: climate.wz_ac, type: ac, idle_action: fan_only}]
+      temperature_sensor: sensor.wz_temp
+      climate_mode: heat_only
+      comfort_temp: 21.0
+      eco_temp: 18.0
+expect:
+  - {check: "room.wohnzimmer.presence_away == true", at: "+0d09h", label: away detected}
+  - {check: "dev('climate.wz_ac').mode == 'off'", at: "+0d09h", label: device off while away}
+  - {check: "dev('climate.wz_ac').mode != 'off'", at: "+0d19h", label: back on after return}

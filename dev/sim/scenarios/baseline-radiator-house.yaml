@@ -1,0 +1,147 @@
+name: baseline-radiator-house
+description: >
+  Four-room flat with a gas boiler and TRVs, two people (commuter + home office),
+  weekday/weekend schedules, MPC with weather forecast. Baseline for comfort, energy,
+  command load and model convergence; also the runtime benchmark.
+tags: [baseline, trv, mpc]
+start: 2026-01-12T00:00
+duration: 14d
+location: {latitude: 52.5, longitude: 13.4, time_zone: Europe/Berlin}
+weather: {profile: temperate}
+house:
+  building: bestand_teilsaniert
+  floors: {og: Obergeschoss}
+  outdoor:
+    sensors:
+      temperature: sensor.aussen_temp
+      humidity: sensor.aussen_feuchte
+  rooms:
+    wohnzimmer:
+      name: Wohnzimmer
+      floor: og
+      floor_area_m2: 28
+      exterior_wall_m2: 16
+      initial: {temperature: 20.0}
+      neighbors: {kueche: open_door, flur: closed_door}
+      windows:
+        - {orientation: S, area_m2: 3.5, sensor: binary_sensor.wohnzimmer_fenster}
+      devices:
+        - {entity_id: climate.wohnzimmer_trv, profile: generic_trv, h_radiator_w_k: 55}
+        - {entity_id: climate.heizung_kessel, profile: generic_boiler}
+      sensors:
+        temperature: {entity_id: sensor.wohnzimmer_temp, profile: aqara_th}
+        humidity: {entity_id: sensor.wohnzimmer_feuchte}
+    kueche:
+      name: Küche
+      floor: og
+      floor_area_m2: 12
+      exterior_wall_m2: 8
+      initial: {temperature: 19.5}
+      windows: [{orientation: E, area_m2: 1.2}]
+      devices:
+        - {entity_id: climate.kueche_trv, profile: generic_trv}
+      sensors:
+        temperature: {entity_id: sensor.kueche_temp}
+    schlafzimmer:
+      name: Schlafzimmer
+      floor: og
+      floor_area_m2: 16
+      exterior_wall_m2: 11
+      initial: {temperature: 18.0}
+      neighbors: {flur: closed_door}
+      windows:
+        - {orientation: N, area_m2: 1.8, sensor: binary_sensor.schlafzimmer_fenster}
+      devices:
+        - {entity_id: climate.schlafzimmer_trv, profile: generic_trv}
+      sensors:
+        temperature: {entity_id: sensor.schlafzimmer_temp}
+        humidity: {entity_id: sensor.schlafzimmer_feuchte}
+    buero:
+      name: Büro
+      floor: og
+      floor_area_m2: 11
+      exterior_wall_m2: 9
+      initial: {temperature: 19.0}
+      neighbors: {flur: closed_door}
+      windows: [{orientation: W, area_m2: 1.5}]
+      devices:
+        - {entity_id: climate.buero_trv, profile: sonoff_trvzb}
+      sensors:
+        temperature: {entity_id: sensor.buero_temp}
+        occupancy: {entity_id: binary_sensor.buero_praesenz}
+    flur:
+      name: Flur
+      floor: og
+      floor_area_m2: 8
+      exterior_wall_m2: 2
+      initial: {temperature: 18.0}
+people:
+  - {id: anna, profile: commuter, rooms: {sleeping: schlafzimmer, living: wohnzimmer}}
+  - {id: ben, profile: home_office, rooms: {sleeping: schlafzimmer, office: buero, living: wohnzimmer}}
+helpers:
+  schedule:
+    plan_wohnen: {weekdays: ["06:00-08:00", "16:30-22:30"], weekend: ["07:30-23:00"]}
+    plan_schlafen: {daily: ["05:30-07:00", "21:00-22:30@18"]}
+    plan_buero: {weekdays: ["08:00-17:30@20.5"]}
+roommind:
+  settings:
+    outdoor_temp_sensor: sensor.aussen_temp
+    outdoor_humidity_sensor: sensor.aussen_feuchte
+    weather_entity: weather.simhome
+    control_mode: mpc
+    presence_enabled: true
+    presence_persons: [person.anna, person.ben]
+    compressor_groups:
+      - id: kessel
+        name: Kessel
+        members: [climate.wohnzimmer_trv, climate.kueche_trv, climate.schlafzimmer_trv, climate.buero_trv]
+        master_entity: climate.heizung_kessel
+        min_run_minutes: 5
+        min_off_minutes: 5
+  rooms:
+    wohnzimmer:
+      devices: [{entity_id: climate.wohnzimmer_trv, type: trv, heating_system_type: radiator}]
+      temperature_sensor: sensor.wohnzimmer_temp
+      humidity_sensor: sensor.wohnzimmer_feuchte
+      window_sensors: [binary_sensor.wohnzimmer_fenster]
+      climate_mode: heat_only
+      schedules: [{entity_id: schedule.plan_wohnen}]
+      comfort_temp: 21.0
+      eco_temp: 18.0
+    kueche:
+      devices: [{entity_id: climate.kueche_trv, type: trv, heating_system_type: radiator}]
+      temperature_sensor: sensor.kueche_temp
+      climate_mode: heat_only
+      schedules: [{entity_id: schedule.plan_wohnen}]
+      comfort_temp: 20.0
+      eco_temp: 17.5
+    schlafzimmer:
+      devices: [{entity_id: climate.schlafzimmer_trv, type: trv, heating_system_type: radiator}]
+      temperature_sensor: sensor.schlafzimmer_temp
+      humidity_sensor: sensor.schlafzimmer_feuchte
+      window_sensors: [binary_sensor.schlafzimmer_fenster]
+      climate_mode: heat_only
+      schedules: [{entity_id: schedule.plan_schlafen}]
+      comfort_temp: 19.0
+      eco_temp: 16.5
+      ignore_presence: true
+    buero:
+      devices: [{entity_id: climate.buero_trv, type: trv, heating_system_type: radiator}]
+      temperature_sensor: sensor.buero_temp
+      occupancy_sensors: [binary_sensor.buero_praesenz]
+      climate_mode: heat_only
+      schedules: [{entity_id: schedule.plan_buero}]
+      comfort_temp: 20.5
+      eco_temp: 17.0
+timeline:
+  - {at: "+2d7h", do: window.open, entity_id: binary_sensor.schlafzimmer_fenster, for: 15m}
+  - {at: "+3d18h", do: window.open, entity_id: binary_sensor.wohnzimmer_fenster, for: 10m}
+  - {at: "+5d", do: weather.set, temperature_delta: -8, for: 2d}
+  - {at: "+9d10h", do: roommind.ws, type: roommind/override/set, area_id: wohnzimmer, override_type: boost, duration: 2}
+expect:
+  - {metric: comfort.in_band_pct, room: wohnzimmer, min: 85}
+  - {metric: device.commands_per_hour, entity_id: climate.schlafzimmer_trv, max: 4}
+  - {invariant: no_rejected_commands}
+  - {invariant: setpoints_within_device_range}
+  - {invariant: window_open_pauses}
+  - {check: "room.wohnzimmer.override_active == true", at: "+9d10h30m", label: boost override active}

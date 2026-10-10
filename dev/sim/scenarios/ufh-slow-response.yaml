@@ -1,0 +1,48 @@
+name: ufh-slow-response
+description: >
+  Underfloor heating in a well insulated living room. The screed slab responds with
+  hours of lag and keeps heating after switch-off. Checks comfort around schedule
+  changes, overshoot from residual heat and whether the EKF learns a plausible
+  time constant instead of attributing slab heat to the sun (#35, #115, #131).
+refs: [35, 115, 131]
+tags: [ufh, mpc, model]
+start: 2026-01-12T00:00
+duration: 7d
+location: {latitude: 52.5, longitude: 13.4, time_zone: Europe/Berlin}
+weather: {profile: temperate}
+known_failure: "needs analysis: ~0.5 K average overshoot above the heat target with underfloor heating (slab residual + solar)"
+house:
+  building: neubau_kfw55
+  outdoor: {sensors: {temperature: sensor.aussen_temp}}
+  rooms:
+    wohnzimmer:
+      name: Wohnzimmer
+      floor_area_m2: 32
+      exterior_wall_m2: 18
+      initial: {temperature: 20.0}
+      windows: [{orientation: S, area_m2: 5}]
+      devices:
+        - {entity_id: climate.wohnzimmer_fbh, profile: ufh_zone}
+      sensors: {temperature: {entity_id: sensor.wohnzimmer_temp}}
+helpers:
+  schedule:
+    plan: {daily: ["06:00-22:00"]}
+roommind:
+  settings:
+    outdoor_temp_sensor: sensor.aussen_temp
+    weather_entity: weather.simhome
+    control_mode: mpc
+  rooms:
+    wohnzimmer:
+      devices: [{entity_id: climate.wohnzimmer_fbh, type: trv, heating_system_type: underfloor, setpoint_mode: direct}]
+      temperature_sensor: sensor.wohnzimmer_temp
+      climate_mode: heat_only
+      schedules: [{entity_id: schedule.plan}]
+      comfort_temp: 21.5
+      eco_temp: 19.0
+expect:
+  - {metric: comfort.undershoot_kh, room: wohnzimmer, max: 25}
+  - {metric: comfort.heat_overshoot_kh, room: wohnzimmer, max: 15}
+  - {metric: model.learned_alpha_per_h, room: wohnzimmer, min: 0.005, max: 0.02}
+  - {metric: room.temp_max, room: wohnzimmer, max: 23.5}
+  - {invariant: target_never_empty}

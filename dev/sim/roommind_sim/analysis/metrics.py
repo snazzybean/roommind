@@ -24,7 +24,7 @@ def _device_ids(run: RunData) -> list[str]:
 
 
 def _room_metrics(run: RunData, area: str) -> dict[str, Any]:
-    under = over = in_band = covered = 0.0
+    under = over = over_heat = in_band = covered = 0.0
     pred_err: list[float] = []
     prev_t = None
     for s in run.samples:
@@ -45,6 +45,8 @@ def _room_metrics(run: RunData, area: str) -> dict[str, Any]:
         covered += dt_h
         if heat is not None and t_air < heat:
             under += (heat - t_air) * dt_h
+        if heat is not None and t_air > heat + 0.5:
+            over_heat += (t_air - heat - 0.5) * dt_h
         if cool is not None and t_air > cool:
             over += (t_air - cool) * dt_h
         if (heat is None or t_air >= heat - 0.5) and (cool is None or t_air <= cool + 0.5):
@@ -61,6 +63,7 @@ def _room_metrics(run: RunData, area: str) -> dict[str, Any]:
     return {
         "undershoot_kh": round(under, 3),
         "overshoot_kh": round(over, 3),
+        "heat_overshoot_kh": round(over_heat, 3),
         "in_band_pct": round(100 * in_band / covered, 1) if covered else None,
         "temp_min": round(min(temps), 2) if temps else None,
         "temp_max": round(max(temps), 2) if temps else None,

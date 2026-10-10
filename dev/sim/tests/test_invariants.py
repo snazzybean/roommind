@@ -107,3 +107,37 @@ def test_command_rate():
     run = _run([False] * 70, commands=[(30 * i, "set_temperature", {"temperature": 22}) for i in range(20)])
     assert max_commands_per_hour(run, limit=12)
     assert not max_commands_per_hour(run, limit=30)
+
+
+def test_commanded_min_run_counts_per_group():
+    rooms = {
+        "a": {"devices": [{"entity_id": "climate.a", "profile": "generic_split_ac"}]},
+        "b": {"devices": [{"entity_id": "climate.b", "profile": "generic_split_ac"}]},
+    }
+    scn = load_scenario_dict(scenario(rooms))
+    t0 = scn.start
+    cmds = [
+        (0, "climate.a", "heat"),
+        (60, "climate.b", "heat"),
+        (300, "climate.a", "off"),  # a stops after 5 min, b keeps the compressor running
+        (1200, "climate.b", "off"),
+    ]
+    events = [
+        {
+            "t": t0 + t,
+            "type": "command",
+            "entity_id": e,
+            "service": "set_hvac_mode",
+            "data": {"hvac_mode": m},
+            "result": "accepted",
+        }
+        for t, e, m in cmds
+    ]
+    storage = {
+        "settings": {"compressor_groups": [{"id": "g", "members": ["climate.a", "climate.b"], "min_run_minutes": 15}]},
+        "rooms": {},
+    }
+    run = RunData(None, scn, [], [], events, t0 + 3600, storage)  # type: ignore[arg-type]
+    assert min_run_commanded(run) == []
+    events[3]["t"] = t0 + 600  # whole group off after 10 min
+    assert len(min_run_commanded(run)) == 1

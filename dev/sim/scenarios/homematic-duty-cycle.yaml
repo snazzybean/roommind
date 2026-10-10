@@ -1,0 +1,45 @@
+name: homematic-duty-cycle
+description: >
+  Homematic IP TRV (radio duty cycle) on a boiler, MPC with proportional setpoints.
+  Counts commands per hour; bursts exhaust the duty cycle and the TRV rejects frames (#317).
+refs: [317]
+tags: [trv, commands]
+start: 2026-01-12T00:00
+duration: 3d
+location: {latitude: 52.5, longitude: 13.4, time_zone: Europe/Berlin}
+weather: {profile: winter-cold}
+known_failure: "candidate (#317 class): proportional setpoint jitters every 30-60 s, bursts exceed the radio duty cycle"
+house:
+  building: bestand_teilsaniert
+  outdoor: {sensors: {temperature: sensor.aussen_temp}}
+  rooms:
+    schlafzimmer:
+      name: Schlafzimmer
+      floor_area_m2: 16
+      initial: {temperature: 17.0}
+      windows: [{orientation: N, area_m2: 1.8}]
+      devices:
+        - {entity_id: climate.schlafzimmer_trv, profile: homematic_ip_trv}
+        - {entity_id: climate.kessel, profile: generic_boiler}
+      sensors: {temperature: {entity_id: sensor.schlafzimmer_temp}}
+helpers:
+  schedule:
+    plan: {daily: ["05:30-07:00", "20:30-22:30"]}
+roommind:
+  settings:
+    outdoor_temp_sensor: sensor.aussen_temp
+    weather_entity: weather.simhome
+    control_mode: mpc
+    compressor_groups:
+      - {id: kessel, name: Kessel, members: [climate.schlafzimmer_trv], master_entity: climate.kessel, min_run_minutes: 5, min_off_minutes: 5}
+  rooms:
+    schlafzimmer:
+      devices: [{entity_id: climate.schlafzimmer_trv, type: trv, heating_system_type: radiator}]
+      temperature_sensor: sensor.schlafzimmer_temp
+      climate_mode: heat_only
+      schedules: [{entity_id: schedule.plan}]
+      comfort_temp: 19.5
+      eco_temp: 17.0
+expect:
+  - {invariant: no_rejected_commands}
+  - {invariant: max_commands_per_hour, entity_id: climate.schlafzimmer_trv, limit: 20}
