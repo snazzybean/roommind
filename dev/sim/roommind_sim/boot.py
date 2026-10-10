@@ -64,7 +64,15 @@ def main(argv: list[str] | None = None) -> int:
         "1",
     ]
     exit_code = ha_main.main()
-    _write_raw(state_file, json.dumps(clk.state()))
+    state = clk.state()
+    plan_file = state_file.with_name("clock_plan.json")
+    if plan_file.is_file():
+        # simhome switched to real time for the shutdown; continue with the plan it saved.
+        plan = json.loads(plan_file.read_text())
+        for key in ("mode", "factor", "target", "then_mode", "then_action"):
+            state[key] = plan.get(key)
+        plan_file.unlink()
+    _write_raw(state_file, json.dumps(state))
     if exit_code == RESTART_EXIT_CODE:
         os.execv(
             sys.executable,

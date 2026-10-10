@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time
@@ -47,6 +48,9 @@ class SimRuntime:
         self._unsubs: list[CALLBACK_TYPE] = []
         self._buffers: dict[str, list[str]] = {"samples": [], "observer": [], "events": []}
         self._last_step = time.time()
+        # Persist/flush jobs run in the executor; serialize them so files are not
+        # written concurrently and timeline lines stay in order.
+        self._io_lock = asyncio.Lock()
         self.removed: set[str] = set(state.get("removed", []))
 
     # --- loading ------------------------------------------------------------------------
@@ -212,19 +216,28 @@ class SimRuntime:
         self.hass.async_create_task(self.async_flush())
 
     async def async_flush(self) -> None:
-        buffers = {k: v for k, v in self._buffers.items() if v}
-        self._buffers = {k: [] for k in self._buffers}
-        if buffers:
-            await self.hass.async_add_executor_job(_append_lines, self.dir / "timeline", buffers)
+        async with self._io_lock:
+            buffers = {k: v for k, v in self._buffers.items() if v}
+            self._buffers = {k: [] for k in self._buffers}
+            if buffers:
+                await self.hass.async_add_executor_job(_append_lines, self.dir / "timeline", buffers)
 
     async def async_persist(self) -> None:
         world = self.world.snapshot()
         runtime = {"timeline_done": sorted(self.done), "provisioned": self.provisioned, "removed": sorted(self.removed)}
         clock = self.clock.state() if self.clock else None
-        await self.hass.async_add_executor_job(_write_state, self.dir / "state", world, runtime, clock)
+        async with self._io_lock:
+            await self.hass.async_add_executor_job(_write_state, self.dir / "state", world, runtime, clock)
         await self.async_flush()
 
     async def async_stop(self, _event: Any = None) -> None:
+        clk = self.clock
+        if clk is not None:
+            # Shutdown waits on real timeouts; in turbo they would jump hours ahead. Run
+            # the shutdown in real time and let boot restore the plan (mode/target) after.
+            plan = clk.state()
+            await self.hass.async_add_executor_job(_write_state, self.dir / "state", None, None, None, plan)
+            clk.set_mode(clockmod.SCALED, 1.0)
         for unsub in self._unsubs:
             unsub()
         self._unsubs.clear()
@@ -295,9 +308,15 @@ def _append_lines(folder: Path, buffers: dict[str, list[str]]) -> None:
             fh.write("\n".join(lines) + "\n")
 
 
-def _write_state(folder: Path, world: dict[str, Any], runtime: dict[str, Any], clock: dict[str, Any] | None) -> None:
+def _write_state(
+    folder: Path,
+    world: dict[str, Any] | None,
+    runtime: dict[str, Any] | None,
+    clock: dict[str, Any] | None,
+    clock_plan: dict[str, Any] | None = None,
+) -> None:
     folder.mkdir(parents=True, exist_ok=True)
-    for name, data in (("world", world), ("runtime", runtime), ("clock", clock)):
+    for name, data in (("world", world), ("runtime", runtime), ("clock", clock), ("clock_plan", clock_plan)):
         if data is None:
             continue
         tmp = folder / f"{name}.json.tmp"

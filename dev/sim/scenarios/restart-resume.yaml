@@ -1,0 +1,41 @@
+name: restart-resume
+description: >
+  HA restarts mid-run. Clock and world must continue where they stopped; timeline items
+  run exactly once; window sensors are unavailable for a while after the restart (#437, #181).
+refs: [437, 181]
+tags: [infra]
+start: 2026-01-12T00:00
+duration: 2d
+location: {latitude: 52.5, longitude: 13.4, time_zone: Europe/Berlin}
+weather: {profile: temperate}
+house:
+  building: bestand_teilsaniert
+  outdoor:
+    sensors: {temperature: sensor.aussen_temp}
+  rooms:
+    buero:
+      name: Büro
+      initial: {temperature: 20.0}
+      windows: [{orientation: E, area_m2: 1.5, sensor: binary_sensor.buero_fenster}]
+      devices:
+        - {entity_id: climate.buero_trv, profile: sonoff_trvzb}
+      sensors:
+        temperature: {entity_id: sensor.buero_temp, unavailable_after_start_s: 90}
+roommind:
+  settings: {outdoor_temp_sensor: sensor.aussen_temp}
+  rooms:
+    buero:
+      devices: [{entity_id: climate.buero_trv, type: trv}]
+      temperature_sensor: sensor.buero_temp
+      window_sensors: [binary_sensor.buero_fenster]
+      climate_mode: heat_only
+      comfort_temp: 21.0
+timeline:
+  - {at: "+1d", do: ha.restart}
+  - {at: "+1d1h", do: window.open, entity_id: binary_sensor.buero_fenster, for: 20m}
+  - {at: "+1d2h", do: mark, label: after restart}
+expect:
+  - {check: "room.buero.window_open == true", at: "+1d1h05m", label: window seen after restart}
+  - {check: "room.buero.mode == 'idle'", at: "+1d1h10m", label: paused while open}
+  - {invariant: window_open_pauses}
+  - {invariant: target_never_empty}

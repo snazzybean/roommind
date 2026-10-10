@@ -177,12 +177,22 @@ def cmd_run(args: argparse.Namespace) -> int:
         )
         inst.write_meta(pid=proc.pid, launcher="foreground")
         last = ""
+        last_change = time.time()
         while proc.poll() is None:
             time.sleep(1)
             progress = _progress(inst, scn)
-            if progress and progress != last and not args.quiet:
-                print(f"\r  {progress}", end="", flush=True)
-                last = progress
+            if progress != last:
+                last, last_change = progress, time.time()
+                if progress and not args.quiet:
+                    print(f"\r  {progress}", end="", flush=True)
+            elif time.time() - last_change > args.stall_timeout:
+                print(f"\nno progress for {args.stall_timeout:.0f}s real, killing the run", file=sys.stderr)
+                proc.terminate()
+                try:
+                    proc.wait(30)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                break
     print()
     real = time.time() - t0
     code = proc.returncode
@@ -384,6 +394,33 @@ def cmd_world(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_shot(args: argparse.Namespace) -> int:
+    from .ui import screenshot
+
+    inst = _live(args.name)
+    status = _ws(inst, "simhome/status")
+    result = screenshot(
+        inst,
+        path=args.path,
+        viewport=args.viewport,
+        dark=args.dark,
+        lang=args.lang,
+        wait_s=args.wait,
+        full_page=args.full,
+        out=Path(args.out) if args.out else None,
+        sim_now=status["now"],
+        actions=args.do,
+    )
+    errors = _ws(inst, "system_log/list")
+    recent = [e for e in errors if e.get("level") in ("ERROR", "CRITICAL")]
+    print(result["file"])
+    for c in result["console"]:
+        print(f"  browser {c['type']}: {c['text'][:300]}")
+    for e in recent[:10]:
+        print(f"  HA {e.get('level')}: {e.get('name')}: {' | '.join(e.get('message', []))[:300]}")
+    return 0
+
+
 def cmd_report(args: argparse.Namespace) -> int:
     from .analysis import evaluate_run
 
@@ -427,6 +464,12 @@ def _parser() -> argparse.ArgumentParser:
         "--ui", action="store_true", help="build the frontend first (to open the run with sim up --from-run)"
     )
     run.add_argument("-q", "--quiet", action="store_true")
+    run.add_argument(
+        "--stall-timeout",
+        type=float,
+        default=300.0,
+        help="abort when the sim clock does not move for this many real seconds",
+    )
     run.set_defaults(func=cmd_run)
 
     up = sub.add_parser("up", help="start a live instance (UI on the LAN)")
@@ -484,6 +527,20 @@ def _parser() -> argparse.ArgumentParser:
     world = sub.add_parser("world", help="ground truth of a live instance")
     world.add_argument("name", nargs="?", default="main")
     world.set_defaults(func=cmd_world)
+
+    shot = sub.add_parser(
+        "shot", help="screenshot the UI, e.g. sim shot main --path /roommind/room/wohnzimmer --viewport mobile"
+    )
+    shot.add_argument("name", nargs="?", default="main")
+    shot.add_argument("--path", default="/roommind")
+    shot.add_argument("--viewport", default="desktop", choices=["desktop", "mobile", "tablet"])
+    shot.add_argument("--dark", action="store_true")
+    shot.add_argument("--lang", default="de")
+    shot.add_argument("--wait", type=float, default=4.0, help="seconds to let the panel settle")
+    shot.add_argument("--full", action="store_true", help="full page")
+    shot.add_argument("--do", action="append", default=[], help="click:<text> | wait:<ms> | scroll:<px>, repeatable")
+    shot.add_argument("--out")
+    shot.set_defaults(func=cmd_shot)
 
     report = sub.add_parser("report", help="re-evaluate a run (name, path or 'last')")
     report.add_argument("run", nargs="?", default="last")
