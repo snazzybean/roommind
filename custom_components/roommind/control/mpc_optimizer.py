@@ -5,7 +5,14 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 
-from ..const import HEATING_SYSTEM_PROFILES, MIN_POWER_FRACTION, MODE_COOLING, MODE_HEATING, MODE_IDLE
+from ..const import (
+    HEATING_SYSTEM_PROFILES,
+    MIN_POWER_FRACTION,
+    MODE_COOLING,
+    MODE_HEATING,
+    MODE_IDLE,
+    MODE_START_PENALTY,
+)
 from .residual_heat import compute_residual_heat
 from .thermal_model import RCModel
 
@@ -26,6 +33,11 @@ class MPCPlan:
     temperatures: list[float]  # len = len(actions) + 1 (includes initial)
     dt_minutes: float = 5.0
     power_fractions: list[float] = field(default_factory=list)
+    # Power fraction actually delivered in each block, which is not the same as
+    # the fraction commanded: a regulated AC sitting at its setpoint is told to
+    # run at MIN but delivers nothing. Kept unrounded so a replay reproduces the
+    # trajectory exactly (see simulate_plan).
+    delivered_fractions: list[float] = field(default_factory=list)
     # Per-system decision lookahead used when building this plan. Exposed so
     # the controller's safety guard can align its horizon with the optimizer's.
     lookahead_blocks: int = LOOKAHEAD_BASE_BLOCKS
@@ -81,6 +93,7 @@ class MPCOptimizer:
         solar_series: list[float] | None = None,
         residual_series: list[float] | None = None,
         occupancy_series: list[float] | None = None,
+        initial_mode: str = MODE_IDLE,
     ) -> MPCPlan:
         """Find optimal action sequence over the planning horizon.
 
@@ -90,6 +103,13 @@ class MPCOptimizer:
         Accepts dual target series (heat_target_series + cool_target_series)
         for dead-band-aware optimization. If cool_target_series is None,
         it defaults to heat_target_series (single-target behavior).
+
+        ``initial_mode`` is the mode actually running when the plan is built.
+        Continuing it is free; STARTING a different active mode is charged
+        MODE_START_PENALTY (comfort-equivalent), so near steady state runs
+        consolidate instead of duty-cycling at the min-run floor. The real
+        cross-cycle min-run is enforced by the controller, so the pre-existing
+        run is treated as having satisfied the plan's internal min_run.
         """
         if cool_target_series is None:
             cool_target_series = list(heat_target_series)
@@ -124,9 +144,14 @@ class MPCOptimizer:
         actions: list[str] = []
         temperatures: list[float] = [T_room]
         power_fractions: list[float] = []
+        delivered_fractions: list[float] = []
         current_temp = T_room
-        current_mode = MODE_IDLE
-        blocks_in_mode = 0
+        if initial_mode in (MODE_HEATING, MODE_COOLING):
+            current_mode = initial_mode
+            blocks_in_mode = self.min_run_blocks  # real min-run is the controller's job
+        else:
+            current_mode = MODE_IDLE
+            blocks_in_mode = 0
 
         for i in range(n_blocks):
             T_out = T_outdoor_series[i]
@@ -171,6 +196,10 @@ class MPCOptimizer:
                         future_residual=future_residual,
                         future_occupancy=future_occupancy,
                     )
+                    if action != MODE_IDLE and action != current_mode:
+                        # Starting a run costs wear and noise; charging it in
+                        # comfort currency keeps steady-state cycling slow.
+                        cost += self.w_comfort * MODE_START_PENALTY
                     if cost < best_cost:
                         best_cost = cost
                         best_action = action
@@ -192,11 +221,17 @@ class MPCOptimizer:
             elif best_action != MODE_IDLE and pf == 0.0:
                 pf = 1.0  # min_run_blocks enforcement: keep full power
 
-            # Apply action with proportional Q for accurate forward prediction
+            # Apply action with proportional Q for accurate forward prediction.
+            # A proportional AC never drives past its own setpoint: at/below
+            # the cool target the rung servo parks the head and delivered
+            # power is ~zero — the pf=MIN command only keeps the run alive.
+            # Predicting MIN*Q_cool here forecast phantom overshoot for every
+            # holding block, which made sustained cooling look like a comfort
+            # violation and forced the plan into idle/cool duty-cycling.
             if best_action == MODE_HEATING:
                 Q = pf * self.model.Q_heat
             elif best_action == MODE_COOLING:
-                Q = -(pf * self.model.Q_cool)
+                Q = 0.0 if current_temp <= cool_tgt else -(pf * self.model.Q_cool)
             else:
                 Q = 0.0
             next_temp = self.model.predict(
@@ -213,6 +248,7 @@ class MPCOptimizer:
             actions.append(best_action)
             temperatures.append(round(next_temp, 2))
             power_fractions.append(round(pf, 3))
+            delivered_fractions.append(0.0 if Q == 0.0 else pf)
 
             # Track run length
             if best_action == current_mode:
@@ -228,6 +264,7 @@ class MPCOptimizer:
             temperatures=temperatures,
             dt_minutes=dt_minutes,
             power_fractions=power_fractions,
+            delivered_fractions=delivered_fractions,
             lookahead_blocks=self._lookahead_blocks,
         )
 
@@ -260,11 +297,15 @@ class MPCOptimizer:
         current_temp = T_room
         for i in range(n_blocks):
             pf = plan.power_fractions[i] if i < len(plan.power_fractions) else 0.0
+            # What the block actually delivered, which is zero for a regulated
+            # cooling block holding at its setpoint. Falls back to the commanded
+            # fraction for plans built without it.
+            delivered = plan.delivered_fractions[i] if i < len(plan.delivered_fractions) else pf
             action = plan.actions[i]
             if action == MODE_HEATING:
-                Q = pf * self.model.Q_heat
+                Q = delivered * self.model.Q_heat
             elif action == MODE_COOLING:
-                Q = -(pf * self.model.Q_cool)
+                Q = -(delivered * self.model.Q_cool)
             else:
                 Q = 0.0
             qs = q_solar[i] if i < len(q_solar) else 0.0
@@ -330,6 +371,17 @@ class MPCOptimizer:
             # Simulate HVAC for min_run_blocks (not just 1 block) to correctly
             # value sustained heating/cooling over the lookahead horizon.
             block_Q = Q if j < self.min_run_blocks else 0.0
+            # Regulated cooling: a setpoint-following AC holds at its target
+            # instead of overshooting past it, so the COOLING hypothesis must
+            # not charge itself for a full-power plunge it would never
+            # deliver. Without this the hypothesis predicted min_run blocks
+            # of unregulated Q_cool, made "keep cooling" look like a comfort
+            # violation near target, and duty-cycled against idle. Heating is
+            # left unregulated deliberately: UFH pre-heat charges thermal
+            # mass past the current target on purpose.
+            c_tgt = future_cool_targets[j] if j < len(future_cool_targets) else cool_target
+            if action == MODE_COOLING and block_Q != 0.0 and T <= c_tgt:
+                block_Q = 0.0
             # Residual for the idle / post-run blocks. For the HEATING
             # hypothesis on a gated slow system, synthesize the afterglow this
             # hypothetical run would generate; otherwise fall back to the
@@ -357,16 +409,16 @@ class MPCOptimizer:
             # from implausible model predictions
             T = max(self.temp_min, min(self.temp_max, T))
             h_tgt = future_heat_targets[j] if j < len(future_heat_targets) else heat_target
-            c_tgt = future_cool_targets[j] if j < len(future_cool_targets) else cool_target
             # Dead-band-aware comfort cost: zero inside the band
             if T < h_tgt:
                 total_cost += self.w_comfort * (T - h_tgt) ** 2
             elif T > c_tgt:
                 total_cost += self.w_comfort * (T - c_tgt) ** 2
             # else: inside dead band, no comfort cost
-            # Energy cost: proportional to HVAC power for min_run blocks
+            # Energy cost: proportional to the power actually simulated for
+            # the block — a regulated (held) cooling block consumes ~nothing.
             if j < self.min_run_blocks and action != MODE_IDLE:
-                total_cost += self.w_energy * abs(Q) / 1000.0
+                total_cost += self.w_energy * abs(block_Q) / 1000.0
 
         return total_cost
 
