@@ -131,8 +131,9 @@ def _wait_ready(inst: Instance, timeout: float = READY_TIMEOUT_S) -> bool:
         try:
             with urllib.request.urlopen(f"http://127.0.0.1:{port}/manifest.json", timeout=2) as resp:
                 if resp.status == 200 and inst.token_path.exists():
+                    _ws(inst, "simhome/status")
                     return True
-        except OSError:
+        except Exception:  # noqa: BLE001 - still starting (HTTP up before simhome, or token from a copied run)
             pass
         time.sleep(1)
     return False
@@ -346,19 +347,19 @@ def cmd_up(args: argparse.Namespace) -> int:
     if inst.is_running():
         print(f"{args.name} already running: {inst.url()}")
         return 0
-    fresh = args.fresh or not inst.scenario_path.exists()
-    if fresh:
+    from .scenario import load_scenario_dict
+
+    if args.from_run:
+        _seed_from_run(inst, _resolve_run(args.from_run))
+        scn = load_scenario_dict(json.loads(inst.scenario_path.read_text()))
+    elif args.fresh or not inst.scenario_path.exists():
         if not args.scenario:
             raise RuntimeError("new instance needs --scenario")
         if inst.dir.exists():
             subprocess.run(["rm", "-rf", str(inst.dir)], check=True)
         scn = load_scenario(args.scenario, _overrides(args.set))
     else:
-        from .scenario import load_scenario_dict
-
         scn = load_scenario_dict(json.loads(inst.scenario_path.read_text()))
-    if args.from_run:
-        _seed_from_run(inst, Path(args.from_run))
     rm_src = roommind_src(override=args.roommind_src)
     if not args.roommind_src:
         _check_frontend()
