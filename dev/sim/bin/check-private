@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
-"""Refuse staged files that contain private data (LAN IPs, local paths, tokens, emails).
+"""Refuse private data (LAN IPs, local paths, tokens, emails) in what is about to be committed.
 
-Usage: dev/sim/bin/check-private [paths...]   (default: staged files)
+Usage: dev/sim/bin/check-private [paths...]
+Without paths it checks only the lines a commit adds (staged diff), so existing content
+elsewhere in the repo (example IPs, test fixtures) does not block unrelated commits.
 Extra local patterns (names, coordinates, hostnames) can live outside the repo in
 $ROOMMIND_SIM_HOME/private-patterns.txt, one regex per line.
 """
@@ -25,11 +27,37 @@ PATTERNS = {
 ALLOW_MARK = "check-private: allow"
 
 
-def staged_files() -> list[Path]:
-    out = subprocess.run(
-        ["git", "diff", "--cached", "--name-only", "--diff-filter=ACMR"], capture_output=True, text=True, check=True
+def staged_lines() -> list[tuple[str, int, str]]:
+    diff = subprocess.run(
+        ["git", "diff", "--cached", "--unified=0", "--no-color", "--diff-filter=ACMR"],
+        capture_output=True,
+        text=True,
+        check=True,
     ).stdout
-    return [Path(p) for p in out.splitlines() if p]
+    out: list[tuple[str, int, str]] = []
+    path, lineno = "", 0
+    for line in diff.splitlines():
+        if line.startswith("+++ "):
+            path = line[6:] if line.startswith("+++ b/") else line[4:]
+        elif line.startswith("@@"):
+            lineno = int(line.split("+", 1)[1].split(",")[0].split(" ")[0]) - 1
+        elif line.startswith("+") and not line.startswith("+++"):
+            lineno += 1
+            out.append((path, lineno, line[1:]))
+    return out
+
+
+def file_lines(paths: list[Path]) -> list[tuple[str, int, str]]:
+    out: list[tuple[str, int, str]] = []
+    for path in paths:
+        if not path.is_file() or path.suffix in {".png", ".jpg", ".gz", ".ico", ".woff2"}:
+            continue
+        try:
+            text = path.read_text()
+        except UnicodeDecodeError:
+            continue
+        out.extend((str(path), i, line) for i, line in enumerate(text.splitlines(), 1))
+    return out
 
 
 def load_patterns() -> dict[str, re.Pattern[str]]:
@@ -44,26 +72,19 @@ def load_patterns() -> dict[str, re.Pattern[str]]:
 
 
 def main(argv: list[str]) -> int:
-    files = [Path(a) for a in argv] or staged_files()
+    lines = file_lines([Path(a) for a in argv]) if argv else staged_lines()
     patterns = load_patterns()
     hits = []
-    for path in files:
-        if not path.is_file() or path.suffix in {".png", ".jpg", ".gz", ".ico", ".woff2"}:
+    for path, lineno, line in lines:
+        if ALLOW_MARK in line:
             continue
-        try:
-            text = path.read_text()
-        except UnicodeDecodeError:
-            continue
-        for lineno, line in enumerate(text.splitlines(), 1):
-            if ALLOW_MARK in line:
-                continue
-            for name, rx in patterns.items():
-                if rx.search(line):
-                    hits.append(f"{path}:{lineno}: {name}: {line.strip()[:120]}")
+        for name, rx in patterns.items():
+            if rx.search(line):
+                hits.append(f"{path}:{lineno}: {name}: {line.strip()[:120]}")
     if hits:
         print("Private data found, not committing:", *hits, sep="\n  ", file=sys.stderr)
         return 1
-    print(f"check-private: {len(files)} file(s) clean")
+    print(f"check-private: {len(lines)} line(s) clean")
     return 0
 
 
