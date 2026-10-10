@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# ha-mcp (stdio) pointed at a simulation instance, for a local .mcp.json entry:
+#   "ha-sim": {"type": "stdio", "command": "<repo>/dev/sim/bin/ha-sim-mcp", "args": ["main"]}
+# Separate from any production Home Assistant MCP entry.
+set -euo pipefail
+name="${1:-main}"
+inst="${ROOMMIND_SIM_HOME:-$HOME/.roommind-sim}/instances/$name"
+port="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["port"])' "$inst/meta.json" 2>/dev/null || echo 8130)"
+export HOMEASSISTANT_URL="http://127.0.0.1:$port"
+HOMEASSISTANT_TOKEN="$(cat "$inst/token" 2>/dev/null || true)"
+export HOMEASSISTANT_TOKEN
+if [[ -z "$HOMEASSISTANT_TOKEN" ]]; then
+  echo "ha-sim-mcp: instance '$name' has no token yet; start it with: sim up $name --scenario <name>" >&2
+fi
+exec uvx ha-mcp@latest

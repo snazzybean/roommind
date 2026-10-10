@@ -436,6 +436,12 @@ def cmd_ps(args: argparse.Namespace) -> int:
     return 0
 
 
+def _source_label(source: Any) -> str:
+    if isinstance(source, dict):
+        return f"{source.get('git', '')} {source.get('path', '')}".strip()
+    return str(source or "")
+
+
 def cmd_logs(args: argparse.Namespace) -> int:
     inst = _live(args.name) if not args.run else Instance(Path(args.name).name, Path(args.name))
     log = inst.logs_dir / "home-assistant.log"
@@ -541,6 +547,34 @@ def cmd_import(args: argparse.Namespace) -> int:
     for a in scenario.get("assumptions", []):
         print(f"  - {a}")
     print(f"next: sim run {path}   or   sim up <name> --scenario {path}")
+    return 0
+
+
+def cmd_compare(args: argparse.Namespace) -> int:
+    """Metric diff of two runs, e.g. before/after a fix (sim run X --roommind-src v1.7.8 vs. this checkout)."""
+    a_dir, b_dir = _resolve_run(args.a), _resolve_run(args.b)
+    a = json.loads((a_dir / "summary.json").read_text())
+    b = json.loads((b_dir / "summary.json").read_text())
+    print(f"A: {a_dir.name}  ({(a.get('source') or {}).get('git', '?')})")
+    print(f"B: {b_dir.name}  ({(b.get('source') or {}).get('git', '?')})")
+    for group in ("rooms", "devices", "model"):
+        for name, ma in a["metrics"][group].items():
+            mb = b["metrics"][group].get(name, {})
+            rows = []
+            for key, va in ma.items():
+                vb = mb.get(key)
+                if isinstance(va, int | float) and isinstance(vb, int | float) and va != vb:
+                    delta = vb - va
+                    pct = f" ({100 * delta / va:+.0f}%)" if va else ""
+                    rows.append(f"    {key:22} {va:>10} -> {vb:<10} {delta:+.3g}{pct}")
+            if rows:
+                print(f"  {dict(rooms='room', devices='device', model='model')[group]} {name}")
+                print("\n".join(rows))
+    ea = {e["label"]: e["passed"] for e in a.get("expectations", [])}
+    for e in b.get("expectations", []):
+        before = ea.get(e["label"])
+        if before is not None and before != e["passed"]:
+            print(f"  expectation {e['label']}: {'PASS' if before else 'FAIL'} -> {'PASS' if e['passed'] else 'FAIL'}")
     return 0
 
 
@@ -691,6 +725,11 @@ def _parser() -> argparse.ArgumentParser:
     imp.add_argument("--mode", choices=["closed", "replay"], default="closed")
     imp.add_argument("--duration", default="2d", help="closed mode: how long to continue after the export")
     imp.set_defaults(func=cmd_import)
+
+    compare = sub.add_parser("compare", help="metric diff of two runs (names, paths or 'last')")
+    compare.add_argument("a")
+    compare.add_argument("b")
+    compare.set_defaults(func=cmd_compare)
 
     report = sub.add_parser("report", help="re-evaluate a run (name, path or 'last')")
     report.add_argument("run", nargs="?", default="last")
