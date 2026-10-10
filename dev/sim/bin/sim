@@ -9,6 +9,12 @@ if [[ -z "${ROOMMIND_SIM_NO_REEXEC:-}" ]]; then
   if [[ -n "$top" && -x "$top/dev/sim/bin/sim" && "$(cd "$top/dev/sim" && pwd -P)" != "$(cd "$SIM_ROOT" && pwd -P)" ]]; then
     ROOMMIND_SIM_NO_REEXEC=1 exec "$top/dev/sim/bin/sim" "$@"
   fi
+  # A checkout without dev/sim (e.g. a worktree of a branch older than the sim): still
+  # test *its* RoomMind code, not the one next to this script.
+  if [[ -n "$top" && ! -d "$top/dev/sim" && -f "$top/custom_components/roommind/manifest.json" ]]; then
+    export ROOMMIND_SIM_SRC="${ROOMMIND_SIM_SRC:-$top}"
+    echo "sim: $top has no dev/sim, using sim from $SIM_ROOT with RoomMind code from $top" >&2
+  fi
 fi
 export ROOMMIND_SIM_HOME="${ROOMMIND_SIM_HOME:-$HOME/.roommind-sim}"
 HA_VERSION="${ROOMMIND_SIM_HA:-2026.10.0}"

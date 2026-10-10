@@ -162,6 +162,10 @@ def load_scenario_dict(data: dict[str, Any]) -> Scenario:
         timeline.append(_timeline_item(i, item, start, loc.time_zone))
     timeline.sort(key=lambda t: (t.at, t.index))
 
+    if data.get("known_failure"):
+        raise ScenarioError(
+            "known_failure belongs on the expectation it covers (expect[i].known_failure)", "known_failure"
+        )
     expect = list(data.get("expect") or [])
     for i, exp in enumerate(expect):
         if not isinstance(exp, dict) or not ({"metric", "invariant", "check"} & exp.keys()):

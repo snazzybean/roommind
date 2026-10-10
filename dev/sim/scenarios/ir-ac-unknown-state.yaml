@@ -1,0 +1,17 @@
+name: ir-ac-unknown-state
+extends: ir-ac-no-feedback
+description: >
+  IR AC whose climate entity reports state "unknown" (no feedback at all). RoomMind's
+  command cache must not resend an unchanged mode/setpoint pair every cycle; a repeat
+  every 30 min (reassert) is intended (#416).
+refs: [416]
+house:
+  rooms:
+    wohnzimmer:
+      devices:
+        - entity_id: climate.wz_ir_ac
+          profile: broadlink_ir_ac
+          quirks: [{type: no_state_feedback, state: unknown}]
+expect:
+  - {metric: device.redundant_commands, entity_id: climate.wz_ir_ac, max: 120, label: unchanged frames stay at the 30 min reassert rate}
+  - {invariant: no_rejected_commands}

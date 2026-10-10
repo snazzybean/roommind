@@ -12,4 +12,4 @@ export HOMEASSISTANT_TOKEN
 if [[ -z "$HOMEASSISTANT_TOKEN" ]]; then
   echo "ha-sim-mcp: instance '$name' has no token yet; start it with: sim up $name --scenario <name>" >&2
 fi
-exec uvx ha-mcp@latest
+exec uvx ha-mcp@8.6.0

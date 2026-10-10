@@ -80,6 +80,11 @@ def screenshot(
             color_scheme="dark" if dark else "light",
         )
         ctx.add_init_script(f"window.localStorage.setItem('hassTokens', {json.dumps(json.dumps(tokens))});")
+        # Rejections with non-Error reasons reach Playwright as an empty "Object"; log the reason.
+        ctx.add_init_script(
+            "window.addEventListener('unhandledrejection', e => console.error('unhandledrejection: ' + "
+            "(e.reason && (e.reason.message || JSON.stringify(e.reason)) || String(e.reason))));"
+        )
         page = ctx.new_page()
         if sim_now is not None and abs(sim_now - time.time()) > CLOCK_ALIGN_THRESHOLD_S:
             page.clock.install(time=sim_now)

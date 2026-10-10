@@ -8,7 +8,6 @@ start: 2026-01-12T00:00
 duration: 3d
 location: {latitude: 52.5, longitude: 13.4, time_zone: Europe/Berlin}
 weather: {profile: winter-cold}
-known_failure: "candidate (#317 class): proportional setpoint jitters every 30-60 s, bursts exceed the radio duty cycle"
 house:
   building: bestand_teilsaniert
   outdoor: {sensors: {temperature: sensor.aussen_temp}}
@@ -41,5 +40,5 @@ roommind:
       comfort_temp: 19.5
       eco_temp: 17.0
 expect:
-  - {invariant: no_rejected_commands}
-  - {invariant: max_commands_per_hour, entity_id: climate.schlafzimmer_trv, limit: 20}
+  - {invariant: no_rejected_commands, known_failure: 'candidate (#317 class): proportional setpoint jitters every 30-60 s, bursts exceed the radio duty cycle'}
+  - {invariant: max_commands_per_hour, entity_id: climate.schlafzimmer_trv, limit: 20, known_failure: 'candidate (#317 class): proportional setpoint jitters every 30-60 s, bursts exceed the radio duty cycle'}

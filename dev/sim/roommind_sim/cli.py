@@ -261,6 +261,8 @@ def _print_summary(summary: dict[str, Any], real: float) -> None:
         for e in exp:
             mark = "PASS" if e["passed"] else ("XFAIL" if e.get("known_failure") else "FAIL")
             print(f"  [{mark}] {e['label']}: {e['detail']}")
+    for label in summary.get("unexpected_pass") or []:
+        print(f"XPASS: '{label}' is marked as known failure but passed; remove its known_failure")
     print("RESULT:", "PASS" if summary.get("passed", True) else "FAIL")
 
 
@@ -361,7 +363,7 @@ def cmd_up(args: argparse.Namespace) -> int:
     else:
         scn = load_scenario_dict(json.loads(inst.scenario_path.read_text()))
     rm_src = roommind_src(override=args.roommind_src)
-    if not args.roommind_src:
+    if rm_src == REPO_ROOT / "custom_components" / "roommind":
         _check_frontend()
     port = inst_mod.allocate_port(args.name)
     _prepare(inst, scn, port, args.recorder, rm_src)

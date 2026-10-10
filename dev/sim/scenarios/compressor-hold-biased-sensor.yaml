@@ -10,8 +10,7 @@ description: >
   unit already satisfies.
 refs: [436]
 tags: [compressor, ac]
-known_failure: "#436 follow-up candidate: hold setpoint too close to target for ACs with a biased return-air sensor"
 expect:
-  - {invariant: min_run_respected}
+  - {invariant: min_run_respected, known_failure: '#436 follow-up candidate: hold setpoint too close to target for ACs with a biased return-air sensor'}
   - {invariant: min_run_commanded}
   - {metric: device.starts_per_day, entity_id: climate.wohnzimmer_ac, max: 30}

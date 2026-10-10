@@ -10,7 +10,6 @@ start: 2026-01-12T00:00
 duration: 7d
 location: {latitude: 52.5, longitude: 13.4, time_zone: Europe/Berlin}
 weather: {profile: temperate}
-known_failure: "needs analysis: ~0.5 K average overshoot above the heat target with underfloor heating (slab residual + solar)"
 house:
   building: neubau_kfw55
   outdoor: {sensors: {temperature: sensor.aussen_temp}}
@@ -42,7 +41,7 @@ roommind:
       eco_temp: 19.0
 expect:
   - {metric: comfort.undershoot_kh, room: wohnzimmer, max: 25}
-  - {metric: comfort.heat_overshoot_kh, room: wohnzimmer, max: 15}
+  - {metric: comfort.heat_overshoot_kh, room: wohnzimmer, max: 15, known_failure: 'needs analysis: ~0.5 K average overshoot above the heat target with underfloor heating (slab residual + solar)'}
   - {metric: model.learned_alpha_per_h, room: wohnzimmer, min: 0.005, max: 0.02}
   - {metric: room.temp_max, room: wohnzimmer, max: 23.5}
   - {invariant: target_never_empty}

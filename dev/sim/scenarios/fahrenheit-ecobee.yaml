@@ -8,7 +8,6 @@ start: 2026-01-12T00:00
 duration: 3d
 location: {latitude: 40.7, longitude: -74.0, time_zone: America/New_York, unit_system: us_customary, country: US}
 weather: {profile: temperate}
-known_failure: "candidate: same 30 s heat/off flip-flop as ir-ac-no-feedback; room stays below target"
 house:
   building: us_wood_frame
   outdoor: {sensors: {temperature: sensor.outdoor_temp}}
@@ -35,5 +34,5 @@ roommind:
 expect:
   - {invariant: no_rejected_commands}
   - {invariant: setpoints_within_device_range}
-  - {invariant: max_commands_per_hour, entity_id: climate.ecobee, limit: 8}
-  - {metric: comfort.in_band_pct, room: living_room, min: 85}
+  - {invariant: max_commands_per_hour, entity_id: climate.ecobee, limit: 8, known_failure: 'candidate: controller heats up to the hard ceiling (target +1 K), gets suppressed, heats again next cycle (~45 cmds/h); same with control_mode=bangbang (setting is not read by the backend), without sensor noise, at 1.2 kW and on v1.7.7. Likely fast air-node dynamics of AC heating vs the 1-node model (#128/#316 pattern); strength depends on the sim's air/mass calibration'}
+  - {metric: comfort.in_band_pct, room: living_room, min: 85, known_failure: 'candidate: controller heats up to the hard ceiling (target +1 K), gets suppressed, heats again next cycle (~45 cmds/h); same with control_mode=bangbang (setting is not read by the backend), without sensor noise, at 1.2 kW and on v1.7.7. Likely fast air-node dynamics of AC heating vs the 1-node model (#128/#316 pattern); strength depends on the sim's air/mass calibration'}

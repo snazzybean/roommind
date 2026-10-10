@@ -9,7 +9,6 @@ start: 2026-01-12T00:00
 duration: 3d
 location: {latitude: 52.5, longitude: 13.4, time_zone: Europe/Berlin}
 weather: {profile: temperate}
-known_failure: "candidate: MPC heats a 10 m2 office at 25 C with target 20.5 (same pattern as ir-ac-no-feedback); command bursts follow"
 house:
   building: bestand_teilsaniert
   outdoor: {sensors: {temperature: sensor.aussen_temp}}
@@ -67,4 +66,4 @@ roommind:
 expect:
   - {invariant: min_run_commanded}
   - {invariant: no_heat_and_cool_same_group}
-  - {invariant: max_commands_per_hour, limit: 12}
+  - {invariant: max_commands_per_hour, limit: 12, known_failure: 'candidate: controller heats up to the hard ceiling (target +1 K), gets suppressed, heats again next cycle (~45 cmds/h); same with control_mode=bangbang (setting is not read by the backend), without sensor noise, at 1.2 kW and on v1.7.7. Likely fast air-node dynamics of AC heating vs the 1-node model (#128/#316 pattern); strength depends on the sim's air/mass calibration'}

@@ -89,8 +89,10 @@ def _result_block(summary: dict[str, Any]) -> str:
             f"<td>{w['count']}×, z. B. {html.escape(w['violations'][0]['detail'])}</td></tr>"
         )
     verdict = "<span class='pass'>PASS</span>" if summary["passed"] else "<span class='fail'>FAIL</span>"
-    if summary.get("known_failure"):
-        verdict += f" (bekannter Fehler: {html.escape(str(summary['known_failure']))})"
+    if summary.get("xfailed"):
+        verdict += f" ({summary['xfailed']} bekannte Fehler)"
+    for label in summary.get("unexpected_pass") or []:
+        verdict += f" · XPASS: {html.escape(label)}"
     table = "<table><tr><th></th><th>Erwartung</th><th>Ergebnis</th></tr>" + "".join(rows) + "</table>" if rows else ""
     return f"<h2>Ergebnis: {verdict}</h2>{table}"
 

@@ -9,7 +9,6 @@ start: 2026-06-15T00:00
 duration: 3d
 location: {latitude: 52.5, longitude: 13.4, time_zone: Europe/Berlin}
 weather: {profile: temperate}
-known_failure: "candidate: during a cooling override MPC goes idle 1.2 K above the cool target"
 house:
   building: neubau_kfw55
   outdoor: {sensors: {temperature: sensor.aussen_temp}}
@@ -40,4 +39,4 @@ expect:
   - {invariant: target_never_empty}
   - {check: "room.dachzimmer.override_active == true", at: "+1d01h10m", label: override active}
   - {check: "room.dachzimmer.mode == 'cooling'", at: "+1d01h10m", label: override cools despite the outdoor gate}
-  - {check: "room.dachzimmer.mode == 'cooling' or room.dachzimmer.current_temp <= 21.5", at: "+1d01h40m", label: override keeps cooling until near its target}
+  - {check: "room.dachzimmer.mode == 'cooling' or room.dachzimmer.current_temp <= 21.5", at: "+1d01h40m", label: override keeps cooling until near its target, known_failure: 'candidate: during a cooling override MPC goes idle 1.2 K above the cool target'}

@@ -8,7 +8,6 @@ start: 2026-01-12T00:00
 duration: 2d
 location: {latitude: 52.5, longitude: 13.4, time_zone: Europe/Berlin}
 weather: {profile: temperate}
-known_failure: "candidate: MPC flips heating 100% / idle every 30 s on sensor noise around 1 K above target (no hold without a compressor group); every flip is a beep"
 house:
   building: bestand_teilsaniert
   outdoor: {sensors: {temperature: sensor.aussen_temp}}
@@ -35,6 +34,6 @@ roommind:
       comfort_temp: 21.0
       eco_temp: 18.0
 expect:
-  - {metric: device.commands_per_hour, entity_id: climate.wz_ir_ac, max: 3}
+  - {metric: device.commands_per_hour, entity_id: climate.wz_ir_ac, max: 3, known_failure: 'candidate: controller heats up to the hard ceiling (target +1 K), gets suppressed, heats again next cycle (~45 cmds/h); same with control_mode=bangbang (setting is not read by the backend), without sensor noise, at 1.2 kW and on v1.7.7. Likely fast air-node dynamics of AC heating vs the 1-node model (#128/#316 pattern); strength depends on the sim's air/mass calibration'}
   - {metric: device.redundant_commands, entity_id: climate.wz_ir_ac, max: 0}
-  - {invariant: max_commands_per_hour, entity_id: climate.wz_ir_ac, limit: 10}
+  - {invariant: max_commands_per_hour, entity_id: climate.wz_ir_ac, limit: 10, known_failure: 'candidate: controller heats up to the hard ceiling (target +1 K), gets suppressed, heats again next cycle (~45 cmds/h); same with control_mode=bangbang (setting is not read by the backend), without sensor noise, at 1.2 kW and on v1.7.7. Likely fast air-node dynamics of AC heating vs the 1-node model (#128/#316 pattern); strength depends on the sim's air/mass calibration'}

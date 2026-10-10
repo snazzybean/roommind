@@ -27,6 +27,7 @@ def venv_python(version: str = DEFAULT_HA_VERSION) -> Path:
 
 def roommind_src(repo: Path = REPO_ROOT, override: str | None = None) -> Path:
     """RoomMind code to load: this checkout, another path, or a git ref (exported once)."""
+    override = override or os.environ.get("ROOMMIND_SIM_SRC")
     if not override:
         return repo / "custom_components" / "roommind"
     path = Path(override).expanduser()

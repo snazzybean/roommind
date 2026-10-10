@@ -16,7 +16,13 @@ from .metrics import compute_metrics
 def evaluate_run(run_dir: Path, write_report: bool = True) -> dict[str, Any]:
     run = load_run(run_dir)
     metrics = compute_metrics(run)
-    results = [_evaluate(run, metrics, exp) for exp in run.scenario.expect]
+    results = []
+    for exp in run.scenario.expect:
+        result = _evaluate(run, metrics, exp)
+        # Scoped per expectation: a new regression elsewhere in the scenario still fails.
+        if exp.get("known_failure"):
+            result["known"] = exp["known_failure"]
+        results.append(result)
     explicit = {e.get("invariant") for e in run.scenario.expect}
     warnings = []
     for name in DEFAULT_INVARIANTS:
@@ -28,11 +34,12 @@ def evaluate_run(run_dir: Path, write_report: bool = True) -> dict[str, Any]:
     broken = _broken(run)
     if broken:
         results.insert(0, {"label": "run sanity", "passed": False, "detail": broken})
-    failed = [r for r in results if not r["passed"]]
-    known = run.scenario.known_failure
-    for r in failed:
-        if r["label"] != "run sanity":
-            r["known_failure"] = known
+    for r in results:
+        if not r["passed"] and r.get("known"):
+            r["known_failure"] = r["known"]
+    failed = [r for r in results if not r["passed"] and not r.get("known_failure")]
+    xfailed = [r for r in results if not r["passed"] and r.get("known_failure")]
+    xpassed = [r["label"] for r in results if r["passed"] and r.get("known")]
     summary = {
         "scenario": run.scenario.name,
         "refs": run.scenario.refs,
@@ -40,9 +47,9 @@ def evaluate_run(run_dir: Path, write_report: bool = True) -> dict[str, Any]:
         "metrics": metrics,
         "expectations": results,
         "warnings": warnings,
-        "known_failure": known,
-        "passed": not failed or (bool(known) and not broken),
-        "unexpected_pass": bool(known) and not failed and bool(results),
+        "passed": not failed,
+        "xfailed": len(xfailed),
+        "unexpected_pass": xpassed,
         "lines": _lines(metrics, warnings),
         "real_seconds": run.meta.get("real_seconds"),
         "source": run.meta.get("source"),
@@ -82,7 +89,7 @@ def _evaluate(run: RunData, metrics: dict[str, Any], exp: dict[str, Any]) -> dic
                 "passed": False,
                 "detail": f"unknown invariant (known: {', '.join(INVARIANTS)})",
             }
-        args = {k: v for k, v in exp.items() if k not in ("invariant", "label")}
+        args = {k: v for k, v in exp.items() if k not in ("invariant", "label", "known_failure")}
         found = INVARIANTS[name](run, **args)
         detail = (
             "ok" if not found else f"{len(found)} violation(s), first at {_rel(run, found[0].t)}: {found[0].detail}"

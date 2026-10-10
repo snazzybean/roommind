@@ -36,12 +36,16 @@ class Instance:
     def run(cls, scenario_name: str) -> Instance:
         stamp = time.strftime("%Y%m%d-%H%M%S", time.localtime())
         base = sim_home() / "runs" / f"{stamp}-{scenario_name}"
-        path = base
+        base.parent.mkdir(parents=True, exist_ok=True)
         n = 1
-        while path.exists():
-            n += 1
-            path = base.with_name(f"{base.name}-{n}")
-        return cls(path.name, path)
+        while True:
+            path = base if n == 1 else base.with_name(f"{base.name}-{n}")
+            try:
+                path.mkdir()  # atomic: parallel runs of the same scenario get distinct dirs
+            except FileExistsError:
+                n += 1
+                continue
+            return cls(path.name, path)
 
     @property
     def config_dir(self) -> Path:
