@@ -64,8 +64,8 @@
             <a id="indexLink" class="nav" href="index.html">&Hat; index</a> &nbsp; &nbsp;
             <a id="nextFileLink" class="nav" href="z_260372de4d6d50b3_ac_coil_dry_manager_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
-            <a class="nav" href="https://coverage.readthedocs.io/en/7.16.1">coverage.py v7.16.1</a>,
-            created at 2026-10-10 15:05 +0000
+            <a class="nav" href="https://coverage.readthedocs.io/en/7.16.2">coverage.py v7.16.2</a>,
+            created at 2026-10-12 11:34 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -92,7 +92,7 @@
     <p class="run"><span class="n"><a id="t10" href="#t10">10</a></span><span class="t"><span class="key">from</span> <span class="nam">homeassistant</span><span class="op">.</span><span class="nam">const</span> <span class="key">import</span> <span class="nam">__version__</span> <span class="key">as</span> <span class="nam">HA_VERSION</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t11" href="#t11">11</a></span><span class="t"><span class="key">from</span> <span class="nam">homeassistant</span><span class="op">.</span><span class="nam">core</span> <span class="key">import</span> <span class="nam">HomeAssistant</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t12" href="#t12">12</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t13" href="#t13">13</a></span><span class="t"><span class="key">from</span> <span class="op">.</span><span class="nam">const</span> <span class="key">import</span> <span class="nam">DOMAIN</span><span class="op">,</span> <span class="nam">VERSION</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t13" href="#t13">13</a></span><span class="t"><span class="key">from</span> <span class="op">.</span><span class="nam">const</span> <span class="key">import</span> <span class="nam">DEFAULT_CONTROL_MODE</span><span class="op">,</span> <span class="nam">DOMAIN</span><span class="op">,</span> <span class="nam">VERSION</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t14" href="#t14">14</a></span><span class="t"><span class="key">from</span> <span class="op">.</span><span class="nam">control</span><span class="op">.</span><span class="nam">mpc_controller</span> <span class="key">import</span> <span class="nam">_active_targets</span><span class="op">,</span> <span class="nam">_last_commands</span><span class="op">,</span> <span class="nam">_now</span><span class="op">,</span> <span class="nam">_sent_at</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t15" href="#t15">15</a></span><span class="t"><span class="key">from</span> <span class="op">.</span><span class="nam">utils</span><span class="op">.</span><span class="nam">history_store</span> <span class="key">import</span> <span class="nam">DETAIL_FIELDS</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t16" href="#t16">16</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
@@ -492,7 +492,7 @@
     <p class="run run2"><span class="n"><a id="t410" href="#t410">410</a></span><span class="t">            <span class="str">&quot;latitude&quot;</span><span class="op">:</span> <span class="nam">round</span><span class="op">(</span><span class="nam">hass</span><span class="op">.</span><span class="nam">config</span><span class="op">.</span><span class="nam">latitude</span><span class="op">)</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t411" href="#t411">411</a></span><span class="t">            <span class="str">&quot;longitude&quot;</span><span class="op">:</span> <span class="nam">round</span><span class="op">(</span><span class="nam">hass</span><span class="op">.</span><span class="nam">config</span><span class="op">.</span><span class="nam">longitude</span><span class="op">)</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t412" href="#t412">412</a></span><span class="t">        <span class="op">}</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t413" href="#t413">413</a></span><span class="t">        <span class="str">&quot;settings&quot;</span><span class="op">:</span> <span class="nam">dict</span><span class="op">(</span><span class="nam">settings</span><span class="op">)</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t413" href="#t413">413</a></span><span class="t">        <span class="str">&quot;settings&quot;</span><span class="op">:</span> <span class="op">{</span><span class="str">&quot;control_mode&quot;</span><span class="op">:</span> <span class="nam">DEFAULT_CONTROL_MODE</span><span class="op">,</span> <span class="op">**</span><span class="nam">settings</span><span class="op">}</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t414" href="#t414">414</a></span><span class="t">        <span class="str">&quot;rooms&quot;</span><span class="op">:</span> <span class="nam">rooms_diag</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t415" href="#t415">415</a></span><span class="t">        <span class="str">&quot;outdoor&quot;</span><span class="op">:</span> <span class="nam">outdoor</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t416" href="#t416">416</a></span><span class="t">        <span class="str">&quot;recent_history&quot;</span><span class="op">:</span> <span class="nam">recent_history</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
@@ -517,8 +517,8 @@
             <a class="nav" href="index.html">&Hat; index</a> &nbsp; &nbsp;
             <a class="nav" href="z_260372de4d6d50b3_ac_coil_dry_manager_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
-            <a class="nav" href="https://coverage.readthedocs.io/en/7.16.1">coverage.py v7.16.1</a>,
-            created at 2026-10-10 15:05 +0000
+            <a class="nav" href="https://coverage.readthedocs.io/en/7.16.2">coverage.py v7.16.2</a>,
+            created at 2026-10-12 11:34 +0000
         </p>
     </div>
 </footer>

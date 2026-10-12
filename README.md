@@ -8,20 +8,20 @@
 | custom\_components/roommind/binary\_sensor.py                      |       37 |        0 |    100% |           |
 | custom\_components/roommind/climate.py                             |      174 |        0 |    100% |           |
 | custom\_components/roommind/config\_flow.py                        |       11 |       11 |      0% |      3-23 |
-| custom\_components/roommind/const.py                               |      123 |        0 |    100% |           |
+| custom\_components/roommind/const.py                               |      127 |        0 |    100% |           |
 | custom\_components/roommind/control/\_\_init\_\_.py                |        0 |        0 |    100% |           |
 | custom\_components/roommind/control/analytics\_simulator.py        |      208 |        2 |     99% |    53, 85 |
-| custom\_components/roommind/control/mpc\_controller.py             |     1023 |       55 |     95% |170-172, 178, 275-276, 282-283, 295-305, 600-602, 620-621, 655-658, 669-676, 689-690, 1060-1062, 1283, 1369-1381, 1488-1496, 1511, 1787-1795, 1828, 2137, 2139, 2150, 2152, 2157, 2162, 2184, 2186 |
-| custom\_components/roommind/control/mpc\_optimizer.py              |      211 |        0 |    100% |           |
+| custom\_components/roommind/control/mpc\_controller.py             |     1083 |       52 |     95% |186, 284-285, 291-292, 304-314, 609-611, 629-630, 664-667, 678-685, 698-699, 1093-1095, 1411, 1497-1509, 1616-1624, 1639, 1915-1923, 1956, 2303, 2305, 2316, 2318, 2323, 2328, 2350, 2352 |
+| custom\_components/roommind/control/mpc\_optimizer.py              |      216 |        0 |    100% |           |
 | custom\_components/roommind/control/residual\_heat.py              |       24 |        0 |    100% |           |
 | custom\_components/roommind/control/solar.py                       |       81 |        1 |     99% |        72 |
-| custom\_components/roommind/control/thermal\_model.py              |      442 |       17 |     96% |394, 863-878, 989, 1112, 1119-1123 |
-| custom\_components/roommind/coordinator.py                         |      976 |       53 |     95% |387-388, 721-724, 996-997, 1007, 1009, 1454, 1496, 1554, 1848-1851, 1984-1986, 1990-1996, 2000, 2009, 2030, 2035, 2037, 2040, 2043, 2084, 2089-2094, 2098, 2131, 2133, 2136, 2139, 2155-2156, 2272, 2292-2300, 2318-2319, 2334-2339, 2356-2357 |
+| custom\_components/roommind/control/thermal\_model.py              |      443 |       17 |     96% |396, 873-888, 999, 1122, 1129-1133 |
+| custom\_components/roommind/coordinator.py                         |      976 |       53 |     95% |387-388, 721-724, 996-997, 1007, 1009, 1455, 1497, 1555, 1849-1852, 1985-1987, 1991-1997, 2001, 2010, 2031, 2036, 2038, 2041, 2044, 2085, 2090-2095, 2099, 2132, 2134, 2137, 2140, 2156-2157, 2273, 2293-2301, 2319-2320, 2335-2340, 2357-2358 |
 | custom\_components/roommind/diagnostics.py                         |      230 |        0 |    100% |           |
 | custom\_components/roommind/managers/\_\_init\_\_.py               |        0 |        0 |    100% |           |
 | custom\_components/roommind/managers/ac\_coil\_dry\_manager.py     |      246 |        0 |    100% |           |
 | custom\_components/roommind/managers/compressor\_group\_manager.py |      170 |        2 |     99% |  125, 203 |
-| custom\_components/roommind/managers/cover\_manager.py             |      197 |        0 |    100% |           |
+| custom\_components/roommind/managers/cover\_manager.py             |      198 |        0 |    100% |           |
 | custom\_components/roommind/managers/cover\_orchestrator.py        |      168 |        2 |     99% |   74, 181 |
 | custom\_components/roommind/managers/ekf\_training\_manager.py     |       54 |        1 |     98% |        28 |
 | custom\_components/roommind/managers/heat\_source\_orchestrator.py |      122 |        4 |     97% |60, 68, 199, 205 |
@@ -45,8 +45,8 @@
 | custom\_components/roommind/utils/schedule\_utils.py               |      190 |        0 |    100% |           |
 | custom\_components/roommind/utils/sensor\_utils.py                 |       29 |        1 |     97% |        25 |
 | custom\_components/roommind/utils/temp\_utils.py                   |       26 |        0 |    100% |           |
-| custom\_components/roommind/websocket\_api.py                      |      292 |        2 |     99% |   724-729 |
-| **TOTAL**                                                          | **6447** |  **236** | **96%** |           |
+| custom\_components/roommind/websocket\_api.py                      |      292 |        2 |     99% |   727-732 |
+| **TOTAL**                                                          | **6518** |  **233** | **96%** |           |
 
 
 ## Setup coverage badge
