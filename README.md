@@ -16,7 +16,7 @@
 | custom\_components/roommind/control/residual\_heat.py              |       34 |        0 |    100% |           |
 | custom\_components/roommind/control/solar.py                       |       81 |        1 |     99% |        72 |
 | custom\_components/roommind/control/thermal\_model.py              |      475 |       17 |     96% |434, 938-946, 1064, 1189, 1196-1200 |
-| custom\_components/roommind/coordinator.py                         |     1004 |       53 |     95% |407-408, 767-770, 1046-1047, 1057, 1059, 1526, 1570, 1628, 1922-1925, 2060-2062, 2066-2072, 2076, 2085, 2106, 2111, 2113, 2116, 2119, 2160, 2165-2170, 2174, 2207, 2209, 2212, 2215, 2231-2232, 2348, 2368-2376, 2394-2395, 2410-2415, 2432-2433 |
+| custom\_components/roommind/coordinator.py                         |     1029 |       53 |     95% |407-408, 767-770, 1046-1047, 1057, 1059, 1532, 1576, 1634, 1963-1966, 2101-2103, 2107-2113, 2117, 2126, 2147, 2152, 2154, 2157, 2160, 2201, 2206-2211, 2215, 2248, 2250, 2253, 2256, 2272-2273, 2389, 2409-2417, 2435-2436, 2451-2456, 2473-2474 |
 | custom\_components/roommind/diagnostics.py                         |      231 |        0 |    100% |           |
 | custom\_components/roommind/managers/\_\_init\_\_.py               |        0 |        0 |    100% |           |
 | custom\_components/roommind/managers/ac\_coil\_dry\_manager.py     |      246 |        0 |    100% |           |
@@ -46,7 +46,7 @@
 | custom\_components/roommind/utils/sensor\_utils.py                 |       29 |        1 |     97% |        25 |
 | custom\_components/roommind/utils/temp\_utils.py                   |       26 |        0 |    100% |           |
 | custom\_components/roommind/websocket\_api.py                      |      292 |        2 |     99% |   727-732 |
-| **TOTAL**                                                          | **6914** |  **220** | **97%** |           |
+| **TOTAL**                                                          | **6939** |  **220** | **97%** |           |
 
 
 ## Setup coverage badge
