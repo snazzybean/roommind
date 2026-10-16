@@ -11,8 +11,8 @@
 | custom\_components/roommind/const.py                               |      137 |        0 |    100% |           |
 | custom\_components/roommind/control/\_\_init\_\_.py                |        0 |        0 |    100% |           |
 | custom\_components/roommind/control/analytics\_simulator.py        |      230 |        2 |     99% |   74, 106 |
-| custom\_components/roommind/control/mpc\_controller.py             |     1194 |       39 |     97% |190, 294-295, 301-302, 314-324, 619-621, 639-640, 674-677, 688-695, 708-709, 867, 1672, 1675, 1790-1798, 1813, 2089-2097, 2130, 2569, 2571, 2582, 2584, 2589, 2594, 2616, 2618 |
-| custom\_components/roommind/control/mpc\_optimizer.py              |      286 |        0 |    100% |           |
+| custom\_components/roommind/control/mpc\_controller.py             |     1195 |       39 |     97% |190, 294-295, 301-302, 314-324, 619-621, 639-640, 674-677, 688-695, 708-709, 867, 1674, 1677, 1792-1800, 1815, 2091-2099, 2132, 2571, 2573, 2584, 2586, 2591, 2596, 2618, 2620 |
+| custom\_components/roommind/control/mpc\_optimizer.py              |      295 |        0 |    100% |           |
 | custom\_components/roommind/control/residual\_heat.py              |       34 |        0 |    100% |           |
 | custom\_components/roommind/control/solar.py                       |       81 |        1 |     99% |        72 |
 | custom\_components/roommind/control/thermal\_model.py              |      475 |       17 |     96% |434, 938-946, 1064, 1189, 1196-1200 |
@@ -46,7 +46,7 @@
 | custom\_components/roommind/utils/sensor\_utils.py                 |       29 |        1 |     97% |        25 |
 | custom\_components/roommind/utils/temp\_utils.py                   |       26 |        0 |    100% |           |
 | custom\_components/roommind/websocket\_api.py                      |      292 |        2 |     99% |   727-732 |
-| **TOTAL**                                                          | **6969** |  **220** | **97%** |           |
+| **TOTAL**                                                          | **6979** |  **220** | **97%** |           |
 
 
 ## Setup coverage badge
