@@ -8,15 +8,15 @@
 | custom\_components/roommind/binary\_sensor.py                      |       37 |        0 |    100% |           |
 | custom\_components/roommind/climate.py                             |      174 |        0 |    100% |           |
 | custom\_components/roommind/config\_flow.py                        |       11 |       11 |      0% |      3-23 |
-| custom\_components/roommind/const.py                               |      137 |        0 |    100% |           |
+| custom\_components/roommind/const.py                               |      143 |        0 |    100% |           |
 | custom\_components/roommind/control/\_\_init\_\_.py                |        0 |        0 |    100% |           |
 | custom\_components/roommind/control/analytics\_simulator.py        |      229 |        2 |     99% |   75, 107 |
-| custom\_components/roommind/control/mpc\_controller.py             |     1238 |       33 |     97% |221, 325-326, 332-333, 345-355, 665-667, 685-686, 750-757, 938, 1768, 1771, 1886-1894, 1909, 2185-2193, 2227, 2666, 2668, 2679, 2681, 2686, 2691, 2713, 2715 |
+| custom\_components/roommind/control/mpc\_controller.py             |     1265 |       35 |     97% |222, 268-269, 340-341, 347-348, 360-370, 688-690, 708-709, 773-780, 961, 1794, 1797, 1913-1922, 1937, 2222-2231, 2266, 2738, 2740, 2751, 2753, 2758, 2763, 2785, 2787 |
 | custom\_components/roommind/control/mpc\_optimizer.py              |      301 |        0 |    100% |           |
 | custom\_components/roommind/control/residual\_heat.py              |       34 |        0 |    100% |           |
 | custom\_components/roommind/control/solar.py                       |       81 |        1 |     99% |        72 |
 | custom\_components/roommind/control/thermal\_model.py              |      475 |       17 |     96% |434, 938-946, 1064, 1189, 1196-1200 |
-| custom\_components/roommind/coordinator.py                         |     1035 |       53 |     95% |409-410, 770-773, 1050-1051, 1061, 1063, 1540, 1584, 1642, 1972-1975, 2111-2113, 2117-2123, 2127, 2136, 2157, 2162, 2164, 2167, 2170, 2211, 2216-2221, 2225, 2258, 2260, 2263, 2266, 2282-2283, 2399, 2419-2427, 2445-2446, 2461-2466, 2483-2484 |
+| custom\_components/roommind/coordinator.py                         |     1069 |       55 |     95% |415-416, 785-788, 1066-1067, 1077, 1079, 1580, 1631, 1659-1660, 1709, 2039-2042, 2178-2180, 2184-2190, 2194, 2203, 2224, 2229, 2231, 2234, 2237, 2278, 2283-2288, 2292, 2325, 2327, 2330, 2333, 2349-2350, 2466, 2486-2494, 2512-2513, 2528-2533, 2550-2551 |
 | custom\_components/roommind/diagnostics.py                         |      231 |        0 |    100% |           |
 | custom\_components/roommind/managers/\_\_init\_\_.py               |        0 |        0 |    100% |           |
 | custom\_components/roommind/managers/ac\_coil\_dry\_manager.py     |      248 |        0 |    100% |           |
@@ -24,6 +24,7 @@
 | custom\_components/roommind/managers/cover\_manager.py             |      204 |        0 |    100% |           |
 | custom\_components/roommind/managers/cover\_orchestrator.py        |      243 |        2 |     99% |   85, 197 |
 | custom\_components/roommind/managers/ekf\_training\_manager.py     |       58 |        1 |     98% |        31 |
+| custom\_components/roommind/managers/head\_offset\_tracker.py      |       67 |        2 |     97% |    97, 99 |
 | custom\_components/roommind/managers/heat\_source\_orchestrator.py |      123 |        4 |     97% |63, 71, 205, 211 |
 | custom\_components/roommind/managers/mold\_manager.py              |       69 |        0 |    100% |           |
 | custom\_components/roommind/managers/residual\_heat\_tracker.py    |       69 |        0 |    100% |           |
@@ -46,7 +47,7 @@
 | custom\_components/roommind/utils/sensor\_utils.py                 |       29 |        1 |     97% |        25 |
 | custom\_components/roommind/utils/temp\_utils.py                   |       26 |        0 |    100% |           |
 | custom\_components/roommind/websocket\_api.py                      |      292 |        2 |     99% |   727-732 |
-| **TOTAL**                                                          | **7035** |  **214** | **97%** |           |
+| **TOTAL**                                                          | **7169** |  **220** | **97%** |           |
 
 
 ## Setup coverage badge
