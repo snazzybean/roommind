@@ -1176,6 +1176,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             climate_active=climate_active,
             coil_dry_skip_training=coil_dry.skip_ekf_training,
             compressor_hold=bool(compressor_forced_on),
+            held_at_target=bool(controller.held_at_target),
         )
 
         return self._build_room_state_dict(
@@ -1234,6 +1235,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         climate_active: bool,
         coil_dry_skip_training: bool = False,
         compressor_hold: bool = False,
+        held_at_target: bool = False,
     ) -> tuple[str, float]:
         """Observe device state, train EKF, compute display mode.
 
@@ -1344,6 +1346,12 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             obs_mode, _ = self._observe_device_action(room)
             if obs_mode in (MODE_HEATING, MODE_COOLING):
                 hold_running = obs_mode
+        # Idle action "hold": the unit runs at whatever output balances the room, which
+        # no label describes. Not trained, and no rebound charge builds up behind it.
+        if held_at_target and ekf_mode == MODE_IDLE and hold_running is None:
+            obs_mode, _ = self._observe_device_action(room)
+            if obs_mode in (MODE_HEATING, MODE_COOLING):
+                hold_running = obs_mode  # as the min-run hold: skip only while it runs
 
         # Update thermal model with observation (EKF online learning).
         # The filter must NOT train with a degenerate outdoor fallback (e.g.
@@ -1382,6 +1390,8 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             )
         else:
             self._ekf_training.clear(area_id)
+            if held_at_target and hold_running is not None and current_temp_raw is not None:
+                self._model_manager.resync_temperature(area_id, current_temp_raw)
         # Same mode the EKF learns from, so the charge matches its labels.
         self._rebound_tracker.update(area_id, hold_running or ekf_mode)
 

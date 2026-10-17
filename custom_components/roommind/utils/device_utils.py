@@ -26,6 +26,10 @@ IDLE_ACTION_FAN_ONLY = "fan_only"
 DEFAULT_IDLE_FAN_MODE = "low"
 IDLE_ACTION_SETBACK = "setback"
 IDLE_ACTION_LOW = "low"
+# ACs: near the target the unit stays in its mode at the target in its own frame and
+# modulates down by itself; further past the target, or with no run ahead, as setback.
+IDLE_ACTION_HOLD = "hold"
+HOLD_BAND_K = 0.5
 DEFAULT_IDLE_SETBACK_OFFSET = 2.0
 
 SETPOINT_MODE_PROPORTIONAL = "proportional"

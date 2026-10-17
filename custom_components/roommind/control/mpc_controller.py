@@ -45,7 +45,9 @@ from ..const import (
 from ..managers.heat_source_orchestrator import evaluate_heat_sources
 from ..utils.device_utils import (
     DEFAULT_IDLE_SETBACK_OFFSET,
+    HOLD_BAND_K,
     IDLE_ACTION_FAN_ONLY,
+    IDLE_ACTION_HOLD,
     IDLE_ACTION_LOW,
     IDLE_ACTION_OFF,
     IDLE_ACTION_SETBACK,
@@ -597,6 +599,9 @@ async def async_idle_device(
     idle_action, idle_fan_mode = get_idle_action(devices, entity_id)
     if force_off and idle_action != IDLE_ACTION_LOW:
         idle_action = IDLE_ACTION_OFF
+    if idle_action == IDLE_ACTION_HOLD:
+        # Past the hold band, or for a device the controller does not hold
+        idle_action = IDLE_ACTION_SETBACK
 
     # Fallback low setpoint (in HA display units) for devices where min_temp
     # is not effective (e.g. Wavin Sentio with min_temp=0 or high min_temp).
@@ -1260,6 +1265,8 @@ class MPCController:
         self._lead_cool: float | None = None
         # hvac modes whose setback devices may switch off (set by _evaluate_mpc)
         self._setback_release: frozenset[str] = frozenset()
+        # ACs the idle action "hold" kept running at the target this cycle
+        self.held_at_target: set[str] = set()
 
         s = settings or {}
         self._mpc_enabled = is_mpc_enabled(s)
@@ -2245,6 +2252,8 @@ class MPCController:
                     )
                     await self._async_hold_retarget(eid, targets, current_temp)
                     continue
+                if not force_off and await self._async_hold_at_target(eid, targets, current_temp):
+                    continue
                 await async_idle_device(
                     self.hass,
                     eid,
@@ -2270,6 +2279,46 @@ class MPCController:
         """HA-unit setpoint for a held device: direct target (+offset) or the room target in the device's frame."""
         direct = self._direct_setpoint_ha(eid, target)
         return direct if direct is not None else celsius_to_ha_temp(self.hass, target + self._head_offset(eid, intent))
+
+    async def _async_hold_at_target(self, eid: str, targets: TargetTemps, current_temp: float | None) -> bool:
+        """Idle action "hold": keep an AC in its mode at the room target in its own frame.
+
+        A modulating unit given the target (plus its learned running offset) throttles
+        down to the output that balances the room instead of stopping, so a short idle
+        between MPC runs costs no compressor start and no full-power restart. Only
+        within ``HOLD_BAND_K`` of the target and while a run of this mode is still
+        expected (the setback release, #255); otherwise the device falls through to
+        setback/off. Returns True if the device was held.
+        """
+        if (
+            eid not in self.acs
+            or not self.has_external_sensor
+            or current_temp is None
+            or get_idle_action(self._devices, eid)[0] != IDLE_ACTION_HOLD
+        ):
+            return False
+        state = self.hass.states.get(eid)
+        hvac = state.state if state else None
+        if hvac not in ("heat", "cool") or hvac in self._setback_release:
+            return False
+        target = targets.heat if hvac == "heat" else targets.cool
+        if target is None:
+            return False
+        past = target - current_temp if hvac == "cool" else current_temp - target
+        if past > HOLD_BAND_K:
+            return False
+        # The frame follows the unit: while it runs, its running offset holds the room at
+        # the target; once it has stopped on its own, the idle offset makes it restart
+        # only when the room is past the target again, not when its sensor reads the
+        # stagnant layer under the ceiling.
+        frame = "idle" if state.attributes.get("hvac_action") == "idle" else hvac
+        await self._call(
+            "set_temperature",
+            {"entity_id": eid, "temperature": self._hold_setpoint_ha(eid, target, frame), "hvac_mode": hvac},
+            temp_intent=hvac,
+        )
+        self.held_at_target.add(eid)
+        return True
 
     async def _async_hold_retarget(self, eid: str, targets: TargetTemps, current_temp: float | None) -> None:
         """Pass a deliberately changed target on to a device held by the compressor min-run.

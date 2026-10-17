@@ -1158,6 +1158,17 @@ class RoomModelManager:
         est = self._estimators.get(area_id)
         return est._n_updates if est else 0
 
+    def resync_temperature(self, area_id: str, T_measured: float) -> None:
+        """Keep the temperature state on the measurement while training is skipped.
+
+        A skipped interval leaves the state where the last update put it; the first
+        update after an hour-long hold would otherwise see the whole drift since then
+        as one interval's innovation and book it on alpha and the gains.
+        """
+        est = self.get_estimator(area_id)
+        if est._initialized:
+            est._x[0] = T_measured
+
     def update_window_open(
         self,
         area_id: str,

@@ -1,0 +1,16 @@
+name: ac-hold-at-target
+extends: ekf-summer-ac
+description: >
+  ekf-summer-ac over five days with idle action "hold": when the MPC goes idle at the
+  cooling target, the unit stays in cool at the target in its own frame and modulates
+  down instead of being switched off. Compare with `sim run ekf-summer-ac --until 5d`.
+tags: [ac, idle]
+duration: 5d
+roommind:
+  rooms:
+    wohnzimmer:
+      devices: [{entity_id: climate.wz_ac, type: ac, idle_action: hold}]
+expect:
+  - {invariant: no_rejected_commands}
+  - {metric: comfort.overshoot_kh, room: wohnzimmer, max: 9, label: cooling keeps the room near its target}
+  - {metric: model.learned_alpha_per_h, room: wohnzimmer, min: 0.005, max: 0.05, label: loss rate of the whole room, known_failure: 'open: the EKF learns alpha ~10x too high once the hold takes over the time at the target'}
