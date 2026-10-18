@@ -149,8 +149,14 @@ def _afterglow_run(
     run_minutes: float = 60.0,
     disturb_at: float | None = None,
     restart_at: float | None = None,
+    model: RCModel = ROOM,
+    device_kw: float = 0.0,
+    tell_power: bool = True,
 ) -> float | None:
-    """Replay a room cooling after a run, warmed by *true_scale* x the radiator profile."""
+    """Replay a room cooling after a run, warmed by *true_scale* x the radiator profile.
+
+    *device_kw* runs metered devices meanwhile; *tell_power* passes their power to the learner.
+    """
     T = 21.0
     sample = None
     elapsed = DT
@@ -158,10 +164,10 @@ def _afterglow_run(
         mode = MODE_HEATING if restart_at is not None and elapsed >= restart_at else MODE_IDLE
         if mode == MODE_IDLE:
             q = compute_residual_heat(elapsed - DT / 2, "radiator", 1.0, run_minutes, true_scale)
-            T = ROOM.predict(T, 5.0, 0.0, DT, q_residual=q)
+            T = model.predict(T, 5.0, 0.0, DT, q_residual=q, q_power=device_kw)
         sample = learner.step(
             "r",
-            model=ROOM,
+            model=model,
             system_type="radiator",
             mode=mode,
             current_temp=T,
@@ -173,6 +179,7 @@ def _afterglow_run(
             q_solar=0.0,
             q_occupancy=0.0,
             disturbed=disturb_at is not None and elapsed >= disturb_at,
+            q_power=device_kw if tell_power else 0.0,
         )
         if sample is not None or mode == MODE_HEATING:
             return sample
@@ -441,3 +448,12 @@ def test_preheat_stops_earlier_with_large_stored_heat():
     heated = learned.actions[:10].count(MODE_HEATING)
     assert heated <= 2
     assert max(learned.temperatures[:13]) < 20.8
+
+
+def test_metered_device_heat_is_no_afterglow():
+    """A PC on a power sensor keeps warming the room after the run: not the radiator's heat."""
+    model = RCModel(C=ROOM.C, U=ROOM.U, Q_heat=ROOM.Q_heat, Q_cool=ROOM.Q_cool, Q_power=1.2)
+    told = _afterglow_run(ResidualHeatLearner(), true_scale=1.0, model=model, device_kw=0.4)
+    assert told == pytest.approx(1.0, rel=0.1)
+    untold = _afterglow_run(ResidualHeatLearner(), true_scale=1.0, model=model, device_kw=0.4, tell_power=False)
+    assert untold is not None and untold > 1.3

@@ -511,6 +511,10 @@ def _model_metrics(run: RunData) -> dict[str, Any]:
         beta_s = _truth_beta_s(run, area, truth["capacity_j_k"])
         beta_h = _truth_beta_device(run, area, truth["capacity_j_k"], "heating")
         beta_c = _truth_beta_device(run, area, truth["capacity_j_k"], "cooling")
+        # Only rooms whose power sensors RoomMind knows learn beta_p; the others keep the default
+        metered = bool(((run.scenario.roommind.get("rooms") or {}).get(area) or {}).get("power_sensors"))
+        beta_p = _truth_beta_p(run, area, truth["capacity_j_k"]) if metered else None
+        learned_beta_p = _learned_beta_p(learned) if metered else None
         # learned / truth: the expectation form for heating and cooling rates
         ratio = {
             key: round(x[i] / truth_val, 2) if len(x) > i and truth_val else None
@@ -526,6 +530,9 @@ def _model_metrics(run: RunData) -> dict[str, Any]:
             "learned_beta_h": round(x[2], 3) if len(x) > 2 else None,
             "learned_beta_c": round(x[3], 3) if len(x) > 3 else None,
             "learned_beta_s": round(x[4], 3) if len(x) > 4 else None,
+            "truth_beta_p": round(beta_p, 3) if beta_p is not None else None,
+            "learned_beta_p": round(learned_beta_p, 3) if learned_beta_p is not None else None,
+            "beta_p_ratio": round(learned_beta_p / beta_p, 2) if learned_beta_p is not None and beta_p else None,
             **ratio,
             "n_updates": learned.get("n_updates"),
         }
@@ -551,6 +558,25 @@ def _truth_beta_device(run: RunData, area: str, capacity_j_k: float, action: str
     if share <= 0 or capacity_j_k <= 0:
         return None
     return power / share * 3600.0 / capacity_j_k
+
+
+def _learned_beta_p(learned: dict[str, Any]) -> float | None:
+    """beta_p from RoomMind's storage: its own entry beside the 6D x (or x[7] of a full vector)."""
+    side = learned.get("beta_p")
+    if isinstance(side, dict) and isinstance(side.get("x"), int | float):
+        return float(side["x"])
+    x = learned.get("x") or []
+    return float(x[7]) if len(x) > 7 else None
+
+
+def _truth_beta_p(run: RunData, area: str, capacity_j_k: float) -> float | None:
+    """Device heat in RoomMind's units (K/h per kW, lumped capacity): every metered watt heats the room.
+
+    None when the room's metered devices never ran.
+    """
+    if capacity_j_k <= 0 or not any(s["rooms"][area].get("power_w", 0) > 0 for s in run.samples):
+        return None
+    return 1000.0 * 3600.0 / capacity_j_k
 
 
 def _truth_beta_s(run: RunData, area: str, capacity_j_k: float) -> float | None:

@@ -31,7 +31,7 @@ _ENTITY_RE = re.compile(r"^[a-z_]+\.[a-z0-9_]+$")
 _DEVICE_KEYS = {"entity_id", "profile", "name"}
 _HELPER_DOMAINS = {"schedule", "input_boolean", "input_number", "input_select", "template"}
 DEVICE_MODELS = {"trv", "ac", "heat_pump", "heater", "boiler", "ufh"}
-SENSOR_KINDS = {"temperature", "humidity", "occupancy"}
+SENSOR_KINDS = {"temperature", "humidity", "occupancy", "power"}
 
 # Timeline actions and their required arguments; implementations live in simhome.actions.
 ACTIONS: dict[str, set[str]] = {
@@ -40,6 +40,7 @@ ACTIONS: dict[str, set[str]] = {
     "person.leave": {"person"},
     "person.arrive": {"person"},
     "occupancy.set": {"room", "count"},
+    "power.set": {"room", "watts"},
     "cover.manual": {"entity_id", "position"},
     "device.manual": {"entity_id"},
     "entity.unavailable": {"entity_id"},
@@ -347,7 +348,14 @@ _ROOM_ENTITY_FIELDS = (
     "schedule_selector_entity",
     "cover_schedule_selector_entity",
 )
-_ROOM_LIST_FIELDS = ("window_sensors", "occupancy_sensors", "covers", "presence_persons", "valve_protection_exclude")
+_ROOM_LIST_FIELDS = (
+    "window_sensors",
+    "occupancy_sensors",
+    "power_sensors",
+    "covers",
+    "presence_persons",
+    "valve_protection_exclude",
+)
 
 
 def _validate(scn: Scenario) -> None:

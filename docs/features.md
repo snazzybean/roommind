@@ -16,6 +16,16 @@ Before a warmer schedule block the room starts heating early enough to be warm w
 
 Radiator rooms learn how much heat is still released after heating stops and how long it lasts, and stop early enough not to overshoot.
 
+### Power sensors (device heat)
+
+Devices running in a room heat it: a PC with 300 W warms a small office about as much as a weak radiator. Assign their power sensors to the room in the room's sensors (Device power: sensor entities with device class `power`, in W or kW).
+
+- **Learning:** RoomMind adds them up and learns how much each kW warms the room ("Device Heat" in the analytics model card, in °C/h per kW). It learns while the devices draw more than 20 W and the room is not heating, the same way as the solar gain.
+- **Planning:** the MPC plans with it and heats less while the devices run. Nothing says when a device switches off, so the plan lets the measured power fade over about an hour. The analytics backtest replays the recorded device power too.
+- **Better model:** without the sensors, the device heat ends up in the room's loss rate and heating power. With them, those two are learned more accurately as well.
+- **Not counted:** the power of the room's own heaters and ACs. Their heat is already learned as heating power, so a sensor on the same device is ignored with a warning in the log.
+- **Readings:** negative readings (a meter that also counts feed-in) count as 0. An unavailable sensor counts as off.
+
 ### Proportional valve control
 
 TRVs receive calculated setpoints instead of simple on/off, producing smoother temperature curves with less overshoot.

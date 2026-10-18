@@ -74,7 +74,7 @@ from ..utils.device_utils import (
 )
 from ..utils.temp_utils import celsius_delta_to_ha, celsius_to_ha_temp
 from .direct_valve import async_release_valve, async_set_valve, clear_valve_cache
-from .mpc_optimizer import MPCOptimizer, MPCPlan, preheat_max_blocks, slow_start_penalty
+from .mpc_optimizer import MPCOptimizer, MPCPlan, power_decay_series, preheat_max_blocks, slow_start_penalty
 from .residual_heat import get_min_run_blocks, heat_min_run_blocks, mean_rebound
 from .thermal_model import RoomModelManager
 
@@ -1189,17 +1189,23 @@ def valve_demand(
     *,
     q_solar: float,
     q_occupancy: float,
+    q_power: float = 0.0,
 ) -> float:
     """Valve opening (0-1) for a room with direct valve control (#413), 0.0 without demand.
 
-    The share of full heating power that holds *target* against the learned losses, sun
-    and occupancy, plus 100 % per ``VALVE_PROPORTIONAL_BAND_K`` below it. The optimizer's
+    The share of full heating power that holds *target* against the learned losses, sun,
+    occupancy and metered devices, plus 100 % per ``VALVE_PROPORTIONAL_BAND_K`` below it. The optimizer's
     closed form is a 5-min deadbeat with an energy bias: it saturates a step below the
     target and finds no demand right at it, so a valve would still switch on and off.
     """
     if model.Q_heat <= 0:
         return 0.0
-    hold = model.U * (target - outdoor_temp) - model.Q_solar * q_solar - model.Q_occupancy * q_occupancy
+    hold = (
+        model.U * (target - outdoor_temp)
+        - model.Q_solar * q_solar
+        - model.Q_occupancy * q_occupancy
+        - (model.Q_power * q_power if q_power else 0.0)
+    )
     pf = hold / model.Q_heat + (target - current_temp) / VALVE_PROPORTIONAL_BAND_K
     return min(1.0, pf) if pf > 0.0 else 0.0
 
@@ -1238,6 +1244,7 @@ def gentle_power(
     q_residual: float,
     q_occupancy: float,
     rebound_charge: float | None = None,
+    q_power: float = 0.0,
 ) -> float:
     """Closed-form power for a min-run continuation of *mode*, at least MIN_POWER_FRACTION."""
     pf, pf_mode = optimizer.compute_optimal_power(
@@ -1248,6 +1255,7 @@ def gentle_power(
         q_solar=q_solar,
         q_residual=q_residual,
         q_occupancy=q_occupancy,
+        q_power=q_power,
         rebound_charge=rebound_charge,
     )
     return max(pf, MIN_POWER_FRACTION) if pf_mode == mode else MIN_POWER_FRACTION
@@ -1524,6 +1532,7 @@ class MPCController:
         q_occupancy: float = 0.0,
         q_rebound: float | None = None,
         previous_heat_sources: str = "none",
+        q_power: float = 0.0,
         head_offsets: HeadOffsetTracker | None = None,
         price_level: str | None = None,
         planning_temp: float | None = None,
@@ -1575,6 +1584,8 @@ class MPCController:
         self._idle_since = idle_since
         self._shading_factor = shading_factor
         self.q_occupancy = q_occupancy
+        # Power of the room's metered devices now (kW)
+        self.q_power = q_power
         # AC rebound charge now (residual_heat); None leaves the air/mass term out
         self.q_rebound = q_rebound
         # Learned AC sensor offsets (device reading - room sensor); None leaves setpoints in the room frame
@@ -1666,6 +1677,7 @@ class MPCController:
             q_solar=self.q_solar,
             q_residual=self.q_residual,
             q_occupancy=self.q_occupancy,
+            q_power=self.q_power,
         )
         if pred_std < MPC_MAX_PREDICTION_STD and self._has_enough_data(can_heat, can_cool):
             plan_from = (
@@ -1819,6 +1831,7 @@ class MPCController:
             q_solar=self.q_solar * self._shading_factor,
             q_residual=self.q_residual,
             q_occupancy=self.q_occupancy,
+            q_power=self.q_power,
             q_rebound=None if self.q_rebound is None else mean_rebound(self.q_rebound, False, dt_minutes),
         )
 
@@ -1849,6 +1862,9 @@ class MPCController:
 
         # Build occupancy heat series (constant over horizon)
         occupancy_series = [self.q_occupancy] * horizon_blocks
+
+        # Metered devices: the power now, fading over the plan (they may switch off)
+        power_series = power_decay_series(self.q_power, horizon_blocks, PLAN_DT_MINUTES)
 
         # Build dual target series with schedule lookahead for pre-heating/pre-cooling.
         # None values (from "off" action) are replaced with current_temp so the
@@ -1939,6 +1955,7 @@ class MPCController:
                 solar_series=solar_series,
                 residual_series=residual_series,
                 occupancy_series=occupancy_series,
+                power_series=power_series,
                 initial_mode=self.previous_mode,
                 rebound_charge=self.q_rebound,
                 heat_run=self._heat_run,
@@ -1947,7 +1964,8 @@ class MPCController:
             )
             self.last_plan = plan
             # Shading can attenuate solar gain, never the body heat of whoever just
-            # walked in, so the cover logic reads a peak computed without it (#418).
+            # walked in or the heat of running devices, so the cover logic reads a
+            # peak computed without them (#418).
             # Replaying the plan keeps the control decision itself untouched.
             _unoccupied = (
                 optimizer.simulate_plan(
@@ -1958,9 +1976,10 @@ class MPCController:
                     solar_series=solar_series,
                     residual_series=residual_series,
                     occupancy_series=None,
+                    power_series=None,
                     rebound_charge=self.q_rebound,
                 )
-                if self.q_occupancy > 0
+                if self.q_occupancy > 0 or self.q_power > 0
                 else None
             )
             self._peak_temps_unoccupied = _unoccupied if _unoccupied and len(_unoccupied) > 1 else None
@@ -2082,6 +2101,7 @@ class MPCController:
             q_residual=self.q_residual,
             q_occupancy=self.q_occupancy,
             rebound_charge=self.q_rebound,
+            q_power=self.q_power,
         )
 
     def _valve_demand(self, model: Any, current_temp: float, outdoor_temp: float, target: float) -> float:
@@ -2092,6 +2112,7 @@ class MPCController:
             target,
             q_solar=self.q_solar * self._shading_factor,
             q_occupancy=self.q_occupancy,
+            q_power=self.q_power,
         )
 
     def _evaluate_bangbang(
@@ -2281,8 +2302,8 @@ class MPCController:
     def predicted_peak_temp(self) -> float | None:
         """Return the maximum predicted temperature over the MPC lookahead horizon.
 
-        Excludes occupancy heat: this value drives shading decisions, and covers
-        cannot counteract metabolic gain (#418).
+        Excludes occupancy and device heat: this value drives shading decisions, and
+        covers cannot counteract metabolic gain or running devices (#418).
 
         Available after async_evaluate() has been called.
         Returns None if no MPC plan was computed (bang-bang mode or insufficient data).

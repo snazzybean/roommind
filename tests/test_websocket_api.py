@@ -3851,3 +3851,40 @@ def test_custom_override_stays_within_the_climate_entity_limits(side):
         with pytest.raises(vol.Invalid):
             schema({**base, side: value})
     assert schema({**base, side: 5})[side] == 5.0
+
+
+async def test_analytics_model_reports_device_heat(ws_hass, store, connection):
+    """Q_power is per kW; the panel also gets what the devices running now add."""
+    await store.async_load()
+    await store.async_save_room("room_a", {"thermostats": ["climate.trv1"], "power_sensors": ["sensor.pc_power"]})
+
+    est = _make_mock_estimator(model_dict={"Q_heat": 3.0, "Q_power": 2.0})
+    est.get_model.return_value.Q_power = 2.0
+    coordinator = _make_analytics_coordinator(history_rows=[], estimator=est, rooms_live={"room_a": {"power_kw": 0.25}})
+    ws_hass.data[DOMAIN]["coordinator"] = coordinator
+
+    msg = {"id": 63, "type": "roommind/analytics/get", "area_id": "room_a"}
+    await _get_analytics(ws_hass, connection, msg)
+
+    model = connection.send_result.call_args[0][1]["model"]
+    assert model["has_power_sensors"] is True
+    assert model["power_now_kw"] == pytest.approx(0.25)
+    assert model["power_gain_now"] == pytest.approx(0.5)
+
+
+@pytest.mark.asyncio
+async def test_save_room_power_sensors_roundtrip_and_own_entity_rejected(ws_hass, store, connection):
+    await store.async_load()
+    msg = {
+        "id": 2,
+        "type": "roommind/rooms/save",
+        "area_id": "office",
+        "thermostats": ["climate.office"],
+        "power_sensors": ["sensor.pc_power"],
+    }
+    await _save_room(ws_hass, connection, msg)
+    assert connection.send_result.call_args[0][1]["room"]["power_sensors"] == ["sensor.pc_power"]
+
+    connection.reset_mock()
+    await _save_room(ws_hass, connection, {**msg, "power_sensors": ["sensor.roommind_office_target_temp"]})
+    connection.send_error.assert_called_once()

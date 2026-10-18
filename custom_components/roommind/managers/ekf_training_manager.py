@@ -31,6 +31,8 @@ class EkfTrainingManager:
         # Rooms whose model temperature is current right now (no skipped cycle since the
         # last observation); k_window may only learn from those.
         self._current: set[str] = set()
+        # dt-weighted mean power of the metered devices (kW): it changes from tick to tick
+        self._accumulated_power: dict[str, float] = {}
         self.last_temps: dict[str, float] = {}
 
     def set_model_manager(self, model_manager: RoomModelManager) -> None:
@@ -54,6 +56,7 @@ class EkfTrainingManager:
         prev_mode = self._accumulated_mode.pop(area_id, None)
         pf = self._accumulated_pf.pop(area_id, 1.0)
         q_rebound = self._accumulated_rebound.pop(area_id, None)
+        q_power = self._accumulated_power.pop(area_id, 0.0)
         if accumulated > 0 and prev_mode is not None:
             self._model_manager.update(
                 area_id,
@@ -68,6 +71,7 @@ class EkfTrainingManager:
                 q_residual=q_residual,
                 q_occupancy=q_occupancy,
                 q_rebound=q_rebound,
+                q_power=q_power,
             )
 
     def process(
@@ -87,6 +91,7 @@ class EkfTrainingManager:
         dt_minutes: float,
         q_occupancy: float = 0.0,
         q_rebound: float | None = None,
+        q_power: float = 0.0,
     ) -> None:
         """Process an EKF training step for a room.
 
@@ -162,12 +167,15 @@ class EkfTrainingManager:
                 else:
                     old_rebound = self._accumulated_rebound.get(area_id, q_rebound)
                     self._accumulated_rebound[area_id] = (old_rebound * old_dt + q_rebound * dt_minutes) / new_dt
+                old_power = self._accumulated_power.get(area_id, q_power)
+                self._accumulated_power[area_id] = (old_power * old_dt + q_power * dt_minutes) / new_dt
             self._accumulated_dt[area_id] = new_dt
             self._accumulated_mode[area_id] = ekf_mode
 
             if self._accumulated_dt[area_id] >= EKF_UPDATE_MIN_DT:
                 pf = self._accumulated_pf.pop(area_id, 1.0)
                 batch_rebound = self._accumulated_rebound.pop(area_id, None)
+                batch_power = self._accumulated_power.pop(area_id, 0.0)
                 self._model_manager.update(
                     area_id,
                     current_temp,
@@ -181,6 +189,7 @@ class EkfTrainingManager:
                     q_residual=q_residual,
                     q_occupancy=q_occupancy,
                     q_rebound=batch_rebound,
+                    q_power=batch_power,
                 )
                 self._accumulated_dt[area_id] = 0.0
 
@@ -200,6 +209,7 @@ class EkfTrainingManager:
         self._accumulated_mode.pop(area_id, None)
         self._accumulated_pf.pop(area_id, None)
         self._accumulated_rebound.pop(area_id, None)
+        self._accumulated_power.pop(area_id, None)
 
     def remove_room(self, area_id: str) -> None:
         """Clean up all state for a removed room."""
