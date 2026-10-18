@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
+
+import pytest
 
 from custom_components.roommind.utils.sensor_utils import read_sensor_value
 
@@ -153,3 +155,73 @@ def test_climate_entity_does_not_read_state(caplog):
         result = read_sensor_value(hass, "climate.study", "study", "temperature")
     assert result == 21.0
     assert "could not parse" not in caplog.text
+
+
+# ---------------------------------------------------------------------------
+# read_power_kw
+# ---------------------------------------------------------------------------
+
+
+def _power_hass(states: dict[str, tuple[str, str | None]]) -> MagicMock:
+    hass = MagicMock()
+
+    def get(entity_id):
+        if entity_id not in states:
+            return None
+        value, unit = states[entity_id]
+        state = MagicMock()
+        state.state = value
+        state.attributes = {"unit_of_measurement": unit} if unit else {}
+        return state
+
+    hass.states.get.side_effect = get
+    return hass
+
+
+def test_power_sums_sensors_in_kw():
+    from custom_components.roommind.utils.sensor_utils import read_power_kw
+
+    hass = _power_hass({"sensor.pc": ("350", "W"), "sensor.server": ("0.15", "kW"), "sensor.lamp": ("40", None)})
+    assert read_power_kw(hass, ["sensor.pc", "sensor.server", "sensor.lamp"], "office") == pytest.approx(0.54)
+
+
+def test_power_skips_unavailable_and_counts_negative_as_zero():
+    from custom_components.roommind.utils.sensor_utils import read_power_kw
+
+    hass = _power_hass({"sensor.pc": ("unavailable", "W"), "sensor.meter": ("-200", "W"), "sensor.tv": ("80", "W")})
+    assert read_power_kw(hass, ["sensor.pc", "sensor.meter", "sensor.tv"], "living") == pytest.approx(0.08)
+
+
+def test_power_none_without_any_reading():
+    from custom_components.roommind.utils.sensor_utils import read_power_kw
+
+    hass = _power_hass({"sensor.pc": ("unknown", "W")})
+    assert read_power_kw(hass, ["sensor.pc", "sensor.gone"], "office") is None
+    assert read_power_kw(hass, [], "office") is None
+
+
+def test_power_ignores_unknown_unit(caplog):
+    from custom_components.roommind.utils.sensor_utils import read_power_kw
+
+    hass = _power_hass({"sensor.odd": ("5", "VA"), "sensor.pc": ("100", "W")})
+    assert read_power_kw(hass, ["sensor.odd", "sensor.pc"], "office") == pytest.approx(0.1)
+    assert "expected W or kW" in caplog.text
+
+
+def test_power_skips_sensors_of_the_rooms_heaters(caplog):
+    from custom_components.roommind.utils.sensor_utils import read_power_kw, room_device_ids
+
+    hass = _power_hass({"sensor.heater_power": ("2000", "W"), "sensor.pc": ("300", "W")})
+    entries = {
+        "climate.heater": MagicMock(device_id="dev-heater"),
+        "sensor.heater_power": MagicMock(device_id="dev-heater"),
+        "sensor.pc": MagicMock(device_id="dev-pc"),
+    }
+    registry = MagicMock()
+    registry.async_get.side_effect = entries.get
+    with patch("homeassistant.helpers.entity_registry.async_get", return_value=registry):
+        ids = room_device_ids(hass, [{"entity_id": "climate.heater"}, {"entity_id": "climate.unknown"}])
+        assert ids == {"dev-heater"}
+        total = read_power_kw(hass, ["sensor.heater_power", "sensor.pc"], "bath", exclude_device_ids=ids)
+    assert total == pytest.approx(0.3)
+    assert "already learned as heating power" in caplog.text

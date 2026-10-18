@@ -164,7 +164,7 @@ class ResidualHeatLearner:
     stored heat depends on its size, water temperature and how fast its TRV closes.
     After each heating run the room is watched: every cycle, the measured change is
     compared with the learned model's idle prediction without residual heat (outdoor,
-    sun and occupancy included), and with the change the profile at scale 1 predicts.
+    sun, occupancy and metered device power included), and with the change the profile at scale 1 predicts.
     At the end of the window the ratio of the two sums is one sample of the room's
     residual scale. Summing per-step differences telescopes the measurements to
     ``T_end - T_start``, so sensor resolution only enters at the two ends.
@@ -199,6 +199,7 @@ class ResidualHeatLearner:
         q_occupancy: float,
         disturbed: bool,
         tau_minutes: float | None = None,
+        q_power: float = 0.0,
     ) -> float | None:
         """Advance one cycle. Returns a residual scale sample when an observation completes."""
         obs = self._obs.get(area_id)
@@ -230,10 +231,10 @@ class ResidualHeatLearner:
             return None
 
         mid = max(0.0, minutes_since_stop - dt_minutes / 2)
-        base = model.predict(obs.T_prev, T_outdoor, 0.0, dt_minutes, q_solar=q_solar, q_occupancy=q_occupancy)
-        with_unit = model.predict(
-            obs.T_prev, T_outdoor, 0.0, dt_minutes, q_solar=q_solar, q_occupancy=q_occupancy, q_residual=1.0
-        )
+        # The metered devices' heat (power sensors) is no afterglow either
+        inputs = {"q_solar": q_solar, "q_occupancy": q_occupancy, "q_power": q_power}
+        base = model.predict(obs.T_prev, T_outdoor, 0.0, dt_minutes, **inputs)
+        with_unit = model.predict(obs.T_prev, T_outdoor, 0.0, dt_minutes, q_residual=1.0, **inputs)
         excess = current_temp - base
         obs.measured_excess += excess
         obs.steps.append((mid, with_unit - base, excess))

@@ -145,6 +145,8 @@ def _csv_to_points(rows: list[dict]) -> list[dict]:
                 "room_temp_max": _safe_float(row.get("room_temp_max", "")),
                 "room_temp_min": _safe_float(row.get("room_temp_min", "")),
                 "co2": _safe_float(row.get("co2", "")),
+                # Metered device power (kW): a model input of the backtest only
+                "power_kw": _safe_float(row.get("power_kw", "")),
                 **{f: _safe_float(row.get(f, "")) for f in MODEL_INPUT_FIELDS},
             }
         )
@@ -320,6 +322,7 @@ async def build_analytics_data(
     # Only the figures need the run starts, bucket extremes and model inputs; 90 days of points would carry them
     for point in history + detail:
         del point["heat_starts"], point["cool_starts"], point["room_temp_max"], point["room_temp_min"]
+        del point["power_kw"]
         for f in MODEL_INPUT_FIELDS:
             del point[f]
 
@@ -384,6 +387,7 @@ async def build_analytics_data(
             # EKF uncertainty: sqrt(P[0][0]) as proxy for sigma_e
             sigma_proxy = math.sqrt(max(est._P[0][0], 0.0))
             has_occupancy_sensors = len(room_config.get("occupancy_sensors", [])) > 0
+            power_now_kw = coordinator.rooms.get(area_id, {}).get("power_kw")
             model_info = {
                 "confidence": est.confidence,
                 "daily_history": [
@@ -410,6 +414,10 @@ async def build_analytics_data(
                 "has_occupancy_sensors": has_occupancy_sensors,
                 "solar_learned": _observed(est, _SOLAR_STATE),
                 "occupancy_learned": _observed(est, _OCCUPANCY_STATE),
+                "has_power_sensors": bool(room_config.get("power_sensors")),
+                # Q_power is the gain per kW; this is what the devices running now add
+                "power_now_kw": power_now_kw,
+                "power_gain_now": round(rc.Q_power * (power_now_kw or 0.0), 3),
                 # Q_solar is the gain at full sun (1000 W/m²); these are what it means now and today
                 "solar_gain_now": round(
                     rc.Q_solar
@@ -543,6 +551,7 @@ async def build_analytics_data(
                         residual_scale=sim_scale,
                         residual_tau=sim_tau,
                         q_occupancy=sim_q_occupancy,
+                        q_power=coordinator.rooms.get(area_id, {}).get("power_kw") or 0.0,
                         q_rebound=coordinator._rebound_tracker.get_charge(area_id),
                         previous_mode=sim_prev_mode,
                         mode_elapsed_minutes=sim_mode_elapsed,

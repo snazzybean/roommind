@@ -1,0 +1,5 @@
+description: Smart plug metering the devices plugged into it (W); its power heats the room.
+noise: 0.0
+resolution: 1
+offset: 0.0
+report: {min_delta: 5, heartbeat_s: 300, min_interval_s: 10}

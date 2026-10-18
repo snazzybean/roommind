@@ -256,6 +256,7 @@ class RoomMindStore:
             "preheat_enabled": config.get("preheat_enabled", True),
             "price_shift": config.get("price_shift", 0.0),
             "follow_device_setpoint": config.get("follow_device_setpoint", False),
+            "power_sensors": config.get("power_sensors", []),
             "climate_mode": config.get("climate_mode", "auto"),
             "schedules": config.get("schedules", []),
             "schedule_selector_entity": config.get("schedule_selector_entity", ""),

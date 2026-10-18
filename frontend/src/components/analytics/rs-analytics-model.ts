@@ -266,7 +266,8 @@ export class RsAnalyticsModel extends LitElement {
     const unit = tempUnit(this.hass);
     const oneDegree = toCelsiusDelta(1, this.hass);
     const loss = model.U * (now.room - now.outdoor);
-    const sun = m.solar_learned ? (m.solar_gain_now ?? 0) : 0;
+    // Sun and the metered devices running now (power sensors) both warm the room
+    const sun = (m.solar_learned ? (m.solar_gain_now ?? 0) : 0) + (m.power_gain_now ?? 0);
     const minutes = (net: number) =>
       net > 0.05
         ? localize("analytics.now_minutes", l, { time: formatMinutes((60 * oneDegree) / net, l) })
@@ -462,6 +463,20 @@ export class RsAnalyticsModel extends LitElement {
         id: "occupancy_gain",
         icon: "mdi:account-group-outline",
         value: m.occupancy_learned ? rate(model.Q_occupancy) : null,
+      });
+    }
+    if (model && m?.has_power_sensors) {
+      tiles.push({
+        id: "power_gain",
+        icon: "mdi:flash",
+        value: `${delta(model.Q_power ?? 0, 1)} ${unit}/h·kW`,
+        detail:
+          m.power_now_kw != null && m.power_gain_now != null
+            ? localize("analytics.power_gain_sub", l, {
+                power: `${formatNumber(Math.round(m.power_now_kw * 1000), this.hass)} W`,
+                gain: rate(m.power_gain_now),
+              })
+            : undefined,
       });
     }
     const bt = m?.backtest;

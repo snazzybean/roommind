@@ -129,6 +129,7 @@ def backtest(points: list[dict], model: RCModel, k_window: float) -> BacktestRes
                 q_solar=p.get("model_solar") or 0.0,
                 q_residual=p.get("model_residual") or 0.0,
                 q_occupancy=p.get("model_occupancy") or 0.0,
+                q_power=p.get("power_kw") or 0.0,
                 q_rebound=mean_rebound(charge[k], RCModel.cooling_drive(Q), dt),
             )
         result.predicted[ts[i]] = round(T, 2)

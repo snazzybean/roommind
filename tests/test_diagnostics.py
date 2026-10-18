@@ -19,13 +19,13 @@ from custom_components.roommind.managers.ac_coil_dry_manager import AcCoilDryMan
 def _make_estimator():
     """Build a mock ThermalEKF estimator."""
     est = MagicMock()
-    est._x = [20.0, 0.5, 100.0, 80.0, 10.0, 0.3, 12.0]
+    est._x = [20.0, 0.5, 100.0, 80.0, 10.0, 0.3, 12.0, 0.8]
     est._n_updates = 200
     est._n_idle = 120
     est._n_heating = 60
     est._n_cooling = 20
     est._applicable_modes = {"idle", "heating"}
-    est._P = [[0.01 * (i == j) for j in range(7)] for i in range(7)]
+    est._P = [[0.01 * (i == j) for j in range(8)] for i in range(8)]
     est.prediction_std.return_value = 0.25
     est.confidence = 0.85
     rc = MagicMock()
@@ -95,12 +95,13 @@ def test_build_model_info():
     assert info["beta_h"] == 100.0
     assert info["beta_c"] == 80.0
     assert info["beta_f"] == 12.0
+    assert info["beta_p"] == 0.8
     assert info["n_updates"] == 200
     assert info["n_idle"] == 120
     assert info["n_heating"] == 60
     assert info["n_cooling"] == 20
     assert info["applicable_modes"] == ["heating", "idle"]  # sorted
-    assert len(info["P_diagonal"]) == 7
+    assert len(info["P_diagonal"]) == 8
     assert info["confidence"] == 0.85
     assert "model_params" in info
 
