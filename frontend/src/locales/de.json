@@ -218,10 +218,10 @@
   "devices.valve_protection_excluded": "Vom Ventilschutz ausgenommen",
   "devices.valve_protection_exclude_hint": "Dieses Gerät wird nicht vom Ventilschutz bewegt (z.B. virtuelle Kessel-Entitäten)",
   "devices.valve_direct_control": "Direkte Ventilsteuerung",
-  "devices.valve_opening_entity": "Öffnungsgrad-Entität (0–100%)",
-  "devices.valve_closing_entity": "Schließgrad-Entität (0–100%)",
-  "devices.valve_direct_control_hint": "Sendet die Ventilposition direkt an Number-Entitäten. Öffnung 100% / Schließung 0% = vollständig offen. Ersetzt bei Konfiguration die proportionale Sollwertsteuerung.",
-  "devices.valve_direct_badge": "Direkte Steuerung",
+  "devices.valve_opening_entity": "Ventil-Öffnungsgrad",
+  "devices.valve_closing_entity": "Ventil-Schließgrad",
+  "devices.valve_direct_control_hint": "Für Thermostate, bei denen Home Assistant die Ventilöffnung setzen kann (z. B. SONOFF TRVZB: valve_opening_degree und valve_closing_degree, beide nötig). RoomMind hält das Ventil dann auf der Öffnung, die der Raum braucht, z. B. 30 %, statt es ganz aufzumachen: weniger Ventilbewegungen, leiser und gleichmäßiger. Felder leeren oder Klimasteuerung ausschalten setzt beide wieder auf 100 %.",
+  "devices.valve_direct_badge": "Direktes Ventil",
   "devices.info.types_title": "Gerätetypen",
   "devices.info.types_body": "Thermostat bedeutet Heizkörperthermostat / TRV. Klimagerät bedeutet AC, Wärmepumpe oder eine andere Klima-Entität für Kühlung oder Warmluftheizung. Beides sind Home-Assistant-Klima-Entitäten; der Unterschied liegt darin, wie RoomMind sie ansteuert.",
   "devices.info.control_title": "Wie RoomMind sie steuert",
@@ -572,5 +572,6 @@
   "heat_source.ac_min_outdoor": "Min. Außentemp. für AC-Heizen",
   "heat_source.ac_min_outdoor_hint": "AC-Heizen unter dieser Temperatur komplett deaktivieren, um die Wärmepumpen-Hardware zu schützen.",
   "heat_source.ac_min_outdoor_suffix": "°C",
-  "heat_source.summary_disabled": "Intelligente Quellenwahl ist aus"
+  "heat_source.summary_disabled": "Intelligente Quellenwahl ist aus",
+  "devices.valve_closing_entity_hint": "Hält das Ventil auf der gesetzten Öffnung, egal was die Regelung des Thermostats will. Wird automatisch eingetragen, wenn das Gerät eine hat."
 }

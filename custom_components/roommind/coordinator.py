@@ -51,6 +51,7 @@ from .const import (
     is_override_suppressed,
     make_roommind_context,
 )
+from .control.direct_valve import async_release_orphaned_valves, async_release_valve, held_opening
 from .control.mpc_controller import (
     DEFAULT_OUTDOOR_TEMP_FALLBACK,
     MPCController,
@@ -82,11 +83,13 @@ from .managers.weather_manager import WeatherManager
 from .managers.window_manager import WindowManager
 from .utils.device_utils import (
     build_rooms_devices_map,
+    configured_valves,
     get_ac_eids,
     get_all_entity_ids,
     get_direct_setpoint_eids,
     get_setpoint_offsets,
     get_trv_eids,
+    get_valve_entities,
     room_contributes_to_group,
 )
 from .utils.history_store import HistoryStore
@@ -329,6 +332,12 @@ class RoomMindCoordinator(DataUpdateCoordinator):
 
         # Control master devices based on aggregate room demand
         await self._async_control_master_devices(room_states, rooms, settings)
+        # Against the live config, not this cycle's snapshot: a save during the cycle released
+        # a valve the snapshot may just have pinned again
+        try:
+            await async_release_orphaned_valves(self.hass, configured_valves(store.get_rooms()))
+        except Exception:  # noqa: BLE001
+            _LOGGER.warning("Releasing unconfigured valves failed", exc_info=True)
 
         # Record to history store (throttled)
         learning_disabled = set(settings.get("learning_disabled_rooms", []))
@@ -641,6 +650,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
 
         # --- Outdoor room: skip all control logic ---
         if room.get("is_outdoor", False):
+            await self._async_release_valves(area_id, room.get("devices", []))
             return {
                 "area_id": area_id,
                 "current_temp": current_temp,
@@ -1052,11 +1062,13 @@ class RoomMindCoordinator(DataUpdateCoordinator):
 
         switch_off = area_id in self._rooms_to_switch_off and self._take_room_switch_off(area_id, climate_active)
         if not climate_active:
-            # Climate control disabled — do NOT send commands.
+            # Climate control disabled — do NOT send commands. A pinned valve is handed back
+            # all the same, or the TRV could not regulate on its own.
             mode = MODE_IDLE
             power_fraction = 0.0
             if switch_off:
                 await self._async_switch_devices_off(area_id, room.get("devices", []), targets)
+            await self._async_release_valves(area_id, room.get("devices", []))
         elif waiting_for_data:
             mode = MODE_IDLE
             power_fraction = 0.0
@@ -1321,7 +1333,11 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         # report idle/off — heating/cooling observations keep the commanded
         # power_fraction so MPC throttling (e.g. pf=0.3) is preserved.
         q_residual_training = q_residual
-        if climate_active and has_external_sensor and ekf_mode in (MODE_HEATING, MODE_COOLING):
+        # A pinned valve heats whatever its TRV reports; the TRVZB says idle once its own sensor is warm
+        valve_held = ekf_mode == MODE_HEATING and any(
+            held_opening(eid) for eid in get_valve_entities(room.get("devices", []))
+        )
+        if climate_active and has_external_sensor and ekf_mode in (MODE_HEATING, MODE_COOLING) and not valve_held:
             obs_mode, _ = self._observe_device_action(room)
             if obs_mode == MODE_IDLE:
                 _LOGGER.debug(
@@ -1770,8 +1786,9 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         Driven devices: the plan's active commands with orchestration, else every device
         that is not off. A parked device still running (compressor hold) delivers, so it
         counts as well. A heat pump that is defrosting delivers no heat (0.0).
-        Devices without a usable ``hvac_action`` keep their commanded pf;
-        no observable device at all keeps ``commanded_pf``.
+        TRVs with direct valve control count with the opening they are held at, devices
+        without a usable ``hvac_action`` with their commanded pf; no observable device at
+        all keeps ``commanded_pf``.
         """
         running_actions = ("heating", "preheating") if mode == MODE_HEATING else ("cooling",)
         if heat_source_plan is not None and heat_source_plan.commands:
@@ -1780,13 +1797,18 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         else:
             driven = dict.fromkeys(get_all_entity_ids(room.get("devices", [])), commanded_pf)
             parked = []
+        valve_eids = get_valve_entities(room.get("devices", []))
         labels: list[float] = []
         for eid, pf in driven.items():
             state = self.hass.states.get(eid)
             if state is None or state.state in ("unavailable", "unknown", "off"):
                 continue
             action = state.attributes.get("hvac_action")
-            if action in running_actions:
+            if eid in valve_eids and mode == MODE_HEATING:
+                # The valve sits at the opening RoomMind holds; its hvac_action says only that it is open
+                held = held_opening(eid)
+                labels.append(held if held is not None else pf)
+            elif action in running_actions:
                 labels.append(1.0)
             elif action in ("idle", "off", "heating", "preheating", "cooling", "defrosting"):
                 labels.append(0.0)
@@ -2143,6 +2165,14 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 continue
             # Control stays off, so no later cycle reports this member to its compressor group
             self._compressor_manager.update_member(entity_id, False)
+
+    async def _async_release_valves(self, area_id: str, devices: list[dict]) -> None:
+        """Hand every valve RoomMind pins in this room back to its TRV (#413)."""
+        for entity_id, (opening, closing) in get_valve_entities(devices).items():
+            try:
+                await async_release_valve(self.hass, entity_id, opening, closing, area_id=area_id, hand_back=True)
+            except Exception:  # noqa: BLE001
+                _LOGGER.warning("Room '%s': releasing the valve of '%s' failed", area_id, entity_id, exc_info=True)
 
     async def async_room_removed(self, area_id: str) -> None:
         """Remove sensor entities for a deleted room and refresh data."""

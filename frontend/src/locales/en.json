@@ -217,10 +217,10 @@
   "devices.coil_dry_global_off_hint": "Evaporator drying is switched off globally, so nothing runs for this device. Turn it on in the settings, or set this device to \"Always on\".",
   "devices.valve_protection_excluded": "Excluded from valve protection",
   "devices.valve_protection_exclude_hint": "This entity will not be cycled by valve protection (e.g. virtual boiler entities)",
-  "devices.valve_direct_control": "Direct Valve Control",
-  "devices.valve_opening_entity": "Opening degree entity (0–100%)",
-  "devices.valve_closing_entity": "Closing degree entity (0–100%)",
-  "devices.valve_direct_control_hint": "Send valve position directly to number entities. Opening 100% / closing 0% = fully open. If set, this replaces proportional setpoint control.",
+  "devices.valve_direct_control": "Direct valve control",
+  "devices.valve_opening_entity": "Valve opening degree",
+  "devices.valve_closing_entity": "Valve closing degree",
+  "devices.valve_direct_control_hint": "For thermostats that let Home Assistant set the valve opening (e.g. SONOFF TRVZB: valve_opening_degree and valve_closing_degree, both needed). RoomMind then holds the valve at the opening the room needs, e.g. 30 %, instead of opening it fully: fewer valve movements, quieter and more even heat. Clear the fields or switch off climate control and RoomMind sets both back to 100 %.",
   "devices.valve_direct_badge": "Direct valve",
   "devices.info.types_title": "Device types",
   "devices.info.types_body": "Thermostat means a radiator thermostat / TRV. Climate Device means an AC, heat pump, or other climate entity used for cooling or forced-air heating. Both are Home Assistant climate entities; the distinction is how RoomMind controls them.",
@@ -572,5 +572,6 @@
   "heat_source.ac_min_outdoor": "Min. outdoor temp for AC heating",
   "heat_source.ac_min_outdoor_hint": "Disable AC heating entirely below this temperature to protect the heat pump hardware.",
   "heat_source.ac_min_outdoor_suffix": "°C",
-  "heat_source.summary_disabled": "Smart source selection is off"
+  "heat_source.summary_disabled": "Smart source selection is off",
+  "devices.valve_closing_entity_hint": "Keeps the valve at the set opening whatever the thermostat's own control wants. Filled in automatically when the device has one."
 }

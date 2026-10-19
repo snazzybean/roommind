@@ -217,10 +217,10 @@
   "devices.coil_dry_global_off_hint": "Le séchage de l'évaporateur est désactivé globalement, rien ne se déclenche donc pour cet appareil. Activez-le dans les réglages ou passez cet appareil sur « Toujours actif ».",
   "devices.valve_protection_excluded": "Exclu de la protection des vannes",
   "devices.valve_protection_exclude_hint": "Cette entité ne sera pas cyclée par la protection des vannes (ex. entités chaudière virtuelles)",
-  "devices.valve_direct_control": "Contrôle direct de vanne",
-  "devices.valve_opening_entity": "Entité degré d'ouverture (0–100%)",
-  "devices.valve_closing_entity": "Entité degré de fermeture (0–100%)",
-  "devices.valve_direct_control_hint": "Envoie la position de vanne directement aux entités nombre. Ouverture 100% / fermeture 0% = complètement ouvert. Remplace le contrôle par consigne proportionnel si configuré.",
+  "devices.valve_direct_control": "Contrôle direct de la vanne",
+  "devices.valve_opening_entity": "Degré d'ouverture de la vanne",
+  "devices.valve_closing_entity": "Degré de fermeture de la vanne",
+  "devices.valve_direct_control_hint": "Pour les têtes thermostatiques dont Home Assistant peut régler l'ouverture (p. ex. SONOFF TRVZB : valve_opening_degree et valve_closing_degree, les deux sont nécessaires). RoomMind maintient alors la vanne à l'ouverture dont la pièce a besoin, p. ex. 30 %, au lieu de l'ouvrir complètement : moins de mouvements, plus silencieux et une chaleur plus régulière. Videz les champs ou désactivez le contrôle climatique et RoomMind remet les deux à 100 %.",
   "devices.valve_direct_badge": "Vanne directe",
   "devices.info.types_title": "Types d'appareil",
   "devices.info.types_body": "Thermostat désigne un thermostat de radiateur / TRV. Appareil climatique désigne un climatiseur, une pompe à chaleur ou autre entité climatique utilisée pour le refroidissement ou le chauffage à air pulsé. Les deux sont des entités climatiques dans Home Assistant; la différence réside dans la façon dont RoomMind les contrôle.",
@@ -572,5 +572,6 @@
   "heat_source.ac_min_outdoor": "Température extérieure min. pour la climatisation",
   "heat_source.ac_min_outdoor_hint": "Désactiver complètement la climatisation en dessous de cette température pour protéger le matériel de la pompe à chaleur.",
   "heat_source.ac_min_outdoor_suffix": "°C",
-  "heat_source.summary_disabled": "La sélection intelligente de la source est désactivée"
+  "heat_source.summary_disabled": "La sélection intelligente de la source est désactivée",
+  "devices.valve_closing_entity_hint": "Maintient la vanne à l'ouverture réglée, quoi que veuille la régulation de la tête. Rempli automatiquement si l'appareil en a une."
 }

@@ -806,3 +806,32 @@ class TestGetSetpointOffsets:
     def test_device_without_entity_id_skipped(self):
         devices = [{"setpoint_mode": "direct", "setpoint_offset": 1.0}]
         assert get_setpoint_offsets(devices) == {}
+
+
+def test_valve_trvs_ignore_the_direct_setpoint_mode():
+    """A TRV with direct valve control always gets the boost (#413)."""
+    from custom_components.roommind.utils.device_utils import (
+        configured_valves,
+        get_direct_setpoint_eids,
+        get_setpoint_offset,
+        get_valve_entities,
+    )
+
+    devices = [
+        {
+            "entity_id": "climate.v",
+            "type": "trv",
+            "setpoint_mode": "direct",
+            "setpoint_offset": 1.0,
+            "valve_opening_entity": "number.v_open",
+            "valve_closing_entity": "number.v_close",
+        },
+        {"entity_id": "climate.d", "type": "trv", "setpoint_mode": "direct", "setpoint_offset": 1.0},
+        {"entity_id": "climate.ac", "type": "ac", "valve_opening_entity": "number.ignored"},
+        {"entity_id": "climate.c", "type": "trv", "valve_closing_entity": "number.c_close"},
+    ]
+    assert get_direct_setpoint_eids(devices) == {"climate.d"}
+    assert get_setpoint_offset(devices, "climate.v") == 0.0
+    assert get_setpoint_offset(devices, "climate.d") == 1.0
+    assert get_valve_entities(devices) == {"climate.v": ("number.v_open", "number.v_close")}
+    assert configured_valves({"a": {"devices": devices}, "b": {}}) == get_valve_entities(devices)

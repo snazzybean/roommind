@@ -39,6 +39,8 @@ from ..const import (
     PROPORTIONAL_DEADBAND_C,
     PROPORTIONAL_DEADBAND_NEAR_TARGET_C,
     PROPORTIONAL_SETPOINT_DWELL_SECONDS,
+    VALVE_OVERSHOOT_STOP_K,
+    VALVE_PROPORTIONAL_BAND_K,
     TargetTemps,
     is_override_active,
     make_roommind_context,
@@ -57,10 +59,11 @@ from ..utils.device_utils import (
     get_setpoint_offset,
     get_setpoint_offsets,
     get_trv_eids,
-    get_valve_eids_map,
+    get_valve_entities,
     has_reliable_hvac_modes,
 )
 from ..utils.temp_utils import celsius_delta_to_ha, celsius_to_ha_temp
+from .direct_valve import async_release_valve, async_set_valve, clear_valve_cache
 from .mpc_optimizer import MPCOptimizer, MPCPlan, preheat_max_blocks, slow_start_penalty
 from .residual_heat import get_min_run_blocks, mean_rebound
 from .thermal_model import RoomModelManager
@@ -110,14 +113,6 @@ _COOLING_CAPABLE_STATES = ("heat_cool", "auto")
 
 def _now() -> float:
     return time.monotonic()
-
-
-# Cache of last sent valve opening percentage per climate entity.
-# Keyed as "<climate_entity_id>:opening" → last opening % (0-100).
-_last_valve_pcts: dict[str, int] = {}
-
-# Minimum valve position change (%) before a new number.set_value is sent.
-VALVE_POSITION_DEADBAND = 5
 
 
 def _cache_entry(service: str, data: dict) -> dict[str, Any]:
@@ -295,70 +290,7 @@ def clear_command_cache() -> None:
     _active_targets.clear()
     _overshoot_sent.clear()
     _hold_modulated.clear()
-    _last_valve_pcts.clear()
-
-
-async def async_send_valve_position(
-    hass: HomeAssistant,
-    opening_entity: str | None,
-    closing_entity: str | None,
-    opening_pct: int,
-    *,
-    area_id: str = "unknown",
-    climate_eid: str = "unknown",
-) -> None:
-    """Send direct valve position commands to TRV number entities.
-
-    ``opening_pct`` is 0-100 (100 = fully open).  The closing percentage is
-    computed as ``100 - opening_pct``.  Commands are suppressed when the
-    position has not changed by more than ``VALVE_POSITION_DEADBAND`` percent
-    since the last successful send.
-    """
-    opening_pct = max(0, min(100, opening_pct))
-    closing_pct = 100 - opening_pct
-
-    cache_key = f"{climate_eid}:opening"
-    last_opening = _last_valve_pcts.get(cache_key)
-    if last_opening is not None and abs(opening_pct - last_opening) < VALVE_POSITION_DEADBAND:
-        return
-
-    if opening_entity:
-        try:
-            await hass.services.async_call(
-                "number",
-                "set_value",
-                {"entity_id": opening_entity, "value": float(opening_pct)},
-                blocking=True,
-                context=make_roommind_context(),
-            )
-        except Exception:  # noqa: BLE001
-            _LOGGER.warning(
-                "Area '%s': number.set_value(%d) failed on valve opening entity '%s'",
-                area_id,
-                opening_pct,
-                opening_entity,
-                exc_info=True,
-            )
-
-    if closing_entity:
-        try:
-            await hass.services.async_call(
-                "number",
-                "set_value",
-                {"entity_id": closing_entity, "value": float(closing_pct)},
-                blocking=True,
-                context=make_roommind_context(),
-            )
-        except Exception:  # noqa: BLE001
-            _LOGGER.warning(
-                "Area '%s': number.set_value(%d) failed on valve closing entity '%s'",
-                area_id,
-                closing_pct,
-                closing_entity,
-                exc_info=True,
-            )
-
-    _last_valve_pcts[cache_key] = opening_pct
+    clear_valve_cache()
 
 
 def _resolve_idle_setpoint(
@@ -1029,6 +961,39 @@ def heat_start_hysteresis(ac_heats: bool, has_trvs: bool) -> float:
     return BANGBANG_HEAT_HYSTERESIS if ac_heats or not has_trvs else MPC_START_HYSTERESIS
 
 
+def is_valve_modulating(devices: list[dict], acs_can_heat: bool, has_external_sensor: bool) -> bool:
+    """True when the room heats only through TRVs with direct valve control (#413).
+
+    Such a room holds the valve at the power it needs instead of switching a boosted
+    setpoint on and off. A heat-capable AC or a TRV on a setpoint keeps the on/off rules.
+    """
+    trvs = get_trv_eids(devices)
+    return has_external_sensor and not acs_can_heat and bool(trvs) and set(trvs) <= set(get_valve_entities(devices))
+
+
+def valve_demand(
+    model: Any,
+    current_temp: float,
+    outdoor_temp: float,
+    target: float,
+    *,
+    q_solar: float,
+    q_occupancy: float,
+) -> float:
+    """Valve opening (0-1) for a room with direct valve control (#413), 0.0 without demand.
+
+    The share of full heating power that holds *target* against the learned losses, sun
+    and occupancy, plus 100 % per ``VALVE_PROPORTIONAL_BAND_K`` below it. The optimizer's
+    closed form is a 5-min deadbeat with an energy bias: it saturates a step below the
+    target and finds no demand right at it, so a valve would still switch on and off.
+    """
+    if model.Q_heat <= 0:
+        return 0.0
+    hold = model.U * (target - outdoor_temp) - model.Q_solar * q_solar - model.Q_occupancy * q_occupancy
+    pf = hold / model.Q_heat + (target - current_temp) / VALVE_PROPORTIONAL_BAND_K
+    return min(1.0, pf) if pf > 0.0 else 0.0
+
+
 def is_slow_heat(min_run_blocks: int) -> bool:
     """A heating system with a longer min run than an AC (UFH) must start before the drift."""
     return min_run_blocks > get_min_run_blocks("", PLAN_DT_MINUTES)
@@ -1096,6 +1061,7 @@ def decide_mpc_action(
     idle_drift: Callable[[float], float],
     continuation_power: Callable[[str, float], float],
     area_id: str | None = None,
+    valve_demand: Callable[[float], float] | None = None,
 ) -> tuple[str, float]:
     """Apply the controller's rules to the optimizer's first block.
 
@@ -1104,6 +1070,8 @@ def decide_mpc_action(
     callbacks: ``idle_drift(minutes)`` predicts the room without HVAC,
     ``continuation_power(mode, target)`` gives the power of a min-run continuation.
     ``area_id`` enables the hard-ceiling log lines (the prediction passes None).
+    ``valve_demand(target)`` (holding power plus proportional term, 0.0 without demand,
+    see ``valve_demand``) marks a room with direct valve control, see ``_valve_action``.
 
     Order: hard ceiling, model guard, then the switching hysteresis.
     """
@@ -1167,6 +1135,10 @@ def decide_mpc_action(
     heat_rising = max(near_heat) > heat_now
     cool_falling = min(near_cool) < cool_now
 
+    if valve_demand is not None and not slow_heat and can_heat and previous_mode == MODE_HEATING:
+        if action != MODE_COOLING and current_temp < max(near_heat) + HARD_OVERSHOOT_CEILING:
+            return _valve_action(action, power_fraction, current_temp, heat_now, heat_rising, valve_demand)
+
     if action == MODE_HEATING:
         if not slow_heat and previous_mode != MODE_HEATING and not heat_rising:
             if current_temp > heat_now - heat_hysteresis - _TEMP_EPSILON:
@@ -1190,7 +1162,39 @@ def decide_mpc_action(
         and cool_in_min_run
     ):
         return MODE_COOLING, continuation_power(MODE_COOLING, cool_now)
+    if valve_demand is not None and action == MODE_HEATING and not slow_heat and not heat_rising:
+        # A valve start runs at what the room needs, not at the optimizer's full-power fallback
+        return action, max(valve_demand(heat_now), MIN_POWER_FRACTION)
     return action, power_fraction
+
+
+def _valve_action(
+    action: str,
+    power_fraction: float,
+    current_temp: float,
+    heat_now: float,
+    heat_rising: bool,
+    valve_demand: Callable[[float], float],
+) -> tuple[str, float]:
+    """A running room with direct valve control holds the valve at the power it needs (#413).
+
+    Setpoint TRVs open fully or not at all, so their runs stop at the target and restart
+    below the start hysteresis. A valve can hold the room instead: below the target at
+    least ``MIN_POWER_FRACTION`` (no stop right after a start), above it the demand, which
+    falls to zero ``VALVE_PROPORTIONAL_BAND_K`` x holding share past the target. A rising target in the
+    guard window keeps the optimizer's own power (pre-heat).
+    """
+    if current_temp >= heat_now + VALVE_OVERSHOOT_STOP_K and not heat_rising:
+        # A model that overrates the holding power would keep the valve open up to the hard ceiling
+        return MODE_IDLE, 0.0
+    demand = valve_demand(heat_now)
+    if action == MODE_HEATING and heat_rising:
+        return MODE_HEATING, max(power_fraction, demand)
+    if current_temp < heat_now:
+        return MODE_HEATING, max(demand, MIN_POWER_FRACTION)
+    if demand > 0.0:
+        return MODE_HEATING, demand
+    return MODE_IDLE, 0.0
 
 
 def infer_running_mode(hass: HomeAssistant, room_config: dict, before: float | None = None) -> str | None:
@@ -1305,12 +1309,14 @@ class MPCController:
         self._devices: list[dict] = room_config.get("devices", [])
         self._direct_eids: set[str] = get_direct_setpoint_eids(self._devices)
         self._direct_offsets: dict[str, float] = get_setpoint_offsets(self._devices)
-        self._valve_eids: dict[str, tuple[str | None, str | None]] = get_valve_eids_map(self._devices)
+        self._valve_entities: dict[str, tuple[str, str]] = get_valve_entities(self._devices)
         self.climate_mode: str = room_config.get("climate_mode", "auto")
         self.outdoor_temp = outdoor_temp
         self.outdoor_forecast = outdoor_forecast or []
         self.previous_mode = previous_mode
         self.has_external_sensor = has_external_sensor
+        # Direct valve control needs RoomMind's own room sensor; Managed Mode keeps the TRV's setpoint
+        self._valve_eids = self._valve_entities if has_external_sensor else {}
         self._model_manager = model_manager
         self._area_id = room_config.get("area_id", "unknown")
         self._target_resolver = target_resolver
@@ -1353,6 +1359,9 @@ class MPCController:
         self._w_energy = max(1.0, (100 - cw) / 10.0)
         self._preheat_max_blocks = preheat_max_blocks(cw, PLAN_DT_MINUTES)
         self._approach_rate = min(1.0, APPROACH_RATE_MIN + (1.0 - APPROACH_RATE_MIN) * cw / DEFAULT_COMFORT_WEIGHT)
+        self._valve_modulating = is_valve_modulating(
+            self._devices, check_acs_can_heat(hass, room_config), self.has_external_sensor
+        )
         self._ac_boost_delta = min(
             AC_BOOST_DELTA_MAX,
             AC_BOOST_DELTA_MIN + (AC_BOOST_DELTA_MAX - AC_BOOST_DELTA_MIN) * cw / DEFAULT_COMFORT_WEIGHT,
@@ -1651,6 +1660,9 @@ class MPCController:
                 idle_drift=lambda minutes: self._predict_idle_drift(current_temp, minutes),
                 continuation_power=partial(self._gentle_power, optimizer, current_temp, outdoor_now),
                 area_id=self._area_id,
+                valve_demand=(
+                    partial(self._valve_demand, model, current_temp, outdoor_now) if self._valve_modulating else None
+                ),
             )
             if (
                 _pass
@@ -1685,6 +1697,16 @@ class MPCController:
             q_residual=self.q_residual,
             q_occupancy=self.q_occupancy,
             rebound_charge=self.q_rebound,
+        )
+
+    def _valve_demand(self, model: Any, current_temp: float, outdoor_temp: float, target: float) -> float:
+        return valve_demand(
+            model,
+            current_temp,
+            outdoor_temp,
+            target,
+            q_solar=self.q_solar * self._shading_factor,
+            q_occupancy=self.q_occupancy,
         )
 
     def _evaluate_bangbang(
@@ -1971,6 +1993,10 @@ class MPCController:
         # carried TRVs (valve protection is TRV-only).  Coil dry excludes ACs.
         acs = [e for e in self.acs if e not in _exclude]
 
+        if not self.has_external_sensor:
+            for eid in thermostats:
+                await self._async_release_valve(eid)
+
         # Managed mode (no external sensor) with auto climate mode and
         # both device types: activate each device in its natural mode so
         # both can self-regulate against the target temperature.
@@ -2115,7 +2141,8 @@ class MPCController:
                         self._area_id,
                         cmd.entity_id,
                     )
-                    await self._async_hold_retarget(cmd.entity_id, targets, current_temp)
+                    if not await self._async_hold_valve(cmd.entity_id, targets):
+                        await self._async_hold_retarget(cmd.entity_id, targets, current_temp)
                     continue
                 if cmd.entity_id in _forced_off and cmd.active:
                     await async_idle_device(
@@ -2127,6 +2154,7 @@ class MPCController:
                         use_setpoint_offset=self.has_external_sensor,
                         head_offset=self._head_offset(cmd.entity_id, "idle"),
                     )
+                    await self._async_release_valve(cmd.entity_id)
                     continue
                 if cmd.active:
                     if cmd.device_type == "thermostat":
@@ -2141,23 +2169,13 @@ class MPCController:
                             t = trv_heat_boost if self.has_external_sensor else effective_target
                         ha_t = self._heating_setpoint_ha(cmd.entity_id, t, effective_target, direct_target)
                         await self._call("set_hvac_mode", {"entity_id": cmd.entity_id, "hvac_mode": "heat"})
-                        _valve_ents = self._valve_eids.get(cmd.entity_id)
-                        if _valve_ents:
-                            await async_send_valve_position(
-                                self.hass,
-                                _valve_ents[0],
-                                _valve_ents[1],
-                                round(cmd.power_fraction * 100),
-                                area_id=self._area_id,
-                                climate_eid=cmd.entity_id,
-                            )
-                        else:
-                            await self._call(
-                                "set_temperature",
-                                {"entity_id": cmd.entity_id, "temperature": ha_t, "hvac_mode": "heat"},
-                                temp_intent="heat",
-                                deadband=self._proportional_deadband(cmd.entity_id, current_temp, effective_target),
-                            )
+                        await self._async_drive_valve(cmd.entity_id, cmd.power_fraction, effective_target)
+                        await self._call(
+                            "set_temperature",
+                            {"entity_id": cmd.entity_id, "temperature": ha_t, "hvac_mode": "heat"},
+                            temp_intent="heat",
+                            deadband=self._proportional_deadband(cmd.entity_id, current_temp, effective_target),
+                        )
                     else:  # ac
                         if self.has_external_sensor and current_temp is not None:
                             t = round(
@@ -2210,16 +2228,7 @@ class MPCController:
                             use_setpoint_offset=self.has_external_sensor,
                             head_offset=self._head_offset(cmd.entity_id, "idle"),
                         )
-                        _valve_ents = self._valve_eids.get(cmd.entity_id)
-                        if _valve_ents:
-                            await async_send_valve_position(
-                                self.hass,
-                                _valve_ents[0],
-                                _valve_ents[1],
-                                0,
-                                area_id=self._area_id,
-                                climate_eid=cmd.entity_id,
-                            )
+                        await self._async_release_valve(cmd.entity_id)
                     else:
                         # ACs can be turned off without boiler cycling concerns
                         await self._call("set_hvac_mode", {"entity_id": cmd.entity_id, "hvac_mode": "off"})
@@ -2249,36 +2258,17 @@ class MPCController:
                         use_setpoint_offset=self.has_external_sensor,
                         head_offset=self._head_offset(eid, "idle"),
                     )
-                    _valve_ents = self._valve_eids.get(eid)
-                    if _valve_ents:
-                        await async_send_valve_position(
-                            self.hass,
-                            _valve_ents[0],
-                            _valve_ents[1],
-                            0,
-                            area_id=self._area_id,
-                            climate_eid=eid,
-                        )
+                    await self._async_release_valve(eid)
                     continue
                 ha_t = self._heating_setpoint_ha(eid, trv_target, effective_target, direct_target)
                 await self._call("set_hvac_mode", {"entity_id": eid, "hvac_mode": "heat"})
-                _valve_ents = self._valve_eids.get(eid)
-                if _valve_ents:
-                    await async_send_valve_position(
-                        self.hass,
-                        _valve_ents[0],
-                        _valve_ents[1],
-                        round(power_fraction * 100),
-                        area_id=self._area_id,
-                        climate_eid=eid,
-                    )
-                else:
-                    await self._call(
-                        "set_temperature",
-                        {"entity_id": eid, "temperature": ha_t, "hvac_mode": "heat"},
-                        temp_intent="heat",
-                        deadband=self._proportional_deadband(eid, current_temp, effective_target),
-                    )
+                await self._async_drive_valve(eid, power_fraction, effective_target)
+                await self._call(
+                    "set_temperature",
+                    {"entity_id": eid, "temperature": ha_t, "hvac_mode": "heat"},
+                    temp_intent="heat",
+                    deadband=self._proportional_deadband(eid, current_temp, effective_target),
+                )
             # ACs: proportional setpoint in Full Control, actual target otherwise
             if self.has_external_sensor and current_temp is not None:
                 ac_heat_target = round(
@@ -2365,8 +2355,10 @@ class MPCController:
                         use_setpoint_offset=self.has_external_sensor,
                         head_offset=self._head_offset(eid, "idle"),
                     )
+                    await self._async_release_valve(eid)
                     continue
                 await self._call("set_hvac_mode", {"entity_id": eid, "hvac_mode": "off"})
+                await self._async_release_valve(eid)
         elif mode == MODE_IDLE:
             for eid in thermostats + acs:
                 if eid in _forced_on:
@@ -2380,7 +2372,8 @@ class MPCController:
                         self._area_id,
                         eid,
                     )
-                    await self._async_hold_retarget(eid, targets, current_temp)
+                    if not await self._async_hold_valve(eid, targets):
+                        await self._async_hold_retarget(eid, targets, current_temp)
                     continue
                 await async_idle_device(
                     self.hass,
@@ -2393,16 +2386,38 @@ class MPCController:
                     force_off=force_off,
                     release_setback=self._setback_release,
                 )
-                _valve_ents = self._valve_eids.get(eid)
-                if _valve_ents:
-                    await async_send_valve_position(
-                        self.hass,
-                        _valve_ents[0],
-                        _valve_ents[1],
-                        0,
-                        area_id=self._area_id,
-                        climate_eid=eid,
-                    )
+                await self._async_release_valve(eid)
+
+    async def _async_drive_valve(self, eid: str, power_fraction: float, target: float) -> None:
+        """Pin the valve of a TRV with direct valve control at ``power_fraction`` of its opening.
+
+        The degrees go out before the caller's setpoint, so a released valve does not open
+        fully first. The TRV keeps getting the proportional setpoint, as a TRV without valve
+        control; a release that lets go for good hands it the room target instead.
+        """
+        valve = self._valve_eids.get(eid)
+        if valve is not None:
+            await async_set_valve(self.hass, eid, *valve, power_fraction * 100, area_id=self._area_id, target=target)
+
+    async def _async_hold_valve(self, eid: str, targets: TargetTemps) -> bool:
+        """Compressor min-run hold of a TRV with direct valve control: the minimum opening.
+
+        The setpoint rules of the hold (retarget, overshoot, throttle) do not move a
+        pinned valve, so it would stay at its last opening for the whole min run.
+        """
+        valve = self._valve_eids.get(eid)
+        if valve is None:
+            return False
+        await async_set_valve(
+            self.hass, eid, *valve, MIN_POWER_FRACTION * 100, area_id=self._area_id, target=targets.heat, urgent=True
+        )
+        return True
+
+    async def _async_release_valve(self, eid: str) -> None:
+        """Give a TRV with direct valve control its own regulation back (also in Managed Mode)."""
+        valve = self._valve_entities.get(eid)
+        if valve is not None:
+            await async_release_valve(self.hass, eid, *valve, area_id=self._area_id)
 
     async def _call_and_record(
         self, eid: str, record: tuple[float | None, float | None], *args: Any, **kwargs: Any

@@ -25,6 +25,7 @@ from .const import (
     build_override_live,
     is_override_suppressed,
 )
+from .control.direct_valve import async_release_valve
 from .services.analytics_service import (
     _compute_target_forecast,  # noqa: F401 - re-exported for tests
     _csv_to_points,  # noqa: F401 - re-exported for tests
@@ -43,6 +44,7 @@ from .utils.device_utils import (
     DEFAULT_COIL_DRY_MINUTES,
     SETPOINT_OFFSET_MAX,
     SETPOINT_OFFSET_MIN,
+    get_valve_entities,
 )
 from .utils.schedule_utils import mask_override_band, override_preset_band
 
@@ -69,6 +71,25 @@ def _validate_device_coil_dry(device: dict) -> dict:
     """
     if device.get("type") == "trv" and device.get("coil_dry") == COIL_DRY_ON:
         raise vol.Invalid("coil_dry='on' is only supported for ACs (type='ac')")
+    return device
+
+
+def _number_entity_or_empty(value: object) -> str:
+    """A ``number.*`` entity id, or "" for none."""
+    if value is None or value == "":
+        return ""
+    if not isinstance(value, str) or not value.startswith("number."):
+        raise vol.Invalid("must be a number entity")
+    return value
+
+
+def _validate_device_valve(device: dict) -> dict:
+    """Direct valve control (#413) is for TRVs; it takes effect once both degree entities are set."""
+    opening, closing = device.get("valve_opening_entity"), device.get("valve_closing_entity")
+    if (opening or closing) and device.get("type") != "trv":
+        raise vol.Invalid("direct valve control is only supported for TRVs (type='trv')")
+    if device.get("valve_closing_entity") and device.get("valve_closing_entity") == device.get("valve_opening_entity"):
+        raise vol.Invalid("valve_opening_entity and valve_closing_entity must differ")
     return device
 
 
@@ -368,11 +389,12 @@ async def websocket_list_rooms(
                     vol.Optional("coil_dry_minutes", default=0): vol.All(vol.Coerce(int), vol.Range(min=0, max=60)),
                     vol.Optional("coil_dry_mode", default=""): vol.In(["", *COIL_DRY_MODES]),
                     vol.Optional("coil_dry_fan_mode", default=""): str,
-                    vol.Optional("valve_opening_entity"): vol.Any(str, None),
-                    vol.Optional("valve_closing_entity"): vol.Any(str, None),
+                    vol.Optional("valve_opening_entity"): _number_entity_or_empty,
+                    vol.Optional("valve_closing_entity"): _number_entity_or_empty,
                 },
                 _validate_device_idle_action,
                 _validate_device_coil_dry,
+                _validate_device_valve,
             )
         ],
         vol.Optional("temperature_sensor"): str,
@@ -458,7 +480,10 @@ async def websocket_save_room(
             area_id,
         )
 
+    old_valves = get_valve_entities((store.get_room(area_id) or {}).get("devices", []))
     room = await store.async_save_room(area_id, config)
+    new_valves = get_valve_entities(room.get("devices", []))
+    await _async_release_dropped_valves(hass, area_id, old_valves, new_valves)
 
     # Notify coordinator to create/update sensor entities for the room
     coordinator = _get_coordinator(hass)
@@ -466,6 +491,26 @@ async def websocket_save_room(
         await coordinator.async_room_added(room)
 
     connection.send_result(msg["id"], {"room": room})
+
+
+async def _async_release_dropped_valves(
+    hass: HomeAssistant,
+    area_id: str,
+    old: dict[str, tuple[str, str]],
+    new: dict[str, tuple[str, str]],
+) -> None:
+    """Hand valves RoomMind no longer controls back to their TRVs (#413).
+
+    Nobody else would: without the config RoomMind does not know these number
+    entities any more, and the valve would stay pinned where it was last set.
+    """
+    for climate_eid, (opening, closing) in old.items():
+        if new.get(climate_eid) == (opening, closing):
+            continue
+        try:
+            await async_release_valve(hass, climate_eid, opening, closing, area_id=area_id, hand_back=True)
+        except Exception:  # noqa: BLE001
+            _LOGGER.warning("Room '%s': releasing the valve of '%s' failed", area_id, climate_eid, exc_info=True)
 
 
 # ---------------------------------------------------------------------------
@@ -489,11 +534,14 @@ async def websocket_delete_room(
     store = hass.data[DOMAIN]["store"]
     area_id = msg["area_id"]
 
+    old_valves = get_valve_entities((store.get_room(area_id) or {}).get("devices", []))
     try:
         await store.async_delete_room(area_id)
     except KeyError:
         connection.send_error(msg["id"], "not_found", f"Room '{area_id}' not found")
         return
+
+    await _async_release_dropped_valves(hass, area_id, old_valves, {})
 
     # Notify coordinator to remove sensor entities for the deleted room
     coordinator = _get_coordinator(hass)

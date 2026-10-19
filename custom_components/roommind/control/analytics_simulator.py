@@ -31,7 +31,9 @@ from .mpc_controller import (
     heat_start_hysteresis,
     is_mpc_enabled,
     is_slow_heat,
+    is_valve_modulating,
     outdoor_gate_limits,
+    valve_demand,
 )
 from .mpc_optimizer import MPCOptimizer, preheat_max_blocks, slow_start_penalty
 from .residual_heat import (
@@ -327,6 +329,9 @@ def _simulate_mpc(
     w_comfort = max(1.0, cw / 10.0)
     w_energy = max(1.0, (100 - cw) / 10.0)
     approach_rate = min(1.0, APPROACH_RATE_MIN + (1.0 - APPROACH_RATE_MIN) * cw / DEFAULT_COMFORT_WEIGHT)
+    valve_modulating = is_valve_modulating(
+        room_config.get("devices", []), acs_can_heat, bool(room_config.get("temperature_sensor"))
+    )
 
     rules = heating_system_type if run_system is None else run_system
     min_run = get_min_run_blocks(rules, PLAN_DT_MINUTES)
@@ -442,6 +447,11 @@ def _simulate_mpc(
                 idle_drift=partial(_idle_drift, model, T, T_out, qs, current_q_residual, q_occupancy, charge),
                 continuation_power=partial(
                     _continuation_power, optimizer, T, T_out, qs, current_q_residual, q_occupancy, charge
+                ),
+                valve_demand=(
+                    partial(valve_demand, model, T, T_out, q_solar=qs, q_occupancy=q_occupancy)
+                    if valve_modulating
+                    else None
                 ),
             )
         if action == MODE_HEATING:

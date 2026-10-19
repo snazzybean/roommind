@@ -93,6 +93,11 @@ PROPORTIONAL_DEADBAND_C = 0.5  # Minimum proportional setpoint change (°C) to r
 PROPORTIONAL_DEADBAND_NEAR_TARGET_C = 0.2  # Finer proportional deadband (°C) within 1°C of target
 PROPORTIONAL_SETPOINT_DWELL_SECONDS = 300  # Minimum time a proportional setpoint stays on the device before a recomputed one replaces it (one MPC block, #317)
 BOOST_CAP_FALLBACK_STEP = 0.5  # Distance kept below a device's max_temp for proportional heating setpoints when it reports no target_temp_step (#396)
+# Direct valve control (#413): TRVs whose valve opening RoomMind sets through number entities
+VALVE_DWELL_SECONDS = 600  # Minimum time a valve position stays before a small correction moves the motor again
+VALVE_DEADBAND_PCT = 5  # Smaller position changes are not sent
+VALVE_OVERSHOOT_STOP_K = 0.5  # A modulating valve closes this far above the target whatever the model says
+VALVE_PROPORTIONAL_BAND_K = 1.0  # A modulating valve opens 100 % further per this many K below the target
 # AC sensor offset (device reading - room sensor while the compressor runs), see HeadOffsetTracker
 HEAD_OFFSET_SETTLE_S = 240  # Running time before readings count: the offset builds up with the airflow after a start
 HEAD_OFFSET_ALPHA = 0.05  # EMA weight per reading (one per 30 s cycle: ~10 min of running to follow a change)

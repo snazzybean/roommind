@@ -212,6 +212,13 @@ TIGHT_AC = RCModel(C=1.0, U=0.02, Q_heat=20.0, Q_cool=20.0)
             {"climate_mode": "heat_only"},
             {"T0": 22.5, "previous_mode": MODE_HEATING, "elapsed_minutes": 1.0},
         ),
+        ("valve below the hysteresis", TRV, {"climate_mode": "heat_only", "valve": True}, {"T0": 20.0}),
+        (
+            "valve holding at the target",
+            TRV,
+            {"climate_mode": "heat_only", "valve": True},
+            {"T0": 21.0, "outdoor": -5.0, "previous_mode": MODE_HEATING, "elapsed_minutes": 30.0},
+        ),
     ],
 )
 def test_prediction_follows_the_controller(monkeypatch, label, model, room, kwargs):
@@ -224,7 +231,13 @@ def test_prediction_follows_the_controller(monkeypatch, label, model, room, kwar
         "heating_system_type": room.get("heating_system_type", ""),
         **kwargs,
     }
+    room = dict(room)
+    valve = room.pop("valve", False)
     room_config = make_room(**room)
+    if valve:
+        for device in room_config["devices"]:
+            device["valve_opening_entity"] = "number.valve_opening_degree"
+            device["valve_closing_entity"] = "number.valve_closing_degree"
     has_ac = bool(room_config.get("acs"))
     real = _closed_loop(
         monkeypatch,
@@ -250,3 +263,21 @@ def test_prediction_without_the_controller_rules_would_differ(monkeypatch):
     )
     bare = _prediction(TRV, room, T0=20.95, targets=TargetTemps(heat=21.0, cool=24.0), outdoor=5.0)
     assert bare != real
+
+
+def test_valve_room_holds_where_a_setpoint_room_switches():
+    """The valve rule changes the prediction: a steadier room around the target (#413)."""
+    setpoint_room = make_room(climate_mode="heat_only")
+    valve_room = make_room(climate_mode="heat_only")
+    valve_room["devices"][0]["valve_opening_entity"] = "number.valve_opening_degree"
+    valve_room["devices"][0]["valve_closing_entity"] = "number.valve_closing_degree"
+    common = {
+        "T0": 21.0,
+        "targets": TargetTemps(heat=21.0, cool=24.0),
+        "outdoor": -5.0,
+        "previous_mode": MODE_HEATING,
+        "elapsed_minutes": 30.0,
+    }
+    setpoint = _prediction(TRV, setpoint_room, **common)
+    valve = _prediction(TRV, valve_room, **common)
+    assert max(valve) - min(valve) < max(setpoint) - min(setpoint)

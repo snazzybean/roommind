@@ -18,9 +18,11 @@ from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.typing import ConfigType
 
 from .const import DOMAIN, PLATFORMS, VERSION
+from .control.direct_valve import async_release_all_valves, clear_valve_cache
 from .coordinator import RoomMindCoordinator
 from .deprecation import async_schedule_deprecation_check
 from .store import RoomMindStore
+from .utils.device_utils import configured_valves
 from .websocket_api import async_register_websocket_commands
 
 _LOGGER = logging.getLogger(__name__)
@@ -45,6 +47,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await store.async_load()
         hass.data[DOMAIN]["store"] = store
 
+    clear_valve_cache()  # after an unload, which stopped valve control
     coordinator = RoomMindCoordinator(hass, entry)
     await coordinator.async_config_entry_first_refresh()
 
@@ -117,6 +120,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a RoomMind config entry."""
     unload_ok: bool = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
+        await _async_release_all_valves(hass)
+    if unload_ok:
         hass.data[DOMAIN].pop(entry.entry_id)
         hass.data[DOMAIN].pop("coordinator", None)
 
@@ -125,6 +130,15 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         async_remove_panel(hass, "roommind")
 
     return unload_ok
+
+
+async def _async_release_all_valves(hass: HomeAssistant) -> None:
+    """Hand pinned valves back to their TRVs (#413): without RoomMind nobody would.
+
+    A reload pins them again on the next cycle.
+    """
+    store = hass.data.get(DOMAIN, {}).get("store")
+    await async_release_all_valves(hass, configured_valves(store.get_rooms()) if store is not None else {})
 
 
 async def _async_check_version_mismatch(hass: HomeAssistant) -> None:

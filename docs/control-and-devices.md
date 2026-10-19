@@ -91,6 +91,25 @@ This only applies in rooms with an external room sensor and to devices that repo
 
 In `Proportional` mode the boosted heating setpoint stays one step (`target_temp_step`, 0.5 °C if the device reports none) below the device's `max_temp`, and never below the room target. Some integrations reject exactly their own `max_temp`, which made the Dyson Heat/Cool purifier ignore the 37°C setpoint. The cooling floor (`min_temp`) is unchanged.
 
+## Direct Valve Control (TRVs)
+
+Some TRVs let Home Assistant set the valve opening itself through `number` entities, for example the SONOFF TRVZB in Zigbee2MQTT (`valve_opening_degree` and `valve_closing_degree`). With a setpoint, a TRV opens its valve fully as soon as it wants heat, so the radiator runs at full power in short bursts. With direct valve control RoomMind holds the valve at the opening the room needs, for example 30 %, for as long as it is needed.
+
+To use it, open the TRV in the room's device list and pick the opening degree entity; RoomMind fills in the closing degree entity of the same device when it finds one. Both are needed. The fields are only shown in rooms with an external room sensor, for TRVs whose device has `number` entities (valve-like ones are offered first).
+
+How it behaves:
+
+- While heating, RoomMind sets the opening degree to the heating power and the closing degree to `100 - opening`, so the valve stays at that position whatever the TRV's own controller decides. The TRV keeps getting its proportional setpoint as before. The setpoint mode does not apply to these TRVs.
+- In a room that heats only through TRVs with direct valve control (no heat-capable AC, no underfloor heating), a running room keeps heating at the target with the power that holds it there, instead of stopping and restarting below it. The opening is the share of full heating power the learned room model needs to hold the target (losses minus sun and occupancy), plus 100 % per 1 °C below the target; above the target it drops until the valve closes. A new run still starts only below the start hysteresis, and pre-heating ahead of a schedule block works as for other TRVs. The heating power shown in the room is the opening RoomMind computes; the valve follows it within the limits below.
+- To spare battery and motor noise, a new position goes out only if it differs by at least 5 % and at the earliest 10 minutes after the last move; a changed room target goes out at once.
+- During a boiler min-run hold (compressor group) the valve runs at 15 % right away.
+- When the room stops heating, RoomMind sets both degrees back to 100 % (the device default) and the configured idle action switches the TRV off as usual.
+- Both degrees also go back to 100 % when you clear the fields, remove the TRV or the room, switch climate control off, reload or remove the integration, or the room has no external sensor (`Managed` mode). When RoomMind lets go of a heating TRV this way, the TRV also gets the room target as its setpoint, so it works like a normal thermostat again instead of heating on RoomMind's raised setpoint. Degrees you change by hand afterwards stay as you set them until the next restart or reload; to set them yourself for good, clear the fields. While RoomMind controls the valve, a limit you set on the degrees yourself (for example for hydraulic balancing) is overwritten: RoomMind uses the full range.
+- In such a room the valve closes at the latest 0.5 °C above the target. In mixed rooms the valve follows the heating power of the normal on/off rules.
+- During the first days, while the room model learns, RoomMind controls the room with simple on/off rules and the valve opens fully when heating.
+
+A valve does not deliver heat in proportion to its opening: many radiators give most of their output at a small opening. RoomMind learns the room's response at the openings it actually uses.
+
 ## Idle Behavior: Off, Fan Only, Setback
 
 `When idle` applies to `Climate Device` entries.
