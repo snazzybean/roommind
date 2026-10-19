@@ -78,6 +78,7 @@ class World:
         self.boot_time = scenario.start
         self.zones: dict[str, Zone] = {}
         self.devices: dict[str, SimDevice] = {}
+        self.valve_numbers: dict[str, tuple[str, str]] = {}  # number entity -> (TRV, opening|closing)
         self.sensors: dict[str, SimSensor] = {}
         self.occupancy: dict[str, SimOccupancy] = {}
         self.windows: dict[str, list[SimWindow]] = {}
@@ -121,6 +122,8 @@ class World:
                     self.window_sensors[w.sensor] = sw
             for dev in room.devices:
                 self.devices[dev.entity_id] = create_device(dev, random.Random(f"{scn.seed}:{dev.entity_id}"))
+                for kind, number in dev.valve_numbers().items():
+                    self.valve_numbers[number] = (dev.entity_id, kind)
             for s in room.sensors:
                 if s.kind == "occupancy":
                     self.occupancy[s.entity_id] = SimOccupancy(s)
@@ -186,6 +189,7 @@ class World:
             if server is not None:
                 loads[server.entity_id] += getattr(dev, "water_draw_w", 0.0)
             changed.add(dev.entity_id)
+            changed.update(dev.spec.valve_numbers().values())
         for b in boilers:
             b.load_w = loads[b.entity_id]
             b.step(dt, DeviceEnv(now=now, zone=self.zones[b.room], outdoor=out, zones=self.zones))
@@ -263,6 +267,14 @@ class World:
             return CommandResult(False, "unknown_entity")
         return dev.call(service, data, now)
 
+    def valve_call(self, entity_id: str, value: float, now: float) -> CommandResult:
+        """``number.set_value`` on a TRV's valve opening/closing degree entity."""
+        target = self.valve_numbers.get(entity_id)
+        if target is None:
+            return CommandResult(False, "unknown_entity")
+        eid, kind = target
+        return self.devices[eid].call(f"set_valve_{kind}_degree", {"value": value}, now)
+
     def cover_call(self, entity_id: str, service: str, data: dict[str, Any]) -> bool:
         cover = self.covers[entity_id]
         return cover.available and cover.command(service, data)
@@ -270,6 +282,8 @@ class World:
     def is_available(self, entity_id: str, now: float) -> bool:
         if entity_id in self.devices:
             return self.devices[entity_id].available
+        if entity_id in self.valve_numbers:
+            return self.devices[self.valve_numbers[entity_id][0]].available
         if entity_id in self.sensors:
             return self.sensors[entity_id].available(now) and self.sensors[entity_id].value is not None
         if entity_id in self.occupancy:
@@ -458,6 +472,11 @@ class World:
                     "available": d.available,
                     **({"fan_mode": d.fan_mode} if d.fan_modes else {}),
                     **({"valve": round(d.valve, 3)} if hasattr(d, "valve") else {}),
+                    **(
+                        {"valve_open_deg": d.valve_opening_deg, "valve_close_deg": d.valve_closing_deg}
+                        if d.spec.valve_numbers()
+                        else {}
+                    ),
                     **({"t_slab": round(d.t_slab, 2)} if getattr(d, "t_slab", None) is not None else {}),
                     **({"t_rad": round(d.t_rad, 2)} if getattr(d, "t_rad", None) is not None else {}),
                 }

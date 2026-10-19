@@ -360,16 +360,27 @@ def no_heat_and_cool_same_group(run: RunData) -> list[Violation]:
 
 
 def no_commands_when_climate_off(run: RunData) -> list[Violation]:
-    """With climate control off RoomMind sends no device commands (#36, #74, #365)."""
+    """With climate control off RoomMind sends no device commands (#36, #74, #365).
+
+    Handing a pinned valve back (degree to 100, #413) is the exception: the TRV could
+    not regulate on its own otherwise.
+    """
     settings = run.settings()
     rooms = run.rooms_config()
     off_rooms = {a for a, r in rooms.items() if r.get("climate_control_enabled") is False}
     if settings.get("climate_control_active") is False:
         off_rooms = set(rooms)
     devices = {d.entity_id for d in run.scenario.all_devices() if d.room in off_rooms}
+    devices |= {n for d in run.scenario.all_devices() if d.room in off_rooms for n in d.valve_numbers().values()}
     return [
-        Violation(c["t"], f"{c['entity_id']} got {c['service']}") for c in run.commands if c["entity_id"] in devices
+        Violation(c["t"], f"{c['entity_id']} got {c['service']}")
+        for c in run.commands
+        if c["entity_id"] in devices and not _valve_release(c)
     ]
+
+
+def _valve_release(command: dict) -> bool:
+    return bool(command["entity_id"].startswith("number.") and (command.get("data") or {}).get("value") == 100)
 
 
 def max_commands_per_hour(run: RunData, limit: float = 12.0, entity_id: str | None = None) -> list[Violation]:

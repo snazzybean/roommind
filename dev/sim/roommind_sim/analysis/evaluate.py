@@ -201,6 +201,8 @@ def _lines(metrics: dict[str, Any], warnings: list[dict[str, Any]]) -> list[str]
         lines.append(
             f"device {eid}: {m['commands']} cmds ({m['commands_per_hour']}/h, {m['redundant_commands']} no-op, {m['rejected_commands']} rejected), "
             f"{m['device_starts']} starts, active {m['active_h']} h, {m['electric_kwh']} kWh el"
+            + (f", valve {m['valve_travel_per_day']} strokes/day" if m.get("valve_travel_per_day") is not None else "")
+            + (f", {m['valve_commands_per_hour']} valve cmds/h" if m.get("valve_commands_per_hour") is not None else "")
         )
     for eid, m in metrics.get("covers", {}).items():
         lines.append(

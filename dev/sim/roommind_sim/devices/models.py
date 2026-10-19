@@ -8,13 +8,14 @@ from typing import Any
 
 from ..physics.psychro import LATENT_HEAT, abs_humidity
 from ..physics.zone import Gains
-from .base import DeviceEnv, SimDevice, approach, clamp
+from .base import CommandResult, DeviceEnv, SimDevice, approach, clamp
 
 GROUND_TEMP_C = 12.0
 VALVE_TRAVEL_S = 120.0
 UFH_ACTUATOR_TRAVEL_S = 180.0
 COIL_TEMP_C = 10.0
 MAX_SUPPLY_C = 75.0
+_VALVE_SERVICES = {"set_valve_opening_degree": "opening", "set_valve_closing_degree": "closing"}
 
 
 def _gains(heat_w: float, radiant_fraction: float) -> Gains:
@@ -84,7 +85,42 @@ class Trv(SimDevice):
         super().__post_init__()
         self.t_rad: float | None = None
         self.valve = 0.0
+        self.valve_opening_deg = 100
+        self.valve_closing_deg = 100
         self._next_report = 0.0
+
+    def _apply(self, service: str, data: dict[str, Any]) -> CommandResult:
+        kind = _VALVE_SERVICES.get(service)
+        if kind is None:
+            return super()._apply(service, data)
+        if kind not in self.spec.valve_numbers():
+            return CommandResult(False, f"unsupported_service:{service}")
+        value = round(float(data["value"]))
+        if not 0 <= value <= 100:
+            return CommandResult(False, "out_of_range")
+        attr = f"valve_{kind}_deg"
+        changed = getattr(self, attr) != value
+        setattr(self, attr, value)
+        return CommandResult(True, changed=changed)
+
+    def _valve_position(self, demand: float) -> float:
+        """TRVZB semantics: open position = opening degree, closed position = 100 - closing
+        degree; the P controller's demand moves the valve between both. Crossed degrees
+        (open position below closed position) clamp the demand into their range instead
+        of inverting it."""
+        lo = 1.0 - self.valve_closing_deg / 100.0
+        hi = self.valve_opening_deg / 100.0
+        if hi >= lo:
+            return lo + demand * (hi - lo)
+        return clamp(demand, hi, lo)
+
+    def flow_share(self) -> float:
+        """Share of full water flow at the current valve position (dead zone, then position ** exponent)."""
+        p = self.spec.params
+        dead = float(p.get("valve_dead_zone", 0.0))
+        if self.valve <= dead:
+            return 0.0
+        return ((self.valve - dead) / (1.0 - dead)) ** float(p.get("valve_flow_exponent", 1.0))
 
     def _design_dt(self) -> float:
         """Mean radiator excess over a 20 °C room at the design supply (steady state, valve open)."""
@@ -115,11 +151,11 @@ class Trv(SimDevice):
         demand = 0.0
         if self.hvac_mode in ("heat", "auto", "heat_cool") and self.available:
             demand = clamp((self.target_c - reading) / float(p.get("p_band_k", 1.0)), 0.0, 1.0)
-        self.valve = approach(self.valve, demand, 1.0 / VALVE_TRAVEL_S, dt)
+        self.valve = approach(self.valve, self._valve_position(demand), 1.0 / VALVE_TRAVEL_S, dt)
         supply = env.supply_temp_c if env.supply_temp_c is not None else curve_supply_c(p, env.outdoor.temp_c, 55.0)
         flow = float(p.get("flow_w_k", h_rad * float(p.get("flow_per_h", 1.5))))
         capacity_j_k = float(p.get("radiator_capacity_kj_k", h_rad * float(p.get("capacity_kj_per_h", 1.75)))) * 1000
-        q_in = self.valve * flow * max(0.0, supply - self.t_rad)
+        q_in = self.flow_share() * flow * max(0.0, supply - self.t_rad)
         # EN 442: output grows with the excess temperature to the power n (~1.3 for panels)
         dt_design = self._design_dt()
         excess = self.t_rad - z.t_air
@@ -133,11 +169,18 @@ class Trv(SimDevice):
         return {self.room: _gains(q_out, float(p.get("radiant_fraction", 0.3)))}
 
     def _model_state(self) -> dict[str, Any]:
-        return {"t_rad": self.t_rad, "valve": self.valve}
+        return {
+            "t_rad": self.t_rad,
+            "valve": self.valve,
+            "valve_opening_deg": self.valve_opening_deg,
+            "valve_closing_deg": self.valve_closing_deg,
+        }
 
     def _restore_model_state(self, data: dict[str, Any]) -> None:
         self.t_rad = data.get("t_rad")
         self.valve = data.get("valve", 0.0)
+        self.valve_opening_deg = data.get("valve_opening_deg", 100)
+        self.valve_closing_deg = data.get("valve_closing_deg", 100)
 
 
 @dataclass

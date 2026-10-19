@@ -112,6 +112,8 @@ clean signal (with a comment why).
 | Air-source units frost up while heating in humid air between -20 and +6 °C and defrost for `defrost_s` (300 s, no heat) after at least `defrost_interval_s` (2700 s); `hvac_action` meanwhile is `defrost_action` (`heating`) | `generic_split_ac`, `ecobee` | `defrost_interval_s: 0` |
 | ECO/quiet modes cap a split AC's output | `generic_split_ac` | `max_output` (1.0 = off) |
 | Zigbee sensor reporting in 0.2 K steps | profile `sonoff_snzb02d` (opt-in) | |
+| TRV valve flow linear in the valve position | `generic_trv` | `valve_flow_exponent` (< 1 = concave, low valve authority), `valve_dead_zone` (no flow below it) |
+| Direct valve control: `number.<trv object_id>_valve_opening_degree` / `_valve_closing_degree` (0-100 %, default 100 = the TRV's own control; open position = opening, closed position = 100 - closing, also in `off`) | capability `valve_numbers` (`sonoff_trvzb`) | metrics `device.valve_travel_per_day` (full strokes), `device.valve_commands_per_hour` |
 
 The heating curve was checked against a real radiator room in October (rate 20-30 min into a
 run 0.75-0.8 K/h, real 0.78-0.92; before: 1.8-2.0). Forecast error sizes, defrost timing and

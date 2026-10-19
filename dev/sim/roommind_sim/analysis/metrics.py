@@ -182,7 +182,18 @@ def _room_metrics(run: RunData, area: str) -> dict[str, Any]:
 
 
 def _device_metrics(run: RunData, eid: str, duration_h: float) -> dict[str, Any]:
+    """Per device; ``commands*`` count only the climate entity.
+
+    ``valve_travel_per_day`` (TRVs): summed valve movement in full strokes per day, from the
+    samples, so reversals within one sample interval are missed. ``valve_commands_per_hour``
+    (TRVs with direct valve control): ``number.set_value`` calls on its opening/closing entities.
+    """
     cmds = [c for c in run.commands if c["entity_id"] == eid]
+    spec = next(d for d in run.scenario.all_devices() if d.entity_id == eid)
+    numbers = set(spec.valve_numbers().values())
+    valve_cmds = [c for c in run.commands if c["entity_id"] in numbers]
+    travel: float | None = None
+    last_valve: float | None = None
     rejected = [c for c in cmds if str(c.get("result", "")).startswith("rejected")]
     noop = [c for c in cmds if c.get("result") == "accepted:no_change"]
     modes = run.commanded_modes(eid)
@@ -203,6 +214,10 @@ def _device_metrics(run: RunData, eid: str, duration_h: float) -> dict[str, Any]
                 active_h += dt_h
         if d["active"] and not was_active:
             starts += 1
+        if "valve" in d:
+            if last_valve is not None:
+                travel = (travel or 0.0) + abs(d["valve"] - last_valve)
+            last_valve = d["valve"]
         was_active = d["active"]
         prev = s["t"]
     days = max(duration_h / 24, 1e-9)
@@ -219,6 +234,9 @@ def _device_metrics(run: RunData, eid: str, duration_h: float) -> dict[str, Any]
         "active_h": round(active_h, 2),
         "electric_kwh": round(electric_wh / 1000, 3),
         "heat_kwh": round(heat_wh / 1000, 3),
+        # every device gets the keys: the report table takes its columns from the first row
+        "valve_travel_per_day": round(travel / days, 2) if travel is not None else None,
+        "valve_commands_per_hour": round(len(valve_cmds) / duration_h, 2) if numbers else None,
     }
 
 

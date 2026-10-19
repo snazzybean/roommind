@@ -30,6 +30,13 @@ class DeviceSpec:
     params: dict[str, Any] = field(default_factory=dict)
     quirks: list[dict[str, Any]] = field(default_factory=list)
 
+    def valve_numbers(self) -> dict[str, str]:
+        """``{"opening"|"closing": number entity id}`` of a TRV with direct valve control (TRVZB)."""
+        if self.model != "trv" or not self.capabilities.get("valve_numbers"):
+            return {}
+        object_id = self.entity_id.split(".", 1)[1]
+        return {kind: f"number.{object_id}_valve_{kind}_degree" for kind in ("opening", "closing")}
+
 
 @dataclass
 class SensorSpec:
@@ -128,6 +135,7 @@ class Scenario:
     def entity_ids(self) -> set[str]:
         """Every entity the simulation (or HA helper YAML) will provide."""
         ids: set[str] = {d.entity_id for d in self.all_devices()}
+        ids |= {eid for d in self.all_devices() for eid in d.valve_numbers().values()}
         ids |= {s.entity_id for s in self.all_sensors()}
         for room in self.rooms.values():
             ids |= {w.sensor for w in room.windows if w.sensor}

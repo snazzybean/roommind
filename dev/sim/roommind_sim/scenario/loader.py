@@ -371,6 +371,8 @@ def _validate(scn: Scenario) -> None:
             raise ScenarioError("room is not defined in house.rooms", where)
         for i, dev in enumerate(room.get("devices") or []):
             check(dev.get("entity_id"), f"{where}.devices[{i}]")
+            for key in ("valve_opening_entity", "valve_closing_entity"):
+                check(dev.get(key), f"{where}.devices[{i}].{key}")
         for key in _ROOM_ENTITY_FIELDS:
             check(room.get(key), f"{where}.{key}")
         for key in _ROOM_LIST_FIELDS:

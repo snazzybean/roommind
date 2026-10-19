@@ -107,6 +107,8 @@ class SimRuntime:
         for room in self.scn.rooms.values():
             for d in room.devices:
                 rooms_by_entity[d.entity_id] = room.area_id
+                for number in d.valve_numbers().values():
+                    rooms_by_entity[number] = room.area_id
             for s in room.sensors:
                 rooms_by_entity[s.entity_id] = room.area_id
             for w in room.windows:

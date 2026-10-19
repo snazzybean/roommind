@@ -20,5 +20,10 @@ params:
   radiant_fraction: 0.3        # share of output going to the mass node
   sensor_bias: 0.04            # TRV head sees air + bias * (radiator - air), ~1 K at a hot radiator
   p_band_k: 1.0                # valve fully open this far below setpoint
+  # Flow share at a valve position: none up to valve_dead_zone, then the rest rescaled to 0..1
+  # and raised to valve_flow_exponent. 1.0/0.0 = linear (default). < 1 = concave: a real TRV
+  # with low valve authority already passes most of the flow at a small opening.
+  valve_flow_exponent: 1.0
+  valve_dead_zone: 0.0
   report_interval_s: 60
 quirks: []
