@@ -228,3 +228,20 @@ In that case RoomMind can decide which source should heat:
 - or both, when the gap is large
 
 It uses temperature gap and outdoor conditions to make that choice.
+
+## Central Heating
+
+`Settings -> Central Heating` switches a boiler or heat pump from the rooms' heat demand.
+
+- **Target:** a `switch` or `input_boolean` is turned on and off. A `climate` thermostat gets the **on temperature** in heat mode when switched on and the **off temperature** when switched off; `When switching off` decides whether it then stays in heat mode (a boiler thermostat that just gets a low setpoint) or is also switched off. Without temperatures only the mode is switched.
+- **Rooms needed:** the target runs while at least this many rooms are being heated. A room counts while RoomMind heats it, after window, presence, schedule and override handling, not while a valve merely happens to be open.
+- **Start delay:** how long enough rooms must demand heat before the target is switched on. Demand that drops again within the delay switches nothing.
+- **Run-on:** how long the target keeps running after fewer rooms demand heat. Demand that returns within the run-on keeps it running without a new start.
+- **Which rooms count:** in each room under Devices → `Counts for the central heating`. By default every room with a radiator thermostat (TRV) counts; rooms heated only by an AC or an electric heater do not, unless switched on.
+
+Both delays run to the second. After a restart RoomMind takes over the state the target is in and only switches when the rule says so. If the target is switched by hand, RoomMind switches it back on the next cycle. With climate control switched off globally no room counts, so the target goes off after the run-on.
+
+`binary_sensor.roommind_central_heating` is on while RoomMind runs the target. Its attributes list the demanding rooms, the rooms needed, and a running start delay or run-on with the seconds left. It is unavailable while the feature is off.
+
+A central heating with a minimum number of rooms above 1 does not heat a single room on its own: a room that needs heat waits until enough others do. Keep this in mind for rooms with a long comfort block of their own.
+

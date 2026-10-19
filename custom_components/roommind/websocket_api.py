@@ -11,6 +11,9 @@ from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant, callback
 
 from .const import (
+    CENTRAL_HEATING_MAX_DELAY_S,
+    CENTRAL_HEATING_OFF_MODE_TEMPERATURE,
+    CENTRAL_HEATING_OFF_MODES,
     CLIMATE_MODES,
     CONFLICT_RESOLUTIONS,
     CONTROL_MODE_BANGBANG,
@@ -171,6 +174,7 @@ _ROOM_SAVE_FIELDS = (
     "voc_sensor",
     "voc_threshold",
     "ventilation_entity",
+    "central_heating",
 )
 
 _SETTINGS_SAVE_FIELDS = (
@@ -216,6 +220,7 @@ _SETTINGS_SAVE_FIELDS = (
     "room_order",
     "group_by_floor",
     "compressor_groups",
+    "central_heating",
 )
 
 
@@ -399,6 +404,7 @@ async def websocket_list_rooms(
             ),
             "coil_dry_drain_minutes": settings.get("coil_dry_drain_minutes", DEFAULT_COIL_DRY_DRAIN_MINUTES),
             "compressor_groups": settings.get("compressor_groups", []),
+            "central_heating_enabled": bool((settings.get("central_heating") or {}).get("enabled")),
         },
     )
 
@@ -508,6 +514,8 @@ async def websocket_list_rooms(
         vol.Optional("ventilation_entity"): vol.Any(
             "", vol.All(str, vol.Match(rf"^({'|'.join(VENTILATION_DOMAINS)})\.[a-z0-9_]+$"))
         ),
+        # None: automatic (rooms with radiator thermostats count)
+        vol.Optional("central_heating"): vol.Any(None, bool),
     }
 )
 @websocket_api.async_response
@@ -875,6 +883,28 @@ async def websocket_get_settings(
         ],
         vol.Optional("room_order"): [str],
         vol.Optional("group_by_floor"): bool,
+        vol.Optional("central_heating"): {
+            vol.Optional("enabled", default=False): bool,
+            vol.Optional("entity_id", default=""): vol.Any(
+                "", vol.Match(r"^(switch|input_boolean|climate)\.[a-z0-9_]+$")
+            ),
+            vol.Optional("min_rooms", default=1): vol.All(vol.Coerce(int), vol.Range(min=1, max=50)),
+            vol.Optional("start_delay_s", default=0): vol.All(
+                vol.Coerce(int), vol.Range(min=0, max=CENTRAL_HEATING_MAX_DELAY_S)
+            ),
+            vol.Optional("stop_delay_s", default=0): vol.All(
+                vol.Coerce(int), vol.Range(min=0, max=CENTRAL_HEATING_MAX_DELAY_S)
+            ),
+            vol.Optional("on_temperature", default=None): vol.Any(
+                None, vol.All(vol.Coerce(float), vol.Range(min=5, max=90))
+            ),
+            vol.Optional("off_temperature", default=None): vol.Any(
+                None, vol.All(vol.Coerce(float), vol.Range(min=5, max=90))
+            ),
+            vol.Optional("climate_off_mode", default=CENTRAL_HEATING_OFF_MODE_TEMPERATURE): vol.In(
+                CENTRAL_HEATING_OFF_MODES
+            ),
+        },
         vol.Optional("compressor_groups"): [
             {
                 vol.Required("id"): str,

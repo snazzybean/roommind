@@ -5,6 +5,7 @@ from __future__ import annotations
 from helpers import scenario
 
 from roommind_sim.analysis.invariants import (
+    central_heating_rules,
     hold_shows_running_unit,
     max_commands_per_hour,
     min_run_commanded,
@@ -306,3 +307,38 @@ def test_cover_lowered_over_open_window():
     assert no_cover_lowered_over_open_window(_cover_run([(370, "set_cover_position", {"position": 0})], windows)) == []
     # rooms without window sensors in RoomMind are not checked
     assert no_cover_lowered_over_open_window(_cover_run(down, windows, window_sensors=False)) == []
+
+
+def _central(states: list[tuple[int, int, bool]], start_s: int = 120, stop_s: int = 600) -> RunData:
+    """Observer every 30 s: (demanding rooms, min rooms, on)."""
+    run = _run(
+        [False], settings={"central_heating": {"enabled": True, "start_delay_s": start_s, "stop_delay_s": stop_s}}
+    )
+    t0 = run.start
+    run.observer[:] = [
+        {
+            "t": t0 + 30 * i,
+            "rooms": {},
+            "central_heating": {"enabled": True, "demanding_count": n, "min_rooms": m, "on": on},
+        }
+        for i, (n, m, on) in enumerate(states)
+    ]
+    return run
+
+
+def test_central_heating_follows_its_delays():
+    # demand from 0 s, on after 120 s; demand gone at 300 s, off after 600 s
+    states = [(2, 2, i * 30 >= 120) for i in range(10)] + [(1, 2, True)] * 20 + [(1, 2, False)] * 3
+    assert central_heating_rules(_central(states)) == []
+
+
+def test_central_heating_on_too_early_or_off_too_early():
+    early_on = [(1, 2, False)] * 5 + [(2, 2, False), (2, 2, True)] + [(2, 2, True)] * 5
+    assert "on before enough rooms" in central_heating_rules(_central(early_on))[0].detail
+    early_off = [(2, 2, True)] * 3 + [(1, 2, True), (1, 2, False)]
+    assert "off before the run-on" in central_heating_rules(_central(early_off))[0].detail
+
+
+def test_central_heating_stuck_is_a_violation():
+    stuck = [(2, 2, False)] * 20
+    assert "still off" in central_heating_rules(_central(stuck))[0].detail

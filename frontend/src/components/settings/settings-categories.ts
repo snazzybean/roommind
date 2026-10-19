@@ -15,6 +15,7 @@ export type SettingsCategoryId =
   | "learning"
   | "mold"
   | "valve"
+  | "central_heating"
   | "compressor"
   | "coil_dry"
   | "notifications"
@@ -106,6 +107,12 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
         icon: "mdi:shield-refresh",
         title: "valve_protection.title",
         intro: "settings.intro.valve",
+      },
+      {
+        id: "central_heating",
+        icon: "mdi:water-boiler",
+        title: "central_heating.title",
+        intro: "settings.intro.central_heating",
       },
       {
         id: "compressor",

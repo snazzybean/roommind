@@ -112,6 +112,8 @@ const ROOM_FIELDS: [string, RoomFieldSync][] = [
   ["voc_threshold", plain("_vocThreshold", (c) => c?.voc_threshold ?? null)],
   ["ventilation_entity", plain("_ventilationEntity", (c) => c?.ventilation_entity ?? "")],
   ["preheat_enabled", plain("_preheatEnabled", (c) => c?.preheat_enabled ?? true)],
+  // null: automatic (rooms with radiator thermostats count)
+  ["central_heating", plain("_centralHeating", (c) => c?.central_heating ?? null)],
   [
     "follow_device_setpoint",
     plain("_followDeviceSetpoint", (c) => c?.follow_device_setpoint ?? false),
@@ -238,6 +240,7 @@ export class RsRoomDetail extends LitElement {
   @property({ attribute: false }) public outdoorTemp: number | null = null;
   @property({ type: Boolean }) public vacationActive = false;
   @property({ attribute: false }) public vacationUntil: number | null = null;
+  @property({ type: Boolean }) public centralHeatingEnabled = false;
 
   @state() private _devices: DeviceConfig[] = [];
   @state() private _selectedTempSensor = "";
@@ -254,6 +257,7 @@ export class RsRoomDetail extends LitElement {
   @state() private _vocSensor = "";
   @state() private _vocThreshold: number | null = null;
   @state() private _ventilationEntity = "";
+  @state() private _centralHeating: boolean | null = null;
   @state() private _selectedWindowSensors: Set<string> = new Set();
   @state() private _windowOpenDelay = 0;
   @state() private _windowCloseDelay = 0;
@@ -958,6 +962,21 @@ export class RsRoomDetail extends LitElement {
             @device-changed=${this._onDeviceChanged}
             @valve-protection-exclude-toggle=${this._onValveProtectionExcludeToggle}
           ></rs-device-section>
+          ${
+            this.centralHeatingEnabled
+              ? html`<rs-list-row
+                  switch
+                  wrap
+                  .heading=${localize("devices.central_heating", lang)}
+                  .secondary=${localize("devices.central_heating_hint", lang)}
+                  .checked=${this._centralHeating ?? this._devices.some((d) => d.type === "trv")}
+                  @toggle-changed=${(e: CustomEvent<boolean>) => {
+                    this._centralHeating = e.detail;
+                    this._autoSave();
+                  }}
+                ></rs-list-row>`
+              : nothing
+          }
         </rs-edit-dialog>`;
       case "sensors":
         return html`<rs-edit-dialog

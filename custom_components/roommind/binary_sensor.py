@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from homeassistant.components.binary_sensor import BinarySensorEntity
+from homeassistant.components.binary_sensor import BinarySensorDeviceClass, BinarySensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -39,8 +39,8 @@ async def async_setup_entry(
         if has_air_quality_sensor(room):
             entities.append(RoomMindAirQualitySensor(coordinator, area_id))
             coordinator._air_quality_entity_areas.add(area_id)
-    if entities:
-        async_add_entities(entities)
+    entities.append(RoomMindCentralHeatingSensor(coordinator))
+    async_add_entities(entities)
 
 
 class RoomMindCoverPausedSensor(CoordinatorEntity, BinarySensorEntity):
@@ -104,4 +104,38 @@ class RoomMindAirQualitySensor(CoordinatorEntity, BinarySensorEntity):
             "voc": live.get("voc"),
             "reason": live.get("air_quality_reason"),
             "ventilation_active": live.get("ventilation_active", False),
+        }
+
+
+class RoomMindCentralHeatingSensor(CoordinatorEntity, BinarySensorEntity):
+    """On while RoomMind runs the central heating; unavailable while it is not configured."""
+
+    _attr_has_entity_name = True
+    _attr_name = "Central Heating"
+    _attr_device_class = BinarySensorDeviceClass.HEAT
+    _attr_icon = "mdi:water-boiler"
+
+    def __init__(self, coordinator: RoomMindCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{DOMAIN}_central_heating"
+        self.entity_id = f"binary_sensor.{DOMAIN}_central_heating"
+
+    def _state(self) -> dict:
+        data: dict = (self.coordinator.data or {}).get("central_heating") or {}
+        return data
+
+    @property
+    def available(self) -> bool:
+        return bool(super().available and self._state().get("enabled"))
+
+    @property
+    def is_on(self) -> bool:
+        return bool(self._state().get("on"))
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        state = self._state()
+        return {
+            key: state.get(key)
+            for key in ("entity_id", "demanding_rooms", "demanding_count", "min_rooms", "pending", "pending_seconds")
         }
