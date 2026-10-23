@@ -6,7 +6,7 @@
 |------------------------------------------------------------------- | -------: | -------: | ------: | --------: |
 | custom\_components/roommind/\_\_init\_\_.py                        |      117 |       87 |     26% |35-37, 43-66, 71-72, 78-116, 121-132, 146-169, 174-212 |
 | custom\_components/roommind/binary\_sensor.py                      |       37 |        0 |    100% |           |
-| custom\_components/roommind/climate.py                             |      399 |        0 |    100% |           |
+| custom\_components/roommind/climate.py                             |      400 |        0 |    100% |           |
 | custom\_components/roommind/config\_flow.py                        |       11 |       11 |      0% |      3-23 |
 | custom\_components/roommind/const.py                               |      147 |        0 |    100% |           |
 | custom\_components/roommind/control/\_\_init\_\_.py                |        0 |        0 |    100% |           |
@@ -49,7 +49,7 @@
 | custom\_components/roommind/utils/sensor\_utils.py                 |       29 |        1 |     97% |        25 |
 | custom\_components/roommind/utils/temp\_utils.py                   |       26 |        0 |    100% |           |
 | custom\_components/roommind/websocket\_api.py                      |      319 |        2 |     99% |   778-783 |
-| **TOTAL**                                                          | **7807** |  **220** | **97%** |           |
+| **TOTAL**                                                          | **7808** |  **220** | **97%** |           |
 
 
 ## Setup coverage badge
