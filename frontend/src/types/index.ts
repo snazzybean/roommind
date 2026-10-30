@@ -206,6 +206,8 @@ export interface RoomConfig {
   /** Orchestration: expensive electricity prefers the primary source, cheap the AC. */
   heat_source_price_aware?: boolean;
   climate_control_enabled?: boolean;
+  mold_enabled?: boolean;
+  mold_prevention_intensity?: "" | "light" | "medium" | "strong";
   live?: RoomLiveData;
 }
 

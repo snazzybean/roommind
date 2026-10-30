@@ -98,7 +98,7 @@ Smart cover deployment based on predicted solar overheating. Includes night clos
 
 ### Mold risk
 
-Surface humidity estimation using the DIN 4108-2 method. Configurable notifications and automatic temperature raise to prevent mold growth.
+Surface humidity estimation using the DIN 4108-2 method. Configurable notifications and automatic temperature raise to prevent mold growth. Each room can switch mold protection off or use its own prevention intensity (sensor settings of the room, humidity section).
 
 ### Air quality (CO₂/VOC)
 

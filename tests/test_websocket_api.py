@@ -102,6 +102,9 @@ async def test_list_rooms_empty(ws_hass, store, connection):
             "coil_dry_min_cooling_minutes": 10,
             "coil_dry_drain_minutes": 0,
             "compressor_groups": [],
+            "mold_detection_enabled": False,
+            "mold_prevention_enabled": False,
+            "mold_prevention_intensity": "medium",
         },
     )
 
@@ -2338,6 +2341,37 @@ async def test_save_room_with_climate_control_enabled(ws_hass, store, connection
     assert stored["climate_control_enabled"] is False
 
 
+@pytest.mark.asyncio
+async def test_save_room_mold_overrides_roundtrip(ws_hass, store, connection):
+    """Round-trip: per-room mold switch and prevention intensity persist through WS save."""
+    await store.async_load()
+
+    msg = {
+        "id": 10,
+        "type": "roommind/rooms/save",
+        "area_id": "bedroom",
+        "mold_enabled": False,
+        "mold_prevention_intensity": "strong",
+    }
+    await _save_room(ws_hass, connection, msg)
+
+    room = connection.send_result.call_args[0][1]["room"]
+    assert room["mold_enabled"] is False
+    assert room["mold_prevention_intensity"] == "strong"
+
+
+def test_save_room_mold_prevention_intensity_rejects_unknown():
+    """mold_prevention_intensity only takes the three levels or "" for the global one."""
+    import voluptuous as vol
+
+    from custom_components.roommind.websocket_api import websocket_save_room
+
+    schema = websocket_save_room._ws_schema
+    schema({"id": 1, "type": "roommind/rooms/save", "area_id": "x", "mold_prevention_intensity": ""})
+    with pytest.raises(vol.Invalid):
+        schema({"id": 1, "type": "roommind/rooms/save", "area_id": "x", "mold_prevention_intensity": "max"})
+
+
 def test_save_room_cover_deploy_threshold_rejects_negative():
     """covers_deploy_threshold rejects negative values."""
     import voluptuous as vol
@@ -3217,6 +3251,19 @@ async def test_list_rooms_defaults_coil_dry_settings(ws_hass, store, connection)
     assert result["coil_dry_fan_mode"] == "low"
     assert result["coil_dry_min_cooling_minutes"] == 10
     assert result["coil_dry_drain_minutes"] == 0
+
+
+@pytest.mark.asyncio
+async def test_list_rooms_surfaces_global_mold_settings(ws_hass, store, connection):
+    """rooms/list carries the global mold switches the room detail needs for its per-room options."""
+    await store.async_load()
+
+    await _list_rooms(ws_hass, connection, {"id": 1, "type": "roommind/rooms/list"})
+
+    result = connection.send_result.call_args[0][1]
+    assert result["mold_detection_enabled"] is False
+    assert result["mold_prevention_enabled"] is False
+    assert result["mold_prevention_intensity"] == "medium"
 
 
 @pytest.mark.asyncio
