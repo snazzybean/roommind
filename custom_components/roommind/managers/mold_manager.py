@@ -31,6 +31,20 @@ from ..utils.notification_utils import (
 _LOGGER = logging.getLogger(__name__)
 
 
+def room_mold_settings(room: dict, settings: dict) -> dict:
+    """Apply a room's mold overrides on top of the global settings.
+
+    A room can opt out of mold detection and prevention entirely, and can
+    use its own prevention intensity ("" keeps the global one).
+    """
+    if not room.get("mold_enabled", True):
+        return {**settings, "mold_detection_enabled": False, "mold_prevention_enabled": False}
+    intensity = room.get("mold_prevention_intensity")
+    if intensity:
+        return {**settings, "mold_prevention_intensity": intensity}
+    return settings
+
+
 @dataclass
 class MoldResult:
     """Result of mold risk evaluation for a room."""
@@ -73,6 +87,12 @@ class MoldManager:
         result = MoldResult()
 
         if not (settings.get("mold_detection_enabled") or settings.get("mold_prevention_enabled")):
+            # Switched off (globally or for this room): drop a running risk
+            # timer and its notifications so they don't outlive the setting.
+            if area_id in self._risk_since or self._prevention_active.get(area_id):
+                self.remove_room(area_id)
+                dismiss_mold_notification(self.hass, area_id, "risk")
+                dismiss_mold_notification(self.hass, area_id, "prevention")
             return result
 
         if current_humidity is None or current_temp is None:
