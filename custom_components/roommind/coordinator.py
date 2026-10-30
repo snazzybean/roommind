@@ -111,7 +111,7 @@ from .managers.humidity_manager import (
     humidity_limits,
     humidity_regulated,
 )
-from .managers.mold_manager import MoldManager
+from .managers.mold_manager import MoldManager, room_mold_settings
 from .managers.price_manager import PriceManager
 from .managers.recent_temps import RECENT_WINDOW_S, RecentTemps
 from .managers.residual_heat_tracker import (
@@ -1113,7 +1113,9 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             mold_surface_temp,
             mold_prevention_active_room,
             mold_prevention_temp_delta,
-        ) = await self._evaluate_mold_risk(area_id, room, current_temp, current_humidity, settings)
+        ) = await self._evaluate_mold_risk(
+            area_id, room, current_temp, current_humidity, room_mold_settings(room, settings)
+        )
 
         # Load schedule blocks once — used for both target temp resolution and MPC lookahead.
         from .utils.schedule_utils import (

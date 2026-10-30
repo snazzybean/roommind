@@ -4,7 +4,7 @@ import type { HomeAssistant, HassArea, RoomFanMode, RoomLiveData } from "../type
 import { getEntitiesForArea } from "../utils/room-state";
 import { localize, type TranslationKey } from "../utils/localize";
 import { openEntityInfo } from "../utils/events";
-import { tempUnit } from "../utils/temperature";
+import { tempUnit, toDisplayDelta } from "../utils/temperature";
 import { formatMinutes, formatNumber, formatPercent } from "../utils/format";
 import { tokens } from "../styles/tokens";
 import { inputStyles } from "../styles/input-styles";
@@ -29,6 +29,9 @@ import "./shared/rs-icon-button";
 import "./shared/rs-info-icon";
 import "./shared/rs-list-row";
 import "./shared/rs-segmented";
+
+const MOLD_INTENSITIES = ["light", "medium", "strong"] as const;
+const MOLD_INTENSITY_DELTAS: Record<string, number> = { light: 1, medium: 2, strong: 3 };
 
 type SensorKind =
   | "temp"
@@ -123,6 +126,13 @@ export class RsSensorSection extends LitElement {
   /** Live state of the room: air quality judgement and whether RoomMind runs the ventilation. */
   @property({ attribute: false }) public live?: RoomLiveData;
   @property({ type: String }) public heatingSystemType = "";
+  /** Global mold switches; the per-room options only show while one of them is on. */
+  @property({ type: Boolean }) public moldDetectionEnabled = false;
+  @property({ type: Boolean }) public moldPreventionEnabled = false;
+  @property({ type: String }) public moldPreventionIntensityGlobal = "medium";
+  @property({ type: Boolean }) public moldEnabled = true;
+  /** Room override of the prevention intensity, "" = global. */
+  @property({ type: String }) public moldPreventionIntensity = "";
   @property({ type: Boolean }) public editing = false;
   /** Outdoor area: only temperature and humidity, nothing that controls. */
   @property({ type: Boolean }) public outdoor = false;
@@ -233,7 +243,9 @@ export class RsSensorSection extends LitElement {
           ? this._row(
               this.humiditySensor,
               "mdi:water-percent",
-              localize("detail.sensors.humidity", l),
+              [localize("detail.sensors.humidity", l), this._moldViewText(l)]
+                .filter(Boolean)
+                .join(" · "),
               this._humidityValue(this.humiditySensor),
             )
           : nothing
@@ -643,7 +655,7 @@ export class RsSensorSection extends LitElement {
 
     return html`
       ${this._renderKind("temp", inArea("temp"), nothing, this._renderTempNote(l))}
-      ${this._renderKind("humidity", inArea("humidity"), nothing)}
+      ${this._renderKind("humidity", inArea("humidity"), this._renderMoldSettings(l))}
       ${
         this.outdoor
           ? nothing
@@ -1006,6 +1018,74 @@ export class RsSensorSection extends LitElement {
               <ha-icon icon="mdi:information-outline" aria-hidden="true"></ha-icon>
               <span>${localize("devices.underfloor_delay_hint", l)}</span>
             </p>`
+          : nothing
+      }
+    `;
+  }
+
+  private _intensityLabel(intensity: string, l: string): string {
+    return localize(`mold.intensity_${intensity}` as "mold.intensity_medium", l, {
+      delta: formatNumber(
+        toDisplayDelta(MOLD_INTENSITY_DELTAS[intensity] ?? 2, this.hass),
+        this.hass,
+        0,
+        1,
+      ),
+      unit: tempUnit(this.hass),
+    });
+  }
+
+  /** Short note on the humidity row when the room differs from the global mold settings. */
+  private _moldViewText(l: string): string {
+    if (this.outdoor || !(this.moldDetectionEnabled || this.moldPreventionEnabled)) return "";
+    if (!this.moldEnabled) return localize("mold.room_off_view", l);
+    if (this.moldPreventionEnabled && this.moldPreventionIntensity) {
+      return localize("mold.room_intensity_view", l, {
+        intensity: this._intensityLabel(this.moldPreventionIntensity, l),
+      });
+    }
+    return "";
+  }
+
+  /** Mold protection of this room, on top of the global mold settings. */
+  private _renderMoldSettings(l: string) {
+    if (this.outdoor || !this.humiditySensor) return nothing;
+    if (!(this.moldDetectionEnabled || this.moldPreventionEnabled)) return nothing;
+    const options = [
+      {
+        value: "global",
+        label: localize("mold.room_intensity_global", l, {
+          intensity: this._intensityLabel(this.moldPreventionIntensityGlobal, l),
+        }),
+      },
+      ...MOLD_INTENSITIES.map((v) => ({ value: v, label: this._intensityLabel(v, l) })),
+    ];
+    return html`
+      <rs-list-row
+        switch
+        wrap
+        .heading=${localize("mold.room_enabled", l)}
+        .checked=${this.moldEnabled}
+        @toggle-changed=${(e: CustomEvent<boolean>) =>
+          this._fireSensorChanged("mold_enabled", e.detail)}
+      >
+        <rs-info-icon slot="end" .text=${localize("mold.room_enabled_hint", l)}></rs-info-icon>
+      </rs-list-row>
+      ${
+        this.moldEnabled && this.moldPreventionEnabled
+          ? html`<rs-field .label=${localize("mold.room_intensity", l)}>
+              <rs-segmented
+                wrap
+                .label=${localize("mold.room_intensity", l)}
+                .options=${options}
+                .value=${this.moldPreventionIntensity || "global"}
+                @value-changed=${(e: CustomEvent<{ value: string }>) => {
+                  const v = e.detail.value === "global" ? "" : e.detail.value;
+                  if (e.detail.value && v !== this.moldPreventionIntensity)
+                    this._fireSensorChanged("mold_prevention_intensity", v);
+                }}
+              ></rs-segmented>
+            </rs-field>`
           : nothing
       }
     `;
