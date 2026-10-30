@@ -173,6 +173,8 @@ _ROOM_SAVE_FIELDS = (
     "voc_sensor",
     "voc_threshold",
     "ventilation_entity",
+    "mold_enabled",
+    "mold_prevention_intensity",
 )
 
 # Same limits as the room climate entity; also turns away nan/inf
@@ -422,6 +424,9 @@ async def websocket_list_rooms(
             ),
             "coil_dry_drain_minutes": settings.get("coil_dry_drain_minutes", DEFAULT_COIL_DRY_DRAIN_MINUTES),
             "compressor_groups": settings.get("compressor_groups", []),
+            "mold_detection_enabled": settings.get("mold_detection_enabled", False),
+            "mold_prevention_enabled": settings.get("mold_prevention_enabled", False),
+            "mold_prevention_intensity": settings.get("mold_prevention_intensity", "medium"),
         },
     )
 
@@ -531,6 +536,8 @@ async def websocket_list_rooms(
         vol.Optional("ventilation_entity"): vol.Any(
             "", vol.All(str, vol.Match(rf"^({'|'.join(VENTILATION_DOMAINS)})\.[a-z0-9_]+$"))
         ),
+        vol.Optional("mold_enabled"): bool,
+        vol.Optional("mold_prevention_intensity"): vol.In(["", "light", "medium", "strong"]),
     }
 )
 @websocket_api.async_response

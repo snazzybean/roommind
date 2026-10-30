@@ -487,3 +487,66 @@ class TestMoldPreventionNeedsHeating:
         state = await self._run(hass, mock_config_entry, room, extra)
         assert state["mold_risk_level"] == "critical"
         assert state["mold_prevention_active"] is expected
+
+
+class TestMoldPerRoom:
+    """Per-room mold switch and prevention intensity on top of the global settings."""
+
+    _SETTINGS = {
+        "mold_detection_enabled": True,
+        "mold_prevention_enabled": True,
+        "mold_prevention_intensity": "medium",
+        "outdoor_temp_sensor": "sensor.outdoor_temp",
+    }
+
+    def _setup(self, hass, room):
+        store = _make_store_mock({"living_room_abc12345": room})
+        store.get_settings.return_value = dict(self._SETTINGS)
+        hass.data = {"roommind": {"store": store}}
+        hass.states.get = MagicMock(side_effect=make_mock_states_get(humidity="75.0", outdoor_temp="0.0"))
+        hass.services.async_call = AsyncMock()
+        return store
+
+    @pytest.mark.asyncio
+    async def test_room_switched_off_skips_mold(self, hass, mock_config_entry):
+        self._setup(hass, {**SAMPLE_ROOM, "mold_enabled": False})
+        coordinator = _create_coordinator(hass, mock_config_entry)
+        data = await coordinator._async_update_data()
+
+        room = data["rooms"]["living_room_abc12345"]
+        assert room["mold_risk_level"] == "ok"
+        assert room["mold_prevention_active"] is False
+        assert room["target_temp"] == 21.0
+
+    @pytest.mark.asyncio
+    async def test_room_intensity_overrides_global(self, hass, mock_config_entry):
+        self._setup(hass, {**SAMPLE_ROOM, "mold_prevention_intensity": "strong"})
+        coordinator = _create_coordinator(hass, mock_config_entry)
+        data = await coordinator._async_update_data()
+
+        room = data["rooms"]["living_room_abc12345"]
+        assert room["mold_prevention_delta"] == 3.0
+        assert room["target_temp"] == 24.0
+
+    @pytest.mark.asyncio
+    async def test_empty_room_intensity_uses_global(self, hass, mock_config_entry):
+        self._setup(hass, {**SAMPLE_ROOM, "mold_prevention_intensity": ""})
+        coordinator = _create_coordinator(hass, mock_config_entry)
+        data = await coordinator._async_update_data()
+
+        assert data["rooms"]["living_room_abc12345"]["mold_prevention_delta"] == 2.0
+
+    @pytest.mark.asyncio
+    async def test_switching_room_off_ends_running_prevention(self, hass, mock_config_entry):
+        store = self._setup(hass, SAMPLE_ROOM)
+        coordinator = _create_coordinator(hass, mock_config_entry)
+        data = await coordinator._async_update_data()
+        assert data["rooms"]["living_room_abc12345"]["mold_prevention_active"] is True
+
+        store.get_rooms.return_value = {"living_room_abc12345": {**SAMPLE_ROOM, "mold_enabled": False}}
+        with patch("custom_components.roommind.managers.mold_manager.dismiss_mold_notification") as dismiss:
+            data = await coordinator._async_update_data()
+
+        assert data["rooms"]["living_room_abc12345"]["mold_prevention_active"] is False
+        assert {c.args[2] for c in dismiss.call_args_list} == {"risk", "prevention"}
+        assert "living_room_abc12345" not in coordinator._mold_manager._risk_since
