@@ -51,6 +51,13 @@ def preheat_max_blocks(comfort_weight: float, dt_minutes: float = 5.0, *, enable
     return int(hours * 60 / dt_minutes)
 
 
+def preheat_lead_blocks(lead_seconds: float | None, dt_minutes: float = 5.0) -> int | None:
+    """A schedule block's pre-heat lead (seconds, None: unlimited) in plan blocks."""
+    if lead_seconds is None:
+        return None
+    return int(max(0.0, lead_seconds) / (dt_minutes * 60.0))
+
+
 def slow_start_penalty(min_run_blocks: int, dt_minutes: float = 5.0) -> float:
     """``MPCOptimizer.start_penalty`` for a run of *min_run_blocks*: only slow systems pay for starts.
 
@@ -133,6 +140,10 @@ class MPCOptimizer:
     residual_scale: float = 1.0
     # Learned decay time of that afterglow in minutes (radiators); None uses the profile's
     residual_tau: float | None = None
+    # Per plan block: the longest lead (blocks) the heat target there may be pre-heated
+    # for, from the schedule block's ``preheat`` or the room's switch; None = no limit.
+    # Applies on top of preheat_max_blocks, which then only carries the slider.
+    preheat_lead_blocks: list[int | None] | None = None
 
     def __post_init__(self) -> None:
         # Set before optimize() runs so callers / patched optimize() still expose
@@ -533,7 +544,7 @@ class MPCOptimizer:
         n = min(n, len(goal))
 
         def rises(j: int) -> bool:
-            return goal[j] > now and schedule[j] > schedule[i]
+            return goal[j] > now and schedule[j] > schedule[i] and self._lead_allows(i, j)
 
         rise = next((j for j in range(i + 1, n) if rises(j) and goal[j] > T_room), None)
         if rise is None:
@@ -641,7 +652,7 @@ class MPCOptimizer:
         n = min(n, len(goal))
 
         def falls(j: int) -> bool:
-            return goal[j] < now and schedule[j] < schedule[i]
+            return goal[j] < now and schedule[j] < schedule[i] and self._lead_allows(i, j)
 
         if next((j for j in range(i + 1, n) if falls(j) and goal[j] < T_room), None) is None:
             return 0
@@ -720,6 +731,14 @@ class MPCOptimizer:
             if target > now and T < target - PREHEAT_DEADLINE_MARGIN:
                 return False
         return True
+
+    def _lead_allows(self, i: int, j: int) -> bool:
+        """Whether block *i* may already pre-heat (pre-cool) for the target at block *j*."""
+        leads = self.preheat_lead_blocks
+        if leads is None or j >= len(leads):
+            return True
+        lead = leads[j]
+        return lead is None or j - i <= lead
 
     def simulate_plan(
         self,
