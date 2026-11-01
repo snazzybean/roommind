@@ -36,7 +36,7 @@ from .mpc_controller import (
     outdoor_gate_limits,
     valve_demand,
 )
-from .mpc_optimizer import MPCOptimizer, preheat_max_blocks, slow_start_penalty
+from .mpc_optimizer import MPCOptimizer, preheat_lead_blocks, preheat_max_blocks, slow_start_penalty
 from .residual_heat import (
     advance_rebound,
     build_residual_series,
@@ -431,6 +431,12 @@ def _simulate_mpc(
             heat_series = [h for h, _ in filled]
             cool_series = [c for _, c in filled]
             schedule_series = _schedule_series(window, T)
+            # Schedule blocks with their own ``preheat`` (see make_preheat_lead_resolver)
+            lead_blocks = (
+                [preheat_lead_blocks(tf.get("preheat_lead"), PLAN_DT_MINUTES) for tf in window]
+                if window and "preheat_lead" in window[0]
+                else None
+            )
             remaining_outdoor = outdoor_series[i : i + len(window)]
             remaining_solar = solar_series[i : i + len(window)] if solar_series else None
             # Build residual series for remaining blocks
@@ -462,10 +468,11 @@ def _simulate_mpc(
                 start_penalty=start_penalty,
                 fast_heater_shares_model=acs_can_heat,
                 preheat_max_blocks=preheat_max_blocks(
-                    cw, PLAN_DT_MINUTES, enabled=room_config.get("preheat_enabled", True)
+                    cw, PLAN_DT_MINUTES, enabled=lead_blocks is not None or room_config.get("preheat_enabled", True)
                 ),
                 residual_scale=residual_scale,
                 residual_tau=residual_tau,
+                preheat_lead_blocks=lead_blocks,
             )
             plan = optimizer.optimize(
                 T_room=T,

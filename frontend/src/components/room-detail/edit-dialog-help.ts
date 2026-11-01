@@ -102,6 +102,24 @@ export function scheduleHelp(lang: string) {
     </div>
     <p style="margin-top: 8px">${unsafeHTML(localize("schedule.help_split_note", lang))}</p>
     <p style="margin-top: 12px">
+      <strong>${localize("schedule.help_preheat_title", lang)}</strong>
+    </p>
+    <p>${unsafeHTML(localize("schedule.help_preheat", lang))}</p>
+    <div class="yaml-block">
+      ${unsafeHTML(
+        '- <span class="yaml-key">from</span>: <span class="yaml-value">"06:00:00"</span>\n' +
+          '  <span class="yaml-key">to</span>: <span class="yaml-value">"08:00:00"</span>\n' +
+          '  <span class="yaml-key">data</span>:\n' +
+          '    <span class="yaml-key">temperature</span>: <span class="yaml-value">22</span>\n' +
+          '    <span class="yaml-key">preheat</span>: <span class="yaml-value">45</span>\n' +
+          '- <span class="yaml-key">from</span>: <span class="yaml-value">"17:00:00"</span>\n' +
+          '  <span class="yaml-key">to</span>: <span class="yaml-value">"22:00:00"</span>\n' +
+          '  <span class="yaml-key">data</span>:\n' +
+          '    <span class="yaml-key">preheat</span>: <span class="yaml-value">false</span>',
+      )}
+    </div>
+    <p style="margin-top: 8px">${unsafeHTML(localize("schedule.help_preheat_note", lang))}</p>
+    <p style="margin-top: 12px">
       <strong>${localize("schedule.help_multi_title", lang)}</strong>
     </p>
     <p>${unsafeHTML(localize("schedule.help_multi", lang))}</p>

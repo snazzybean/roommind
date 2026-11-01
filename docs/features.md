@@ -10,7 +10,7 @@ Per-room thermal model (Extended Kalman Filter) that learns your home's heating/
 
 ### Pre-heating and pre-cooling
 
-Before a warmer schedule block the room starts heating early enough to be warm when the block begins; rooms with an AC likewise start cooling before a cooler block. The lead is limited by the `Priority` slider in the settings and can be switched off per room ("Pre-heat before schedule blocks"). The room page and the room card show a running pre-heat with its target and start.
+Before a warmer schedule block the room starts heating early enough to be warm when the block begins; rooms with an AC likewise start cooling before a cooler block. The lead is limited by the `Priority` slider in the settings and can be switched off per room ("Pre-heat before schedule blocks"). A schedule block can switch it on or off or limit its lead with `preheat` in its data, see [Per schedule block](control-and-devices.md#per-schedule-block). The room page and the room card show a running pre-heat with its target and start.
 
 ### Radiator afterglow
 
