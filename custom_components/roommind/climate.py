@@ -164,6 +164,7 @@ class RoomMindOverrideClimate(CoordinatorEntity, ClimateEntity):
 
     _attr_has_entity_name = True
     _attr_icon = "mdi:thermometer-alert"
+    _attr_native_temperature_unit = UnitOfTemperature.CELSIUS
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
     _attr_target_temperature_step = 0.5
     _attr_min_temp = MIN_TARGET_TEMP
@@ -244,7 +245,7 @@ class RoomMindOverrideClimate(CoordinatorEntity, ClimateEntity):
         return HVACMode.HEAT
 
     @property
-    def target_temperature(self) -> float | None:
+    def native_target_temperature(self) -> float | None:
         mode = self._climate_mode()
         if mode == "auto" or not self._is_override_active():
             # None keeps the dual slider in the HA thermostat card
@@ -257,21 +258,21 @@ class RoomMindOverrideClimate(CoordinatorEntity, ClimateEntity):
         return float(val) if isinstance(val, (int, float)) else None
 
     @property
-    def target_temperature_low(self) -> float | None:
+    def native_target_temperature_low(self) -> float | None:
         if not self._is_override_active():
             return None
         val = (self._room() or {}).get("override_heat")
         return float(val) if isinstance(val, (int, float)) else None
 
     @property
-    def target_temperature_high(self) -> float | None:
+    def native_target_temperature_high(self) -> float | None:
         if not self._is_override_active():
             return None
         val = (self._room() or {}).get("override_cool")
         return float(val) if isinstance(val, (int, float)) else None
 
     @property
-    def current_temperature(self) -> float | None:
+    def native_current_temperature(self) -> float | None:
         """Return the room's current temperature from coordinator data."""
         data = self.coordinator.data
         if not data:
@@ -281,6 +282,12 @@ class RoomMindOverrideClimate(CoordinatorEntity, ClimateEntity):
             return None
         val = room_data.get("current_temp")
         return float(val) if isinstance(val, (int, float)) else None
+
+    # HA before 2026.11 reads the old names; a class providing both makes newer HA use native_*
+    current_temperature = native_current_temperature
+    target_temperature = native_target_temperature
+    target_temperature_low = native_target_temperature_low
+    target_temperature_high = native_target_temperature_high
 
     async def async_set_temperature(self, **kwargs: Any) -> None:
         """Set override targets from range or single temperature."""
@@ -355,6 +362,7 @@ class RoomMindRoomClimate(CoordinatorEntity, ClimateEntity):
 
     _attr_has_entity_name = True
     _attr_icon = "mdi:home-thermometer"
+    _attr_native_temperature_unit = UnitOfTemperature.CELSIUS
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
     _attr_target_temperature_step = 0.5
     _attr_min_temp = MIN_TARGET_TEMP
@@ -471,7 +479,7 @@ class RoomMindRoomClimate(CoordinatorEntity, ClimateEntity):
         return HVACAction.IDLE
 
     @property
-    def current_temperature(self) -> float | None:
+    def native_current_temperature(self) -> float | None:
         val = self._live().get("current_temp")
         return float(val) if isinstance(val, (int, float)) else None
 
@@ -496,7 +504,7 @@ class RoomMindRoomClimate(CoordinatorEntity, ClimateEntity):
         return heat, cool
 
     @property
-    def target_temperature(self) -> float | None:
+    def native_target_temperature(self) -> float | None:
         mode = self._climate_mode()
         if mode == CLIMATE_MODE_AUTO:
             # None keeps the dual slider in the HA thermostat card
@@ -506,14 +514,20 @@ class RoomMindRoomClimate(CoordinatorEntity, ClimateEntity):
         return float(val) if isinstance(val, (int, float)) else None
 
     @property
-    def target_temperature_low(self) -> float | None:
+    def native_target_temperature_low(self) -> float | None:
         heat, _ = self._band()
         return float(heat) if isinstance(heat, (int, float)) else None
 
     @property
-    def target_temperature_high(self) -> float | None:
+    def native_target_temperature_high(self) -> float | None:
         _, cool = self._band()
         return float(cool) if isinstance(cool, (int, float)) else None
+
+    # HA before 2026.11 reads the old names; a class providing both makes newer HA use native_*
+    current_temperature = native_current_temperature
+    target_temperature = native_target_temperature
+    target_temperature_low = native_target_temperature_low
+    target_temperature_high = native_target_temperature_high
 
     @property
     def preset_mode(self) -> str | None:
@@ -568,7 +582,7 @@ class RoomMindRoomClimate(CoordinatorEntity, ClimateEntity):
         known = [(want, have) for want, have in given if have is not None]
         if not given or len(known) < len(given):
             return False
-        unit, precision = self.temperature_unit, self.precision
+        unit, precision = UnitOfTemperature.CELSIUS, self.precision
         if unit == self.hass.config.units.temperature_unit:
             return all(abs(want - have) < self._attr_target_temperature_step / 2 for want, have in known)
         # Compared as shown: a °F display rounds to whole degrees, its echo is up to 0.28 K off

@@ -36,7 +36,6 @@ class SimClimate(SimEntity, ClimateEntity):
     def __init__(self, rt: Any, dev: SimDevice) -> None:
         super().__init__(rt, dev.entity_id, dev.spec.name)
         self.dev = dev
-        self._attr_temperature_unit = UnitOfTemperature.FAHRENHEIT if dev.unit == "F" else UnitOfTemperature.CELSIUS
         self._attr_hvac_modes = [HVACMode(m) for m in dev.hvac_modes]
         self._attr_min_temp = dev.min_temp
         self._attr_max_temp = dev.max_temp
@@ -74,20 +73,31 @@ class SimClimate(SimEntity, ClimateEntity):
         return _ACTIONS.get(action) if action else None
 
     @property
-    def current_temperature(self) -> float | None:
+    def native_current_temperature(self) -> float | None:
         return self._attrs.get("current_temperature")
 
     @property
-    def target_temperature(self) -> float | None:
+    def native_target_temperature(self) -> float | None:
         return self._attrs.get("temperature")
 
     @property
-    def target_temperature_low(self) -> float | None:
+    def native_target_temperature_low(self) -> float | None:
         return self._attrs.get("target_temp_low")
 
     @property
-    def target_temperature_high(self) -> float | None:
+    def native_target_temperature_high(self) -> float | None:
         return self._attrs.get("target_temp_high")
+
+    @property
+    def native_temperature_unit(self) -> str:
+        return UnitOfTemperature.FAHRENHEIT if self.dev.unit == "F" else UnitOfTemperature.CELSIUS
+
+    # HA before 2026.11 reads the old names; a class providing both makes newer HA use native_*
+    temperature_unit = native_temperature_unit
+    current_temperature = native_current_temperature
+    target_temperature = native_target_temperature
+    target_temperature_low = native_target_temperature_low
+    target_temperature_high = native_target_temperature_high
 
     @property
     def fan_mode(self) -> str | None:
