@@ -304,6 +304,7 @@ export interface AnalyticsData {
     has_occupancy_sensors: boolean;
     solar_gain_now?: number;
     solar_gain_today_max?: number;
+    residual_heat_now?: number;
   };
 }
 

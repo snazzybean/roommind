@@ -176,6 +176,26 @@ HEATING_SYSTEM_PROFILES: dict[str, dict[str, float]] = {
     },
 }
 RESIDUAL_HEAT_CUTOFF = 0.02  # below this q_residual is treated as zero
+# Only radiator rooms learn their residual heat and stop a run early on it; underfloor
+# keeps its own pre-heat synthesis (mpc_optimizer) with the fixed profile.
+HEATING_SYSTEM_RADIATOR = "radiator"
+
+# Learned residual heat: after each heating run the room is watched for
+# RESIDUAL_LEARN_WINDOW_MINUTES; the rise beyond the model's idle drift, divided by
+# the rise the profile predicts, is one sample of the room's residual scale
+# (multiplier on the profile's initial_fraction). A run that restarts earlier still
+# counts after RESIDUAL_LEARN_MIN_MINUTES. The window is longer than a radiator's
+# profile tau on purpose: the scale then matches the total stored heat, which is
+# what decides the overshoot, even when the real radiator cools slower than tau.
+# The cap is far above the profile's own scale: real rooms (a 7-day HA history, short
+# runs on TRVs with boosted setpoints) released 8-25x the profile's heat after a stop,
+# mostly because the heating rate learned during a short run trails the radiator.
+RESIDUAL_LEARN_WINDOW_MINUTES = 60.0
+RESIDUAL_LEARN_MIN_MINUTES = 15.0
+RESIDUAL_LEARN_MIN_EXPECTED_K = 0.03  # profile-predicted rise below this carries no signal
+RESIDUAL_SCALE_MIN = 0.0
+RESIDUAL_SCALE_MAX = 15.0
+RESIDUAL_SCALE_EMA_ALPHA = 0.2
 
 # AC rebound: while an AC cools, the air drops below the building mass; after it
 # stops the air relaxes back within minutes. Charge relaxes towards the cooling

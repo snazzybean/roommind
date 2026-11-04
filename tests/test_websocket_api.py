@@ -3156,6 +3156,28 @@ async def test_analytics_model_reports_solar_gain_now_and_today(ws_hass, store, 
     assert model["solar_gain_today_max"] == pytest.approx(0.6)
 
 
+@pytest.mark.asyncio
+async def test_analytics_model_reports_residual_heat_now(ws_hass, store, connection):
+    """Residual heat in the heating strength's unit: learned Q_heat times the room's live q_residual."""
+    await store.async_load()
+    await store.async_save_room("room_a", {"thermostats": ["climate.trv1"]})
+
+    est = _make_mock_estimator(model_dict={"Q_heat": 3.0, "Q_solar": 0.0, "Q_occupancy": 0.0})
+    est.get_model.return_value.Q_heat = 3.0
+    est.get_model.return_value.Q_solar = 0.0
+    coordinator = _make_analytics_coordinator(
+        history_rows=[], estimator=est, rooms_live={"room_a": {"shading_factor": 1.0, "q_residual": 0.25}}
+    )
+    coordinator._current_q_solar = 0.0
+    ws_hass.data[DOMAIN]["coordinator"] = coordinator
+
+    msg = {"id": 63, "type": "roommind/analytics/get", "area_id": "room_a"}
+    with patch("custom_components.roommind.services.analytics_service.clear_sky_peak_today", return_value=0.0):
+        await _get_analytics(ws_hass, connection, msg)
+
+    assert connection.send_result.call_args[0][1]["model"]["residual_heat_now"] == pytest.approx(0.75)
+
+
 def test_clear_sky_peak_today_follows_the_season():
     from datetime import datetime
 

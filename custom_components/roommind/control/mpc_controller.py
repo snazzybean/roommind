@@ -1322,6 +1322,8 @@ class MPCController:
         cloud_series: list[float | None] | None = None,
         q_residual: float = 0.0,
         heating_system_type: str = "",
+        residual_scale: float = 1.0,
+        heat_run: tuple[float, float] | None = None,
         mode_on_since: float | None = None,
         idle_since: float | None = None,
         shading_factor: float = 1.0,
@@ -1356,6 +1358,11 @@ class MPCController:
         self._cloud_series = cloud_series or []
         self.q_residual = q_residual
         self._heating_system_type = heating_system_type
+        # Learned multiplier on the residual heat profile, and the heating run in
+        # progress as (minutes, power fraction): the plan weighs the heat that
+        # stopping now would leave in the radiators (ResidualHeatTracker.get_run_state)
+        self._residual_scale = residual_scale
+        self._heat_run = heat_run
         # Heating system whose run rules apply this cycle (see _resolve_run_system)
         self._run_system = heating_system_type
         self._previous_heat_sources = previous_heat_sources
@@ -1669,6 +1676,7 @@ class MPCController:
                 start_penalty=slow_start_penalty(min_run, PLAN_DT_MINUTES),
                 fast_heater_shares_model=check_acs_can_heat(self.hass, self.room_config),
                 preheat_max_blocks=self._preheat_max_blocks,
+                residual_scale=self._residual_scale,
             )
 
             plan = optimizer.optimize(
@@ -1682,6 +1690,7 @@ class MPCController:
                 occupancy_series=occupancy_series,
                 initial_mode=self.previous_mode,
                 rebound_charge=self.q_rebound,
+                heat_run=self._heat_run,
             )
             self.last_plan = plan
             # Shading can attenuate solar gain, never the body heat of whoever just

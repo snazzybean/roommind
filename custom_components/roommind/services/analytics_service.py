@@ -17,6 +17,7 @@ from ..const import (
     DEFAULT_COMFORT_HEAT,
     DEFAULT_ECO_COOL,
     DEFAULT_ECO_HEAT,
+    HEATING_SYSTEM_RADIATOR,
     MODE_IDLE,
 )
 from ..control.mpc_controller import (
@@ -280,6 +281,9 @@ async def build_analytics_data(
                     rc.Q_solar * clear_sky_peak_today(hass.config.latitude, hass.config.longitude, time.time()),
                     3,
                 ),
+                # Same unit as the heating strength: heat still released by the radiators
+                # now, or while heating, what stopping now would leave behind
+                "residual_heat_now": round(rc.Q_heat * coordinator.rooms.get(area_id, {}).get("q_residual", 0.0), 3),
             }
 
     # Build merged forecast: same format as history points, on a shared 5-min grid
@@ -345,19 +349,21 @@ async def build_analytics_data(
                 )
                 # Residual heat state for analytics simulation
                 system_type = room_config.get("heating_system_type", "")
+                # The learned residual heat applies to radiator rooms only
+                sim_scale = est.residual_scale if system_type == HEATING_SYSTEM_RADIATOR else 1.0
                 sim_q_residual = 0.0
                 sim_heat_dur = 0.0
-                sim_last_pf = 1.0
+                # Power of the run in progress or the last one (the prediction weighs its afterglow)
+                sim_last_pf = coordinator._residual_tracker._off_power.get(area_id, 1.0)
                 if system_type and area_id in getattr(coordinator._residual_tracker, "_off_since", {}):
                     import time as _time
 
                     off_since = coordinator._residual_tracker._off_since[area_id]
                     elapsed = (_time.time() - off_since) / 60.0
                     sim_heat_dur = (off_since - coordinator._residual_tracker._on_since.get(area_id, off_since)) / 60.0
-                    sim_last_pf = coordinator._residual_tracker._off_power.get(area_id, 1.0)
                     from ..control.residual_heat import compute_residual_heat
 
-                    sim_q_residual = compute_residual_heat(elapsed, system_type, sim_last_pf, sim_heat_dur)
+                    sim_q_residual = compute_residual_heat(elapsed, system_type, sim_last_pf, sim_heat_dur, sim_scale)
 
                 sim_q_occupancy = 0.0
                 for occ_eid in room_config.get("occupancy_sensors", []):
@@ -391,6 +397,7 @@ async def build_analytics_data(
                         heating_system_type=system_type,
                         heating_duration_minutes=sim_heat_dur,
                         last_power_fraction=sim_last_pf,
+                        residual_scale=sim_scale,
                         q_occupancy=sim_q_occupancy,
                         q_rebound=coordinator._rebound_tracker.get_charge(area_id),
                         previous_mode=sim_prev_mode,

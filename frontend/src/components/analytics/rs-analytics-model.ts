@@ -40,6 +40,7 @@ export class RsAnalyticsModel extends LitElement {
     const hasCooled = n_cooling >= 10;
     const hasIdleData = n_samples - n_heating - n_cooling >= 10;
     const n_observations = m?.n_observations ?? n_samples;
+    const residualHeat = toDisplayDelta(m?.residual_heat_now ?? 0, this.hass);
     const ph = "\u2014";
 
     const statItems: Array<{ id: string; labelKey: TranslationKey; infoKey: TranslationKey }> = [];
@@ -158,6 +159,18 @@ export class RsAnalyticsModel extends LitElement {
                     "analytics.heating_rate",
                     "",
                     "analytics.info.heating_rate",
+                  )
+                : nothing
+            }
+            ${
+              // Only while the radiators hold heat (rounded, so "0.0" never shows)
+              canHeat && hasHeated && residualHeat >= 0.05
+                ? stat(
+                    "residual_heat",
+                    residualHeat.toFixed(1) + tempUnit(this.hass) + "/h",
+                    "analytics.residual_heat",
+                    "",
+                    "analytics.info.residual_heat",
                   )
                 : nothing
             }
