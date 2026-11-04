@@ -7,6 +7,7 @@ import type { HomeAssistant, CompressorGroup, ConflictResolution } from "../../t
 import { localize } from "../../utils/localize";
 import { getSelectValue } from "../../utils/events";
 import "../shared/rs-confirm-button";
+import "../shared/rs-toggle-row";
 import { inputStyles } from "../../styles/input-styles";
 
 @customElement("rs-settings-compressor")
@@ -202,18 +203,13 @@ export class RsSettingsCompressor extends LitElement {
         <div class="field-hint">${localize("compressor.master_entity_hint", l)}</div>
 
         <div class="field-row">
-          <ha-formfield .label=${localize("compressor.enforce_uniform_mode", l)}>
-            <ha-switch
-              .checked=${group.enforce_uniform_mode || false}
-              @change=${(e: Event) => {
-                this._updateGroup(
-                  idx,
-                  "enforce_uniform_mode",
-                  (e.target as HTMLInputElement).checked,
-                );
-              }}
-            ></ha-switch>
-          </ha-formfield>
+          <rs-toggle-row
+            .label=${localize("compressor.enforce_uniform_mode", l)}
+            .checked=${group.enforce_uniform_mode || false}
+            @toggle-changed=${(e: CustomEvent) => {
+              this._updateGroup(idx, "enforce_uniform_mode", e.detail as boolean);
+            }}
+          ></rs-toggle-row>
           <div class="field-hint">${localize("compressor.enforce_uniform_mode_hint", l)}</div>
         </div>
 
