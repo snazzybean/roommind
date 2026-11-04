@@ -282,6 +282,14 @@ def _shrink_run(inst: Instance) -> None:
         path.unlink()
 
 
+def _suite_run_args(args: argparse.Namespace) -> list[str]:
+    """Options every `sim run` of a suite gets."""
+    extra = ["--roommind-src", args.roommind_src] if args.roommind_src else []
+    if args.ha != DEFAULT_HA_VERSION:
+        extra += ["--ha", args.ha]
+    return extra
+
+
 def cmd_suite(args: argparse.Namespace) -> int:
     from concurrent.futures import ThreadPoolExecutor
 
@@ -307,7 +315,7 @@ def cmd_suite(args: argparse.Namespace) -> int:
         print("no scenarios match")
         return 2
     sim = SIM_ROOT / "bin" / "sim"
-    extra = ["--roommind-src", args.roommind_src] if args.roommind_src else []
+    extra = _suite_run_args(args)
 
     def one(name: str) -> tuple[str, int, str, float]:
         t0 = time.time()
@@ -790,6 +798,7 @@ def _parser() -> argparse.ArgumentParser:
     suite.add_argument("--skip-tag", action="append", default=[])
     suite.add_argument("-j", "--jobs", type=int, default=3)
     suite.add_argument("--roommind-src")
+    suite.add_argument("--ha", default=DEFAULT_HA_VERSION)
     suite.set_defaults(func=cmd_suite)
 
     prune = sub.add_parser("prune", help="delete old runs and screenshots")

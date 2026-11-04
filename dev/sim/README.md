@@ -40,7 +40,7 @@ never in the repository.
 | Command | Purpose |
 |---|---|
 | `sim run <scenario> [--set k=v] [--until 3d] [--roommind-src v1.7.7]` | Fresh instance, turbo to the end, evaluate. Exit 0 pass / 1 fail / 2 invalid scenario / 3 HA crashed |
-| `sim suite [-j N] [--tag t] [--roommind-src ref]` | All scenarios in `scenarios/` |
+| `sim suite [-j N] [--tag t] [--roommind-src ref] [--ha version]` | All scenarios in `scenarios/` |
 | `sim compare <run-a> <run-b> [--timeline]` | Metric diff, e.g. a git ref against your working tree; `--timeline` also checks record by record (determinism) |
 | `sim report [run]` | Re-evaluate a run (`last` by default) |
 | `sim up [name] --scenario X [--catch-up] [--speed 60] [--paused] [--from-run R] [--ttl 2h]` | Live instance with UI, reachable on the LAN without password (trusted networks) |
