@@ -82,6 +82,7 @@ from .managers.residual_heat_tracker import AcReboundTracker, ResidualHeatTracke
 from .managers.valve_manager import ValveManager
 from .managers.weather_manager import WeatherManager
 from .managers.window_manager import WindowManager
+from .utils.area_utils import REST_SWITCHED_OFF, rooms_with_area
 from .utils.device_utils import (
     build_rooms_devices_map,
     configured_valves,
@@ -267,7 +268,8 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         5. Returns state dict consumed by sensor entities
         """
         store = self.hass.data[DOMAIN]["store"]
-        rooms = store.get_rooms()
+        stored_rooms = store.get_rooms()
+        rooms = rooms_with_area(self.hass, stored_rooms)
 
         # Read outdoor sensors from global settings
         settings = store.get_settings()
@@ -327,7 +329,11 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             cloud_coverage,
         )
 
+        await self._async_switch_resting_rooms_off(stored_rooms, rooms, settings)
         for area_id, room in rooms.items():
+            # Live, not this cycle's snapshot: an area deleted while the cycle awaited another room
+            if not rooms_with_area(self.hass, {area_id: room}):
+                continue
             try:
                 room_state = await self._async_process_room(room, settings, outdoor_forecast)
                 room_states[area_id] = room_state
@@ -339,7 +345,9 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         # Against the live config, not this cycle's snapshot: a save during the cycle released
         # a valve the snapshot may just have pinned again
         try:
-            await async_release_orphaned_valves(self.hass, configured_valves(store.get_rooms()))
+            await async_release_orphaned_valves(
+                self.hass, configured_valves(rooms_with_area(self.hass, store.get_rooms()))
+            )
         except Exception:  # noqa: BLE001
             _LOGGER.warning("Releasing unconfigured valves failed", exc_info=True)
 
@@ -452,14 +460,15 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             await store.async_save_settings({"valve_last_actuation": self._valve_manager.get_actuation_data()})
             self._valve_manager.actuation_dirty = False
 
-        self._head_offsets.prune(set(build_rooms_devices_map(rooms)))
+        # Against every stored room: a resting room keeps what it learned (#494)
+        self._head_offsets.prune(set(build_rooms_devices_map(stored_rooms)))
         # Persist learned AC sensor offsets (piggyback on thermal save cycle)
         if self._head_offsets.dirty and self._thermal_save_count == 0:
             await store.async_save_settings({"ac_head_offsets": self._head_offsets.get_state()})
             self._head_offsets.dirty = False
 
         # Coil dry: drop state for devices no longer configured anywhere
-        self._coil_dry_manager.prune(set(build_rooms_devices_map(rooms)))
+        self._coil_dry_manager.prune(set(build_rooms_devices_map(stored_rooms)))
 
         # Persist coil dry state on change — a 20 min run is far shorter than
         # the 15 min thermal save cycle, so this must not piggyback on it.
@@ -2258,7 +2267,58 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 _LOGGER.warning("Room '%s': releasing the valve of '%s' failed", area_id, entity_id, exc_info=True)
 
     async def async_room_removed(self, area_id: str) -> None:
-        """Remove sensor entities for a deleted room and refresh data."""
+        """Remove a deleted room's entities, run state, model and history, then refresh."""
+        self._forget_room(area_id)
+        self._model_manager.remove_room(area_id)
+        if self._history_store:
+            await self.hass.async_add_executor_job(self._history_store.remove_room, area_id)
+        await self.async_request_refresh()
+
+    async def async_room_paused(self, area_id: str) -> None:
+        """Let a room whose area was deleted rest: entities and run state go, model and history stay (#494).
+
+        The next cycle switches its devices off. No refresh now: it would reach the removed
+        entities before HA has taken them down.
+        """
+        self._forget_room(area_id)
+
+    async def _async_switch_resting_rooms_off(
+        self, stored_rooms: dict[str, dict], running: dict[str, dict], settings: dict
+    ) -> None:
+        """Switch the devices of a room that started resting off once (#494).
+
+        As the room climate entity's off does: a TRV left at the proportional boost would heat
+        on by itself. Inside the cycle, so no cycle running at the same time sends after it.
+        Devices a running room drives stay with it. Climate control off sends nothing (#36) and
+        leaves the room for the cycle after it is on again. Marked in the store, so a restart does
+        not switch them off again; a room running again loses the mark (its area may have come
+        back without an event, e.g. a restored backup).
+        """
+        for area_id, room in stored_rooms.items():
+            if area_id in running:
+                if room.get(REST_SWITCHED_OFF):
+                    await self._async_mark_rest_switched_off(area_id, False)
+                continue
+            if room.get(REST_SWITCHED_OFF):
+                continue
+            if not (settings.get("climate_control_active", True) and room.get("climate_control_enabled", True)):
+                continue
+            driven = {eid for other in running.values() for eid in get_all_entity_ids(other.get("devices", []))}
+            devices = [d for d in room.get("devices", []) if d.get("entity_id") not in driven]
+            live = (self.rooms or {}).get(area_id, {})
+            targets = TargetTemps(heat=live.get("heat_target"), cool=live.get("cool_target"))
+            await self._async_switch_devices_off(area_id, devices, targets)
+            await self._async_release_valves(area_id, devices, hand_back=False)
+            await self._async_mark_rest_switched_off(area_id, True)
+
+    async def _async_mark_rest_switched_off(self, area_id: str, value: bool) -> None:
+        try:
+            await self.hass.data[DOMAIN]["store"].async_update_room(area_id, {REST_SWITCHED_OFF: value})
+        except KeyError:
+            pass  # deleted in the settings panel meanwhile
+
+    def _forget_room(self, area_id: str) -> None:
+        """Drop a room's entities and in-memory run state."""
         from homeassistant.helpers import entity_registry as er
 
         registry = er.async_get(self.hass)
@@ -2302,13 +2362,8 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         self._climate_control_switch_areas.discard(area_id)
         self._binary_sensor_entity_areas.discard(area_id)
         self._climate_entity_areas.discard(area_id)
-        self._model_manager.remove_room(area_id)
         self._heat_source_states.pop(area_id, None)
         self._coil_dry_manager.remove_room(area_id)
-        if self._history_store:
-            await self.hass.async_add_executor_job(self._history_store.remove_room, area_id)
-
-        await self.async_request_refresh()
 
     def cleanup_orphaned_entities(self) -> None:
         """Remove entities that no longer match any registered entity type.
@@ -2318,7 +2373,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         from homeassistant.helpers import entity_registry as er
 
         store = self.hass.data[DOMAIN]["store"]
-        rooms = store.get_rooms()
+        rooms = rooms_with_area(self.hass, store.get_rooms())
         registry = er.async_get(self.hass)
 
         # Global entities (not per-room) that should never be cleaned up
@@ -2538,8 +2593,16 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 break
 
         if not wake_eid:
+            # A resting room's device would be woken with no cycle to switch it off again (#494)
+            stored = self.hass.data[DOMAIN]["store"].get_rooms()
+            resting = {
+                eid
+                for area_id, room in stored.items()
+                if area_id not in rooms_config
+                for eid in get_all_entity_ids(room.get("devices", []))
+            } - {eid for room in rooms_config.values() for eid in get_all_entity_ids(room.get("devices", []))}
             for eid in group.members:
-                if eid in sitting_out:
+                if eid in sitting_out or eid in resting:
                     continue
                 zone_state = self.hass.states.get(eid)
                 if zone_state and "fan_only" in (zone_state.attributes.get("hvac_modes") or []):

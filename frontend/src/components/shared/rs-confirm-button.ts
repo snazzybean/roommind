@@ -1,4 +1,4 @@
-import { LitElement, html, css } from "lit";
+import { LitElement, html, css, nothing } from "lit";
 import { customElement, property } from "lit/decorators.js";
 
 @customElement("rs-confirm-button")
@@ -7,6 +7,8 @@ export class RsConfirmButton extends LitElement {
   @property({ type: String }) public confirmMessage = "";
   @property({ type: Boolean }) public disabled = false;
   @property({ type: Boolean }) public destructive = false;
+  /** Screen-reader name when several buttons share the visible label. */
+  @property({ type: String }) public accessibleLabel = "";
 
   static styles = css`
     :host {
@@ -46,6 +48,7 @@ export class RsConfirmButton extends LitElement {
       <button
         class="confirm-btn ${this.destructive ? "destructive" : ""}"
         ?disabled=${this.disabled}
+        aria-label=${this.accessibleLabel || nothing}
         @click=${this._onClick}
       >
         ${this.label}

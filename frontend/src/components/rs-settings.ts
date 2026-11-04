@@ -3,7 +3,7 @@
  * Owns all state, loads/saves settings, delegates rendering to sub-components
  * wrapped in ha-expansion-panel accordion sections.
  */
-import { LitElement, html, css } from "lit";
+import { LitElement, html, css, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import type {
   HomeAssistant,
@@ -11,6 +11,7 @@ import type {
   RoomConfig,
   NotificationTarget,
   CompressorGroup,
+  RoomWithoutArea,
 } from "../types";
 import { localize } from "../utils/localize";
 import { fireSaveStatus } from "../utils/events";
@@ -28,11 +29,14 @@ import "./settings/rs-settings-mold";
 import "./settings/rs-settings-notifications";
 import "./settings/rs-settings-learning";
 import "./settings/rs-settings-reset";
+import "./settings/rs-settings-orphans";
 
 @customElement("rs-settings")
 export class RsSettings extends LitElement {
   @property({ attribute: false }) public hass!: HomeAssistant;
   @property({ attribute: false }) public rooms: Record<string, RoomConfig> = {};
+  @property({ attribute: false }) public roomsWithoutArea: RoomWithoutArea[] = [];
+  @state() private _deletedOrphans: ReadonlySet<string> = new Set();
 
   @state() private _groupByFloor = false;
   @state() private _climateControlActive = true;
@@ -147,14 +151,40 @@ export class RsSettings extends LitElement {
     }
   }
 
+  protected willUpdate(changed: Map<string, unknown>) {
+    if (changed.has("roomsWithoutArea") && this._deletedOrphans.size) {
+      // The list from the backend is current again; an id resting later must show up again
+      const listed = new Set(this.roomsWithoutArea.map((r) => r.area_id));
+      this._deletedOrphans = new Set([...this._deletedOrphans].filter((id) => listed.has(id)));
+    }
+  }
+
   protected render() {
     if (!this._loaded) {
       return html`<div class="loading">${localize("panel.loading", this.hass.language)}</div>`;
     }
 
     const l = this.hass.language;
+    const orphans = this.roomsWithoutArea.filter((r) => !this._deletedOrphans.has(r.area_id));
 
     return html`
+      ${
+        orphans.length
+          ? html`<rs-settings-panel
+              icon="mdi:home-remove-outline"
+              .heading=${localize("settings.orphans_title", l)}
+              .intro=${localize("settings.intro.orphans", l)}
+            >
+              <rs-settings-orphans
+                .hass=${this.hass}
+                .rooms=${orphans}
+                @orphan-deleted=${(e: CustomEvent<string>) => {
+                  this._deletedOrphans = new Set([...this._deletedOrphans, e.detail]);
+                }}
+              ></rs-settings-orphans>
+            </rs-settings-panel>`
+          : nothing
+      }
       <rs-settings-panel
         icon="mdi:power"
         .heading=${localize("settings.general_title", l)}

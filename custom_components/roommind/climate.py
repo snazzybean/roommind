@@ -50,6 +50,7 @@ from .const import (
 from .control.mpc_controller import check_acs_can_heat
 from .coordinator import RoomMindCoordinator, _get_area_name
 from .deprecation import warn_deprecated_use
+from .utils.area_utils import rooms_with_area
 from .utils.device_utils import get_ac_eids, get_trv_eids
 from .utils.schedule_utils import mask_override_band, next_schedule_change, override_preset_band
 
@@ -86,7 +87,7 @@ async def async_setup_entry(
     coordinator: RoomMindCoordinator = hass.data[DOMAIN][entry.entry_id]
     store = hass.data[DOMAIN]["store"]
     coordinator.async_add_climate_entities = async_add_entities
-    rooms = store.get_rooms()
+    rooms = rooms_with_area(hass, store.get_rooms())
     entities: list[ClimateEntity] = []
     for area_id in rooms:
         entities.extend(_create_room_climates(coordinator, area_id))
