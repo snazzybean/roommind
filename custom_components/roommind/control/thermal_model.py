@@ -29,6 +29,8 @@ from __future__ import annotations
 import logging
 import math
 
+from ..const import RESIDUAL_SCALE_EMA_ALPHA, RESIDUAL_SCALE_MAX, RESIDUAL_SCALE_MIN
+
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -347,6 +349,9 @@ class ThermalEKF:
         self._initialized: bool = False
         self._k_window: float = self._K_WINDOW_DEFAULT
         self._k_window_n: int = 0
+        # Learned multiplier on the heating system's residual heat profile (ResidualHeatLearner)
+        self._residual_scale: float = 1.0
+        self._residual_scale_n: int = 0
         # Which states the last predict step could observe (F[0][i] != 0).
         self._excited: list[bool] = [True] * self._N
 
@@ -490,6 +495,27 @@ class ThermalEKF:
     def k_window(self) -> float:
         """Learned window heat-exchange multiplier."""
         return self._k_window
+
+    @property
+    def residual_scale(self) -> float:
+        """Learned multiplier on the heating system's residual heat profile."""
+        return self._residual_scale
+
+    def update_residual_scale(self, sample: float) -> None:
+        """Fold one observed residual scale (``ResidualHeatLearner``) into the learned one.
+
+        The first sample replaces the default, later ones are smoothed so a single run
+        disturbed by something the model does not know (a shower, an oven) moves it little.
+        """
+        if not math.isfinite(sample):
+            return
+        sample = max(RESIDUAL_SCALE_MIN, min(RESIDUAL_SCALE_MAX, sample))
+        if self._residual_scale_n == 0:
+            self._residual_scale = sample
+        else:
+            ema = RESIDUAL_SCALE_EMA_ALPHA
+            self._residual_scale = ema * sample + (1.0 - ema) * self._residual_scale
+        self._residual_scale_n += 1
 
     def update_window_open(
         self,
@@ -931,6 +957,8 @@ class ThermalEKF:
             "initialized": self._initialized,
             "k_window": self._k_window,
             "k_window_n": self._k_window_n,
+            "residual_scale": self._residual_scale,
+            "residual_scale_n": self._residual_scale_n,
         }
 
     def boost_covariance(self, factor: float = 2.5, floor_frac: float = 0.3) -> None:
@@ -990,6 +1018,8 @@ class ThermalEKF:
         ekf._initialized = data.get("initialized", ekf._n_updates > 0)
         ekf._k_window = data.get("k_window", cls._K_WINDOW_DEFAULT)
         ekf._k_window_n = data.get("k_window_n", 0)
+        ekf._residual_scale = data.get("residual_scale", 1.0)
+        ekf._residual_scale_n = data.get("residual_scale_n", 0)
         # Recovery migrations for models with alpha pegged at the upper bound.
         # Such models cannot escape on their own: 4-sigma anomaly detection
         # soft-rejects the large innovations and cross-covariance pulls alpha
@@ -1196,6 +1226,16 @@ class RoomModelManager:
         if area_id not in self._estimators:
             return ThermalEKF._K_WINDOW_DEFAULT
         return self._estimators[area_id].k_window
+
+    def get_residual_scale(self, area_id: str) -> float:
+        """Return the learned residual heat scale for *area_id* (1.0 = profile)."""
+        if area_id not in self._estimators:
+            return 1.0
+        return self._estimators[area_id].residual_scale
+
+    def update_residual_scale(self, area_id: str, sample: float) -> None:
+        """Fold one observed residual scale into *area_id*'s learned one."""
+        self.get_estimator(area_id).update_residual_scale(sample)
 
     def boost_learning(self, area_id: str) -> int:
         """Boost covariance for *area_id* to accelerate re-learning.

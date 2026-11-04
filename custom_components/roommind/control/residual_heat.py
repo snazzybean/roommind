@@ -22,6 +22,7 @@ def compute_residual_heat(
     system_type: str,
     last_power_fraction: float = 1.0,
     heating_duration_minutes: float = 0.0,
+    scale: float = 1.0,
 ) -> float:
     """Compute normalised residual heat fraction after heating stopped.
 
@@ -37,9 +38,11 @@ def compute_residual_heat(
         system_type: Key into ``HEATING_SYSTEM_PROFILES`` (e.g. "underfloor").
         last_power_fraction: Power fraction that was active before stopping.
         heating_duration_minutes: How long heating was active before stopping.
+        scale: Learned per-room multiplier on the profile's ``initial_fraction``
+            (see ``ResidualHeatLearner``); 1.0 is the profile as is.
 
     Returns:
-        Residual heat fraction in [0, 1].  Returns 0.0 for unknown or empty
+        Residual heat fraction in [0, initial_fraction * scale].  Returns 0.0 for unknown or empty
         system types (backwards-compatible default).
     """
     profile = HEATING_SYSTEM_PROFILES.get(system_type)
@@ -59,7 +62,7 @@ def compute_residual_heat(
     else:
         charge_fraction = 1.0  # assume fully charged if duration unknown
 
-    q = initial * charge_fraction * math.exp(-elapsed_minutes / tau) * last_power_fraction
+    q = initial * scale * charge_fraction * math.exp(-elapsed_minutes / tau) * last_power_fraction
     return q if q >= RESIDUAL_HEAT_CUTOFF else 0.0
 
 
@@ -70,6 +73,7 @@ def build_residual_series(
     dt_minutes: float = 5.0,
     last_power_fraction: float = 1.0,
     heating_duration_minutes: float = 0.0,
+    scale: float = 1.0,
 ) -> list[float]:
     """Build a decaying residual heat series for MPC lookahead.
 
@@ -85,6 +89,7 @@ def build_residual_series(
             system_type,
             last_power_fraction,
             heating_duration_minutes,
+            scale,
         )
         for i in range(n_blocks)
     ]

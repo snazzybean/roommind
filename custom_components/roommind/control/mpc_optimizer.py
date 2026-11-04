@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from ..const import (
     DEFAULT_COMFORT_WEIGHT,
     HEATING_SYSTEM_PROFILES,
+    HEATING_SYSTEM_RADIATOR,
     MIN_POWER_FRACTION,
     MODE_COOLING,
     MODE_HEATING,
@@ -125,6 +126,8 @@ class MPCOptimizer:
     start_penalty: float = 0.0  # comfort-weighted cost of starting a heating/cooling run (#429)
     # Longest pre-heat lead the deadline may plan (blocks); None = up to the horizon.
     preheat_max_blocks: int | None = None
+    # Learned multiplier on the heating system's residual heat profile (ResidualHeatLearner)
+    residual_scale: float = 1.0
 
     def __post_init__(self) -> None:
         # Set before optimize() runs so callers / patched optimize() still expose
@@ -144,6 +147,7 @@ class MPCOptimizer:
         occupancy_series: list[float] | None = None,
         initial_mode: str = MODE_IDLE,
         rebound_charge: float | None = None,
+        heat_run: tuple[float, float] | None = None,
     ) -> MPCPlan:
         """Find optimal action sequence over the planning horizon.
 
@@ -161,6 +165,13 @@ class MPCOptimizer:
         ``rebound_charge`` is the AC rebound charge now (residual_heat); it
         decays over the plan and warms idle blocks, like ``residual_series``.
         None leaves the air/mass term out.
+
+        ``heat_run`` is the heating run in progress as (minutes heated, power
+        fraction), radiators only (``HEATING_SYSTEM_RADIATOR``). Stopping it leaves its stored heat in the radiators, so every
+        hypothesis that ends heating sees that afterglow, and a run that can coast
+        to the target on it stops early instead of overshooting. The plan tracks
+        its own runs the same way: idle blocks after a planned run see that run's
+        afterglow instead of ``residual_series`` (the real room's).
         """
         if cool_target_series is None:
             cool_target_series = list(heat_target_series)
@@ -202,6 +213,10 @@ class MPCOptimizer:
         last_action = initial_mode
         charge = rebound_charge
         preheat_blocks = 0
+        # Heating run in progress in the plan (minutes, pf), and the last one it stopped (radiators)
+        run = heat_run if initial_mode == MODE_HEATING and self._radiator else None
+        glow: tuple[float, float] | None = None
+        glow_elapsed = 0.0
         # UFH keeps its own pre-heat (longer lookahead with synthesized afterglow): heating
         # a screed until the air reaches the target overshot by the stored heat.
         slow_heat = self.min_run_blocks > get_min_run_blocks("", dt_minutes)
@@ -212,6 +227,8 @@ class MPCOptimizer:
             cool_tgt = cool_target_series[i]
             qs = q_solar[i] if i < len(q_solar) else 0.0
             qr = q_residual[i] if i < len(q_residual) else 0.0
+            if glow is not None:
+                qr = self._afterglow(glow_elapsed, glow)
             qo = q_occupancy[i] if i < len(q_occupancy) else 0.0
 
             # Determine available actions this block
@@ -234,6 +251,11 @@ class MPCOptimizer:
                 best_cost = float("inf")
                 future_solar = q_solar[i:] if q_solar else None
                 future_residual = q_residual[i:] if q_residual else None
+                if glow is not None:
+                    # A run the plan stopped earlier: its afterglow replaces the real room's
+                    future_residual = [
+                        self._afterglow(glow_elapsed + j * dt_minutes, glow) for j in range(self._lookahead_blocks)
+                    ]
                 future_occupancy = q_occupancy[i:] if q_occupancy else None
                 for action in available:
                     cost = self._evaluate_action(
@@ -250,6 +272,7 @@ class MPCOptimizer:
                         future_residual=future_residual,
                         future_occupancy=future_occupancy,
                         rebound_charge=charge,
+                        heat_run=run,
                     )
                     if self.start_penalty and action == MODE_HEATING and last_action != MODE_HEATING:
                         cost += self.w_comfort * self.start_penalty
@@ -342,6 +365,19 @@ class MPCOptimizer:
                 Q = -(pf * self.model.Q_cool)
             else:
                 Q = 0.0
+            if best_action == MODE_HEATING:
+                if self._radiator:
+                    # At full power like the tracker's runs (the stored heat follows the run length)
+                    run = ((run[0] if run else 0.0) + dt_minutes, 1.0)
+                    # A restart at low power cannot cool the radiator faster than its afterglow
+                    Q = max(Q, self.model.Q_heat * qr)
+                glow = None
+            else:
+                if run is not None:
+                    glow, glow_elapsed, run = run, 0.0, None
+                if glow is not None:
+                    qr = self._afterglow(glow_elapsed, glow)
+                    glow_elapsed += dt_minutes
             qb, charge = _rebound_step(charge, Q, dt_minutes)
             next_temp = self.model.predict(
                 current_temp,
@@ -500,6 +536,7 @@ class MPCOptimizer:
         future_residual: list[float] | None = None,
         future_occupancy: list[float] | None = None,
         rebound_charge: float | None = None,
+        heat_run: tuple[float, float] | None = None,
     ) -> float:
         """Evaluate the cost of taking an action, looking a few steps ahead.
 
@@ -507,8 +544,12 @@ class MPCOptimizer:
         slow heating systems. For UFH, the HEATING hypothesis synthesizes its
         own post-heating residual afterglow so the cost function values the
         sustained-comfort benefit of pre-heating. Radiator / "" lookahead stays
-        at LOOKAHEAD_BASE_BLOCKS and synthesis is gated off — byte-identical
-        to pre-fix behaviour.
+        at LOOKAHEAD_BASE_BLOCKS.
+
+        Radiators only: with a heating run in progress (``heat_run``, see
+        :meth:`optimize`), the hypotheses that stop it see its afterglow. A HEATING
+        hypothesis sees the afterglow of its own run after the min run, so
+        a radiator run is judged by where its stored heat takes the room.
         """
         lookahead = min(self._lookahead_blocks, len(future_T_outdoor))
         Q = self._action_to_Q(action)
@@ -526,6 +567,7 @@ class MPCOptimizer:
         )
         heating_duration_minutes = self.min_run_blocks * dt_minutes
         run_blocks = self._min_run_for(action)
+        stop_glow = heat_run if action != MODE_HEATING and self._radiator else None
         if action != MODE_IDLE and not synthesis_enabled:
             Q *= self._hypothesis_power_fraction(
                 action,
@@ -579,8 +621,19 @@ class MPCOptimizer:
                     last_power_fraction=(synth_pf_sum / max(run_blocks, 1) if self.fast_heater_shares_model else 1.0),
                     heating_duration_minutes=heating_duration_minutes,
                 )
+            elif stop_glow is not None:
+                qr = self._afterglow(j * dt_minutes, stop_glow)
+            elif action == MODE_HEATING and self._radiator and j >= run_blocks:
+                own_run = ((heat_run[0] if heat_run else 0.0) + run_blocks * dt_minutes, 1.0)
+                qr = max(
+                    self._afterglow((j - run_blocks) * dt_minutes, own_run),
+                    residual[j] if j < len(residual) else 0.0,
+                )
             else:
                 qr = residual[j] if j < len(residual) else 0.0
+            if action == MODE_HEATING and block_Q > 0.0 and self._radiator:
+                # A low-power run still delivers at least the afterglow (see optimize)
+                block_Q = max(block_Q, self.model.Q_heat * qr)
             qb, charge = _rebound_step(charge, block_Q, dt_minutes)
             T = self.model.predict(
                 T,
@@ -652,6 +705,16 @@ class MPCOptimizer:
         while the room heated further.
         """
         return min(self.temp_min, T_start - CLAMP_HEADROOM_K), max(self.temp_max, T_start + CLAMP_HEADROOM_K)
+
+    @property
+    def _radiator(self) -> bool:
+        """Learned residual heat and the early stop apply to radiator rooms only."""
+        return self.heating_system_type == HEATING_SYSTEM_RADIATOR
+
+    def _afterglow(self, elapsed_minutes: float, run: tuple[float, float]) -> float:
+        """Residual heat fraction *elapsed_minutes* after a run of (minutes, power fraction) stopped."""
+        minutes, pf = run
+        return compute_residual_heat(elapsed_minutes, self.heating_system_type, pf, minutes, self.residual_scale)
 
     def _min_run_for(self, mode: str) -> int:
         """Minimum run in blocks for *mode*."""
