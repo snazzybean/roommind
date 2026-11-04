@@ -47,21 +47,80 @@ export const loadHaElements = async (): Promise<void> => {
     }
   }
 
-  if (customElements.get("ha-entity-picker")) return;
+  // On HA 2026.6+ ha-entity-picker is defined at panel start; the date
+  // picker and chart below are not, so they must not hang off it.
+  if (!customElements.get("ha-entity-picker")) {
+    await loadEntityPicker();
+  }
 
+  await customElements.whenDefined("ha-card");
+
+  // Step 3: Load ha-date-range-picker (used by rs-analytics). The history
+  // panel imports it statically; window.loadCardHelpers only exists once a
+  // dashboard has been opened, so the energy card is the fallback.
+  if (!customElements.get("ha-date-range-picker")) {
+    try {
+      await loadPanelModule("history");
+      await waitForElement("ha-date-range-picker", 5000);
+    } catch {
+      // Falls through to the card helper below
+    }
+  }
+  if (!customElements.get("ha-date-range-picker")) {
+    try {
+      const helpers = await (window as any).loadCardHelpers();
+      await helpers.createCardElement({
+        type: "energy-date-selection",
+        entities: [],
+      });
+      await waitForElement("ha-date-range-picker", 5000);
+    } catch {
+      // ha-date-range-picker not available, the toolbar keeps the quick ranges
+    }
+  }
+
+  // Step 4: Load ha-chart-base (used by rs-analytics).
+  // It is part of HA's history/energy modules and NOT loaded by the
+  // config panel or card-helpers entities card.  Trigger the import
+  // chain via the statistics-graph lovelace card, which depends on it.
+  if (!customElements.get("ha-chart-base")) {
+    try {
+      const helpers = await (window as any).loadCardHelpers();
+      await helpers.createCardElement({
+        type: "statistics-graph",
+        entities: [],
+      });
+      await waitForElement("ha-chart-base", 5000);
+    } catch {
+      // ha-chart-base not available – analytics chart will be empty
+    }
+  }
+};
+
+const waitForElement = (tag: string, timeoutMs: number): Promise<unknown> =>
+  Promise.race([
+    customElements.whenDefined(tag),
+    new Promise((_, reject) => setTimeout(reject, timeoutMs)),
+  ]);
+
+/** Import a built-in panel's module (and everything it imports statically) without showing it. */
+const loadPanelModule = async (componentName: string): Promise<void> => {
+  await customElements.whenDefined("partial-panel-resolver");
+  const ppr = document.createElement("partial-panel-resolver") as any;
+  ppr.hass = {
+    panels: [{ url_path: "tmp", component_name: componentName }],
+  };
+  ppr._updateRoutes();
+  await ppr.routerOptions.routes.tmp.load();
+};
+
+const loadEntityPicker = async (): Promise<void> => {
   // Step 1: Load base HA components via partial-panel-resolver.
   // Guard on ha-selector (not ha-card) because ha-card can be defined by
   // other HA modules without the config/automation route being loaded.
   // We need ha-selector for the entity-picker fallback below.
   if (!customElements.get("ha-selector")) {
-    await customElements.whenDefined("partial-panel-resolver");
-    const ppr = document.createElement("partial-panel-resolver") as any;
-    ppr.hass = {
-      panels: [{ url_path: "tmp", component_name: "config" }],
-    };
-    ppr._updateRoutes();
-    await ppr.routerOptions.routes.tmp.load();
-
+    await loadPanelModule("config");
     await customElements.whenDefined("ha-panel-config");
     const cpr = document.createElement("ha-panel-config") as any;
     await cpr.routerOptions.routes.automation.load();
@@ -109,46 +168,6 @@ export const loadHaElements = async (): Promise<void> => {
       }
     } catch {
       // ha-entity-picker could not be loaded
-    }
-  }
-
-  await customElements.whenDefined("ha-card");
-
-  // Step 3: Load ha-date-range-picker (used by rs-analytics).
-  if (!customElements.get("ha-date-range-picker")) {
-    try {
-      const helpers = await (window as any).loadCardHelpers();
-      await helpers.createCardElement({
-        type: "energy-date-selection",
-        entities: [],
-      });
-      await Promise.race([
-        customElements.whenDefined("ha-date-range-picker"),
-        new Promise((_, reject) => setTimeout(reject, 5000)),
-      ]);
-    } catch {
-      // ha-date-range-picker not available — fallback handled in component
-    }
-  }
-
-  // Step 4: Load ha-chart-base (used by rs-analytics).
-  // It is part of HA's history/energy modules and NOT loaded by the
-  // config panel or card-helpers entities card.  Trigger the import
-  // chain via the statistics-graph lovelace card, which depends on it.
-  if (!customElements.get("ha-chart-base")) {
-    try {
-      const helpers = await (window as any).loadCardHelpers();
-      await helpers.createCardElement({
-        type: "statistics-graph",
-        entities: [],
-      });
-      // Wait up to 5 s for async registration
-      await Promise.race([
-        customElements.whenDefined("ha-chart-base"),
-        new Promise((_, reject) => setTimeout(reject, 5000)),
-      ]);
-    } catch {
-      // ha-chart-base not available – analytics chart will be empty
     }
   }
 };
