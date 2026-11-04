@@ -99,6 +99,12 @@ export interface DeviceConfig {
 export type ConflictResolution =
   "heating_priority" | "cooling_priority" | "majority" | "outdoor_temp";
 
+/** A stored room whose Home Assistant area was deleted; it rests until the area is back (#494). */
+export interface RoomWithoutArea {
+  area_id: string;
+  display_name: string;
+}
+
 export interface CompressorGroup {
   id: string;
   name: string;

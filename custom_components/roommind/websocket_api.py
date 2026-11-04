@@ -33,6 +33,7 @@ from .services.analytics_service import (
     _safe_float,  # noqa: F401 - re-exported for tests
     build_analytics_data,
 )
+from .utils.area_utils import REST_SWITCHED_OFF, rooms_with_area, rooms_without_area
 from .utils.device_utils import (
     COIL_DRY_INHERIT,
     COIL_DRY_MODE_FAN_ONLY,
@@ -254,7 +255,8 @@ async def websocket_list_rooms(
 ) -> None:
     """Return all rooms with current state."""
     store = hass.data[DOMAIN]["store"]
-    rooms = store.get_rooms()
+    stored = store.get_rooms()
+    rooms = rooms_with_area(hass, stored)
 
     # Merge live state from coordinator
     coordinator = _get_coordinator(hass)
@@ -340,6 +342,10 @@ async def websocket_list_rooms(
         msg["id"],
         {
             "rooms": result,
+            "rooms_without_area": [
+                {"area_id": area_id, "display_name": room.get("display_name", "")}
+                for area_id, room in rooms_without_area(hass, stored).items()
+            ],
             "outdoor_temp": coordinator.outdoor_temp_effective if coordinator else None,
             "outdoor_humidity": coordinator.outdoor_humidity if coordinator else None,
             "vacation_active": vacation_active,
@@ -560,24 +566,48 @@ async def websocket_delete_room(
     msg: dict,
 ) -> None:
     """Delete a room."""
-    store = hass.data[DOMAIN]["store"]
     area_id = msg["area_id"]
+    if not await async_remove_room(hass, area_id):
+        connection.send_error(msg["id"], "not_found", f"Room '{area_id}' not found")
+        return
+    connection.send_result(msg["id"], {"success": True})
 
+
+async def async_remove_room(hass: HomeAssistant, area_id: str) -> bool:
+    """Delete a room with its entities, valves, model and history; False if it is not stored."""
+    store = hass.data[DOMAIN]["store"]
     old_valves = get_valve_entities((store.get_room(area_id) or {}).get("devices", []))
     try:
         await store.async_delete_room(area_id)
     except KeyError:
-        connection.send_error(msg["id"], "not_found", f"Room '{area_id}' not found")
-        return
+        return False
 
     await _async_release_dropped_valves(hass, area_id, old_valves, {})
 
-    # Notify coordinator to remove sensor entities for the deleted room
     coordinator = _get_coordinator(hass)
     if coordinator:
         await coordinator.async_room_removed(area_id)
+    # Stored right away, after the in-memory model is gone: else it only went with the next thermal save
+    await store.async_clear_thermal_data_room(area_id)
+    return True
 
-    connection.send_result(msg["id"], {"success": True})
+
+async def async_pause_room(hass: HomeAssistant, area_id: str) -> None:
+    """Stop running a room whose area was deleted, keeping what is stored for it (#494)."""
+    coordinator = _get_coordinator(hass)
+    if hass.data[DOMAIN]["store"].get_room(area_id) is not None and coordinator:
+        await coordinator.async_room_paused(area_id)
+
+
+async def async_resume_room(hass: HomeAssistant, area_id: str) -> None:
+    """Run a resting room again once an area with its id exists (#494)."""
+    store = hass.data[DOMAIN]["store"]
+    if store.get_room(area_id) is None:
+        return
+    await store.async_update_room(area_id, {REST_SWITCHED_OFF: False})
+    coordinator = _get_coordinator(hass)
+    if coordinator:
+        await coordinator.async_room_added(store.get_room(area_id))
 
 
 # ---------------------------------------------------------------------------

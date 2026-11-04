@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -71,6 +72,7 @@ async def test_list_rooms_empty(ws_hass, store, connection):
         1,
         {
             "rooms": {},
+            "rooms_without_area": [],
             "outdoor_temp": None,
             "outdoor_humidity": None,
             "vacation_active": False,
@@ -441,6 +443,23 @@ async def test_save_room_with_schedules(ws_hass, store, connection):
     assert room["schedule_selector_entity"] == ""
     assert room["comfort_temp"] == 22.0
     assert room["eco_temp"] == 18.0
+
+
+@pytest.mark.asyncio
+async def test_list_rooms_reports_resting_rooms_separately(ws_hass, store, connection):
+    """A room whose area was deleted is not listed as a room, only as one without area (#494)."""
+    await store.async_load()
+    await store.async_save_room("kitchen", {})
+    await store.async_save_room("old_room", {"display_name": "Old room"})
+    registry = MagicMock()
+    registry.async_list_areas.return_value = [SimpleNamespace(id="kitchen")]
+
+    with patch("custom_components.roommind.utils.area_utils.ar.async_get", return_value=registry):
+        await _list_rooms(ws_hass, connection, {"id": 1, "type": "roommind/rooms/list"})
+
+    result = connection.send_result.call_args[0][1]
+    assert set(result["rooms"]) == {"kitchen"}
+    assert result["rooms_without_area"] == [{"area_id": "old_room", "display_name": "Old room"}]
 
 
 @pytest.mark.asyncio

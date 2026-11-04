@@ -1,0 +1,53 @@
+name: area-removed-room-rests
+description: >
+  A Home Assistant area is deleted while RoomMind runs. Its room rests (devices switched off
+  once, then no control, not listed, no entities) but keeps its settings and learned model; before the fix it stayed listed, could
+  not be deleted and kept driving its devices. The area is created again under the same name
+  (same id) and the room continues with what it learned. The other room carries on.
+refs: [494]
+# Not covered here: a restart while resting (the sim provisions every house area again on
+# start, which brings the area back); unit tests cover the stored rest_switched_off flag.
+tags: [entities, lifecycle]
+start: 2026-01-12T00:00
+duration: 1d
+location: {latitude: 52.5, longitude: 13.4, time_zone: Europe/Berlin}
+weather: {profile: temperate}
+house:
+  building: bestand_teilsaniert
+  outdoor: {sensors: {temperature: sensor.aussen_temp}}
+  rooms:
+    wohnzimmer:
+      floor_area_m2: 22
+      initial: {temperature: 19.0}
+      devices: [{entity_id: climate.wz_trv, profile: generic_trv}]
+      sensors: {temperature: {entity_id: sensor.wz_temp}}
+    gaestezimmer:
+      floor_area_m2: 12
+      initial: {temperature: 18.0}
+      devices: [{entity_id: climate.gz_trv, profile: generic_trv}]
+      sensors: {temperature: {entity_id: sensor.gz_temp}}
+roommind:
+  settings:
+    outdoor_temp_sensor: sensor.aussen_temp
+  rooms:
+    wohnzimmer:
+      devices: [{entity_id: climate.wz_trv, type: trv, heating_system_type: radiator}]
+      temperature_sensor: sensor.wz_temp
+      climate_mode: heat_only
+      comfort_temp: 21.0
+    gaestezimmer:
+      devices: [{entity_id: climate.gz_trv, type: trv, heating_system_type: radiator}]
+      temperature_sensor: sensor.gz_temp
+      climate_mode: heat_only
+      comfort_temp: 20.0
+timeline:
+  - {at: "+6h", do: roommind.ws, type: config/area_registry/delete, area_id: gaestezimmer}
+  - {at: "+10h", do: roommind.ws, type: config/area_registry/create, name: Gaestezimmer}
+expect:
+  - {check: "room.gaestezimmer != null and room.wohnzimmer != null", at: "+5h", label: both rooms run before the area is deleted}
+  - {check: "room.gaestezimmer == null", at: "+7h", label: room rests while its area is gone}
+  - {check: "dev('climate.gz_trv').mode == 'off'", at: "+7h", label: its thermostat is switched off instead of left at the boost}
+  - {check: "room.gaestezimmer == null and dev('climate.gz_trv').mode == 'off'", at: "+9h", label: still resting and off before the area is back}
+  - {check: "room.gaestezimmer != null and room.gaestezimmer.n_observations >= 100", at: "+10h05m", label: room is back with its learned model}
+  - {check: "room.wohnzimmer != null", at: "+23h", label: the other room keeps running}
+  - {invariant: no_rejected_commands}

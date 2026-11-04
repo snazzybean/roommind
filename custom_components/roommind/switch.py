@@ -13,6 +13,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN, VACATION_SENTINEL_UNTIL
 from .coordinator import RoomMindCoordinator
+from .utils.area_utils import rooms_with_area
 
 
 def _create_room_switches(
@@ -36,7 +37,7 @@ async def async_setup_entry(
     # Global vacation switch (always created)
     entities: list[SwitchEntity] = [RoomMindVacationSwitch(coordinator)]
 
-    rooms = store.get_rooms()
+    rooms = rooms_with_area(hass, store.get_rooms())
     for area_id, room in rooms.items():
         entities.append(RoomMindClimateControlSwitch(coordinator, area_id))
         coordinator._climate_control_switch_areas.add(area_id)

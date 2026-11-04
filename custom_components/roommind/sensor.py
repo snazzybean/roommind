@@ -11,6 +11,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
 from .coordinator import RoomMindCoordinator
+from .utils.area_utils import rooms_with_area
 
 
 def _create_room_entities(coordinator: RoomMindCoordinator, area_id: str) -> list[SensorEntity]:
@@ -34,7 +35,7 @@ async def async_setup_entry(
     coordinator.async_add_entities = async_add_entities
 
     # Create entities for rooms that already exist in the store
-    rooms = store.get_rooms()
+    rooms = rooms_with_area(hass, store.get_rooms())
     entities: list[SensorEntity] = []
     for area_id in rooms:
         entities.extend(_create_room_entities(coordinator, area_id))

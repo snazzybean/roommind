@@ -1,6 +1,6 @@
 import { LitElement, html, css, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
-import type { HomeAssistant, HassArea, RoomConfig } from "./types";
+import type { HomeAssistant, HassArea, RoomConfig, RoomWithoutArea } from "./types";
 import { getEntitiesForArea } from "./utils/room-state";
 import { loadHaElements } from "./load-ha-elements";
 import { localize } from "./utils/localize";
@@ -37,6 +37,7 @@ export class RoomMindPanel extends LitElement {
 
   @state() private _activeTab: TabId = "areas";
   @state() private _rooms: Record<string, RoomConfig> = {};
+  @state() private _roomsWithoutArea: RoomWithoutArea[] = [];
   @state() private _roomsLoaded = false;
   @state() private _selectedAreaId: string | null = null;
   @state() private _analyticsRoom = "";
@@ -681,7 +682,11 @@ export class RoomMindPanel extends LitElement {
   }
 
   private _renderSettings() {
-    return html`<rs-settings .hass=${this.hass} .rooms=${this._rooms}></rs-settings>`;
+    return html`<rs-settings
+      .hass=${this.hass}
+      .rooms=${this._rooms}
+      .roomsWithoutArea=${this._roomsWithoutArea}
+    ></rs-settings>`;
   }
 
   private _computeAreaInfos(): AreaInfo[] {
@@ -780,6 +785,7 @@ export class RoomMindPanel extends LitElement {
     try {
       const result = await this.hass.callWS<{
         rooms: Record<string, RoomConfig>;
+        rooms_without_area?: RoomWithoutArea[];
         vacation_active: boolean;
         vacation_temp: number | null;
         vacation_until: number | null;
@@ -802,6 +808,7 @@ export class RoomMindPanel extends LitElement {
         type: "roommind/rooms/list",
       });
       this._rooms = result.rooms;
+      this._roomsWithoutArea = result.rooms_without_area ?? [];
       this._vacationActive = result.vacation_active ?? false;
       this._vacationTemp = result.vacation_temp ?? null;
       this._vacationUntil = result.vacation_until ?? null;

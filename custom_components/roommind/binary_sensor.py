@@ -10,6 +10,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
 from .coordinator import RoomMindCoordinator
+from .utils.area_utils import rooms_with_area
 
 
 def _create_room_binary_sensors(
@@ -29,7 +30,7 @@ async def async_setup_entry(
     coordinator: RoomMindCoordinator = hass.data[DOMAIN][entry.entry_id]
     store = hass.data[DOMAIN]["store"]
     coordinator.async_add_binary_sensor_entities = async_add_entities
-    rooms = store.get_rooms()
+    rooms = rooms_with_area(hass, store.get_rooms())
     entities: list[BinarySensorEntity] = []
     for area_id, room in rooms.items():
         if room.get("covers"):
