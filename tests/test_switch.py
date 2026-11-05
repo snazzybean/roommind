@@ -12,6 +12,7 @@ from custom_components.roommind.switch import (
     RoomMindClimateControlSwitch,
     RoomMindCoverAutoSwitch,
     RoomMindGlobalClimateControlSwitch,
+    RoomMindResidualHeatSwitch,
     RoomMindVacationSwitch,
     _create_room_switches,
     async_setup_entry,
@@ -353,3 +354,61 @@ async def test_global_climate_control_switch_saves_the_setting(mock_vacation_coo
     await (switch.async_turn_on() if turn_on else switch.async_turn_off())
     store.async_save_settings.assert_awaited_once_with({"climate_control_active": value})
     coordinator.async_request_refresh.assert_awaited_once()
+# --- Residual heat switch (radiator rooms) ---
+
+
+def test_residual_heat_switch_defaults_on(mock_coordinator):
+    coordinator, store = mock_coordinator
+    switch = RoomMindResidualHeatSwitch(coordinator, "living_room")
+    store.get_room.return_value = {}
+    assert switch.is_on is True
+    store.get_room.return_value = None
+    assert switch.is_on is True
+    store.get_room.return_value = {"residual_heat_enabled": False}
+    assert switch.is_on is False
+
+
+@pytest.mark.asyncio
+async def test_residual_heat_switch_turn_on_off(mock_coordinator):
+    coordinator, store = mock_coordinator
+    store.async_update_room = AsyncMock()
+    switch = RoomMindResidualHeatSwitch(coordinator, "living_room")
+    await switch.async_turn_off()
+    store.async_update_room.assert_awaited_with("living_room", {"residual_heat_enabled": False})
+    await switch.async_turn_on()
+    store.async_update_room.assert_awaited_with("living_room", {"residual_heat_enabled": True})
+    assert coordinator.async_request_refresh.await_count == 2
+
+
+def test_residual_heat_switch_ids(mock_coordinator):
+    coordinator, _ = mock_coordinator
+    switch = RoomMindResidualHeatSwitch(coordinator, "living_room")
+    assert switch.unique_id == "roommind_living_room_residual_heat"
+    assert switch.entity_id == "switch.roommind_living_room_residual_heat"
+
+
+@pytest.mark.asyncio
+async def test_async_setup_entry_creates_residual_switch_for_radiator_rooms_only():
+    coordinator = MagicMock()
+    coordinator._switch_entity_areas = set()
+    coordinator._climate_control_switch_areas = set()
+    coordinator._residual_switch_areas = set()
+
+    store = MagicMock()
+    store.get_rooms.return_value = {
+        "living_room": {"heating_system_type": "radiator"},
+        "bathroom": {"heating_system_type": "underfloor"},
+        "bedroom": {},
+    }
+    entry = MagicMock()
+    entry.entry_id = "test_entry"
+    hass = MagicMock()
+    hass.data = {DOMAIN: {entry.entry_id: coordinator, "store": store}}
+    async_add_entities = MagicMock()
+
+    await async_setup_entry(hass, entry, async_add_entities)
+
+    entities = async_add_entities.call_args[0][0]
+    residual = [e for e in entities if isinstance(e, RoomMindResidualHeatSwitch)]
+    assert [e._area_id for e in residual] == ["living_room"]
+    assert coordinator._residual_switch_areas == {"living_room"}

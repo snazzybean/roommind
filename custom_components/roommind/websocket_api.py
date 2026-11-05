@@ -162,6 +162,7 @@ _ROOM_SAVE_FIELDS = (
     "heat_source_price_aware",
     "valve_protection_exclude",
     "climate_control_enabled",
+    "residual_heat_enabled",
 )
 
 _SETTINGS_SAVE_FIELDS = (
@@ -480,6 +481,7 @@ async def websocket_list_rooms(
         vol.Optional("heat_source_ac_min_outdoor"): vol.All(vol.Coerce(float), vol.Range(min=-30, max=5)),
         vol.Optional("heat_source_price_aware"): bool,
         vol.Optional("climate_control_enabled"): bool,
+        vol.Optional("residual_heat_enabled"): bool,
     }
 )
 @websocket_api.async_response
