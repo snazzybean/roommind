@@ -21,6 +21,7 @@ from custom_components.roommind.const import (
     COVER_USER_OVERRIDE_MINUTES,
 )
 from custom_components.roommind.managers.cover_manager import (
+    CoverDecision,
     CoverManager,
     compute_shading_factor,
 )
@@ -76,6 +77,7 @@ async def test_room_config_has_cover_defaults():
     assert room["covers_night_close_offset_minutes"] == 0
     assert room["covers_night_position"] == 0
     assert room["covers_snap_deploy"] is False
+    assert room["covers_window_hold"] is False
     assert room["cover_min_positions"] == {}
 
 
@@ -1946,3 +1948,21 @@ def test_excess_just_above_threshold_holds_instead_of_retracting(mock_t):
     d = mgr.evaluate("lr", predicted_peak_temp=21.2, target_temp=21.0, **_BASE_KWARGS)
     assert d.changed is True
     assert d.target_position == 100
+
+
+def test_hold_restores_the_snapshot():
+    mgr = CoverManager()
+    mgr.update_position("lr", 100)
+    before = mgr.snapshot("lr")
+    d = mgr.evaluate("lr", predicted_peak_temp=25.0, target_temp=22.0, **_BASE_KWARGS)
+    assert d.changed is True
+    assert mgr._get_state("lr").owned is True
+
+    held = mgr.hold("lr", before, "window_hold")
+
+    assert held == CoverDecision(target_position=100, changed=False, reason="window_hold")
+    state = mgr._get_state("lr")
+    assert state.owned is False
+    assert state.baseline_position is None
+    assert state.last_commanded_position is None
+    assert state.last_change_ts == 0.0

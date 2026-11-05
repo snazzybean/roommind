@@ -281,6 +281,7 @@ class RoomMindStore:
             "covers_night_close_offset_minutes": config.get("covers_night_close_offset_minutes", 0),
             "covers_night_position": config.get("covers_night_position", 0),
             "covers_snap_deploy": config.get("covers_snap_deploy", False),
+            "covers_window_hold": config.get("covers_window_hold", False),
             "cover_min_positions": config.get("cover_min_positions", {}),
             "ignore_presence": config.get("ignore_presence", False),
             "is_outdoor": config.get("is_outdoor", False),

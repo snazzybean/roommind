@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from homeassistant.core import HomeAssistant
 
@@ -296,6 +296,19 @@ class CoverManager:
             state.baseline_position = current
         reason = f"deploy(excess={excess:.2f}°C→pos={desired_pos}%)" if desired_pos < 100 else "retract"
         return self._apply_change(state, desired_pos, reason)
+
+    def snapshot(self, area_id: str) -> _RoomCoverState:
+        """Return a copy of the room's state, to undo an evaluate() whose move is not sent."""
+        return replace(self._get_state(area_id))
+
+    def hold(self, area_id: str, snapshot: _RoomCoverState, reason: str) -> CoverDecision:
+        """Undo the last evaluate() and keep the covers where they are.
+
+        The next cycle decides afresh, so a held forced position (night close,
+        schedule) goes out as soon as the hold ends.
+        """
+        self._states[area_id] = snapshot
+        return CoverDecision(target_position=snapshot.current_position, changed=False, reason=reason)
 
     def remove_room(self, area_id: str) -> None:
         """Clean up state when a room is deleted."""

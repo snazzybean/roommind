@@ -347,6 +347,32 @@ def window_open_pauses(run: RunData, grace_s: float = 120.0) -> list[Violation]:
     return out
 
 
+def no_cover_lowered_over_open_window(run: RunData, grace_s: float = COORDINATOR_CYCLE_S) -> list[Violation]:
+    """No cover of a room goes down while one of its window sensors is open (#268).
+
+    Only rooms with window sensors count. ``grace_s`` after the opening covers a
+    command from the cycle that still saw the window closed.
+    """
+    out: list[Violation] = []
+    rooms_cfg = run.rooms_config()
+    windows = run.window_open_intervals()
+    room_of = {c.entity_id: c.room for r in run.scenario.rooms.values() for c in r.covers}
+    for c in run.commands:
+        area = room_of.get(c["entity_id"])
+        if area is None or not (rooms_cfg.get(area) or {}).get("window_sensors"):
+            continue
+        if not any(iv.start + grace_s <= c["t"] <= iv.end for iv in windows.get(area, [])):
+            continue
+        sample = run.sample_at(c["t"]) or {}
+        position = (sample.get("covers", {}).get(c["entity_id"]) or {}).get("position", 100.0)
+        data = c.get("data") or {}
+        if c["service"] == "close_cover" or (
+            c["service"] == "set_cover_position" and float(data.get("position", 100)) < position
+        ):
+            out.append(Violation(c["t"], f"{c['entity_id']} {c['service']} {data} with a window open"))
+    return out
+
+
 def no_heat_and_cool_same_group(run: RunData) -> list[Violation]:
     out: list[Violation] = []
     for group in _groups(run):
@@ -451,6 +477,7 @@ INVARIANTS: dict[str, Callable[..., list[Violation]]] = {
         no_full_cooling_at_target,
         no_rejected_commands,
         window_open_pauses,
+        no_cover_lowered_over_open_window,
         no_heat_and_cool_same_group,
         no_commands_when_climate_off,
         max_commands_per_hour,
