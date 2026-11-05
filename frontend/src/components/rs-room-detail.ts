@@ -94,6 +94,7 @@ export class RsRoomDetail extends LitElement {
   @state() private _isOutdoor = false;
   @state() private _valveProtectionExclude: Set<string> = new Set();
   @state() private _climateControlEnabled = true;
+  @state() private _residualHeatEnabled = true;
   @state() private _heatSourceOrchestration = false;
   @state() private _heatSourcePrimaryDelta = 1.5;
   @state() private _heatSourceOutdoorThreshold = 5.0;
@@ -198,6 +199,17 @@ export class RsRoomDetail extends LitElement {
       text-decoration: underline;
     }
 
+    .residual-toggle {
+      display: block;
+      margin-top: 16px;
+    }
+
+    .view-note {
+      font-size: 12px;
+      color: var(--secondary-text-color);
+      margin-top: 8px;
+    }
+
     .helper-link {
       display: inline-block;
       margin-top: 12px;
@@ -300,6 +312,7 @@ export class RsRoomDetail extends LitElement {
       this._isOutdoor = this.config.is_outdoor ?? false;
       this._valveProtectionExclude = new Set(this.config.valve_protection_exclude ?? []);
       this._climateControlEnabled = this.config.climate_control_enabled ?? true;
+      this._residualHeatEnabled = this.config.residual_heat_enabled ?? true;
       this._heatSourceOrchestration = this.config.heat_source_orchestration ?? false;
       this._heatSourcePrimaryDelta = this.config.heat_source_primary_delta ?? 1.5;
       this._heatSourceOutdoorThreshold = this.config.heat_source_outdoor_threshold ?? 5.0;
@@ -343,6 +356,7 @@ export class RsRoomDetail extends LitElement {
       this._isOutdoor = false;
       this._valveProtectionExclude = new Set();
       this._climateControlEnabled = true;
+      this._residualHeatEnabled = true;
       this._heatSourceOrchestration = false;
       this._heatSourcePrimaryDelta = 1.5;
       this._heatSourceOutdoorThreshold = 5.0;
@@ -509,6 +523,13 @@ export class RsRoomDetail extends LitElement {
                       @device-changed=${this._onDeviceChanged}
                       @valve-protection-exclude-toggle=${this._onValveProtectionExcludeToggle}
                     ></rs-device-section>
+                    ${
+                      this._isRadiatorRoom() && !this._residualHeatEnabled
+                        ? html`<div class="view-note">
+                            ${localize("devices.view_residual_heat_off", this.hass.language)}
+                          </div>`
+                        : nothing
+                    }
                   </rs-section-card>
 
                   <rs-section-card
@@ -772,6 +793,17 @@ export class RsRoomDetail extends LitElement {
             @device-changed=${this._onDeviceChanged}
             @valve-protection-exclude-toggle=${this._onValveProtectionExcludeToggle}
           ></rs-device-section>
+          ${
+            this._isRadiatorRoom()
+              ? html`<rs-toggle-row
+                  class="residual-toggle"
+                  .label=${localize("devices.residual_heat_label", lang)}
+                  .hint=${localize("devices.residual_heat_hint", lang)}
+                  .checked=${this._residualHeatEnabled}
+                  @toggle-changed=${this._onResidualHeatToggle}
+                ></rs-toggle-row>`
+              : nothing
+          }
         </rs-edit-dialog>`;
       case "sensors":
         return html`<rs-edit-dialog
@@ -1125,6 +1157,17 @@ export class RsRoomDetail extends LitElement {
 
   // ---- Outdoor toggle ----
 
+  /** Residual heat is learned and weighed in radiator rooms only (backend: HEATING_SYSTEM_RADIATOR). */
+  private _isRadiatorRoom(): boolean {
+    return resolveHeatingSystemType(this._devices) === "radiator";
+  }
+
+  private _onResidualHeatToggle(e: CustomEvent<boolean>) {
+    e.stopPropagation();
+    this._residualHeatEnabled = e.detail;
+    this._autoSave();
+  }
+
   private _onClimateControlToggle(e: CustomEvent) {
     this._climateControlEnabled = e.detail;
     this._autoSave();
@@ -1177,6 +1220,7 @@ export class RsRoomDetail extends LitElement {
         display_name: this._displayName,
         covers: [...this._selectedCovers],
         climate_control_enabled: this._climateControlEnabled,
+        residual_heat_enabled: this._residualHeatEnabled,
         covers_auto_enabled: this._coversAutoEnabled,
         covers_deploy_threshold: this._coversDeployThreshold,
         covers_min_position: this._coversMinPosition,

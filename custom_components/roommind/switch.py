@@ -11,7 +11,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, VACATION_SENTINEL_UNTIL
+from .const import DOMAIN, HEATING_SYSTEM_RADIATOR, VACATION_SENTINEL_UNTIL
 from .coordinator import RoomMindCoordinator
 from .utils.area_utils import rooms_with_area
 
@@ -41,6 +41,9 @@ async def async_setup_entry(
     for area_id, room in rooms.items():
         entities.append(RoomMindClimateControlSwitch(coordinator, area_id))
         coordinator._climate_control_switch_areas.add(area_id)
+        if room.get("heating_system_type", "") == HEATING_SYSTEM_RADIATOR:
+            entities.append(RoomMindResidualHeatSwitch(coordinator, area_id))
+            coordinator._residual_switch_areas.add(area_id)
         if room.get("covers"):
             entities.extend(_create_room_switches(coordinator, area_id))
             coordinator._switch_entity_areas.add(area_id)
@@ -106,6 +109,43 @@ class RoomMindClimateControlSwitch(CoordinatorEntity, SwitchEntity):
     async def async_turn_off(self, **kwargs: Any) -> None:
         store = self.coordinator.hass.data[DOMAIN]["store"]
         await store.async_update_room(self._area_id, {"climate_control_enabled": False})
+        await self.coordinator.async_request_refresh()
+
+
+class RoomMindResidualHeatSwitch(CoordinatorEntity, SwitchEntity):
+    """Switch to have control consider the radiators' residual heat (radiator rooms only).
+
+    Off: the controller and the analytics prediction ignore the afterglow, so a run
+    is no longer stopped early on it. The thermal model keeps learning with it.
+    """
+
+    _attr_has_entity_name = True
+
+    def __init__(self, coordinator: RoomMindCoordinator, area_id: str) -> None:
+        super().__init__(coordinator)
+        self._area_id = area_id
+        self._attr_unique_id = f"{DOMAIN}_{area_id}_residual_heat"
+        self._attr_name = f"{area_id} Residual Heat"
+        self._attr_icon = "mdi:radiator"
+        self.entity_id = f"switch.{DOMAIN}_{area_id}_residual_heat"
+
+    @property
+    def is_on(self) -> bool:
+        """Return True if control considers the residual heat."""
+        store = self.coordinator.hass.data[DOMAIN]["store"]
+        room = store.get_room(self._area_id)
+        return bool(room.get("residual_heat_enabled", True)) if room else True
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        """Consider the residual heat in control."""
+        store = self.coordinator.hass.data[DOMAIN]["store"]
+        await store.async_update_room(self._area_id, {"residual_heat_enabled": True})
+        await self.coordinator.async_request_refresh()
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        """Ignore the residual heat in control."""
+        store = self.coordinator.hass.data[DOMAIN]["store"]
+        await store.async_update_room(self._area_id, {"residual_heat_enabled": False})
         await self.coordinator.async_request_refresh()
 
 

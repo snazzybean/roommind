@@ -125,9 +125,12 @@ ROOM_ENTITY_SUFFIXES = (
     "_climate_control",
     "_cover_auto",
     "_cover_paused",
+    "_residual_heat",
 )
 # Suffixes only valid when the room has covers configured.
 COVER_ENTITY_SUFFIXES = ("_cover_auto", "_cover_paused")
+# Suffixes only valid in radiator rooms.
+RADIATOR_ENTITY_SUFFIXES = ("_residual_heat",)
 # Device states in which a compressor can be running (fan_only and off do not run it)
 _COMPRESSOR_STATES = ("heat", "cool", "heat_cool", "auto", "dry")
 # hvac modes in which an AC's reading teaches the learned sensor offset (HeadOffsetTracker)
@@ -250,6 +253,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         self._rooms_switched_off: set[str] = set()
         self._switch_entity_areas: set[str] = set()
         self._climate_control_switch_areas: set[str] = set()
+        self._residual_switch_areas: set[str] = set()
         self._binary_sensor_entity_areas: set[str] = set()
         self._climate_entity_areas: set[str] = set()
         # Per-entity cache of schedule blocks; fallback when schedule.get_schedule fails (#308)
@@ -826,12 +830,18 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             self._previous_modes.get(area_id, MODE_IDLE),
             residual_scale,
         )
+        # The per-room residual heat switch takes the afterglow out of control decisions only:
+        # training, the tracker and the learner keep the real afterglow, so the model stays right
+        residual_controlled = radiator and room.get("residual_heat_enabled", True)
         # Heating run in progress: the controller weighs the heat it would leave if it stopped now
         heat_run = (
             self._residual_tracker.get_run_state(area_id, self._previous_modes.get(area_id, MODE_IDLE))
             if radiator
             else None
         )
+        control_heat_run = heat_run if residual_controlled else None
+        control_q_residual = 0.0 if radiator and not residual_controlled else q_residual
+        control_residual_scale = 0.0 if radiator and not residual_controlled else residual_scale
         q_rebound = self._rebound_tracker.get_charge(area_id)
 
         # Read current cover positions for shading factor
@@ -865,10 +875,10 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             latitude=self.hass.config.latitude,
             longitude=self.hass.config.longitude,
             cloud_series=WeatherManager.extract_cloud_series(outdoor_forecast),
-            q_residual=q_residual,
+            q_residual=control_q_residual,
             heating_system_type=system_type,
-            residual_scale=residual_scale,
-            heat_run=heat_run,
+            residual_scale=control_residual_scale,
+            heat_run=control_heat_run,
             shading_factor=shading_factor,
             q_occupancy=q_occupancy,
             q_rebound=q_rebound,
@@ -2261,6 +2271,19 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             self.async_add_switch_entities([RoomMindClimateControlSwitch(self, area_id)])
             self._climate_control_switch_areas.add(area_id)
 
+        # Residual heat switch: radiator rooms only. Like the cover entities it is not
+        # removed on save; cleanup_orphaned_entities() handles that at startup.
+        if (
+            room.get("heating_system_type", "") == HEATING_SYSTEM_RADIATOR
+            and area_id not in self._residual_switch_areas
+            and hasattr(self, "async_add_switch_entities")
+            and self.async_add_switch_entities
+        ):
+            from .switch import RoomMindResidualHeatSwitch
+
+            self.async_add_switch_entities([RoomMindResidualHeatSwitch(self, area_id)])
+            self._residual_switch_areas.add(area_id)
+
         # Cover entities: only create when covers are configured.
         # Not removed on save — cleanup_orphaned_entities() handles that at startup
         # so brief config changes don't break user automations.
@@ -2428,6 +2451,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         self._mode_seeded.discard(area_id)
         self._switch_entity_areas.discard(area_id)
         self._climate_control_switch_areas.discard(area_id)
+        self._residual_switch_areas.discard(area_id)
         self._binary_sensor_entity_areas.discard(area_id)
         self._climate_entity_areas.discard(area_id)
         self._heat_source_states.pop(area_id, None)
@@ -2470,6 +2494,12 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             area_id, suffix = match
             if suffix in COVER_ENTITY_SUFFIXES and not rooms[area_id].get("covers"):
                 # Cover entity for a room without covers configured — orphaned.
+                to_remove.append(entity_entry.entity_id)
+            elif (
+                suffix in RADIATOR_ENTITY_SUFFIXES
+                and rooms[area_id].get("heating_system_type", "") != HEATING_SYSTEM_RADIATOR
+            ):
+                # Radiator-only entity for a room that no longer heats with radiators — orphaned.
                 to_remove.append(entity_entry.entity_id)
 
         for eid in to_remove:
