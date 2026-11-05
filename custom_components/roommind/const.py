@@ -196,6 +196,11 @@ RESIDUAL_LEARN_MIN_EXPECTED_K = 0.03  # profile-predicted rise below this carrie
 RESIDUAL_SCALE_MIN = 0.0
 RESIDUAL_SCALE_MAX = 15.0
 RESIDUAL_SCALE_EMA_ALPHA = 0.2
+# The profile (scale 1) counts as this many earlier samples: a sample moves the scale by
+# 1 / (weight + n + 1) until that reaches the EMA alpha, so one run disturbed by something
+# the model does not know cannot set the scale on its own (one sample reached the cap of
+# 15 in a real room).
+RESIDUAL_SCALE_PRIOR_WEIGHT = 2.0
 
 # AC rebound: while an AC cools, the air drops below the building mass; after it
 # stops the air relaxes back within minutes. Charge relaxes towards the cooling
