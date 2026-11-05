@@ -386,6 +386,9 @@ async def build_analytics_data(
                 system_type = room_config.get("heating_system_type", "")
                 # The learned residual heat applies to radiator rooms only
                 sim_scale = est.residual_scale if system_type == HEATING_SYSTEM_RADIATOR else 1.0
+                # ... and only while its switch is on (scale 0 leaves no afterglow, like the controller)
+                if system_type == HEATING_SYSTEM_RADIATOR and not room_config.get("residual_heat_enabled", True):
+                    sim_scale = 0.0
                 sim_q_residual = 0.0
                 sim_heat_dur = 0.0
                 # Power of the run in progress or the last one (the prediction weighs its afterglow)

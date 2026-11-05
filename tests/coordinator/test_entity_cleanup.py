@@ -437,3 +437,51 @@ class TestRoomClimateEntity:
         store.async_update_room.assert_awaited_once_with("living_room", {"climate_control_enabled": False})
         assert coordinator._rooms_to_switch_off == {"living_room"}
         coordinator.async_request_refresh.assert_awaited_once()
+
+
+def test_cleanup_removes_residual_switch_outside_radiator_rooms(hass, mock_config_entry):
+    """The residual heat switch is orphaned once a room no longer heats with radiators."""
+    from custom_components.roommind.const import DOMAIN
+
+    coordinator = _create_coordinator(hass, mock_config_entry)
+    store = MagicMock()
+    store.get_rooms.return_value = {
+        "living_room": {"heating_system_type": "radiator"},
+        "bathroom": {"heating_system_type": "underfloor"},
+    }
+    hass.data = {DOMAIN: {"store": store}}
+
+    entries = []
+    for area in ("living_room", "bathroom"):
+        e = MagicMock()
+        e.platform = DOMAIN
+        e.unique_id = f"{DOMAIN}_{area}_residual_heat"
+        e.entity_id = f"switch.roommind_{area}_residual_heat"
+        entries.append(e)
+    mock_registry = MagicMock()
+    mock_registry.entities.values.return_value = entries
+
+    with patch("homeassistant.helpers.entity_registry.async_get", return_value=mock_registry):
+        coordinator.cleanup_orphaned_entities()
+
+    removed_ids = [c.args[0] for c in mock_registry.async_remove.call_args_list]
+    assert removed_ids == ["switch.roommind_bathroom_residual_heat"]
+
+
+@pytest.mark.asyncio
+async def test_room_added_creates_residual_switch_once_for_radiator_room(hass, mock_config_entry):
+    coordinator = _create_coordinator(hass, mock_config_entry)
+    coordinator.async_request_refresh = AsyncMock()
+    coordinator.async_add_entities = MagicMock()
+    coordinator.async_add_switch_entities = MagicMock()
+
+    from custom_components.roommind.switch import RoomMindResidualHeatSwitch
+
+    await coordinator.async_room_added({"area_id": "living_room", "heating_system_type": "radiator"})
+    await coordinator.async_room_added({"area_id": "living_room", "heating_system_type": "radiator"})
+    await coordinator.async_room_added({"area_id": "bathroom", "heating_system_type": "underfloor"})
+
+    added = [e for c in coordinator.async_add_switch_entities.call_args_list for e in c.args[0]]
+    residual = [e for e in added if isinstance(e, RoomMindResidualHeatSwitch)]
+    assert [e._area_id for e in residual] == ["living_room"]
+    assert coordinator._residual_switch_areas == {"living_room"}
