@@ -389,3 +389,55 @@ def test_real_room_stops_early_on_its_learned_scale():
     learned = plan(11.0)
     assert learned.actions[0] == MODE_IDLE
     assert max(learned.temperatures[:13]) >= 20.0 - 0.1
+
+
+# ---------------------------------------------------------------------------
+# Pre-heat deadline: waiting sees the heat still stored in the radiators
+# ---------------------------------------------------------------------------
+
+# A real bedroom's learned model; its 20 °C block starts in two blocks (10 min)
+OLIVER = RCModel(C=1.0, U=0.005, Q_heat=1.935, Q_cool=4.0)
+SHORT_BLOCK = [18.5] * 2 + [20.0] * 2 + [12.0] * 20
+
+
+def _deadline(scale: float, **kwargs) -> int:
+    opt = MPCOptimizer(OLIVER, can_cool=False, heating_system_type="radiator", residual_scale=scale)
+    return opt._preheat_deadline(
+        0, 19.3, [6.4] * 24, SHORT_BLOCK, 5.0, q_solar=[], q_occupancy=[], continuing=True, **kwargs
+    )
+
+
+def test_deadline_lets_stored_heat_carry_the_room_to_the_block():
+    """A run whose stored heat reaches the coming target is not forced on (it overshot by ~1 K)."""
+    assert _deadline(15.0) == 2  # blind to the afterglow: forced on
+    assert _deadline(15.0, glow=(30.0, 1.0)) == 0
+    # Little stored heat does not carry the room: still forced on
+    assert _deadline(1.0, glow=(30.0, 1.0)) == 2
+
+
+def test_deadline_uses_the_rooms_residual_without_a_run():
+    """Without a run to stop, the wait sees the room's own residual series."""
+    assert _deadline(15.0, q_residual=[0.0] * 24) == 2
+    assert _deadline(15.0, q_residual=[3.0] * 24) == 0
+
+
+def test_preheat_stops_earlier_with_large_stored_heat():
+    """The morning that overshot by 0.9 K: with the learned heat the plan stops sooner and peaks lower."""
+
+    def plan(scale: float):
+        opt = MPCOptimizer(OLIVER, can_cool=False, heating_system_type="radiator", residual_scale=scale)
+        targets = [18.5 if i * 5 < 13 else 20.0 if i * 5 < 43 else 12.0 for i in range(24)]
+        return opt.optimize(
+            T_room=19.3,
+            T_outdoor_series=[6.4] * 24,
+            heat_target_series=targets,
+            cool_target_series=[max(t, 19.3) for t in targets],
+            dt_minutes=5,
+            initial_mode=MODE_HEATING,
+            heat_run=(6.0, 1.0),
+        )
+
+    learned = plan(15.0)
+    heated = learned.actions[:10].count(MODE_HEATING)
+    assert heated <= 2
+    assert max(learned.temperatures[:13]) < 20.8
