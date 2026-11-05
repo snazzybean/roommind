@@ -282,6 +282,7 @@ class MPCOptimizer:
 
             deadline = 0
             if best_action != MODE_HEATING and MODE_HEATING in available and not slow_heat:
+                continuing = last_action == MODE_HEATING
                 deadline = self._preheat_deadline(
                     i,
                     current_temp,
@@ -290,7 +291,12 @@ class MPCOptimizer:
                     dt_minutes,
                     q_solar=q_solar,
                     q_occupancy=q_occupancy,
-                    continuing=last_action == MODE_HEATING,
+                    continuing=continuing,
+                    # Waiting stops the radiator run in progress (its afterglow, from now)
+                    # or idles on after one the plan stopped; else the room's own residual
+                    q_residual=q_residual[i:],
+                    glow=run if continuing and run is not None else glow,
+                    glow_elapsed=0.0 if continuing and run is not None else glow_elapsed,
                 )
                 if deadline:
                     best_action = MODE_HEATING
@@ -425,6 +431,9 @@ class MPCOptimizer:
         q_solar: list[float],
         q_occupancy: list[float],
         continuing: bool = False,
+        q_residual: list[float] | None = None,
+        glow: tuple[float, float] | None = None,
+        glow_elapsed: float = 0.0,
     ) -> int:
         """Blocks from *i* to the rising heat target that waiting would miss.
 
@@ -437,6 +446,12 @@ class MPCOptimizer:
         single block switched it off and on at the edge, and a plain "heat until the
         coming target" turned every eco-holding run into a pre-heat hours early.
         0 when no such target exists.
+
+        The wait sees the heat still stored in the system: ``glow`` is the radiator run
+        (minutes, power fraction) waiting would stop, or the one the plan stopped
+        ``glow_elapsed`` minutes ago, else ``q_residual`` (from block *i* on) is the
+        room's own. Without it a radiator that stores enough heat to carry the room to
+        the target was forced on, and the run overshot by the heat it left behind.
         """
         n = len(heat_target_series)
         now = heat_target_series[i]
@@ -447,8 +462,16 @@ class MPCOptimizer:
             return 0
         wait = max(PREHEAT_CONTINUE_BLOCKS, self.min_run_blocks) if continuing else 1
         T = T_room
+        residual = q_residual or []
         for j in range(i, n - 1):
-            Q = 0.0 if j < i + wait else self.model.Q_heat
+            waiting = j < i + wait
+            Q = 0.0 if waiting else self.model.Q_heat
+            if not waiting:
+                qr = 0.0  # full power covers the afterglow (see optimize)
+            elif glow is not None:
+                qr = self._afterglow(glow_elapsed + (j - i + 0.5) * dt_minutes, glow)
+            else:
+                qr = residual[j - i] if j - i < len(residual) else 0.0
             T = self.model.predict(
                 T,
                 T_outdoor_series[j],
@@ -456,6 +479,7 @@ class MPCOptimizer:
                 dt_minutes,
                 q_solar=q_solar[j] if j < len(q_solar) else 0.0,
                 q_occupancy=q_occupancy[j] if j < len(q_occupancy) else 0.0,
+                q_residual=qr,
             )
             target = heat_target_series[j + 1]
             if target > now and T < target - PREHEAT_DEADLINE_MARGIN:
