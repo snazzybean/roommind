@@ -29,7 +29,12 @@ from __future__ import annotations
 import logging
 import math
 
-from ..const import RESIDUAL_SCALE_EMA_ALPHA, RESIDUAL_SCALE_MAX, RESIDUAL_SCALE_MIN
+from ..const import (
+    RESIDUAL_SCALE_EMA_ALPHA,
+    RESIDUAL_SCALE_MAX,
+    RESIDUAL_SCALE_MIN,
+    RESIDUAL_SCALE_PRIOR_WEIGHT,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -504,17 +509,16 @@ class ThermalEKF:
     def update_residual_scale(self, sample: float) -> None:
         """Fold one observed residual scale (``ResidualHeatLearner``) into the learned one.
 
-        The first sample replaces the default, later ones are smoothed so a single run
-        disturbed by something the model does not know (a shower, an oven) moves it little.
+        The profile counts as ``RESIDUAL_SCALE_PRIOR_WEIGHT`` earlier samples, so the first
+        samples move the scale by their share of the evidence (a running mean with the
+        profile), then by ``RESIDUAL_SCALE_EMA_ALPHA``. A single run disturbed by something
+        the model does not know (a shower, an oven) moves it little.
         """
         if not math.isfinite(sample):
             return
         sample = max(RESIDUAL_SCALE_MIN, min(RESIDUAL_SCALE_MAX, sample))
-        if self._residual_scale_n == 0:
-            self._residual_scale = sample
-        else:
-            ema = RESIDUAL_SCALE_EMA_ALPHA
-            self._residual_scale = ema * sample + (1.0 - ema) * self._residual_scale
+        alpha = max(RESIDUAL_SCALE_EMA_ALPHA, 1.0 / (RESIDUAL_SCALE_PRIOR_WEIGHT + self._residual_scale_n + 1))
+        self._residual_scale += alpha * (sample - self._residual_scale)
         self._residual_scale_n += 1
 
     def update_window_open(

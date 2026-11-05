@@ -12,6 +12,7 @@ from custom_components.roommind.const import (
     MODE_IDLE,
     RESIDUAL_LEARN_MIN_MINUTES,
     RESIDUAL_LEARN_WINDOW_MINUTES,
+    RESIDUAL_SCALE_EMA_ALPHA,
     RESIDUAL_SCALE_MAX,
     TargetTemps,
 )
@@ -44,31 +45,54 @@ def test_scale_multiplies_the_profile():
 # ---------------------------------------------------------------------------
 
 
-def test_first_sample_replaces_default_then_smoothed():
+def test_first_samples_are_weighed_against_the_profile_then_smoothed():
     ekf = ThermalEKF()
     assert ekf.residual_scale == 1.0
-    ekf.update_residual_scale(3.0)
-    assert ekf.residual_scale == pytest.approx(3.0)
-    ekf.update_residual_scale(1.0)
-    assert 1.0 < ekf.residual_scale < 3.0
+    # The profile counts as two earlier samples: running mean with it
+    ekf.update_residual_scale(4.0)
+    assert ekf.residual_scale == pytest.approx(2.0)  # (1 + 1 + 4) / 3
+    ekf.update_residual_scale(4.0)
+    assert ekf.residual_scale == pytest.approx(2.5)  # (1 + 1 + 4 + 4) / 4
+    ekf.update_residual_scale(4.0)
+    assert ekf.residual_scale == pytest.approx(2.8)  # 1/5 == EMA alpha
+    # From then on the EMA alpha holds
+    ekf.update_residual_scale(4.0)
+    assert ekf.residual_scale == pytest.approx(2.8 + RESIDUAL_SCALE_EMA_ALPHA * 1.2)
+
+
+def test_one_outlier_cannot_set_the_scale():
+    """A single disturbed run used to replace the default outright and reach the cap."""
+    ekf = ThermalEKF()
+    ekf.update_residual_scale(RESIDUAL_SCALE_MAX)
+    assert ekf.residual_scale < RESIDUAL_SCALE_MAX / 2
+
+
+def test_repeated_samples_converge():
+    ekf = ThermalEKF()
+    for _ in range(40):
+        ekf.update_residual_scale(8.0)
+    assert ekf.residual_scale == pytest.approx(8.0, abs=0.01)
 
 
 def test_samples_are_clamped_and_non_finite_ignored():
     ekf = ThermalEKF()
     ekf.update_residual_scale(float("nan"))
     assert ekf.residual_scale == 1.0
-    ekf.update_residual_scale(100.0)
-    assert ekf.residual_scale == RESIDUAL_SCALE_MAX
+    ekf.update_residual_scale(100.0)  # clamped to the cap before weighing
+    assert ekf.residual_scale == pytest.approx(1.0 + (RESIDUAL_SCALE_MAX - 1.0) / 3)
     ekf2 = ThermalEKF()
-    ekf2.update_residual_scale(-4.0)
-    assert ekf2.residual_scale == 0.0
+    ekf2.update_residual_scale(-4.0)  # clamped to 0
+    assert ekf2.residual_scale == pytest.approx(2.0 / 3)
 
 
 def test_scale_survives_persistence_and_old_data_defaults():
     mgr = RoomModelManager()
-    mgr.update_residual_scale("bath", 2.2)
+    mgr.update_residual_scale("bath", 4.0)
     restored = RoomModelManager.from_dict(mgr.to_dict())
-    assert restored.get_residual_scale("bath") == pytest.approx(2.2)
+    assert restored.get_residual_scale("bath") == pytest.approx(2.0)
+    # The sample count persists too, so the next sample is weighed as the second
+    restored.update_residual_scale("bath", 4.0)
+    assert restored.get_residual_scale("bath") == pytest.approx(2.5)
     assert restored.get_residual_scale("unknown") == 1.0
     old = mgr.to_dict()["bath"]
     del old["residual_scale"], old["residual_scale_n"]
