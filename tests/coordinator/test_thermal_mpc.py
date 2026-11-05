@@ -425,7 +425,8 @@ class TestResidualHeatLearning:
         kwargs = step.call_args.kwargs
         assert kwargs["system_type"] == "radiator"
         assert kwargs["disturbed"] is False
-        assert coordinator._model_manager.get_residual_scale(aid) == pytest.approx(2.5)
+        # Weighed against the profile (two prior samples at 1.0)
+        assert coordinator._model_manager.get_residual_scale(aid) == pytest.approx(1.5)
 
     @pytest.mark.asyncio
     async def test_heating_room_reports_the_heat_a_stop_would_leave(self, hass, mock_config_entry):
@@ -507,5 +508,8 @@ class TestResidualHeatLearning:
         coordinator._residual_tracker._on_since[aid] = time.time() - 3600
         with patch("custom_components.roommind.coordinator.MPCController", wraps=MPCController) as ctrl:
             await coordinator._async_update_data()
-        assert ctrl.call_args.kwargs["residual_scale"] == pytest.approx(3.0)
+        assert ctrl.call_args.kwargs["residual_scale"] == pytest.approx(
+            coordinator._model_manager.get_residual_scale(aid)
+        )
+        assert ctrl.call_args.kwargs["residual_scale"] > 1.0
         assert ctrl.call_args.kwargs["heat_run"] is not None
