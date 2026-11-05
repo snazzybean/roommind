@@ -34,8 +34,10 @@ async def async_setup_entry(
     store = hass.data[DOMAIN]["store"]
     coordinator.async_add_switch_entities = async_add_entities
 
-    # Global vacation switch (always created)
-    entities: list[SwitchEntity] = [RoomMindVacationSwitch(coordinator)]
+    entities: list[SwitchEntity] = [
+        RoomMindVacationSwitch(coordinator),
+        RoomMindGlobalClimateControlSwitch(coordinator),
+    ]
 
     rooms = rooms_with_area(hass, store.get_rooms())
     for area_id, room in rooms.items():
@@ -146,4 +148,32 @@ class RoomMindVacationSwitch(CoordinatorEntity, SwitchEntity):
         """Deactivate vacation mode."""
         store = self.coordinator.hass.data[DOMAIN]["store"]
         await store.async_save_settings({"vacation_until": None})
+        await self.coordinator.async_request_refresh()
+
+
+class RoomMindGlobalClimateControlSwitch(CoordinatorEntity, SwitchEntity):
+    """Switch mirroring the global climate control setting of the settings page (#291)."""
+
+    _attr_has_entity_name = True
+
+    def __init__(self, coordinator: RoomMindCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{DOMAIN}_climate_control"
+        self._attr_name = "RoomMind Climate Control"
+        self._attr_icon = "mdi:thermostat"
+        self.entity_id = f"switch.{DOMAIN}_climate_control"
+
+    @property
+    def is_on(self) -> bool:
+        store = self.coordinator.hass.data[DOMAIN]["store"]
+        return bool(store.get_settings().get("climate_control_active", True))
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        store = self.coordinator.hass.data[DOMAIN]["store"]
+        await store.async_save_settings({"climate_control_active": True})
+        await self.coordinator.async_request_refresh()
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        store = self.coordinator.hass.data[DOMAIN]["store"]
+        await store.async_save_settings({"climate_control_active": False})
         await self.coordinator.async_request_refresh()

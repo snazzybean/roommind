@@ -1213,6 +1213,23 @@ async def test_save_settings(ws_hass, store, connection):
     assert result["settings"]["outdoor_temp_sensor"] == "sensor.outdoor"
 
 
+@pytest.mark.asyncio
+async def test_save_settings_climate_control_refreshes_at_once(ws_hass, store, connection):
+    """The panel toggle stops or resumes control and updates the switch entity now (#291)."""
+    await store.async_load()
+    coordinator = MagicMock()
+    coordinator.async_request_refresh = AsyncMock()
+    ws_hass.data[DOMAIN]["coordinator"] = coordinator
+
+    await _save_settings(
+        ws_hass, connection, {"id": 13, "type": "roommind/settings/save", "climate_control_active": False}
+    )
+    coordinator.async_request_refresh.assert_awaited_once()
+
+    await _save_settings(ws_hass, connection, {"id": 14, "type": "roommind/settings/save", "outdoor_temp_sensor": "x"})
+    coordinator.async_request_refresh.assert_awaited_once()
+
+
 # ---------------------------------------------------------------------------
 # Vacation mode tests
 # ---------------------------------------------------------------------------

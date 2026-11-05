@@ -2378,7 +2378,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         registry = er.async_get(self.hass)
 
         # Global entities (not per-room) that should never be cleaned up
-        global_uids = {f"{DOMAIN}_vacation"}
+        global_uids = {f"{DOMAIN}_vacation", f"{DOMAIN}_climate_control"}
 
         to_remove: list[str] = []
         for entity_entry in registry.entities.values():

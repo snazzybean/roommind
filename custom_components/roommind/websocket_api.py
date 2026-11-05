@@ -908,6 +908,10 @@ async def websocket_save_settings(
 
     settings = await store.async_save_settings(changes)
     connection.send_result(msg["id"], {"settings": settings})
+    coordinator = _get_coordinator(hass)
+    if "climate_control_active" in changes and coordinator:
+        # Stop or resume control now, which also updates switch.roommind_climate_control (#291).
+        await coordinator.async_request_refresh()
 
 
 # ---------------------------------------------------------------------------

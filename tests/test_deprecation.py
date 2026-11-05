@@ -85,6 +85,7 @@ def test_no_issue_while_nothing_uses_them(hass):
         _entry("roommind_living_room_override", "climate.roommind_living_room_override"),
         _entry("roommind_living_room_target_temp", "sensor.roommind_living_room_target_temp", disabled=True),
         _entry("roommind_vacation", "switch.roommind_vacation"),
+        _entry("roommind_climate_control", "switch.roommind_climate_control"),
         _entry("roommind_x_mode_climate", "climate.roommind_x_mode"),
         _entry("roommind_other_override", "climate.roommind_other_override", platform="template"),
         _entry(42, "sensor.weird"),
@@ -95,6 +96,7 @@ def test_no_issue_while_nothing_uses_them(hass):
         automations={
             "sensor.roommind_living_room_target_temp": ["automation.disabled_entity"],
             "switch.roommind_vacation": ["automation.vacation"],
+            "switch.roommind_climate_control": ["automation.summer"],
             "climate.roommind_x_mode": ["automation.room_named_mode"],
         },
     )

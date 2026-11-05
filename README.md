@@ -116,6 +116,7 @@ For a more detailed explanation of the `Priority` slider, device types, setpoint
 |--------|-------------|
 | `climate.roommind_{area_id}` | The room as one thermostat, see [Room climate entity](#room-climate-entity) |
 | `switch.roommind_vacation` | Global vacation mode toggle |
+| `switch.roommind_climate_control` | Global climate control toggle, the same as `Settings -> General`. Off stops RoomMind controlling all rooms and leaves the devices as they are, e.g. for a summer/winter automation |
 | `switch.roommind_{area_id}_cover_auto` | Per-room automatic cover control toggle |
 | `binary_sensor.roommind_{area_id}_cover_paused` | On when manual cover override is detected |
 
