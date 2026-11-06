@@ -173,6 +173,7 @@ export interface RoomConfig {
   heat_source_outdoor_threshold?: number;
   heat_source_ac_min_outdoor?: number;
   climate_control_enabled?: boolean;
+  residual_heat_enabled?: boolean;
   live?: RoomLiveData;
 }
 
@@ -346,6 +347,7 @@ export interface AnalyticsData {
     has_occupancy_sensors: boolean;
     solar_gain_now?: number;
     solar_gain_today_max?: number;
+    residual_heat_now?: number;
   };
 }
 

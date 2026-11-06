@@ -7,6 +7,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from custom_components.roommind.control.mpc_controller import MPCController
+
 from .conftest import (
     SAMPLE_ROOM,
     _create_coordinator,
@@ -386,3 +388,161 @@ class TestResidualHeatTracking:
 
         # With delay=0 and window open, underfloor room pauses immediately
         assert coordinator._window_manager._paused.get(room["area_id"], False)
+
+
+class TestResidualHeatLearning:
+    """The coordinator feeds the residual heat learner and the controller (radiator overshoot)."""
+
+    @staticmethod
+    def _radiator_coordinator(hass, mock_config_entry):
+        room = {
+            **SAMPLE_ROOM,
+            "heating_system_type": "radiator",
+            "devices": [
+                {
+                    "entity_id": "climate.living_room",
+                    "type": "trv",
+                    "role": "auto",
+                    "heating_system_type": "radiator",
+                }
+            ],
+        }
+        store = _make_store_mock(rooms={room["area_id"]: room}, settings={"climate_control_active": True})
+        hass.data = {"roommind": {"store": store}}
+        hass.services.async_call = AsyncMock()
+        hass.states.get = make_mock_states_get(
+            temp="18.0",
+            schedule_state="on",
+            schedule_attrs={"current_event": True, "friendly_name": "Heat"},
+        )
+        return _create_coordinator(hass, mock_config_entry), room["area_id"]
+
+    @pytest.mark.asyncio
+    async def test_sample_is_folded_into_the_learned_scale(self, hass, mock_config_entry):
+        coordinator, aid = self._radiator_coordinator(hass, mock_config_entry)
+        with patch.object(coordinator._residual_learner, "step", return_value=2.5) as step:
+            await coordinator._async_update_data()
+        kwargs = step.call_args.kwargs
+        assert kwargs["system_type"] == "radiator"
+        assert kwargs["disturbed"] is False
+        # Weighed against the profile (two prior samples at 1.0)
+        assert coordinator._model_manager.get_residual_scale(aid) == pytest.approx(1.5)
+
+    @pytest.mark.asyncio
+    async def test_heating_room_reports_the_heat_a_stop_would_leave(self, hass, mock_config_entry):
+        coordinator, aid = self._radiator_coordinator(hass, mock_config_entry)
+        await coordinator._async_update_data()
+        assert coordinator._previous_modes.get(aid) == "heating"
+        # A long run: the radiators are fully charged
+        coordinator._residual_tracker._on_since[aid] = time.time() - 3600
+        with patch("custom_components.roommind.coordinator.MPCController", wraps=MPCController) as ctrl:
+            result = await coordinator._async_update_data()
+        heat_run = ctrl.call_args.kwargs["heat_run"]
+        assert heat_run is not None and heat_run[0] == pytest.approx(60.0, abs=0.5)
+        assert result["rooms"][aid]["mode"] == "heating"
+        assert result["rooms"][aid]["q_residual"] > 0.0
+
+    @pytest.mark.asyncio
+    async def test_underfloor_room_neither_learns_nor_stops_early(self, hass, mock_config_entry):
+        coordinator, aid = self._radiator_coordinator(hass, mock_config_entry)
+        room = coordinator.hass.data["roommind"]["store"].get_rooms.return_value[aid]
+        room["heating_system_type"] = "underfloor"
+        room["devices"][0]["heating_system_type"] = "underfloor"
+        coordinator._model_manager.update_residual_scale(aid, 3.0)
+        await coordinator._async_update_data()
+        coordinator._residual_tracker._on_since[aid] = time.time() - 3600
+        with (
+            patch.object(coordinator._residual_learner, "step", return_value=None) as step,
+            patch("custom_components.roommind.coordinator.MPCController", wraps=MPCController) as ctrl,
+        ):
+            result = await coordinator._async_update_data()
+        assert step.call_args.kwargs["system_type"] == ""
+        assert ctrl.call_args.kwargs["heat_run"] is None
+        assert ctrl.call_args.kwargs["residual_scale"] == 1.0
+        assert result["rooms"][aid]["q_residual"] == 0.0
+
+    @pytest.mark.asyncio
+    async def test_thermal_reset_drops_the_observation(self, hass, mock_config_entry):
+        coordinator, aid = self._radiator_coordinator(hass, mock_config_entry)
+        coordinator._residual_learner._obs[aid] = MagicMock()
+        coordinator.reset_thermal_room(aid)
+        assert aid not in coordinator._residual_learner._obs
+        coordinator._residual_learner._obs[aid] = MagicMock()
+        coordinator.reset_thermal_all()
+        assert coordinator._residual_learner._obs == {}
+
+    @pytest.mark.asyncio
+    async def test_switch_off_keeps_residual_heat_out_of_control_only(self, hass, mock_config_entry):
+        """Residual heat switch off: the controller sees no afterglow, training still does."""
+        coordinator, aid = self._radiator_coordinator(hass, mock_config_entry)
+        room = coordinator.hass.data["roommind"]["store"].get_rooms.return_value[aid]
+        room["residual_heat_enabled"] = False
+        coordinator._model_manager.update_residual_scale(aid, 3.0)
+        await coordinator._async_update_data()
+        assert coordinator._previous_modes.get(aid) == "heating"
+        # The run stopped 5 min ago after an hour: the radiators still release heat
+        now = time.time()
+        coordinator._residual_tracker._on_since[aid] = now - 3900
+        coordinator._residual_tracker._off_since[aid] = now - 300
+        coordinator._residual_tracker._off_power[aid] = 1.0
+        coordinator._previous_modes[aid] = "idle"
+        with (
+            patch.object(coordinator._residual_learner, "step", return_value=None) as step,
+            patch("custom_components.roommind.coordinator.MPCController", wraps=MPCController) as ctrl,
+            patch.object(coordinator, "_observe_and_train", wraps=coordinator._observe_and_train) as train,
+        ):
+            await coordinator._async_update_data()
+        kwargs = ctrl.call_args.kwargs
+        assert kwargs["q_residual"] == 0.0
+        assert kwargs["residual_scale"] == 0.0
+        assert kwargs["heat_run"] is None
+        # The learner and the EKF keep the real afterglow
+        assert step.call_args.kwargs["system_type"] == "radiator"
+        assert train.call_args.kwargs["q_residual"] > 0.0
+
+    @pytest.mark.asyncio
+    async def test_switch_on_passes_residual_heat_to_control(self, hass, mock_config_entry):
+        coordinator, aid = self._radiator_coordinator(hass, mock_config_entry)
+        coordinator._model_manager.update_residual_scale(aid, 3.0)
+        await coordinator._async_update_data()
+        coordinator._residual_tracker._on_since[aid] = time.time() - 3600
+        with patch("custom_components.roommind.coordinator.MPCController", wraps=MPCController) as ctrl:
+            await coordinator._async_update_data()
+        assert ctrl.call_args.kwargs["residual_scale"] == pytest.approx(
+            coordinator._model_manager.get_residual_scale(aid)
+        )
+        assert ctrl.call_args.kwargs["residual_scale"] > 1.0
+        assert ctrl.call_args.kwargs["heat_run"] is not None
+
+    @pytest.mark.asyncio
+    async def test_decay_time_sample_is_learned_and_reaches_the_controller(self, hass, mock_config_entry):
+        coordinator, aid = self._radiator_coordinator(hass, mock_config_entry)
+        with (
+            patch.object(coordinator._residual_learner, "step", return_value=4.0) as step,
+            patch.object(coordinator._residual_learner, "take_tau_sample", return_value=40.0),
+        ):
+            await coordinator._async_update_data()
+        # The scale was measured against the profile's decay time (none learned yet)
+        assert step.call_args.kwargs["tau_minutes"] is None
+        tau = coordinator._model_manager.get_residual_tau(aid)
+        assert tau == pytest.approx(10.0 * 4.0 ** (1 / 3))
+        # The scale sample (4.0 -> 2.0 after the prior) is rescaled to keep the total heat
+        assert coordinator._model_manager.get_residual_scale(aid) * tau == pytest.approx(2.0 * 10.0)
+        with (
+            patch.object(coordinator._residual_learner, "step", return_value=None) as step,
+            patch("custom_components.roommind.coordinator.MPCController", wraps=MPCController) as ctrl,
+        ):
+            await coordinator._async_update_data()
+        assert step.call_args.kwargs["tau_minutes"] == pytest.approx(tau)
+        assert ctrl.call_args.kwargs["residual_tau"] == pytest.approx(tau)
+
+    @pytest.mark.asyncio
+    async def test_no_decay_time_without_a_scale_sample(self, hass, mock_config_entry):
+        coordinator, aid = self._radiator_coordinator(hass, mock_config_entry)
+        with (
+            patch.object(coordinator._residual_learner, "step", return_value=None),
+            patch.object(coordinator._residual_learner, "take_tau_sample", return_value=40.0) as take,
+        ):
+            await coordinator._async_update_data()
+        take.assert_not_called()
+        assert coordinator._model_manager.get_residual_tau(aid) is None

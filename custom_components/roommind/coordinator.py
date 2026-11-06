@@ -29,6 +29,7 @@ from .const import (
     DEFAULT_OUTDOOR_HEATING_MAX,
     DOMAIN,
     HEATING_BOOST_TARGET,
+    HEATING_SYSTEM_RADIATOR,
     HISTORY_ROTATE_CYCLES,
     HISTORY_WRITE_CYCLES,
     MAX_PREDICTION_DELTA,
@@ -64,7 +65,7 @@ from .control.mpc_controller import (
     is_hold_throttled,
     is_mpc_active,
 )
-from .control.residual_heat import mean_rebound
+from .control.residual_heat import compute_residual_heat, mean_rebound, residual_tau
 from .control.solar import compute_q_solar_norm
 from .control.thermal_model import RoomModelManager
 from .managers.ac_coil_dry_manager import AcCoilDryManager, CoilDryRoomResult
@@ -80,7 +81,7 @@ from .managers.ekf_training_manager import EkfTrainingManager
 from .managers.head_offset_tracker import HeadOffsetTracker
 from .managers.heat_source_orchestrator import HeatSourcePlan, evaluate_heat_sources
 from .managers.mold_manager import MoldManager
-from .managers.residual_heat_tracker import AcReboundTracker, ResidualHeatTracker
+from .managers.residual_heat_tracker import AcReboundTracker, ResidualHeatLearner, ResidualHeatTracker
 from .managers.valve_manager import ValveManager
 from .managers.weather_manager import WeatherManager
 from .managers.window_manager import WindowManager
@@ -133,9 +134,12 @@ ROOM_ENTITY_SUFFIXES = (
     "_climate_control",
     "_cover_auto",
     "_cover_paused",
+    "_residual_heat",
 )
 # Suffixes only valid when the room has covers configured.
 COVER_ENTITY_SUFFIXES = ("_cover_auto", "_cover_paused")
+# Suffixes only valid in radiator rooms.
+RADIATOR_ENTITY_SUFFIXES = ("_residual_heat",)
 # Device states in which a compressor can be running (fan_only and off do not run it)
 _COMPRESSOR_STATES = ("heat", "cool", "heat_cool", "auto", "dry")
 # hvac modes in which an AC's reading teaches the learned sensor offset (HeadOffsetTracker)
@@ -229,6 +233,8 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         self._mold_manager = MoldManager(hass)
         # Residual heat tracking (heating → idle transition)
         self._residual_tracker = ResidualHeatTracker()
+        # Learns each room's residual scale from the afterglow after every run
+        self._residual_learner = ResidualHeatLearner()
         # AC rebound charge (air pulled below the building mass while cooling)
         self._rebound_tracker = AcReboundTracker()
         # Offset of each AC's own sensor from the room sensor while it runs (setpoints in the device's frame)
@@ -283,6 +289,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         self._rooms_switched_off: set[str] = set()
         self._switch_entity_areas: set[str] = set()
         self._climate_control_switch_areas: set[str] = set()
+        self._residual_switch_areas: set[str] = set()
         self._binary_sensor_entity_areas: set[str] = set()
         self._climate_entity_areas: set[str] = set()
         # Per-entity cache of schedule blocks; fallback when schedule.get_schedule fails (#308)
@@ -824,6 +831,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 "cover_forced_reason": "",
                 "active_cover_schedule_index": -1,
                 "q_occupancy": 0.0,
+                "q_residual": 0.0,
                 "active_heat_sources": None,
                 "compressor_protection_active": False,
                 "compressor_protection_reason": None,
@@ -931,11 +939,29 @@ class RoomMindCoordinator(DataUpdateCoordinator):
 
         # --- Compute residual heat from previous cycle state ---
         system_type = room.get("heating_system_type", "")
+        radiator = system_type == HEATING_SYSTEM_RADIATOR
+        residual_scale = self._model_manager.get_residual_scale(area_id) if radiator else 1.0
+        # Learned afterglow decay time (radiators); None uses the profile's
+        residual_tau_learned = self._model_manager.get_residual_tau(area_id) if radiator else None
         q_residual = self._residual_tracker.get_q_residual(
             area_id,
             system_type,
             self._previous_modes.get(area_id, MODE_IDLE),
+            residual_scale,
+            residual_tau_learned,
         )
+        # The per-room residual heat switch takes the afterglow out of control decisions only:
+        # training, the tracker and the learner keep the real afterglow, so the model stays right
+        residual_controlled = radiator and room.get("residual_heat_enabled", True)
+        # Heating run in progress: the controller weighs the heat it would leave if it stopped now
+        heat_run = (
+            self._residual_tracker.get_run_state(area_id, self._previous_modes.get(area_id, MODE_IDLE))
+            if radiator
+            else None
+        )
+        control_heat_run = heat_run if residual_controlled else None
+        control_q_residual = 0.0 if radiator and not residual_controlled else q_residual
+        control_residual_scale = 0.0 if radiator and not residual_controlled else residual_scale
         q_rebound = self._rebound_tracker.get_charge(area_id)
 
         # Read current cover positions for shading factor
@@ -969,8 +995,11 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             latitude=self.hass.config.latitude,
             longitude=self.hass.config.longitude,
             cloud_series=WeatherManager.extract_cloud_series(outdoor_forecast),
-            q_residual=q_residual,
+            q_residual=control_q_residual,
             heating_system_type=system_type,
+            residual_scale=control_residual_scale,
+            residual_tau=residual_tau_learned,
+            heat_run=control_heat_run,
             shading_factor=shading_factor,
             q_occupancy=q_occupancy,
             q_rebound=q_rebound,
@@ -1185,11 +1214,58 @@ class RoomMindCoordinator(DataUpdateCoordinator):
 
         # --- Residual heat transition tracking ---
         # After compressor constraints may have changed mode to IDLE.
+        # The learner runs first: the tracker forgets the stop once heating restarts.
+        sample = self._residual_learner.step(
+            area_id,
+            model=self._model_manager.get_model(area_id),
+            system_type=system_type if radiator else "",
+            mode=mode,
+            current_temp=current_temp_raw,
+            T_outdoor=self.outdoor_temp_effective,
+            dt_minutes=UPDATE_INTERVAL / 60.0,
+            minutes_since_stop=self._residual_tracker.minutes_since_stop(area_id),
+            run_minutes=self._residual_tracker.last_run_minutes(area_id),
+            run_power=self._residual_tracker.last_run_power(area_id),
+            q_solar=self._current_q_solar * shading_factor,
+            q_occupancy=q_occupancy,
+            # Only an undisturbed afterglow of RoomMind's own run, measured by the room sensor
+            disturbed=(
+                window_open
+                or raw_open
+                or not climate_active
+                or not has_external_sensor
+                or room.get("is_outdoor", False)
+                or area_id in settings.get("learning_disabled_rooms", [])
+                or check_acs_can_heat(self.hass, room)
+                # A min-run hold keeps a device running while the room reads idle
+                or bool(compressor_forced_on)
+            ),
+            tau_minutes=residual_tau_learned,
+        )
+        if sample is not None:
+            # The scale sample is measured against the current decay time; a new decay time
+            # then rescales it so the learned total heat stays (update_residual_tau)
+            self._model_manager.update_residual_scale(area_id, sample)
+            tau_sample = self._residual_learner.take_tau_sample(area_id)
+            if tau_sample is not None:
+                self._model_manager.update_residual_tau(area_id, tau_sample, residual_tau(system_type))
+            _LOGGER.debug(
+                "Room '%s': residual heat sample %.2f (decay %s min), learned scale %.2f, decay %.1f min",
+                area_id,
+                sample,
+                tau_sample,
+                self._model_manager.get_residual_scale(area_id),
+                residual_tau(system_type, self._model_manager.get_residual_tau(area_id)),
+            )
         if climate_active and system_type:
+            # A radiator's stored heat follows how long it ran, not the commanded pf: a TRV
+            # with a boosted setpoint opens fully from a low pf on, and many never report
+            # hvac_action. Its runs count at full power; the learned scale covers the rest.
+            residual_pf = 1.0 if radiator and mode == MODE_HEATING else power_fraction
             self._residual_tracker.update(
                 area_id,
                 mode,
-                power_fraction,
+                residual_pf,
                 self._previous_modes.get(area_id, MODE_IDLE),
                 q_residual=q_residual,
             )
@@ -1395,6 +1471,19 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             mold_prevention_temp_delta=mold_prevention_temp_delta,
             shading_factor=shading_factor,
             q_occupancy=q_occupancy,
+            # Radiators only. Heating: what stopping now would leave behind; otherwise the
+            # afterglow released now
+            q_residual=(
+                0.0
+                if not radiator
+                else compute_residual_heat(
+                    0.0, system_type, heat_run[1], heat_run[0], residual_scale, residual_tau_learned
+                )
+                if mode == MODE_HEATING and heat_run is not None
+                else 0.0
+                if mode == MODE_HEATING
+                else q_residual
+            ),
             cover_eids=cover_eids,
             cover_result=cover_result,
             mpc_active=mpc_active,
@@ -1670,6 +1759,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         shading_factor: float | None,
         q_occupancy: float,
         cover_eids: list[str],
+        q_residual: float = 0.0,
         cover_result: CoverResult,
         mpc_active: bool,
         compressor_protection_reason: str | None = None,
@@ -1771,6 +1861,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             "mold_prevention_delta": mold_prevention_temp_delta,
             "shading_factor": shading_factor,
             "q_occupancy": q_occupancy,
+            "q_residual": q_residual,
             "n_observations": self._model_manager.get_n_observations(area_id),
             "blind_position": (self._cover_orchestrator.get_current_position(area_id) if cover_eids else None),
             "cover_auto_paused": (self._cover_orchestrator.is_user_override_active(area_id) if cover_eids else False),
@@ -2312,6 +2403,19 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             self.async_add_switch_entities([RoomMindClimateControlSwitch(self, area_id)])
             self._climate_control_switch_areas.add(area_id)
 
+        # Residual heat switch: radiator rooms only. Like the cover entities it is not
+        # removed on save; cleanup_orphaned_entities() handles that at startup.
+        if (
+            room.get("heating_system_type", "") == HEATING_SYSTEM_RADIATOR
+            and area_id not in self._residual_switch_areas
+            and hasattr(self, "async_add_switch_entities")
+            and self.async_add_switch_entities
+        ):
+            from .switch import RoomMindResidualHeatSwitch
+
+            self.async_add_switch_entities([RoomMindResidualHeatSwitch(self, area_id)])
+            self._residual_switch_areas.add(area_id)
+
         # Cover entities: only create when covers are configured.
         # Not removed on save — cleanup_orphaned_entities() handles that at startup
         # so brief config changes don't break user automations.
@@ -2469,6 +2573,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         self._ekf_training.remove_room(area_id)
         self._pending_predictions.pop(area_id, None)
         self._residual_tracker.remove_room(area_id)
+        self._residual_learner.remove_room(area_id)
         self._rebound_tracker.remove_room(area_id)
         self._cover_orchestrator.remove_room(area_id)
         self._entity_areas.discard(area_id)
@@ -2478,6 +2583,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         self._mode_seeded.discard(area_id)
         self._switch_entity_areas.discard(area_id)
         self._climate_control_switch_areas.discard(area_id)
+        self._residual_switch_areas.discard(area_id)
         self._binary_sensor_entity_areas.discard(area_id)
         self._climate_entity_areas.discard(area_id)
         self._heat_source_states.pop(area_id, None)
@@ -2521,6 +2627,12 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             if suffix in COVER_ENTITY_SUFFIXES and not rooms[area_id].get("covers"):
                 # Cover entity for a room without covers configured — orphaned.
                 to_remove.append(entity_entry.entity_id)
+            elif (
+                suffix in RADIATOR_ENTITY_SUFFIXES
+                and rooms[area_id].get("heating_system_type", "") != HEATING_SYSTEM_RADIATOR
+            ):
+                # Radiator-only entity for a room that no longer heats with radiators — orphaned.
+                to_remove.append(entity_entry.entity_id)
 
         for eid in to_remove:
             _LOGGER.info("Removing orphaned entity: %s", eid)
@@ -2535,6 +2647,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         self._model_manager.remove_room(area_id)
         self._ekf_training.last_temps.pop(area_id, None)
         self._residual_tracker.clear_room(area_id)
+        self._residual_learner.remove_room(area_id)
 
     def reset_thermal_all(self) -> list[str]:
         """Reset all thermal models. Returns list of affected room IDs."""
@@ -2544,6 +2657,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         self._cover_orchestrator.set_model_manager(self._model_manager)
         self._ekf_training.last_temps.clear()
         self._residual_tracker.clear_all()
+        self._residual_learner.clear_all()
         return room_ids
 
     def boost_learning(self, area_id: str) -> int:

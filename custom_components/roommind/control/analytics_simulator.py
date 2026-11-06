@@ -13,6 +13,7 @@ from ..const import (
     DEFAULT_COMFORT_WEIGHT,
     DEFAULT_OUTDOOR_COOLING_MIN,
     DEFAULT_OUTDOOR_HEATING_MAX,
+    HEATING_SYSTEM_RADIATOR,
     MODE_COOLING,
     MODE_HEATING,
     MODE_IDLE,
@@ -166,6 +167,8 @@ def simulate_prediction(
     heating_system_type: str = "",
     heating_duration_minutes: float = 0.0,
     last_power_fraction: float = 1.0,
+    residual_scale: float = 1.0,
+    residual_tau: float | None = None,
     q_occupancy: float = 0.0,
     previous_mode: str = MODE_IDLE,
     mode_elapsed_minutes: float | None = None,
@@ -199,6 +202,8 @@ def simulate_prediction(
             heating_system_type=heating_system_type,
             heating_duration_minutes=heating_duration_minutes,
             last_power_fraction=last_power_fraction,
+            residual_scale=residual_scale,
+            residual_tau=residual_tau,
             q_occupancy=q_occupancy,
             previous_mode=previous_mode,
             mode_elapsed_minutes=mode_elapsed_minutes,
@@ -220,6 +225,8 @@ def simulate_prediction(
         heating_system_type=heating_system_type,
         heating_duration_minutes=heating_duration_minutes,
         last_power_fraction=last_power_fraction,
+        residual_scale=residual_scale,
+        residual_tau=residual_tau,
         q_occupancy=q_occupancy,
         previous_mode=previous_mode,
         mode_elapsed_minutes=mode_elapsed_minutes,
@@ -307,6 +314,8 @@ def _simulate_mpc(
     heating_system_type: str = "",
     heating_duration_minutes: float = 0.0,
     last_power_fraction: float = 1.0,
+    residual_scale: float = 1.0,
+    residual_tau: float | None = None,
     q_occupancy: float = 0.0,
     previous_mode: str = MODE_IDLE,
     mode_elapsed_minutes: float | None = None,
@@ -351,10 +360,13 @@ def _simulate_mpc(
     run_seconds: float | None = (
         mode_elapsed_minutes * 60 if previous_mode != MODE_IDLE and mode_elapsed_minutes is not None else None
     )
-    # Track residual heat through simulated mode transitions
+    # Track residual heat through simulated mode transitions; a run in progress
+    # counts, so stopping it at once leaves its afterglow like in the controller
     sim_residual_elapsed = 0.0  # minutes since simulated heating stopped
-    sim_heating_blocks = 0  # blocks of simulated heating for charge fraction
-    sim_was_heating = False
+    # (radiators only, as in the controller)
+    sim_was_heating = heating_system_type == HEATING_SYSTEM_RADIATOR and previous_mode == MODE_HEATING
+    sim_was_heating = sim_was_heating and run_seconds is not None
+    sim_heating_blocks = round(cast(float, run_seconds) / block_seconds) if sim_was_heating else 0
     # Seed with real residual state
     current_q_residual = q_residual
     charge = q_rebound
@@ -399,6 +411,8 @@ def _simulate_mpc(
                     PLAN_DT_MINUTES,
                     last_power_fraction,
                     sim_heating_blocks * PLAN_DT_MINUTES if sim_was_heating else heating_duration_minutes,
+                    residual_scale,
+                    residual_tau,
                 )
             optimizer = MPCOptimizer(
                 model=model,
@@ -418,6 +432,8 @@ def _simulate_mpc(
                 preheat_max_blocks=preheat_max_blocks(
                     cw, PLAN_DT_MINUTES, enabled=room_config.get("preheat_enabled", True)
                 ),
+                residual_scale=residual_scale,
+                residual_tau=residual_tau,
             )
             plan = optimizer.optimize(
                 T_room=T,
@@ -430,6 +446,11 @@ def _simulate_mpc(
                 occupancy_series=[q_occupancy] * len(remaining_outdoor),
                 rebound_charge=charge,
                 initial_mode=prev_action,
+                heat_run=(
+                    (cast(float, run_seconds) / 60.0, last_power_fraction)
+                    if rules == HEATING_SYSTEM_RADIATOR and prev_action == MODE_HEATING and run_seconds is not None
+                    else None
+                ),
             )
             in_run = run_seconds is not None
             action, pf = decide_mpc_action(
@@ -494,6 +515,8 @@ def _simulate_mpc(
                     heating_system_type,
                     last_power_fraction,
                     sim_heating_blocks * PLAN_DT_MINUTES,
+                    residual_scale,
+                    residual_tau,
                 )
 
         if action == MODE_IDLE:
@@ -531,6 +554,8 @@ def _simulate_bangbang(
     heating_system_type: str = "",
     heating_duration_minutes: float = 0.0,
     last_power_fraction: float = 1.0,
+    residual_scale: float = 1.0,
+    residual_tau: float | None = None,
     q_occupancy: float = 0.0,
     previous_mode: str = MODE_IDLE,
     mode_elapsed_minutes: float | None = None,
@@ -639,6 +664,8 @@ def _simulate_bangbang(
                     heating_system_type,
                     last_power_fraction,
                     sim_heating_blocks * 5.0,
+                    residual_scale,
+                    residual_tau,
                 )
 
         pred_temps.append(round(T, 2))
