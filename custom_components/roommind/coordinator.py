@@ -1268,6 +1268,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             q_solar=self._current_q_solar,
             predicted_peak_temp=controller.predicted_peak_temp,
             has_override=has_override,
+            window_open=raw_open,
         )
 
         # Track valve actuation during normal heating (skip excluded entities)
@@ -2483,7 +2484,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         registry = er.async_get(self.hass)
 
         # Global entities (not per-room) that should never be cleaned up
-        global_uids = {f"{DOMAIN}_vacation"}
+        global_uids = {f"{DOMAIN}_vacation", f"{DOMAIN}_climate_control"}
 
         to_remove: list[str] = []
         for entity_entry in registry.entities.values():

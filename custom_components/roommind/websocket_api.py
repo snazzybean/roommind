@@ -148,6 +148,7 @@ _ROOM_SAVE_FIELDS = (
     "covers_night_close_offset_minutes",
     "covers_night_position",
     "covers_snap_deploy",
+    "covers_window_hold",
     "cover_min_positions",
     "ignore_presence",
     "is_outdoor",
@@ -321,6 +322,7 @@ async def websocket_list_rooms(
             "cover_auto_paused": live.get("cover_auto_paused", False),
             "cover_override_until": live.get("cover_override_until"),
             "cover_forced_reason": live.get("cover_forced_reason", ""),
+            "cover_reason": live.get("cover_reason", ""),
             "active_cover_schedule_index": live.get("active_cover_schedule_index", -1),
             "active_heat_sources": live.get("active_heat_sources"),
             "learning_paused_reason": learning_paused_reason,
@@ -459,6 +461,7 @@ async def websocket_list_rooms(
         vol.Optional("covers_night_close_offset_minutes"): vol.All(vol.Coerce(int), vol.Range(min=-120, max=120)),
         vol.Optional("covers_night_position"): vol.All(vol.Coerce(int), vol.Range(min=0, max=100)),
         vol.Optional("covers_snap_deploy"): bool,
+        vol.Optional("covers_window_hold"): bool,
         vol.Optional("cover_min_positions"): {str: vol.All(vol.Coerce(int), vol.Range(min=0, max=99))},
         vol.Optional("ignore_presence"): bool,
         vol.Optional("is_outdoor"): bool,
@@ -907,6 +910,10 @@ async def websocket_save_settings(
 
     settings = await store.async_save_settings(changes)
     connection.send_result(msg["id"], {"settings": settings})
+    coordinator = _get_coordinator(hass)
+    if "climate_control_active" in changes and coordinator:
+        # Stop or resume control now, which also updates switch.roommind_climate_control (#291).
+        await coordinator.async_request_refresh()
 
 
 # ---------------------------------------------------------------------------

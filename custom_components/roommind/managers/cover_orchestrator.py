@@ -125,8 +125,13 @@ class CoverOrchestrator:
         q_solar: float,
         predicted_peak_temp: float | None,
         has_override: bool,
+        window_open: bool = False,
     ) -> CoverResult:
-        """Process cover control for a room: MPC check, schedule, prediction, evaluate, apply."""
+        """Process cover control for a room: MPC check, schedule, prediction, evaluate, apply.
+
+        *window_open* is the raw window state (no open/close delay, pending counts
+        as open). With ``covers_window_hold`` it keeps the covers from going down.
+        """
         # Early exit: when auto control is disabled, do nothing.
         # Schedule, night close and MPC are all suppressed — covers stay wherever they are.
         if not room.get("covers_auto_enabled", False):
@@ -304,6 +309,9 @@ class CoverOrchestrator:
 
         # Block E: Evaluate + apply
         cover_eids = room.get("covers", [])
+        _cover_min_positions: dict[str, int] = room.get("cover_min_positions", {})
+        window_hold = window_open and room.get("covers_window_hold", False)
+        before = self._cover_manager.snapshot(area_id) if window_hold else None
         cover_decision = self._cover_manager.evaluate(
             area_id,
             covers_auto_enabled=room.get("covers_auto_enabled", False),
@@ -321,8 +329,14 @@ class CoverOrchestrator:
             current_temp=current_temp,
             solar_gated=_solar_gated,
         )
+        if (
+            before is not None
+            and cover_decision.changed
+            and self._lowers_any(cover_eids, cover_decision.target_position, _cover_min_positions)
+        ):
+            cover_decision = self._cover_manager.hold(area_id, before, "window_hold")
+            _forced_position = None
 
-        _cover_min_positions: dict[str, int] = room.get("cover_min_positions", {})
         if cover_decision.changed:
             _LOGGER.debug(
                 "Cover control [%s]: %s → position %d%%",
@@ -358,6 +372,33 @@ class CoverOrchestrator:
             active_cover_schedule_index=_active_cover_sched_idx,
             decision=cover_decision,
         )
+
+    def _lowers_any(self, cover_eids: list[str], target_position: int, min_positions: dict[str, int]) -> bool:
+        """Return True if sending *target_position* would move any cover down.
+
+        Checked per cover against its own reading: the room average can rise
+        while one cover still goes down. A cover without a known position counts
+        as going down unless it is sent fully open.
+        """
+        for eid in cover_eids:
+            cstate = self.hass.states.get(eid)
+            if cstate is None:
+                continue
+            supported = cstate.attributes.get("supported_features", 0) or 0
+            if supported & _SUPPORT_SET_POSITION:
+                goal = max(min_positions.get(eid, 0), target_position)
+            elif target_position < 100:
+                goal = 0
+            else:
+                continue
+            if goal >= 100:
+                continue
+            pos = cstate.attributes.get("current_position")
+            if pos is None:
+                pos = {"closed": 0, "open": 100}.get(cstate.state)
+            if pos is None or goal < int(pos):
+                return True
+        return False
 
     def _estimate_solar_peak_temp(
         self,

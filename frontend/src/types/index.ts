@@ -53,6 +53,7 @@ export interface RoomLiveData {
   cover_auto_paused: boolean;
   cover_override_until?: number | null;
   cover_forced_reason: string;
+  cover_reason?: string;
   active_cover_schedule_index: number;
   active_heat_sources: string | null;
   learning_paused_reason: "outdoor_unavailable" | null;
@@ -161,6 +162,7 @@ export interface RoomConfig {
   covers_night_close_elevation?: number;
   covers_night_close_offset_minutes?: number;
   covers_snap_deploy?: boolean;
+  covers_window_hold?: boolean;
   cover_min_positions?: Record<string, number>;
   ignore_presence?: boolean;
   is_outdoor?: boolean;

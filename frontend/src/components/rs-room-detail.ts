@@ -85,6 +85,7 @@ export class RsRoomDetail extends LitElement {
   @state() private _coversNightClose = false;
   @state() private _coversNightPosition = 0;
   @state() private _coversSnapDeploy = false;
+  @state() private _coversWindowHold = false;
   @state() private _coverOrientations: Record<string, number> = {};
   @state() private _coversNightCloseElevation = 0;
   @state() private _coversNightCloseOffsetMinutes = 0;
@@ -303,6 +304,7 @@ export class RsRoomDetail extends LitElement {
       this._coversNightClose = this.config.covers_night_close ?? false;
       this._coversNightPosition = this.config.covers_night_position ?? 0;
       this._coversSnapDeploy = this.config.covers_snap_deploy ?? false;
+      this._coversWindowHold = this.config.covers_window_hold ?? false;
       this._coverOrientations = this.config.cover_orientations ?? {};
       this._coversNightCloseElevation = this.config.covers_night_close_elevation ?? 0;
       this._coversNightCloseOffsetMinutes = this.config.covers_night_close_offset_minutes ?? 0;
@@ -347,6 +349,7 @@ export class RsRoomDetail extends LitElement {
       this._coversNightClose = false;
       this._coversNightPosition = 0;
       this._coversSnapDeploy = false;
+      this._coversWindowHold = false;
       this._coverOrientations = {};
       this._coversNightCloseElevation = 0;
       this._coversNightCloseOffsetMinutes = 0;
@@ -612,6 +615,9 @@ export class RsRoomDetail extends LitElement {
                     .nightPosition=${this._coversNightPosition}
                     .snapDeploy=${this._coversSnapDeploy}
                     .forcedReason=${this.config?.live?.cover_forced_reason ?? ""}
+                    .coverReason=${this.config?.live?.cover_reason ?? ""}
+                    .windowHold=${this._coversWindowHold}
+                    .hasWindowSensors=${this._selectedWindowSensors.size > 0}
                     .autoPaused=${
                       this._optimisticCoverResume
                         ? false
@@ -913,6 +919,9 @@ export class RsRoomDetail extends LitElement {
             .nightPosition=${this._coversNightPosition}
             .snapDeploy=${this._coversSnapDeploy}
             .forcedReason=${this.config?.live?.cover_forced_reason ?? ""}
+            .coverReason=${this.config?.live?.cover_reason ?? ""}
+            .windowHold=${this._coversWindowHold}
+            .hasWindowSensors=${this._selectedWindowSensors.size > 0}
             .autoPaused=${
               this._optimisticCoverResume ? false : (this.config?.live?.cover_auto_paused ?? false)
             }
@@ -1118,6 +1127,7 @@ export class RsRoomDetail extends LitElement {
     else if (key === "covers_night_close") this._coversNightClose = value as boolean;
     else if (key === "covers_night_position") this._coversNightPosition = value as number;
     else if (key === "covers_snap_deploy") this._coversSnapDeploy = value as boolean;
+    else if (key === "covers_window_hold") this._coversWindowHold = value as boolean;
     else if (key === "cover_orientations")
       this._coverOrientations = value as Record<string, number>;
     else if (key === "covers_night_close_elevation")
@@ -1230,6 +1240,7 @@ export class RsRoomDetail extends LitElement {
         covers_night_close: this._coversNightClose,
         covers_night_position: this._coversNightPosition,
         covers_snap_deploy: this._coversSnapDeploy,
+        covers_window_hold: this._coversWindowHold,
         cover_orientations: this._coverOrientations,
         covers_night_close_elevation: this._coversNightCloseElevation,
         covers_night_close_offset_minutes: this._coversNightCloseOffsetMinutes,

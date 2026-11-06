@@ -2100,3 +2100,268 @@ class TestShadeByNeedWiring:
         ):
             await _process(orch, room, q_solar=0.2)
         assert cm.evaluate.call_args[1]["predicted_peak_temp"] == pytest.approx(28.0)
+
+
+# ── TestWindowHold (#268) ─────────────────────────────────────────────
+
+_SET_POSITION = 4
+
+
+def _position_cover(position: int) -> MagicMock:
+    s = MagicMock()
+    s.state = "open" if position > 0 else "closed"
+    s.attributes = {"current_position": position, "supported_features": _SET_POSITION}
+    return s
+
+
+def _binary_cover(state: str) -> MagicMock:
+    s = MagicMock()
+    s.state = state
+    s.attributes = {"supported_features": 3}
+    return s
+
+
+async def _process_night(orch: CoverOrchestrator, room: dict, *, window_open: bool, elevation: float = -5.0):
+    with patch(
+        "custom_components.roommind.managers.cover_orchestrator.solar_elevation",
+        return_value=elevation,
+    ):
+        return await orch.async_process(
+            area_id="living_room",
+            room=room,
+            targets=TargetTemps(heat=21.0, cool=24.0),
+            mode=MODE_IDLE,
+            current_temp=21.0,
+            outdoor_temp=15.0,
+            q_solar=0.0,
+            predicted_peak_temp=21.0,
+            has_override=False,
+            window_open=window_open,
+        )
+
+
+class TestWindowHold:
+    """An open window keeps RoomMind from lowering the room's covers (#268/#370)."""
+
+    def _setup(self, states: dict, **room_kw):
+        from custom_components.roommind.managers.cover_manager import CoverManager
+
+        hass = _make_hass()
+        hass.states.get = MagicMock(side_effect=states.get)
+        hass.services.async_call = AsyncMock()
+        orch = CoverOrchestrator(hass, CoverManager(), _make_model_manager())
+        room = _make_room(
+            **{
+                "covers": list(states),
+                "covers_night_close": True,
+                "covers_night_position": 0,
+                "covers_window_hold": True,
+                **room_kw,
+            }
+        )
+        orch.read_positions("living_room", room)
+        return hass, orch, room
+
+    @pytest.mark.asyncio
+    async def test_night_close_waits_while_window_open(self):
+        hass, orch, room = self._setup({"cover.blind1": _position_cover(100)})
+
+        result = await _process_night(orch, room, window_open=True)
+
+        hass.services.async_call.assert_not_called()
+        assert result.decision.changed is False
+        assert result.decision.reason == "window_hold"
+        # The night close hint must not claim the cover is closing
+        assert result.forced_reason == ""
+
+    @pytest.mark.asyncio
+    async def test_night_close_follows_once_window_closed(self):
+        hass, orch, room = self._setup({"cover.blind1": _position_cover(100)})
+        await _process_night(orch, room, window_open=True)
+
+        result = await _process_night(orch, room, window_open=False)
+
+        assert result.decision.changed is True
+        assert result.decision.target_position == 0
+        assert result.forced_reason == "night_close"
+        hass.services.async_call.assert_awaited_once()
+        assert hass.services.async_call.await_args.args[1] == "set_cover_position"
+
+    @pytest.mark.asyncio
+    async def test_hold_leaves_cover_state_untouched(self):
+        """A held move must not count as RoomMind's own position or arm a user override."""
+        hass, orch, room = self._setup({"cover.blind1": _position_cover(100)})
+        cm = orch._cover_manager
+        before = cm._get_state("living_room")
+        snapshot = (before.last_commanded_position, before.owned, before.last_was_forced, before.current_position)
+
+        await _process_night(orch, room, window_open=True)
+        orch.read_positions("living_room", room)
+
+        after = cm._get_state("living_room")
+        assert (
+            after.last_commanded_position,
+            after.owned,
+            after.last_was_forced,
+            after.current_position,
+        ) == snapshot
+        assert cm.is_user_override_active("living_room") is False
+
+    @pytest.mark.asyncio
+    async def test_opening_is_not_held(self):
+        """Raising a cover cannot hit the window; daylight retract goes out with the window open."""
+        hass, orch, room = self._setup({"cover.blind1": _position_cover(100)})
+        await _process_night(orch, room, window_open=False)  # closes to 0
+        hass.states.get = MagicMock(side_effect={"cover.blind1": _position_cover(0)}.get)
+        orch.read_positions("living_room", room)
+        hass.services.async_call.reset_mock()
+
+        result = await _process_night(orch, room, window_open=True, elevation=10.0)
+
+        assert result.decision.changed is True
+        assert result.decision.target_position == 100
+
+    @pytest.mark.asyncio
+    async def test_one_cover_going_down_holds_the_room(self):
+        """The average can rise while a single cover would still be lowered."""
+        states = {"cover.a": _position_cover(100), "cover.b": _position_cover(0)}
+        hass, orch, room = self._setup(states, covers_night_position=60)
+
+        result = await _process_night(orch, room, window_open=True)
+
+        assert result.decision.reason == "window_hold"
+        hass.services.async_call.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_per_cover_minimum_counts(self):
+        """A cover whose own minimum keeps it where it is does not move down."""
+        states = {"cover.a": _position_cover(50)}
+        hass, orch, room = self._setup(states, covers_night_position=0, cover_min_positions={"cover.a": 50})
+
+        result = await _process_night(orch, room, window_open=True)
+
+        assert result.decision.reason != "window_hold"
+
+    @pytest.mark.asyncio
+    async def test_binary_cover_close_is_held(self):
+        hass, orch, room = self._setup({"cover.a": _binary_cover("open")})
+
+        result = await _process_night(orch, room, window_open=True)
+
+        assert result.decision.reason == "window_hold"
+        hass.services.async_call.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_cover_without_known_position_is_held(self):
+        s = MagicMock()
+        s.state = "unknown"
+        s.attributes = {"supported_features": _SET_POSITION}
+        hass, orch, room = self._setup({"cover.a": s})
+
+        result = await _process_night(orch, room, window_open=True)
+
+        assert result.decision.reason == "window_hold"
+
+    @pytest.mark.asyncio
+    async def test_switch_off_keeps_old_behaviour(self):
+        hass, orch, room = self._setup({"cover.blind1": _position_cover(100)})
+        room["covers_window_hold"] = False
+
+        result = await _process_night(orch, room, window_open=True)
+
+        assert result.decision.changed is True
+        assert result.decision.target_position == 0
+
+    @pytest.mark.asyncio
+    async def test_missing_field_keeps_old_behaviour(self):
+        hass, orch, room = self._setup({"cover.blind1": _position_cover(100)})
+        del room["covers_window_hold"]
+
+        result = await _process_night(orch, room, window_open=True)
+
+        assert result.decision.changed is True
+
+    @pytest.mark.asyncio
+    async def test_solar_deploy_is_held(self):
+        hass, orch, room = self._setup({"cover.blind1": _position_cover(100)}, covers_night_close=False)
+
+        with patch.object(CoverOrchestrator, "_estimate_solar_peak_temp", return_value=27.0):
+            result = await orch.async_process(
+                area_id="living_room",
+                room=room,
+                targets=TargetTemps(heat=21.0, cool=24.0),
+                mode=MODE_IDLE,
+                current_temp=23.0,
+                outdoor_temp=25.0,
+                q_solar=0.8,
+                predicted_peak_temp=None,
+                has_override=False,
+                window_open=True,
+            )
+
+        assert result.decision.reason == "window_hold"
+        hass.services.async_call.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_raising_with_an_unknown_cover_is_not_held(self):
+        """A cover without a reading must not block sending everything fully open."""
+        unknown = MagicMock()
+        unknown.state = "unavailable"
+        unknown.attributes = {"supported_features": _SET_POSITION}
+        states = {"cover.a": _position_cover(100), "cover.b": unknown}
+        hass, orch, room = self._setup(states)
+        await _process_night(orch, room, window_open=False)  # closes to 0
+        states["cover.a"] = _position_cover(0)
+        orch.read_positions("living_room", room)
+
+        result = await _process_night(orch, room, window_open=True, elevation=10.0)
+
+        assert result.decision.changed is True
+        assert result.decision.target_position == 100
+
+    @pytest.mark.asyncio
+    async def test_binary_cover_opening_is_not_held(self):
+        states = {"cover.a": _binary_cover("open")}
+        hass, orch, room = self._setup(states)
+        await _process_night(orch, room, window_open=False)  # close_cover
+        states["cover.a"] = _binary_cover("closed")
+        orch.read_positions("living_room", room)
+
+        result = await _process_night(orch, room, window_open=True, elevation=10.0)
+
+        assert result.decision.changed is True
+        assert hass.services.async_call.await_args.args[1] == "open_cover"
+
+    def test_cover_without_state_is_skipped(self):
+        hass, orch, room = self._setup({"cover.a": _position_cover(100)})
+        hass.states.get = MagicMock(return_value=None)
+        assert orch._lowers_any(["cover.a"], 0, {}) is False
+
+    @pytest.mark.asyncio
+    async def test_held_solar_deploy_follows_once_window_closed(self):
+        hass, orch, room = self._setup({"cover.blind1": _position_cover(100)}, covers_night_close=False)
+
+        async def solar(window_open: bool):
+            with patch.object(CoverOrchestrator, "_estimate_solar_peak_temp", return_value=27.0):
+                return await orch.async_process(
+                    area_id="living_room",
+                    room=room,
+                    targets=TargetTemps(heat=21.0, cool=24.0),
+                    mode=MODE_IDLE,
+                    current_temp=23.0,
+                    outdoor_temp=25.0,
+                    q_solar=0.8,
+                    predicted_peak_temp=None,
+                    has_override=False,
+                    window_open=window_open,
+                )
+
+        held = await solar(True)
+        state = orch._cover_manager._get_state("living_room")
+        assert held.decision.reason == "window_hold"
+        assert state.baseline_position is None and state.owned is False
+
+        result = await solar(False)
+
+        assert result.decision.changed is True
+        assert result.decision.target_position < 100

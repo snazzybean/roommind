@@ -11,6 +11,7 @@ from roommind_sim.analysis.invariants import (
     min_run_hold_keeps_setpoint,
     min_run_respected,
     no_cooling_below_outdoor_min,
+    no_cover_lowered_over_open_window,
     no_full_cooling_at_target,
     target_never_empty,
     window_open_pauses,
@@ -259,3 +260,49 @@ def test_lowest_cool_setpoint_at_the_target_450():
     assert not no_full_cooling_at_target(above)
     gentle = _run([False] * 10, commands=[(10, "set_temperature", {**cool, "temperature": 23.3})], observer=observer)
     assert not no_full_cooling_at_target(gentle)
+
+
+def _cover_run(commands, windows, position=100.0, window_sensors=True) -> RunData:  # noqa: ANN001
+    cover = "cover.r_shutter"
+    rooms = {
+        "r": {
+            "devices": [{"entity_id": AC, "profile": "generic_split_ac"}],
+            "windows": [{"sensor": "binary_sensor.r_win"}],
+            "covers": [{"entity_id": cover, "profile": "roller_shutter"}],
+        }
+    }
+    scn = load_scenario_dict(scenario(rooms))
+    t0 = scn.start
+    samples = [
+        {
+            "t": t0 + 60 * (i + 1),
+            "outdoor": {"temp": 5.0},
+            "rooms": {"r": {"t_air": 20.0, "windows_open": 1 if w else 0}},
+            "devices": {AC: {"active": False, "action": "idle", "electric_w": 0, "heat_w": 0}},
+            "covers": {cover: {"position": position}},
+        }
+        for i, w in enumerate(windows)
+    ]
+    room_cfg = {"window_sensors": ["binary_sensor.r_win"]} if window_sensors else {}
+    events = [
+        {"t": t0 + t, "type": "command", "entity_id": cover, "service": svc, "data": data, "result": "accepted"}
+        for t, svc, data in commands
+    ]
+    end = t0 + 60 * (len(windows) + 1)
+    return RunData(None, scn, samples, [], events, end, {"settings": {}, "rooms": {"r": room_cfg}})  # type: ignore[arg-type]
+
+
+def test_cover_lowered_over_open_window():
+    windows = [False] * 5 + [True] * 10 + [False] * 5
+    down = [(600, "set_cover_position", {"position": 0})]
+    assert len(no_cover_lowered_over_open_window(_cover_run(down, windows))) == 1
+    assert len(no_cover_lowered_over_open_window(_cover_run([(600, "close_cover", {})], windows))) == 1
+    # raising, after the window closed, or right at the opening (cycle had not seen it yet)
+    assert (
+        no_cover_lowered_over_open_window(_cover_run([(600, "set_cover_position", {"position": 100})], windows, 40.0))
+        == []
+    )
+    assert no_cover_lowered_over_open_window(_cover_run([(1080, "set_cover_position", {"position": 0})], windows)) == []
+    assert no_cover_lowered_over_open_window(_cover_run([(370, "set_cover_position", {"position": 0})], windows)) == []
+    # rooms without window sensors in RoomMind are not checked
+    assert no_cover_lowered_over_open_window(_cover_run(down, windows, window_sensors=False)) == []

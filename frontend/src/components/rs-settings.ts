@@ -36,6 +36,7 @@ export class RsSettings extends LitElement {
   @property({ attribute: false }) public hass!: HomeAssistant;
   @property({ attribute: false }) public rooms: Record<string, RoomConfig> = {};
   @property({ attribute: false }) public roomsWithoutArea: RoomWithoutArea[] = [];
+  @property({ type: Boolean }) public climateControlActive = true;
   @state() private _deletedOrphans: ReadonlySet<string> = new Set();
 
   @state() private _groupByFloor = false;
@@ -81,6 +82,9 @@ export class RsSettings extends LitElement {
   @state() private _loaded = false;
 
   private _saveDebounce?: ReturnType<typeof setTimeout>;
+  // switch.roommind_climate_control can change it while this page is open (#291), so it
+  // is only sent after the toggle here was used, never as a stale copy with other settings.
+  private _climateControlDirty = false;
 
   connectedCallback() {
     super.connectedCallback();
@@ -156,6 +160,13 @@ export class RsSettings extends LitElement {
       // The list from the backend is current again; an id resting later must show up again
       const listed = new Set(this.roomsWithoutArea.map((r) => r.area_id));
       this._deletedOrphans = new Set([...this._deletedOrphans].filter((id) => listed.has(id)));
+    }
+    if (
+      changed.has("climateControlActive") &&
+      changed.get("climateControlActive") !== undefined &&
+      !this._climateControlDirty
+    ) {
+      this._climateControlActive = this.climateControlActive;
     }
   }
 
@@ -369,6 +380,7 @@ export class RsSettings extends LitElement {
 
   private _onSettingChanged(e: CustomEvent<{ key: string; value: unknown }>) {
     const { key, value } = e.detail;
+    if (key === "climateControlActive") this._climateControlDirty = true;
     (this as Record<string, unknown>)[`_${key}`] = value;
     this._autoSave();
   }
@@ -404,12 +416,13 @@ export class RsSettings extends LitElement {
 
   private async _doSave() {
     fireSaveStatus(this, "saving");
+    const sentClimateControl = this._climateControlDirty ? this._climateControlActive : undefined;
 
     try {
       await this.hass.callWS({
         type: "roommind/settings/save",
         group_by_floor: this._groupByFloor,
-        climate_control_active: this._climateControlActive,
+        ...(sentClimateControl !== undefined ? { climate_control_active: sentClimateControl } : {}),
         learning_disabled_rooms: this._learningDisabledRooms,
         outdoor_temp_sensor: this._outdoorTempSensor,
         outdoor_humidity_sensor: this._outdoorHumiditySensor,
@@ -454,8 +467,14 @@ export class RsSettings extends LitElement {
           ? this._moldNotificationTargets.filter((t) => t.entity_id)
           : [],
       });
+      // Toggled again while the request was out: stays dirty, the queued save sends it.
+      if (this._climateControlActive === sentClimateControl) this._climateControlDirty = false;
       fireSaveStatus(this, "saved");
     } catch {
+      if (this._climateControlActive === sentClimateControl) {
+        this._climateControlDirty = false;
+        this._climateControlActive = this.climateControlActive;
+      }
       fireSaveStatus(this, "error");
     }
   }

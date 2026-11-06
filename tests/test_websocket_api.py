@@ -1091,6 +1091,7 @@ async def test_list_rooms_includes_cover_override_until(ws_hass, store, connecti
             "mode": "idle",
             "cover_auto_paused": True,
             "cover_override_until": 1751700000.0,
+            "cover_reason": "window_hold",
         }
     }
     mock_coordinator.async_request_refresh = AsyncMock()
@@ -1103,6 +1104,7 @@ async def test_list_rooms_includes_cover_override_until(ws_hass, store, connecti
     live = connection.send_result.call_args[0][1]["rooms"]["schlafzimmer"]["live"]
     assert live["cover_auto_paused"] is True
     assert live["cover_override_until"] == 1751700000.0
+    assert live["cover_reason"] == "window_hold"
 
 
 @pytest.mark.asyncio
@@ -1209,6 +1211,23 @@ async def test_save_settings(ws_hass, store, connection):
     connection.send_result.assert_called_once()
     result = connection.send_result.call_args[0][1]
     assert result["settings"]["outdoor_temp_sensor"] == "sensor.outdoor"
+
+
+@pytest.mark.asyncio
+async def test_save_settings_climate_control_refreshes_at_once(ws_hass, store, connection):
+    """The panel toggle stops or resumes control and updates the switch entity now (#291)."""
+    await store.async_load()
+    coordinator = MagicMock()
+    coordinator.async_request_refresh = AsyncMock()
+    ws_hass.data[DOMAIN]["coordinator"] = coordinator
+
+    await _save_settings(
+        ws_hass, connection, {"id": 13, "type": "roommind/settings/save", "climate_control_active": False}
+    )
+    coordinator.async_request_refresh.assert_awaited_once()
+
+    await _save_settings(ws_hass, connection, {"id": 14, "type": "roommind/settings/save", "outdoor_temp_sensor": "x"})
+    coordinator.async_request_refresh.assert_awaited_once()
 
 
 # ---------------------------------------------------------------------------
@@ -2140,10 +2159,12 @@ async def test_save_room_with_cover_schedules(ws_hass, store, connection):
         "cover_schedule_selector_entity": "input_boolean.cover_mode",
         "covers_night_close": True,
         "covers_night_position": 10,
+        "covers_window_hold": True,
     }
     await _save_room(ws_hass, connection, msg)
     connection.send_result.assert_called_once()
     room = connection.send_result.call_args[0][1]["room"]
+    assert room["covers_window_hold"] is True
     assert room["cover_schedules"] == [{"entity_id": "schedule.cover_day"}]
     assert room["cover_schedule_selector_entity"] == "input_boolean.cover_mode"
     assert room["covers_night_close"] is True

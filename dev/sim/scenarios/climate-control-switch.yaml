@@ -1,0 +1,23 @@
+name: climate-control-switch
+extends: climate-control-disabled
+description: >
+  switch.roommind_climate_control (#291) mirrors the global climate control setting. Off
+  through the entity: RoomMind stops sending commands, the TRV the user sets to 17 °C by
+  hand stays there. A reload in between must keep the entity (the startup cleanup removed
+  every roommind_ uid no room owns). On again through the entity: RoomMind heats again.
+refs: [291, 36]
+roommind:
+  settings:
+    climate_control_active: true
+timeline:
+  - {at: "+1d06h", do: ha.service, service: switch.turn_off, data: {entity_id: switch.roommind_climate_control}}
+  - {at: "+1d06h05m", do: device.manual, entity_id: climate.wz_trv, hvac_mode: heat, temperature: 17}
+  - {at: "+1d07h", do: roommind.reload}
+  - {at: "+1d18h", do: ha.service, service: switch.turn_on, data: {entity_id: switch.roommind_climate_control}}
+expect:
+  - {invariant: no_rejected_commands}
+  - {check: "true_temp('wohnzimmer') > 20.5", at: "+1d05h", label: RoomMind holds the room while climate control is on}
+  - {check: "dev('climate.wz_trv').mode == 'heat' and dev('climate.wz_trv').target == 17 and true_temp('wohnzimmer') < 20.0", at: "+1d17h", label: TRV set by hand stays as it is while climate control is off}
+  - {check: "dev('climate.wz_trv').mode == 'heat' and dev('climate.wz_trv').target > 21", at: "+1d18h30m", label: on again through the entity after a reload heats again}
+  # load-sized radiator, the mass cooled for 12 h: full valve gains only ~0.15 K/h
+  - {check: "dev('climate.wz_trv').valve == 1.0 and true_temp('wohnzimmer') > 19.5", at: "+2d", label: room warms up again at full valve}

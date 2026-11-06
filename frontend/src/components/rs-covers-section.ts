@@ -31,6 +31,9 @@ export class RsCoverSection extends LitElement {
   @property({ type: Number }) public nightPosition = 0;
   @property({ type: Boolean }) public snapDeploy = false;
   @property({ type: String }) public forcedReason = "";
+  @property({ type: String }) public coverReason = "";
+  @property({ type: Boolean }) public windowHold = false;
+  @property({ type: Boolean }) public hasWindowSensors = false;
   @property({ attribute: false }) public coverOrientations: Record<string, number> = {};
   @property({ type: Number }) public nightCloseElevation = 0;
   @property({ type: Number }) public nightCloseOffsetMinutes = 0;
@@ -395,6 +398,16 @@ export class RsCoverSection extends LitElement {
             : nothing
       }
       ${
+        this.coverReason === "window_hold"
+          ? html`
+              <div class="status-hint">
+                <ha-icon icon="mdi:window-open-variant"></ha-icon>
+                <span>${localize("covers.window_hold_active", l)}</span>
+              </div>
+            `
+          : nothing
+      }
+      ${
         this.forcedReason === "schedule_active"
           ? html`
               <div class="status-hint">
@@ -601,6 +614,21 @@ export class RsCoverSection extends LitElement {
                 ></ha-switch>
               </div>
 
+              ${
+                this.autoEnabled && (this.hasWindowSensors || this.windowHold)
+                  ? html`
+                      <div class="group-card">
+                        <rs-toggle-row
+                          .label=${localize("covers.window_hold", l)}
+                          .hint=${localize("covers.window_hold_hint", l)}
+                          .checked=${this.windowHold}
+                          @toggle-changed=${(e: CustomEvent) =>
+                            this._emit("covers_window_hold", e.detail)}
+                        ></rs-toggle-row>
+                      </div>
+                    `
+                  : nothing
+              }
               ${
                 this.autoEnabled
                   ? html`
