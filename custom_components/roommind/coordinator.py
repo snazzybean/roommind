@@ -69,7 +69,7 @@ from .control.mpc_controller import (
     is_hold_throttled,
     is_mpc_active,
 )
-from .control.residual_heat import compute_residual_heat, mean_rebound
+from .control.residual_heat import compute_residual_heat, mean_rebound, residual_tau
 from .control.solar import compute_q_solar_norm
 from .control.thermal_model import RoomModelManager
 from .managers.ac_coil_dry_manager import AcCoilDryManager, CoilDryRoomResult
@@ -974,11 +974,14 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         system_type = room.get("heating_system_type", "")
         radiator = system_type == HEATING_SYSTEM_RADIATOR
         residual_scale = self._model_manager.get_residual_scale(area_id) if radiator else 1.0
+        # Learned afterglow decay time (radiators); None uses the profile's
+        residual_tau_learned = self._model_manager.get_residual_tau(area_id) if radiator else None
         q_residual = self._residual_tracker.get_q_residual(
             area_id,
             system_type,
             self._previous_modes.get(area_id, MODE_IDLE),
             residual_scale,
+            residual_tau_learned,
         )
         # The per-room residual heat switch takes the afterglow out of control decisions only:
         # training, the tracker and the learner keep the real afterglow, so the model stays right
@@ -1028,6 +1031,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             q_residual=control_q_residual,
             heating_system_type=system_type,
             residual_scale=control_residual_scale,
+            residual_tau=residual_tau_learned,
             heat_run=control_heat_run,
             shading_factor=shading_factor,
             q_occupancy=q_occupancy,
@@ -1271,14 +1275,22 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 # A min-run hold keeps a device running while the room reads idle
                 or bool(compressor_forced_on)
             ),
+            tau_minutes=residual_tau_learned,
         )
         if sample is not None:
+            # The scale sample is measured against the current decay time; a new decay time
+            # then rescales it so the learned total heat stays (update_residual_tau)
             self._model_manager.update_residual_scale(area_id, sample)
+            tau_sample = self._residual_learner.take_tau_sample(area_id)
+            if tau_sample is not None:
+                self._model_manager.update_residual_tau(area_id, tau_sample, residual_tau(system_type))
             _LOGGER.debug(
-                "Room '%s': residual heat sample %.2f, learned scale %.2f",
+                "Room '%s': residual heat sample %.2f (decay %s min), learned scale %.2f, decay %.1f min",
                 area_id,
                 sample,
+                tau_sample,
                 self._model_manager.get_residual_scale(area_id),
+                residual_tau(system_type, self._model_manager.get_residual_tau(area_id)),
             )
         if climate_active and system_type:
             # A radiator's stored heat follows how long it ran, not the commanded pf: a TRV
@@ -1502,7 +1514,9 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             q_residual=(
                 0.0
                 if not radiator
-                else compute_residual_heat(0.0, system_type, heat_run[1], heat_run[0], residual_scale)
+                else compute_residual_heat(
+                    0.0, system_type, heat_run[1], heat_run[0], residual_scale, residual_tau_learned
+                )
                 if mode == MODE_HEATING and heat_run is not None
                 else 0.0
                 if mode == MODE_HEATING

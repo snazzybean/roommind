@@ -23,6 +23,7 @@ def compute_residual_heat(
     last_power_fraction: float = 1.0,
     heating_duration_minutes: float = 0.0,
     scale: float = 1.0,
+    tau_minutes: float | None = None,
 ) -> float:
     """Compute normalised residual heat fraction after heating stopped.
 
@@ -40,6 +41,8 @@ def compute_residual_heat(
         heating_duration_minutes: How long heating was active before stopping.
         scale: Learned per-room multiplier on the profile's ``initial_fraction``
             (see ``ResidualHeatLearner``); 1.0 is the profile as is.
+        tau_minutes: Learned per-room decay time of the afterglow; None uses the
+            profile's ``tau_minutes``. The charge time stays the profile's.
 
     Returns:
         Residual heat fraction in [0, initial_fraction * scale].  Returns 0.0 for unknown or empty
@@ -49,9 +52,9 @@ def compute_residual_heat(
     if not profile or elapsed_minutes < 0:
         return 0.0
 
-    tau = profile["tau_minutes"]
     initial = profile["initial_fraction"]
-    tau_charge = profile.get("tau_charge_minutes", tau)
+    tau_charge = profile.get("tau_charge_minutes", profile["tau_minutes"])
+    tau = profile["tau_minutes"] if tau_minutes is None else tau_minutes
 
     if tau <= 0:
         return 0.0
@@ -74,6 +77,7 @@ def build_residual_series(
     last_power_fraction: float = 1.0,
     heating_duration_minutes: float = 0.0,
     scale: float = 1.0,
+    tau_minutes: float | None = None,
 ) -> list[float]:
     """Build a decaying residual heat series for MPC lookahead.
 
@@ -90,9 +94,18 @@ def build_residual_series(
             last_power_fraction,
             heating_duration_minutes,
             scale,
+            tau_minutes,
         )
         for i in range(n_blocks)
     ]
+
+
+def residual_tau(system_type: str, learned: float | None = None) -> float:
+    """Decay time of *system_type*'s afterglow: the room's learned one, else the profile's (0.0 without one)."""
+    if learned is not None:
+        return learned
+    profile = HEATING_SYSTEM_PROFILES.get(system_type)
+    return float(profile["tau_minutes"]) if profile else 0.0
 
 
 def get_min_run_blocks(system_type: str, dt_minutes: float = 5.0) -> int:

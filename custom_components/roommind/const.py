@@ -219,6 +219,20 @@ RESIDUAL_SCALE_EMA_ALPHA = 0.2
 # 15 in a real room).
 RESIDUAL_SCALE_PRIOR_WEIGHT = 2.0
 
+# Learned decay time of a radiator room's afterglow. The profile's 10 min is a guess; in
+# real rooms the sensor kept rising for 40-60 min after a stop (radiator and room air
+# release the heat slowly), while a valve that shuts hard showed a short bump. After each
+# full observation window the measured rise is fitted against these decay times (same
+# total heat), and the best one is one sample. Weighed like the scale (prior: the profile).
+RESIDUAL_TAU_GRID = (5.0, 7.5, 10.0, 15.0, 20.0, 25.0, 30.0, 40.0, 50.0, 60.0)
+RESIDUAL_TAU_MIN = 5.0
+RESIDUAL_TAU_MAX = 60.0
+RESIDUAL_TAU_MIN_RISE_K = 0.3  # the shape of a smaller rise is lost in the sensor's 0.1-0.2 K steps
+# Radiator decisions look this many decay times past the min run, so the overshoot a
+# stored-heat afterglow causes 30-60 min after a stop is inside what the plan weighs.
+# At the profile's 10 min this gives the base lookahead (6 blocks).
+RADIATOR_LOOKAHEAD_TAUS = 2.0
+
 # AC rebound: while an AC cools, the air drops below the building mass; after it
 # stops the air relaxes back within minutes. Charge relaxes towards the cooling
 # power fraction while cooling and decays with this time constant otherwise.

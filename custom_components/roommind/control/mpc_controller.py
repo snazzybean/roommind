@@ -1352,6 +1352,7 @@ class MPCController:
         q_residual: float = 0.0,
         heating_system_type: str = "",
         residual_scale: float = 1.0,
+        residual_tau: float | None = None,
         heat_run: tuple[float, float] | None = None,
         mode_on_since: float | None = None,
         idle_since: float | None = None,
@@ -1394,6 +1395,8 @@ class MPCController:
         # progress as (minutes, power fraction): the plan weighs the heat that
         # stopping now would leave in the radiators (ResidualHeatTracker.get_run_state)
         self._residual_scale = residual_scale
+        # Learned decay time of that afterglow (minutes); None uses the profile's
+        self._residual_tau = residual_tau
         self._heat_run = heat_run
         # Heating system whose run rules apply this cycle (see _resolve_run_system)
         self._run_system = heating_system_type
@@ -1710,6 +1713,7 @@ class MPCController:
                 fast_heater_shares_model=check_acs_can_heat(self.hass, self.room_config),
                 preheat_max_blocks=self._preheat_max_blocks,
                 residual_scale=self._residual_scale,
+                residual_tau=self._residual_tau,
             )
 
             plan = optimizer.optimize(
@@ -2031,7 +2035,7 @@ class MPCController:
         profile = HEATING_SYSTEM_PROFILES.get(self._heating_system_type)
         if not profile:
             return None
-        tau = profile["tau_minutes"]
+        tau = profile["tau_minutes"] if self._residual_tau is None else self._residual_tau
         if tau <= 0:
             return None
         series: list[float] = []

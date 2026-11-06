@@ -513,3 +513,36 @@ class TestResidualHeatLearning:
         )
         assert ctrl.call_args.kwargs["residual_scale"] > 1.0
         assert ctrl.call_args.kwargs["heat_run"] is not None
+
+    @pytest.mark.asyncio
+    async def test_decay_time_sample_is_learned_and_reaches_the_controller(self, hass, mock_config_entry):
+        coordinator, aid = self._radiator_coordinator(hass, mock_config_entry)
+        with (
+            patch.object(coordinator._residual_learner, "step", return_value=4.0) as step,
+            patch.object(coordinator._residual_learner, "take_tau_sample", return_value=40.0),
+        ):
+            await coordinator._async_update_data()
+        # The scale was measured against the profile's decay time (none learned yet)
+        assert step.call_args.kwargs["tau_minutes"] is None
+        tau = coordinator._model_manager.get_residual_tau(aid)
+        assert tau == pytest.approx(10.0 * 4.0 ** (1 / 3))
+        # The scale sample (4.0 -> 2.0 after the prior) is rescaled to keep the total heat
+        assert coordinator._model_manager.get_residual_scale(aid) * tau == pytest.approx(2.0 * 10.0)
+        with (
+            patch.object(coordinator._residual_learner, "step", return_value=None) as step,
+            patch("custom_components.roommind.coordinator.MPCController", wraps=MPCController) as ctrl,
+        ):
+            await coordinator._async_update_data()
+        assert step.call_args.kwargs["tau_minutes"] == pytest.approx(tau)
+        assert ctrl.call_args.kwargs["residual_tau"] == pytest.approx(tau)
+
+    @pytest.mark.asyncio
+    async def test_no_decay_time_without_a_scale_sample(self, hass, mock_config_entry):
+        coordinator, aid = self._radiator_coordinator(hass, mock_config_entry)
+        with (
+            patch.object(coordinator._residual_learner, "step", return_value=None),
+            patch.object(coordinator._residual_learner, "take_tau_sample", return_value=40.0) as take,
+        ):
+            await coordinator._async_update_data()
+        take.assert_not_called()
+        assert coordinator._model_manager.get_residual_tau(aid) is None
