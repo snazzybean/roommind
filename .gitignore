@@ -211,6 +211,7 @@ __marimo__/
 frontend/node_modules/
 frontend/dist/
 custom_components/roommind/frontend/roommind-panel.js
+custom_components/roommind/frontend/roommind-card.js
 
 # IDE
 .idea/

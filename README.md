@@ -38,6 +38,7 @@
 - **Separate Heat/Cool Targets** - Independent comfort and eco temperatures for heating and cooling in auto mode, creating a natural dead-band.
 - **Per-Room Climate Toggle** - Disable climate control for individual rooms while keeping other rooms active.
 - **Outdoor Areas** - Mark rooms as outdoor (e.g. balcony) to disable climate control while keeping monitoring.
+- **Dashboard Card** - A room card for any dashboard with temporary override, mode, climate control switch and comfort/eco temperatures, each part optional. See [Dashboard Card](#dashboard-card).
 - **Analytics Dashboard** - Temperature charts with heating power, solar irradiance, and model predictions over 24h to 90 days.
 - **Mobile Ready** - Responsive layout with HA-native toolbar for the companion app.
 - **Multilingual** - English and German, auto-detected from your HA language setting.
@@ -71,6 +72,29 @@ After installation, RoomMind appears as a panel in the HA sidebar.
 6. **Set temperatures** - configure comfort (schedule on) and eco (schedule off) temperatures
 
 RoomMind starts controlling immediately. If MPC is enabled (default), the thermal model begins learning in the background.
+
+## Dashboard Card
+
+Put a RoomMind room on any dashboard: Edit dashboard → Add card → **RoomMind room**. The card ships with the integration, no resource needs to be added. After installing or updating RoomMind, reload the browser tab (or restart the companion app) once so the card is found.
+
+It shows the room's temperature, target, humidity and what RoomMind is doing, plus:
+
+- **Temporary override** - Comfort, Eco or a custom temperature for 1, 2 or 4 hours, with the time left. Tap the active one to end it.
+- **Mode** - Auto, Heat only or Cool only, same as in the panel
+- **Climate control switch** - turns RoomMind's control of the room on or off, same as the switch in the panel
+- **Comfort and eco temperatures** - change the room's comfort and eco targets
+
+Each part can be hidden in the card editor, e.g. a card for the family that only offers the override. **Compact layout** makes the card smaller: icon-only buttons side by side and a smaller status block; with every part hidden it is a plain status card. Hiding only changes what the card shows: every Home Assistant user can still change these settings in the RoomMind panel. Tap the room name to open the room in the panel. Outdoor areas show their readings only. In YAML:
+
+```yaml
+type: custom:roommind-room-card
+area: living_room           # area ID of the room
+compact: false
+hide_override: false
+hide_mode: false
+hide_climate_control: false
+hide_temperatures: false
+```
 
 ## Analytics
 

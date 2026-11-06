@@ -3,6 +3,7 @@ import { customElement, property, state } from "lit/decorators.js";
 import type { HomeAssistant, HassArea, RoomConfig, OverrideType } from "../types";
 import { getModeClass, formatMode, minutesLeft } from "../utils/room-state";
 import { modeStyles } from "../styles/shared-mode-styles";
+import { formatRemaining } from "../utils/override";
 import { localize } from "../utils/localize";
 import { formatTemp, tempUnit, toDisplayDelta } from "../utils/temperature";
 import "./shared/rs-info-icon";
@@ -338,15 +339,8 @@ export class RsHeroStatus extends LitElement {
         this._clearCountdownTimer();
         return;
       }
-      const remaining = u - Date.now() / 1000;
-      if (remaining <= 0) {
-        this._countdown = "";
-        this._clearCountdownTimer();
-        return;
-      }
-      const h = Math.floor(remaining / 3600);
-      const m = Math.floor((remaining % 3600) / 60);
-      this._countdown = h > 0 ? `${h}h ${m}m` : `${m}m`;
+      this._countdown = formatRemaining(u);
+      if (!this._countdown) this._clearCountdownTimer();
     };
 
     update();
