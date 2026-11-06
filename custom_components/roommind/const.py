@@ -223,6 +223,16 @@ DEFAULT_COMPRESSOR_MIN_OFF_MINUTES = 5
 # Long enough that it is not audible as a beep pattern (#416), short enough to heal a lost frame,
 # a change on the remote or a restarted device within one comfortable stretch.
 COMMAND_CACHE_REASSERT_SECONDS = 1800
+# Setpoint changed on the device itself (#259): after RoomMind switches a device's mode, the device may
+# restore a setpoint it stored for that mode. A setpoint change reported up to DEVICE_SETPOINT_MODE_REPORT_SECONDS
+# after the device showed the new mode, within DEVICE_SETPOINT_SETTLE_SECONDS of the switch (cloud integrations
+# report minutes later), is that restore.
+DEVICE_SETPOINT_SETTLE_SECONDS = 300
+DEVICE_SETPOINT_MODE_REPORT_SECONDS = 60
+# A setpoint RoomMind sent this recently is its own echo when the device reports it late (sleepy TRVs).
+DEVICE_SETPOINT_ECHO_SECONDS = 900
+# A device reading older than this (room resting, processing skipped) says nothing about a change since.
+DEVICE_SETPOINT_GAP_SECONDS = 300
 # A resolved target that moved by more than this since the last active command is a deliberate change (°C)
 COMPRESSOR_HOLD_RETARGET_TOLERANCE = 0.05
 # Compressor hold: a heating unit keeps its boost until the room is this far above the heating target

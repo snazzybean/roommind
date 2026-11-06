@@ -59,6 +59,7 @@ export class RsRoomDetail extends LitElement {
   @state() private _selectedOccupancySensors: Set<string> = new Set();
   @state() private _occupancyEcoEnabled = false;
   @state() private _preheatEnabled = true;
+  @state() private _followDeviceSetpoint = false;
   @state() private _occupancyEcoDelay = DEFAULT_OCCUPANCY_ECO_DELAY;
   @state() private _selectedWindowSensors: Set<string> = new Set();
   @state() private _windowOpenDelay = 0;
@@ -269,6 +270,7 @@ export class RsRoomDetail extends LitElement {
       this._selectedOccupancySensors = new Set(this.config.occupancy_sensors ?? []);
       this._occupancyEcoEnabled = this.config.occupancy_eco_enabled ?? false;
       this._preheatEnabled = this.config.preheat_enabled ?? true;
+      this._followDeviceSetpoint = this.config.follow_device_setpoint ?? false;
       this._occupancyEcoDelay = this.config.occupancy_eco_delay ?? DEFAULT_OCCUPANCY_ECO_DELAY;
       this._selectedWindowSensors = new Set(this.config.window_sensors ?? []);
       this._windowOpenDelay = this.config.window_open_delay ?? 0;
@@ -313,6 +315,7 @@ export class RsRoomDetail extends LitElement {
       this._selectedOccupancySensors = new Set();
       this._occupancyEcoEnabled = false;
       this._preheatEnabled = true;
+      this._followDeviceSetpoint = false;
       this._occupancyEcoDelay = DEFAULT_OCCUPANCY_ECO_DELAY;
       this._selectedWindowSensors = new Set();
       this._windowOpenDelay = 0;
@@ -459,6 +462,7 @@ export class RsRoomDetail extends LitElement {
                       .climateMode=${this._climateMode}
                       .scheduleTempWarnings=${this.config?.live?.schedule_temp_warnings ?? []}
                       .preheatEnabled=${this._preheatEnabled}
+                      .followDeviceSetpoint=${this._followDeviceSetpoint}
                       .showPreheat=${this._showPreheat()}
                       .editing=${false}
                       @schedules-changed=${this._onSchedulesChanged}
@@ -727,6 +731,7 @@ export class RsRoomDetail extends LitElement {
             .climateMode=${this._climateMode}
             .scheduleTempWarnings=${this.config?.live?.schedule_temp_warnings ?? []}
             .preheatEnabled=${this._preheatEnabled}
+            .followDeviceSetpoint=${this._followDeviceSetpoint}
             .showPreheat=${this._showPreheat()}
             .editing=${true}
             @schedules-changed=${this._onSchedulesChanged}
@@ -736,6 +741,7 @@ export class RsRoomDetail extends LitElement {
             @eco-heat-changed=${this._onEcoHeatChanged}
             @eco-cool-changed=${this._onEcoCoolChanged}
             @preheat-changed=${this._onPreheatChanged}
+            @follow-device-setpoint-changed=${this._onFollowDeviceSetpointChanged}
           ></rs-schedule-settings>
         </rs-edit-dialog>`;
       case "devices":
@@ -980,6 +986,11 @@ export class RsRoomDetail extends LitElement {
     this._autoSave();
   }
 
+  private _onFollowDeviceSetpointChanged(e: CustomEvent<{ value: boolean }>) {
+    this._followDeviceSetpoint = e.detail.value;
+    this._autoSave();
+  }
+
   private _onEcoCoolChanged(e: CustomEvent<{ value: number }>) {
     this._ecoCool = e.detail.value;
     if (this._ecoHeat > this._ecoCool) this._ecoHeat = this._ecoCool;
@@ -1173,6 +1184,7 @@ export class RsRoomDetail extends LitElement {
         occupancy_eco_enabled: this._occupancyEcoEnabled,
         occupancy_eco_delay: this._occupancyEcoDelay,
         preheat_enabled: this._preheatEnabled,
+        follow_device_setpoint: this._followDeviceSetpoint,
         window_sensors: [...this._selectedWindowSensors],
         window_open_delay: this._windowOpenDelay,
         window_close_delay: this._windowCloseDelay,

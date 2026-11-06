@@ -129,6 +129,7 @@ export interface RoomConfig {
   occupancy_eco_enabled?: boolean;
   occupancy_eco_delay?: number;
   preheat_enabled?: boolean;
+  follow_device_setpoint?: boolean;
   window_sensors: string[];
   window_open_delay: number;
   window_close_delay: number;

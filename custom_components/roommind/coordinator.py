@@ -41,6 +41,7 @@ from .const import (
     MODE_IDLE,
     OUTDOOR_UNAVAILABLE_NOTIFICATION_ID,
     OUTDOOR_UNAVAILABLE_NOTIFY_CYCLES,
+    OVERRIDE_CUSTOM,
     OVERRIDE_TURN_ON_REFRESH_DELAY_S,
     SCHEDULE_STATE_ON,
     THERMAL_SAVE_CYCLES,
@@ -74,6 +75,7 @@ from .managers.compressor_group_manager import (
     resolve_master_action,
 )
 from .managers.cover_orchestrator import CoverOrchestrator, CoverResult
+from .managers.device_setpoint_tracker import DeviceSetpointTracker
 from .managers.ekf_training_manager import EkfTrainingManager
 from .managers.head_offset_tracker import HeadOffsetTracker
 from .managers.heat_source_orchestrator import HeatSourcePlan, evaluate_heat_sources
@@ -89,6 +91,7 @@ from .utils.device_utils import (
     get_ac_eids,
     get_all_entity_ids,
     get_direct_setpoint_eids,
+    get_setpoint_offset,
     get_setpoint_offsets,
     get_trv_eids,
     get_valve_entities,
@@ -96,7 +99,13 @@ from .utils.device_utils import (
 )
 from .utils.history_store import HistoryStore
 from .utils.presence_utils import is_room_vacant
-from .utils.schedule_utils import cap_to_eco, resolve_schedule_index
+from .utils.schedule_utils import (
+    band_in_force,
+    cap_to_eco,
+    next_schedule_change,
+    resolve_schedule_index,
+    set_band_sides,
+)
 from .utils.sensor_utils import read_sensor_value
 from .utils.temp_utils import celsius_delta_to_ha, ha_temp_to_celsius, ha_temp_unit_str
 
@@ -131,6 +140,28 @@ COVER_ENTITY_SUFFIXES = ("_cover_auto", "_cover_paused")
 _COMPRESSOR_STATES = ("heat", "cool", "heat_cool", "auto", "dry")
 # hvac modes in which an AC's reading teaches the learned sensor offset (HeadOffsetTracker)
 _HEAD_OFFSET_HVAC_MODES = ("heat", "cool", "heat_cool", "auto")
+
+
+def _setpoint_side(attr: str, state: Any, device_type: str, climate_mode: str) -> str | None:
+    """Which side of the room band a device setpoint stands for: "heat", "cool" or None if unclear."""
+    if attr == "target_temp_low":
+        return "heat"
+    if attr == "target_temp_high":
+        return "cool"
+    if device_type == "trv" or state.state == "heat":
+        return "heat"
+    if state.state in ("cool", "dry"):
+        return "cool"
+    action = state.attributes.get("hvac_action")
+    if state.state in ("heat_cool", "auto") and action in ("heating", "preheating"):
+        return "heat"
+    if state.state in ("heat_cool", "auto") and action == "cooling":
+        return "cool"
+    if climate_mode == CLIMATE_MODE_HEAT_ONLY:
+        return "heat"
+    if climate_mode == CLIMATE_MODE_COOL_ONLY:
+        return "cool"
+    return None
 
 
 def _match_room_entity(parts: str, rooms: dict) -> tuple[str, str] | None:
@@ -202,6 +233,11 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         self._rebound_tracker = AcReboundTracker()
         # Offset of each AC's own sensor from the room sensor while it runs (setpoints in the device's frame)
         self._head_offsets = HeadOffsetTracker()
+        # Setpoints changed on the devices themselves, taken over as an override where the room opts in (#259).
+        # Kept across reloads: a setpoint sent just before one may be reported just after it.
+        self.device_setpoints: DeviceSetpointTracker = hass.data.setdefault(DOMAIN, {}).setdefault(
+            "device_setpoints", DeviceSetpointTracker(time.monotonic)
+        )
         # EKF training accumulation
         self._ekf_training = EkfTrainingManager(self._model_manager)
         # Cover/blind automatic control
@@ -462,6 +498,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
 
         # Against every stored room: a resting room keeps what it learned (#494)
         self._head_offsets.prune(set(build_rooms_devices_map(stored_rooms)))
+        self.device_setpoints.prune(set(build_rooms_devices_map(stored_rooms)))
         # Persist learned AC sensor offsets (piggyback on thermal save cycle)
         if self._head_offsets.dirty and self._thermal_save_count == 0:
             await store.async_save_settings({"ac_head_offsets": self._head_offsets.get_state()})
@@ -661,10 +698,87 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             return room
         return {**room, "override_heat": None, "override_cool": None, "override_until": None, "override_type": None}
 
+    async def _async_adopt_device_setpoints(self, room: dict, settings: dict) -> dict:
+        """Take a setpoint changed on a device over as the room target until the schedule changes next (#259).
+
+        The value set on the device becomes the target, as with the room climate
+        entity; a direct setpoint offset comes off again. Every device is observed,
+        so its last setpoint is current when the room opts in. Returns the room
+        with the override applied.
+        """
+        area_id = room.get("area_id", "unknown")
+        climate_mode = room.get("climate_mode", "auto")
+        devices = room.get("devices", [])
+        full_control = bool(room.get("temperature_sensor"))
+        # side -> (size of the change, new target °C); the biggest change wins
+        chosen: dict[str, tuple[float, float]] = {}
+        changed_on: list[str] = []
+        for device in devices:
+            eid = device.get("entity_id", "")
+            state = self.hass.states.get(eid)
+            if state is None or state.state in ("unavailable", "unknown"):
+                self.device_setpoints.forget_readings(eid)
+                continue
+            changes = self.device_setpoints.observe(
+                eid, state.state, state.attributes, *self._setpoint_tolerances(state)
+            )
+            offset = get_setpoint_offset(devices, eid) if full_control else 0.0
+            for attr, (before, after) in changes.items():
+                side = _setpoint_side(attr, state, device.get("type", ""), climate_mode)
+                if side is None:
+                    continue
+                size = abs(after - before)
+                if size > chosen.get(side, (0.0, 0.0))[0]:
+                    chosen[side] = (size, ha_temp_to_celsius(self.hass, after) - offset)
+                changed_on.append(eid)
+        if not changed_on or not room.get("follow_device_setpoint", False):
+            return room
+        if not (settings.get("climate_control_active", True) and room.get("climate_control_enabled", True)):
+            return room
+        live = ((self.data or {}).get("rooms") or {}).get(area_id) or {}
+        heat, cool = (chosen[side][1] if side in chosen else None for side in ("heat", "cool"))
+        band = set_band_sides(band_in_force(room, live), heat, cool, climate_mode)
+        if band is None:
+            return room
+        override = {
+            "override_heat": band[0],
+            "override_cool": band[1],
+            "override_until": next_schedule_change(self.hass, room),
+            "override_type": OVERRIDE_CUSTOM,
+        }
+        _LOGGER.info(
+            "Room '%s': setpoint changed on %s, holding %s/%s until the schedule changes",
+            area_id,
+            ", ".join(sorted(set(changed_on))),
+            band[0],
+            band[1],
+        )
+        await self.hass.data[DOMAIN]["store"].async_update_room(area_id, override)
+        self.clear_override_seed(area_id)
+        return {**room, **override}
+
+    def _setpoint_tolerances(self, state: Any) -> tuple[float, float]:
+        """Smallest setpoint change that counts, and how far a device may round a sent value.
+
+        Half the device's step for both. Without a known step a full default step
+        (0.5 °C, 1 °F) for the rounding: RoomMind then sends unrounded values.
+        """
+        step = state.attributes.get("target_temp_step")
+        try:
+            step = float(step) if step is not None else None
+        except (TypeError, ValueError):
+            step = None
+        if step and step > 0:
+            return step / 2, step / 2
+        default = 1.0 if ha_temp_unit_str(self.hass) == "°F" else 0.5
+        return default / 2, default
+
     async def _async_process_room(self, room: dict, settings: dict, outdoor_forecast: list[dict]) -> dict:
         """Process a single room: read sensor, evaluate schedule, apply control."""
         room = self._without_pending_override_seed(room)
         area_id = room.get("area_id", "unknown")
+        if not room.get("is_outdoor", False):
+            room = await self._async_adopt_device_setpoints(room, settings)
 
         current_temp, current_temp_raw, current_humidity, has_external_sensor = self._read_room_sensors(room, area_id)
 

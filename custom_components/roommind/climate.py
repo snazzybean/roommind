@@ -52,7 +52,7 @@ from .coordinator import RoomMindCoordinator, _get_area_name
 from .deprecation import warn_deprecated_use
 from .utils.area_utils import rooms_with_area
 from .utils.device_utils import get_ac_eids, get_trv_eids
-from .utils.schedule_utils import mask_override_band, next_schedule_change, override_preset_band
+from .utils.schedule_utils import band_in_force, mask_override_band, next_schedule_change, override_preset_band
 
 _CLIMATE_MODE_TO_HVAC = {
     CLIMATE_MODE_AUTO: HVACMode.HEAT_COOL,
@@ -97,23 +97,9 @@ async def async_setup_entry(
 
 
 def _current_band(coordinator: RoomMindCoordinator, area_id: str, room: dict) -> tuple[float | None, float | None]:
-    """Return the (heat, cool) band currently in force for this room.
-
-    An active override wins. Otherwise it is the band the coordinator resolved
-    last cycle (minus mold prevention, which is not part of the user's band).
-    Falls back to the comfort band when no live targets exist yet or the room
-    is forced off.
-    """
-    if is_override_active(room):
-        return room.get("override_heat"), room.get("override_cool")
+    """Return the (heat, cool) band currently in force for this room."""
     live = ((coordinator.data or {}).get("rooms") or {}).get(area_id) or {}
-    heat = live.get("heat_target")
-    cool = live.get("cool_target")
-    if heat is None and cool is None:
-        return override_preset_band(room, OVERRIDE_BOOST)
-    if heat is not None and live.get("mold_prevention_active"):
-        heat -= live.get("mold_prevention_delta") or 0
-    return heat, cool
+    return band_in_force(room, live)
 
 
 def _band_from_temperature_call(

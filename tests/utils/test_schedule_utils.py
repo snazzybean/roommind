@@ -14,6 +14,7 @@ from homeassistant.util import dt as dt_util
 
 from custom_components.roommind.const import TargetTemps
 from custom_components.roommind.utils.schedule_utils import (
+    band_in_force,
     find_active_block,
     get_active_schedule_entity,
     make_target_resolver,
@@ -22,6 +23,7 @@ from custom_components.roommind.utils.schedule_utils import (
     read_schedule_blocks,
     resolve_schedule_index,
     resolve_target_at_time,
+    set_band_sides,
 )
 
 # ---------------------------------------------------------------------------
@@ -1876,3 +1878,44 @@ def test_make_target_resolver_caps_an_empty_room_over_the_horizon():
     resolver = make_target_resolver(None, room, {}, room_vacant=True)
     assert resolver(time.time() + 3600) == TargetTemps(17.0, 27.0)
     assert make_target_resolver(None, room, {})(time.time()) == TargetTemps(21.0, 24.0)
+
+
+# ---------------------------------------------------------------------------
+# band_in_force / set_band_sides (#259)
+# ---------------------------------------------------------------------------
+
+
+def test_band_in_force_prefers_the_active_override():
+    room = {"override_heat": 23.0, "override_cool": 25.0, "override_until": None}
+    assert band_in_force(room, {"heat_target": 21.0, "cool_target": 24.0}) == (23.0, 25.0)
+
+
+def test_band_in_force_takes_live_targets_without_mold_delta():
+    live = {"heat_target": 22.0, "cool_target": 24.0, "mold_prevention_active": True, "mold_prevention_delta": 1.0}
+    assert band_in_force({}, live) == (21.0, 24.0)
+
+
+def test_band_in_force_falls_back_to_comfort():
+    assert band_in_force({"comfort_heat": 20.5, "comfort_cool": 25.0}, {}) == (20.5, 25.0)
+
+
+def test_set_band_sides_sets_heat_and_pushes_cool_along():
+    assert set_band_sides((21.0, 24.0), 23.0, None, "auto") == (23.0, 24.0)
+    assert set_band_sides((21.0, 24.0), 25.0, None, "auto") == (25.0, 25.0)
+
+
+def test_set_band_sides_sets_cool_and_pushes_heat_along():
+    assert set_band_sides((21.0, 24.0), None, 20.0, "auto") == (20.0, 20.0)
+
+
+def test_set_band_sides_sets_both_and_stays_within_bounds():
+    assert set_band_sides((21.0, 24.0), 22.0, 25.04, "auto") == (22.0, 25.0)
+    assert set_band_sides((21.0, None), 2.0, None, "heat_only") == (5.0, None)
+    assert set_band_sides((21.0, 24.0), 40.0, None, "auto") == (35.0, 35.0)
+
+
+def test_set_band_sides_ignores_the_unused_side():
+    assert set_band_sides((21.0, 24.0), 22.0, 26.0, "cool_only") == (None, 26.0)
+    assert set_band_sides((21.0, 24.0), 21.5, None, "heat_only") == (21.5, None)
+    assert set_band_sides((None, 24.0), 22.0, None, "cool_only") is None
+    assert set_band_sides((21.0, None), None, 22.0, "heat_only") is None

@@ -21,8 +21,10 @@ from ..const import (
     DEFAULT_ECO_HEAT,
     MAX_TARGET_TEMP,
     MIN_TARGET_TEMP,
+    OVERRIDE_BOOST,
     OVERRIDE_ECO,
     TargetTemps,
+    is_override_active,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -144,6 +146,51 @@ def mask_override_band(heat: float | None, cool: float | None, climate_mode: str
     if climate_mode == CLIMATE_MODE_COOL_ONLY:
         return None, cool
     return heat, cool
+
+
+def band_in_force(room: dict, live: dict) -> tuple[float | None, float | None]:
+    """The (heat, cool) band a room is held at: its active override, else the targets resolved last cycle.
+
+    Mold prevention is taken off again (not part of the user's band). Falls back to
+    the comfort band when no live targets exist yet or the room is forced off.
+    """
+    if is_override_active(room):
+        return room.get("override_heat"), room.get("override_cool")
+    heat = live.get("heat_target")
+    cool = live.get("cool_target")
+    if heat is None and cool is None:
+        return override_preset_band(room, OVERRIDE_BOOST)
+    if heat is not None and live.get("mold_prevention_active"):
+        heat -= live.get("mold_prevention_delta") or 0
+    return heat, cool
+
+
+def set_band_sides(
+    band: tuple[float | None, float | None], heat: float | None, cool: float | None, climate_mode: str
+) -> tuple[float | None, float | None] | None:
+    """*band* with the given sides (°C, None = unchanged) set within the target bounds.
+
+    A side the room's climate mode does not use is ignored; None if no usable side is
+    given. A set side pushes the other along instead of crossing it, so heat never
+    ends above cool.
+    """
+    cur_heat, cur_cool = mask_override_band(*band, climate_mode)
+    heat, cool = mask_override_band(heat, cool, climate_mode)
+    if heat is None and cool is None:
+        return None
+
+    def bounded(value: float) -> float:
+        return round(min(MAX_TARGET_TEMP, max(MIN_TARGET_TEMP, value)), 1)
+
+    if heat is not None:
+        cur_heat = bounded(heat)
+        if cool is None and cur_cool is not None and cur_cool < cur_heat:
+            cur_cool = cur_heat
+    if cool is not None:
+        cur_cool = bounded(cool)
+        if cur_heat is not None and cur_cool < cur_heat:
+            cur_heat = cur_cool
+    return cur_heat, cur_cool
 
 
 def cap_cool_only_heat(heat: float | None, cool: float | None, climate_mode: str) -> tuple[float | None, float | None]:

@@ -1,0 +1,130 @@
+name: device-setpoint-override
+description: >
+  Turning the TRV dial or pressing the AC remote (#259). Rooms that opt in take the value
+  set on the device over as the room target until the next schedule change, in Managed Mode
+  and in Full Control, where the device showed its boost or idle setpoint before. A room
+  without the option is unchanged: an idle TRV keeps the dial value until its next run, then
+  RoomMind sets its own value. Three days of normal operation around it must not produce an
+  override nobody asked for.
+refs: [259]
+tags: [override, trv, ac]
+start: 2026-01-12T00:00
+duration: 3d
+location: {latitude: 52.5, longitude: 13.4, time_zone: Europe/Berlin}
+weather: {profile: temperate}
+house:
+  building: bestand_teilsaniert
+  outdoor: {sensors: {temperature: sensor.aussen_temp}}
+  rooms:
+    wohnzimmer:
+      floor_area_m2: 22
+      initial: {temperature: 19.0}
+      devices: [{entity_id: climate.wz_trv, profile: generic_trv}]
+      sensors: {temperature: {entity_id: sensor.wz_temp}}
+    kinderzimmer:
+      floor_area_m2: 12
+      initial: {temperature: 19.0}
+      devices: [{entity_id: climate.kz_trv, profile: generic_trv}]
+    buero:
+      floor_area_m2: 12
+      initial: {temperature: 19.0}
+      devices: [{entity_id: climate.buero_ac, profile: generic_split_ac}]
+      sensors: {temperature: {entity_id: sensor.buero_temp}}
+    schlafzimmer:
+      floor_area_m2: 14
+      initial: {temperature: 18.0}
+      devices: [{entity_id: climate.sz_trv, profile: generic_trv}]
+      sensors: {temperature: {entity_id: sensor.sz_temp}}
+    flur:
+      floor_area_m2: 10
+      initial: {temperature: 19.0}
+      devices: [{entity_id: climate.flur_thermostat, profile: range_only_thermostat}]
+      sensors: {temperature: {entity_id: sensor.flur_temp}}
+helpers:
+  schedule:
+    plan_wohnen: {weekdays: ["06:00-08:00", "16:30-22:30"], weekend: ["07:30-23:00"]}
+    plan_buero: {weekdays: ["08:00-17:30"]}
+roommind:
+  settings:
+    outdoor_temp_sensor: sensor.aussen_temp
+  rooms:
+    wohnzimmer:
+      devices: [{entity_id: climate.wz_trv, type: trv, heating_system_type: radiator}]
+      temperature_sensor: sensor.wz_temp
+      climate_mode: heat_only
+      schedules: [{entity_id: schedule.plan_wohnen}]
+      comfort_temp: 21.0
+      eco_temp: 18.0
+      follow_device_setpoint: true
+    kinderzimmer:
+      devices: [{entity_id: climate.kz_trv, type: trv, heating_system_type: radiator}]
+      climate_mode: heat_only
+      schedules: [{entity_id: schedule.plan_wohnen}]
+      comfort_temp: 21.0
+      eco_temp: 18.0
+      follow_device_setpoint: true
+    buero:
+      devices: [{entity_id: climate.buero_ac, type: ac}]
+      temperature_sensor: sensor.buero_temp
+      climate_mode: heat_only
+      schedules: [{entity_id: schedule.plan_buero}]
+      comfort_temp: 21.0
+      eco_temp: 17.0
+      follow_device_setpoint: true
+    schlafzimmer:
+      devices: [{entity_id: climate.sz_trv, type: trv, heating_system_type: radiator}]
+      temperature_sensor: sensor.sz_temp
+      climate_mode: heat_only
+      schedules: [{entity_id: schedule.plan_wohnen}]
+      comfort_temp: 20.0
+      eco_temp: 17.0
+    # range-only thermostat in auto: RoomMind's own low/high sends must never become an override
+    flur:
+      devices: [{entity_id: climate.flur_thermostat, type: trv, heating_system_type: radiator}]
+      temperature_sensor: sensor.flur_temp
+      climate_mode: auto
+      schedules: [{entity_id: schedule.plan_wohnen}]
+      comfort_heat: 21.0
+      comfort_cool: 24.0
+      eco_heat: 18.0
+      eco_cool: 27.0
+      follow_device_setpoint: true
+timeline:
+  - {at: "+0d10h", do: mark, label: dial}
+  - {at: "+0d10h", do: device.manual, entity_id: climate.kz_trv, temperature: 22.5}
+  - {at: "+0d10h", do: device.manual, entity_id: climate.wz_trv, temperature: 23}
+  # the rest of the turn arrives after RoomMind already sent its setpoint for the first part
+  - {at: "+0d10h00m45s", do: device.manual, entity_id: climate.wz_trv, temperature: 22}
+  - {at: "+0d10h", do: device.manual, entity_id: climate.sz_trv, temperature: 24}
+  - {at: "+0d11h", do: device.manual, entity_id: climate.buero_ac, temperature: 30}
+expect:
+  - {invariant: no_rejected_commands}
+  - {check: "room.wohnzimmer.override_active == false and room.kinderzimmer.override_active == false and room.buero.override_active == false and room.flur.override_active == false", at: "+0d09h55m", label: no override before anyone touches a device}
+  - {check: "room.kinderzimmer.override_active == true and room.kinderzimmer.heat_target == 22.5", at: "+0d10h05m", label: Managed Mode takes the dial value as the target}
+  - {check: "dev('climate.kz_trv').target == 22.5", at: "+0d10h10m", label: Managed TRV keeps the value turned in}
+  # the TRV shows its 29.5 boost at that moment, the dial goes down to 23, then on to 22
+  - {check: "room.wohnzimmer.override_active == true and room.wohnzimmer.heat_target == 22.0", at: "+0d10h05m", label: Full Control takes the dial value although the TRV showed its boost}
+  - {check: "room.buero.override_active == true and room.buero.heat_target == 30.0", at: "+0d11h05m", label: AC remote value becomes the target}
+  # the idle TRV sits at 5 °C in off; turned to 24 it would be a 35 °C target if the turn were added to the target
+  - {check: "room.schlafzimmer.override_active == false", at: "+0d10h05m", label: without the option no override}
+  - {check: "dev('climate.sz_trv').target != 24", at: "+0d16h40m", label: without the option RoomMind sets its own value at the next run}
+  - {check: "room.wohnzimmer.override_active == false and room.kinderzimmer.override_active == false and room.wohnzimmer.heat_target == 21.0", at: "+0d16h35m", label: the hold ends with the next schedule change}
+  - {check: "room.buero.override_active == false and room.flur.override_active == false", at: "+0d17h35m", label: AC hold ends with the next schedule change}
+  # An override holds until the next schedule change, so a check just before every change
+  # (06:00, 08:00, 16:30, 22:30; office 08:00, 17:30) sees any override nobody asked for.
+  - {check: "room.wohnzimmer.override_active == false and room.kinderzimmer.override_active == false and room.buero.override_active == false and room.flur.override_active == false", at: "+0d05h55m", label: no override from normal operation}
+  - {check: "room.wohnzimmer.override_active == false and room.kinderzimmer.override_active == false and room.buero.override_active == false and room.flur.override_active == false", at: "+0d07h55m", label: no override from normal operation}
+  - {check: "room.flur.override_active == false", at: "+0d16h25m", label: no override from normal operation}
+  - {check: "room.wohnzimmer.override_active == false and room.kinderzimmer.override_active == false and room.flur.override_active == false", at: "+0d17h25m", label: no override from normal operation}
+  - {check: "room.wohnzimmer.override_active == false and room.kinderzimmer.override_active == false and room.buero.override_active == false and room.flur.override_active == false", at: "+0d22h25m", label: no override from normal operation}
+  - {check: "room.wohnzimmer.override_active == false and room.kinderzimmer.override_active == false and room.buero.override_active == false and room.flur.override_active == false", at: "+1d05h55m", label: no override from normal operation}
+  - {check: "room.wohnzimmer.override_active == false and room.kinderzimmer.override_active == false and room.buero.override_active == false and room.flur.override_active == false", at: "+1d07h55m", label: no override from normal operation}
+  - {check: "room.wohnzimmer.override_active == false and room.kinderzimmer.override_active == false and room.buero.override_active == false and room.flur.override_active == false", at: "+1d16h25m", label: no override from normal operation}
+  - {check: "room.wohnzimmer.override_active == false and room.kinderzimmer.override_active == false and room.buero.override_active == false and room.flur.override_active == false", at: "+1d17h25m", label: no override from normal operation}
+  - {check: "room.wohnzimmer.override_active == false and room.kinderzimmer.override_active == false and room.buero.override_active == false and room.flur.override_active == false", at: "+1d22h25m", label: no override from normal operation}
+  - {check: "room.wohnzimmer.override_active == false and room.kinderzimmer.override_active == false and room.buero.override_active == false and room.flur.override_active == false", at: "+2d05h55m", label: no override from normal operation}
+  - {check: "room.wohnzimmer.override_active == false and room.kinderzimmer.override_active == false and room.buero.override_active == false and room.flur.override_active == false", at: "+2d07h55m", label: no override from normal operation}
+  - {check: "room.wohnzimmer.override_active == false and room.kinderzimmer.override_active == false and room.buero.override_active == false and room.flur.override_active == false", at: "+2d16h25m", label: no override from normal operation}
+  - {check: "room.wohnzimmer.override_active == false and room.kinderzimmer.override_active == false and room.buero.override_active == false and room.flur.override_active == false", at: "+2d17h25m", label: no override from normal operation}
+  - {check: "room.wohnzimmer.override_active == false and room.kinderzimmer.override_active == false and room.buero.override_active == false and room.flur.override_active == false", at: "+2d22h25m", label: no override from normal operation}
+  - {check: "room.wohnzimmer.override_active == false and room.kinderzimmer.override_active == false and room.buero.override_active == false and room.flur.override_active == false", at: "+2d23h55m", label: no override from normal operation}

@@ -44,6 +44,19 @@ An external room temperature sensor is the key split:
 
 This matters for the options below.
 
+## Changes Made on the Device
+
+RoomMind writes its setpoint to every device it controls and sets it again when the device reports something else, so a turn of the TRV dial is undone with RoomMind's next command (usually within 30 seconds; a TRV that RoomMind switched off keeps the value until its next run). With `Take over changes made on the device` (schedule settings of the room, off by default) such a change becomes the room target instead, until the next change of the active schedule, like a temperature set on the room climate entity. Without a schedule it holds until you end the override. A running override, also one with a duration, is replaced and then holds until the next schedule change as well.
+
+- The value set on the device is the new target, also in `Full Control`, where the device showed RoomMind's boost or idle setpoint before (e.g. 29.5 °C while heating, or 5 °C while idle). A direct setpoint offset is taken off again. Afterwards the device shows RoomMind's setpoint for the new target, not the value turned in.
+- ACs count too: a TRV and an AC in heating mode change the heating side, an AC in cooling or dry mode the cooling side, a range change on a `heat_cool` device both sides.
+- Only devices that report their setpoint to Home Assistant can be followed. IR devices without state feedback cannot.
+- Thermostats always change the heating side. An AC with a single setpoint in `heat_cool`/`auto` changes the side it reports heating or cooling for; when it reports neither, or is off or in fan mode, it counts only in heat-only or cool-only rooms (for the side the room uses). A change on a side the room does not use (e.g. a thermostat in a cool-only room) is ignored.
+- RoomMind cannot see who changed a setpoint. A value it sent itself and the device has not shown yet counts as RoomMind's, as does a setpoint the device reports while RoomMind switches its mode (until the device shows that mode and up to a minute after, at most 5 minutes after the command). A mode picked on the device itself does not count as such a switch. Everything else counts as a change on the device, also a device's own weekly program, its frost or window protection setting a setpoint, or an automation writing to the device. Leave the option off for such devices.
+- Like every override, the taken-over target outranks vacation, presence and an empty room, and lifts the outdoor temperature limits while it lasts.
+- After a device was unavailable, or after a room was not controlled for a while (e.g. its area was deleted), the first setpoint it reports is not taken over.
+- While climate control is off for the room or globally, nothing is taken over: RoomMind sends no commands then, the device keeps whatever is set on it.
+
 ## Setpoint Mode: Proportional vs Direct
 
 `Setpoint mode` is relevant for thermostat/TRV devices in `Full Control` rooms.

@@ -45,6 +45,7 @@ export class RsScheduleSettings extends RsScheduleBase {
   @property({ attribute: false }) public scheduleTempWarnings: ScheduleTempWarning[] = [];
   @property({ type: Boolean }) public preheatEnabled = true;
   @property({ type: Boolean }) public showPreheat = false;
+  @property({ type: Boolean }) public followDeviceSetpoint = false;
 
   static styles = [
     RsScheduleBase.sharedStyles,
@@ -74,7 +75,8 @@ export class RsScheduleSettings extends RsScheduleBase {
         flex: 1;
       }
 
-      .preheat-toggle {
+      .preheat-toggle,
+      .follow-device-toggle {
         margin-top: 16px;
       }
 
@@ -224,6 +226,13 @@ export class RsScheduleSettings extends RsScheduleBase {
           : nothing
       }
       ${
+        this.followDeviceSetpoint
+          ? html`<div class="view-selector-info">
+              ${localize("schedule.view_follow_device_setpoint", l)}
+            </div>`
+          : nothing
+      }
+      ${
         this.scheduleSelectorEntity
           ? html`<div class="view-selector-info">
               ${localize("schedule.view_selector_prefix", l)}
@@ -272,7 +281,25 @@ export class RsScheduleSettings extends RsScheduleBase {
             ></rs-toggle-row>`
           : nothing
       }
+      <rs-toggle-row
+        class="follow-device-toggle"
+        .label=${localize("schedule.follow_device_setpoint_label", l)}
+        .hint=${localize("schedule.follow_device_setpoint_hint", l)}
+        .checked=${this.followDeviceSetpoint}
+        @toggle-changed=${this._onFollowDeviceSetpointToggle}
+      ></rs-toggle-row>
     `;
+  }
+
+  private _onFollowDeviceSetpointToggle(e: CustomEvent<boolean>) {
+    e.stopPropagation();
+    this.dispatchEvent(
+      new CustomEvent("follow-device-setpoint-changed", {
+        detail: { value: e.detail },
+        bubbles: true,
+        composed: true,
+      }),
+    );
   }
 
   private _onPreheatToggle(e: CustomEvent<boolean>) {
