@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from datetime import timedelta
+from datetime import date, timedelta
+from math import ceil
 
 from homeassistant.util import dt as dt_util
 
@@ -13,7 +14,9 @@ COMFORT_TOLERANCE_K = 0.5
 # A sample stands for the time until the next one; a gap (HA down) must not count as running time
 MAX_SAMPLE_GAP_S = 900
 RHYTHM_DAYS = 14
+RHYTHM_MAX_DAYS = 31
 RHYTHM_MIN_DAYS = 2
+RHYTHM_MEANS = {"temp": "room_temp", "humidity": "humidity", "outdoor": "outdoor_temp"}
 
 
 def _weighted(points: list[dict]) -> Iterator[tuple[dict, float]]:
@@ -96,48 +99,69 @@ def compute_period_stats(points: list[dict], climate_mode: str) -> dict:
     }
 
 
-def _empty_day(date: str) -> dict:
-    return {"date": date, "heat": [None] * 24, "cool": [None] * 24, "window": [None] * 24, "deviation": [None] * 24}
+def _local_date(ts: float) -> date:
+    local: date = dt_util.as_local(dt_util.utc_from_timestamp(ts)).date()
+    return local
 
 
-def compute_rhythm(points: list[dict], climate_mode: str, end_ts: float) -> dict | None:
-    """Hour-by-day grid of the last RHYTHM_DAYS local days, newest day first.
+def rhythm_window(start_ts: float, end_ts: float, now: float) -> tuple[int, float]:
+    """Days of the grid and the moment it ends for a selected range.
+
+    The grid is an overview around the range: it stays on the days up to now while the
+    range lies inside them, so picking a day does not move the rows under the pointer,
+    grows with a longer range and only moves back for a range older than that.
+    """
+    days = min(max(ceil((end_ts - start_ts) / 86400), RHYTHM_DAYS), RHYTHM_MAX_DAYS)
+    if _local_date(start_ts) >= _local_date(now) - timedelta(days=days - 1):
+        return days, now
+    return days, min(end_ts, now)
+
+
+def _empty_day(date_str: str) -> dict:
+    keys = ("heat", "cool", "window", "deviation", *RHYTHM_MEANS)
+    return {"date": date_str, **{key: [None] * 24 for key in keys}}
+
+
+def compute_rhythm(points: list[dict], climate_mode: str, end_ts: float, days_shown: int = RHYTHM_DAYS) -> dict | None:
+    """Hour-by-day grid of the local days up to end_ts, newest day first.
 
     heat, cool and window are shares of the hour (0-1), deviation is the mean signed
-    distance from the wanted band in K. An hour without samples is None. None overall
-    while fewer than RHYTHM_MIN_DAYS days have data, a single row says nothing.
+    distance from the wanted band in K, temp, humidity and outdoor are hourly means.
+    An hour without samples is None. None overall while fewer than RHYTHM_MIN_DAYS days
+    have data, a single row says nothing.
     """
-    last_day = dt_util.as_local(dt_util.utc_from_timestamp(end_ts)).date()
-    dates = [last_day - timedelta(days=i) for i in range(RHYTHM_DAYS)]
-    index = {date: i for i, date in enumerate(dates)}
-    days = [_empty_day(date.isoformat()) for date in dates]
+    last_day = _local_date(end_ts)
+    dates = [last_day - timedelta(days=i) for i in range(days_shown)]
+    index = {day: i for i, day in enumerate(dates)}
+    days = [_empty_day(day.isoformat()) for day in dates]
 
-    # [seconds, heat, cool, window, judged seconds, deviation seconds]
-    cells: dict[tuple[int, int], list[float]] = {}
+    cells: dict[tuple[int, int], dict[str, float]] = {}
     for (point, weight), deviation in zip(_weighted(points), _deviations(points, climate_mode), strict=True):
         local = dt_util.as_local(dt_util.utc_from_timestamp(point["ts"]))
         row = index.get(local.date())
         if row is None or weight <= 0:
             continue
-        cell = cells.setdefault((row, local.hour), [0.0] * 6)
-        cell[0] += weight
-        if point.get("mode") == MODE_HEATING:
-            cell[1] += weight
-        elif point.get("mode") == MODE_COOLING:
-            cell[2] += weight
-        if point.get("window_open"):
-            cell[3] += weight
-        if deviation is not None:
-            cell[4] += weight
-            cell[5] += deviation * weight
+        cell = cells.setdefault((row, local.hour), {})
+        cell["seconds"] = cell.get("seconds", 0.0) + weight
+        for key, on in (
+            ("heat", point.get("mode") == MODE_HEATING),
+            ("cool", point.get("mode") == MODE_COOLING),
+            ("window", bool(point.get("window_open"))),
+        ):
+            cell[key] = cell.get(key, 0.0) + (weight if on else 0.0)
+        values = {key: point.get(field) for key, field in RHYTHM_MEANS.items()}
+        for key, value in {**values, "deviation": deviation}.items():
+            if value is not None:
+                cell[f"{key}_sum"] = cell.get(f"{key}_sum", 0.0) + value * weight
+                cell[f"{key}_seconds"] = cell.get(f"{key}_seconds", 0.0) + weight
 
     for (row, hour), cell in cells.items():
         day = days[row]
-        day["heat"][hour] = round(cell[1] / cell[0], 2)
-        day["cool"][hour] = round(cell[2] / cell[0], 2)
-        day["window"][hour] = round(cell[3] / cell[0], 2)
-        if cell[4] > 0:
-            day["deviation"][hour] = round(cell[5] / cell[4], 2)
+        for key in ("heat", "cool", "window"):
+            day[key][hour] = round(cell[key] / cell["seconds"], 2)
+        for key in ("deviation", *RHYTHM_MEANS):
+            if f"{key}_seconds" in cell:
+                day[key][hour] = round(cell[f"{key}_sum"] / cell[f"{key}_seconds"], 2)
 
     if len({row for row, _ in cells}) < RHYTHM_MIN_DAYS:
         return None

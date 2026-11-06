@@ -103,7 +103,7 @@ hide_temperatures: false
 Select a room and time range (24h / 7d / 30d / 90d / custom) to view temperature and humidity history, heating/cooling power, solar irradiance, and model predictions. Export as CSV or diagnostics report.
 
 - **This period**: time on target (within 0.5° of the wanted band, open windows left out), too cold/too warm shares, mean deviation, heating and cooling hours with the number of runs, and window-open hours.
-- **Daily rhythm**: the last 14 days by hour, always, whatever range is selected. One view shows when the room heats or cools and when windows were open, the other when it missed its target. Handy for spotting a morning that always starts too cold.
+- **Daily rhythm**: an overview of at least 14 days by hour, with the selected range marked. It stays on the latest days, grows with a longer range (up to 31 days) and moves back for an older one. One view shows when the room heats or cools and when windows were open, the other when it missed its target. Hover or tap an hour for its figures, tap a day to show it in the chart above.
 - **Heat loss** in the model card: how many degrees per hour the room loses without heating at 10° difference to outside, for comparing rooms or a renovation before and after. Degrees per hour, not watts, because RoomMind does not know the size of the room.
 
 Humidity needs a humidity sensor on the room. Humidity and time on target start with the first readings after the update, older history has neither.

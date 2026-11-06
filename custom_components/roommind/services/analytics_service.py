@@ -26,7 +26,7 @@ from ..control.mpc_controller import (
     is_mpc_active,
 )
 from ..control.solar import compute_q_solar_norm
-from .analytics_stats import RHYTHM_DAYS, compute_period_stats, compute_rhythm
+from .analytics_stats import compute_period_stats, compute_rhythm, rhythm_window
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -209,6 +209,8 @@ async def build_analytics_data(
     # Read history data -- custom timestamps take precedence over range preset
     detail: list = []
     history: list = []
+    now = time.time()
+    range_start = custom_start if custom_start is not None else now - 43200
     if history_store:
         if custom_start is not None:
             detail = _csv_to_points(
@@ -228,6 +230,7 @@ async def build_analytics_data(
                 "90d": 7776000,
             }
             max_age = max_age_map.get(range_key, 43200)
+            range_start = now - max_age
             detail = _csv_to_points(await hass.async_add_executor_job(history_store.read_detail, area_id, max_age))
             history = _csv_to_points(await hass.async_add_executor_job(history_store.read_history, area_id, max_age))
 
@@ -235,18 +238,19 @@ async def build_analytics_data(
     climate_mode = room_config.get("climate_mode", "auto")
     stats = compute_period_stats(sorted(history + detail, key=lambda p: p["ts"]), climate_mode)
 
-    # The rhythm always shows the days up to now, whatever range is selected
     rhythm: dict | None = None
     if history_store:
-        rhythm_end = time.time()
-        rhythm_start = rhythm_end - (RHYTHM_DAYS + 1) * 86400
+        rhythm_days, rhythm_end = rhythm_window(range_start, custom_end if custom_end is not None else now, now)
+        rhythm_start = rhythm_end - (rhythm_days + 1) * 86400
         rhythm_rows = await hass.async_add_executor_job(
             history_store.read_history, area_id, None, rhythm_start, rhythm_end
         )
         rhythm_rows += await hass.async_add_executor_job(
             history_store.read_detail, area_id, None, rhythm_start, rhythm_end
         )
-        rhythm = compute_rhythm(sorted(_csv_to_points(rhythm_rows), key=lambda p: p["ts"]), climate_mode, rhythm_end)
+        rhythm = compute_rhythm(
+            sorted(_csv_to_points(rhythm_rows), key=lambda p: p["ts"]), climate_mode, rhythm_end, rhythm_days
+        )
 
     # Model info (only if estimator exists -- avoid auto-creating for unknown rooms)
     model_info: dict = {}

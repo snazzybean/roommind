@@ -28,6 +28,8 @@ export class RsAnalytics extends LitElement {
   @state() private _activeQuick: string | null = "24h";
 
   private _refreshInterval?: ReturnType<typeof setInterval>;
+  private _dataRoom = "";
+  private _fetchId = 0;
 
   connectedCallback() {
     super.connectedCallback();
@@ -91,7 +93,7 @@ export class RsAnalytics extends LitElement {
       ></rs-analytics-toolbar>
       ${
         this._selectedRoom
-          ? this._loading
+          ? this._loading && !this._data
             ? html`<div class="loading">${localize("panel.loading", l)}</div>`
             : html`
                 ${this._renderSummary()}
@@ -109,7 +111,10 @@ export class RsAnalytics extends LitElement {
                     ? html`<rs-analytics-rhythm
                         .hass=${this.hass}
                         .rhythm=${this._data?.rhythm ?? null}
+                        .rangeStart=${this._rangeStart}
+                        .rangeEnd=${this._rangeEnd}
                         .language=${l}
+                        @day-selected=${this._onDaySelected}
                       ></rs-analytics-rhythm>`
                     : nothing
                 }
@@ -173,6 +178,20 @@ export class RsAnalytics extends LitElement {
     this._chartAnchor = chartAnchor;
   }
 
+  private async _onDaySelected(e: CustomEvent<string>) {
+    const now = Date.now();
+    const end = new Date(`${e.detail}T23:59:59`).getTime();
+    this._activeQuick = end >= now ? "24h" : null;
+    this._rangeStart = new Date(`${e.detail}T00:00:00`).getTime();
+    this._rangeEnd = Math.min(end, now);
+    this._chartAnchor = this._rangeEnd;
+    await this.updateComplete;
+    const smooth = !matchMedia("(prefers-reduced-motion: reduce)").matches;
+    this.renderRoot
+      .querySelector("rs-analytics-chart")
+      ?.scrollIntoView({ block: "nearest", behavior: smooth ? "smooth" : "auto" });
+  }
+
   private _buildWsParams(): Record<string, unknown> {
     return {
       type: "roommind/analytics/get",
@@ -184,19 +203,22 @@ export class RsAnalytics extends LitElement {
 
   private async _fetchData() {
     if (!this._selectedRoom) return;
+    const fetchId = ++this._fetchId;
     this._loading = true;
-    this._data = null;
+    // Same room: the old data stays up, so a new range does not reset scroll and open views
+    if (this._dataRoom !== this._selectedRoom) this._data = null;
+    this._dataRoom = this._selectedRoom;
     this._chartAnchor = this._rangeEnd;
 
     try {
       const result = await this.hass.callWS<AnalyticsData>(this._buildWsParams());
-      this._data = result;
+      if (fetchId === this._fetchId) this._data = result;
     } catch (err) {
       // eslint-disable-next-line no-console
       console.debug("[RoomMind] fetchData:", err);
-      this._data = null;
+      if (fetchId === this._fetchId) this._data = null;
     } finally {
-      this._loading = false;
+      if (fetchId === this._fetchId) this._loading = false;
     }
   }
 
@@ -215,6 +237,10 @@ export class RsAnalytics extends LitElement {
   static styles = css`
     :host {
       display: block;
+    }
+
+    rs-analytics-chart {
+      scroll-margin-top: 120px;
     }
 
     .no-data {

@@ -10,8 +10,10 @@ from homeassistant.util import dt as dt_util
 from custom_components.roommind.services.analytics_stats import (
     MAX_SAMPLE_GAP_S,
     RHYTHM_DAYS,
+    RHYTHM_MAX_DAYS,
     compute_period_stats,
     compute_rhythm,
+    rhythm_window,
 )
 
 T0 = 1_800_000_000.0
@@ -150,3 +152,52 @@ def test_rhythm_shares_are_parts_of_the_hour():
     assert rhythm is not None
     assert rhythm["days"][0]["heat"][7] == 0.25
     assert rhythm["days"][0]["window"][7] == 0.5
+
+
+def test_rhythm_hours_carry_the_means_for_the_popup():
+    points = _hour_of_samples(4, 7) + _hour_of_samples(5, 7, room_temp=20.5, humidity=48.0, outdoor_temp=6.0)
+    rhythm = compute_rhythm(points, "auto", _local_ts(5, 20))
+    assert rhythm is not None
+    newest = rhythm["days"][0]
+    assert newest["temp"][7] == 20.5
+    assert newest["humidity"][7] == 48
+    assert newest["outdoor"][7] == 6
+    assert rhythm["days"][1]["humidity"][7] is None
+
+
+def test_rhythm_can_show_more_days():
+    points = _hour_of_samples(1, 7) + _hour_of_samples(5, 7)
+    earlier = [{**p, "ts": p["ts"] - 20 * 86400} for p in _hour_of_samples(5, 7)]
+    rhythm = compute_rhythm(sorted(points + earlier, key=lambda p: p["ts"]), "auto", _local_ts(5, 20), 31)
+    assert rhythm is not None
+    assert len(rhythm["days"]) == 21
+
+
+def test_window_stays_on_the_last_days_for_a_day_inside_them():
+    now = _local_ts(20, 12)
+    assert rhythm_window(_local_ts(10, 0), _local_ts(10, 23), now) == (RHYTHM_DAYS, now)
+
+
+def test_window_includes_the_oldest_day_of_the_grid():
+    now = _local_ts(20, 12)
+    assert rhythm_window(_local_ts(7, 0), _local_ts(7, 23), now) == (RHYTHM_DAYS, now)
+    assert rhythm_window(_local_ts(6, 0), _local_ts(6, 23), now)[1] != now
+
+
+def test_window_moves_back_for_an_older_range():
+    now = _local_ts(25, 12)
+    end = _local_ts(3, 23)
+    assert rhythm_window(_local_ts(1, 0), end, now) == (RHYTHM_DAYS, end)
+
+
+def test_window_grows_with_the_range_up_to_the_limit():
+    now = _local_ts(30, 12)
+    assert rhythm_window(now - 29 * 86400, now, now) == (29, now)
+    assert rhythm_window(now - 80 * 86400, now, now) == (RHYTHM_MAX_DAYS, now)
+
+
+def test_window_never_ends_in_the_future():
+    now = _local_ts(5, 12)
+    days, end = rhythm_window(_local_ts(1, 0) - 86400 * 40, now + 86400, now)
+    assert days == RHYTHM_MAX_DAYS
+    assert end == now

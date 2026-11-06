@@ -308,6 +308,9 @@ export interface RhythmDay {
   cool: Array<number | null>;
   window: Array<number | null>;
   deviation: Array<number | null>;
+  temp: Array<number | null>;
+  humidity: Array<number | null>;
+  outdoor: Array<number | null>;
 }
 
 export interface AnalyticsRhythm {
