@@ -332,6 +332,7 @@ export class RsAnalyticsToolbar extends LitElement {
       }
 
       .range-row {
+        flex-wrap: wrap;
         display: flex;
         align-items: center;
         justify-content: space-between;
@@ -501,9 +502,6 @@ export class RsAnalyticsToolbar extends LitElement {
       }
 
       @media (max-width: 600px) {
-        .range-row {
-          flex-wrap: wrap;
-        }
         .range-controls {
           flex-wrap: wrap;
         }

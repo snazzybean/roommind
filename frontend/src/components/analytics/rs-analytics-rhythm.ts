@@ -260,10 +260,8 @@ export class RsAnalyticsRhythm extends LitElement {
 
     .header {
       display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      flex-wrap: wrap;
-      gap: 8px 16px;
+      flex-direction: column;
+      gap: 8px;
       padding: 16px 16px 8px;
     }
 
