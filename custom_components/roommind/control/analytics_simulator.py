@@ -168,6 +168,7 @@ def simulate_prediction(
     heating_duration_minutes: float = 0.0,
     last_power_fraction: float = 1.0,
     residual_scale: float = 1.0,
+    residual_tau: float | None = None,
     q_occupancy: float = 0.0,
     previous_mode: str = MODE_IDLE,
     mode_elapsed_minutes: float | None = None,
@@ -202,6 +203,7 @@ def simulate_prediction(
             heating_duration_minutes=heating_duration_minutes,
             last_power_fraction=last_power_fraction,
             residual_scale=residual_scale,
+            residual_tau=residual_tau,
             q_occupancy=q_occupancy,
             previous_mode=previous_mode,
             mode_elapsed_minutes=mode_elapsed_minutes,
@@ -224,6 +226,7 @@ def simulate_prediction(
         heating_duration_minutes=heating_duration_minutes,
         last_power_fraction=last_power_fraction,
         residual_scale=residual_scale,
+        residual_tau=residual_tau,
         q_occupancy=q_occupancy,
         previous_mode=previous_mode,
         mode_elapsed_minutes=mode_elapsed_minutes,
@@ -312,6 +315,7 @@ def _simulate_mpc(
     heating_duration_minutes: float = 0.0,
     last_power_fraction: float = 1.0,
     residual_scale: float = 1.0,
+    residual_tau: float | None = None,
     q_occupancy: float = 0.0,
     previous_mode: str = MODE_IDLE,
     mode_elapsed_minutes: float | None = None,
@@ -408,6 +412,7 @@ def _simulate_mpc(
                     last_power_fraction,
                     sim_heating_blocks * PLAN_DT_MINUTES if sim_was_heating else heating_duration_minutes,
                     residual_scale,
+                    residual_tau,
                 )
             optimizer = MPCOptimizer(
                 model=model,
@@ -428,6 +433,7 @@ def _simulate_mpc(
                     cw, PLAN_DT_MINUTES, enabled=room_config.get("preheat_enabled", True)
                 ),
                 residual_scale=residual_scale,
+                residual_tau=residual_tau,
             )
             plan = optimizer.optimize(
                 T_room=T,
@@ -510,6 +516,7 @@ def _simulate_mpc(
                     last_power_fraction,
                     sim_heating_blocks * PLAN_DT_MINUTES,
                     residual_scale,
+                    residual_tau,
                 )
 
         if action == MODE_IDLE:
@@ -548,6 +555,7 @@ def _simulate_bangbang(
     heating_duration_minutes: float = 0.0,
     last_power_fraction: float = 1.0,
     residual_scale: float = 1.0,
+    residual_tau: float | None = None,
     q_occupancy: float = 0.0,
     previous_mode: str = MODE_IDLE,
     mode_elapsed_minutes: float | None = None,
@@ -657,6 +665,7 @@ def _simulate_bangbang(
                     last_power_fraction,
                     sim_heating_blocks * 5.0,
                     residual_scale,
+                    residual_tau,
                 )
 
         pred_temps.append(round(T, 2))

@@ -10,8 +10,9 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import __version__ as HA_VERSION
 from homeassistant.core import HomeAssistant
 
-from .const import DEFAULT_CONTROL_MODE, DOMAIN, VERSION
+from .const import DEFAULT_CONTROL_MODE, DOMAIN, HEATING_SYSTEM_RADIATOR, VERSION
 from .control.mpc_controller import _active_targets, _last_commands, _now, _sent_at
+from .control.residual_heat import residual_tau
 from .utils.history_store import DETAIL_FIELDS
 
 # v2 adds what a simulation needs to rebuild a setup (device capabilities, referenced
@@ -288,14 +289,23 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, config_entry: 
 
         # Residual heat state
         if coordinator:
+            # Radiators use the learned size and decay time of their afterglow (as the controller)
+            radiator = config.get("heating_system_type", "") == HEATING_SYSTEM_RADIATOR
+            scale = coordinator._model_manager.get_residual_scale(area_id) if radiator else 1.0
+            tau = coordinator._model_manager.get_residual_tau(area_id) if radiator else None
             live_diag["q_residual"] = round(
                 coordinator._residual_tracker.get_q_residual(
                     area_id,
                     config.get("heating_system_type", ""),
                     coordinator._previous_modes.get(area_id, "idle"),
+                    scale,
+                    tau,
                 ),
                 4,
             )
+            if radiator:
+                live_diag["residual_scale"] = round(scale, 3)
+                live_diag["residual_decay_minutes"] = round(residual_tau("radiator", tau), 1)
             live_diag["q_rebound"] = round(coordinator._rebound_tracker.get_charge(area_id), 4)
 
         # Schedule entity state

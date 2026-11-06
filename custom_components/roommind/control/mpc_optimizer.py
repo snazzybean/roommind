@@ -13,9 +13,10 @@ from ..const import (
     MODE_COOLING,
     MODE_HEATING,
     MODE_IDLE,
+    RADIATOR_LOOKAHEAD_TAUS,
     SLOW_SYSTEM_START_PENALTY,
 )
-from .residual_heat import advance_rebound, compute_residual_heat, get_min_run_blocks, mean_rebound
+from .residual_heat import advance_rebound, compute_residual_heat, get_min_run_blocks, mean_rebound, residual_tau
 from .thermal_model import RCModel
 
 # Base lookahead for per-block decision cost evaluation. Radiator / unknown
@@ -128,6 +129,8 @@ class MPCOptimizer:
     preheat_max_blocks: int | None = None
     # Learned multiplier on the heating system's residual heat profile (ResidualHeatLearner)
     residual_scale: float = 1.0
+    # Learned decay time of that afterglow in minutes (radiators); None uses the profile's
+    residual_tau: float | None = None
 
     def __post_init__(self) -> None:
         # Set before optimize() runs so callers / patched optimize() still expose
@@ -186,7 +189,14 @@ class MPCOptimizer:
         # horizon without a matching cooling-side synthesis would shift the
         # energy/comfort ratio for COOLING and cause more aggressive AC use.
         profile = HEATING_SYSTEM_PROFILES.get(self.heating_system_type) if self.heating_system_type else None
-        if profile and dt_minutes > 0 and not self.can_cool:
+        if profile and dt_minutes > 0 and self._radiator:
+            # Radiators: far enough to see where the run's stored heat takes the room
+            # (its learned decay time; the profile's gives the base lookahead)
+            tau_blocks = math.ceil(
+                RADIATOR_LOOKAHEAD_TAUS * residual_tau(self.heating_system_type, self.residual_tau) / dt_minutes
+            )
+            self._lookahead_blocks = max(LOOKAHEAD_BASE_BLOCKS, self.min_run_blocks + tau_blocks)
+        elif profile and dt_minutes > 0 and not self.can_cool:
             tau_blocks = math.ceil(profile["tau_minutes"] / dt_minutes)
             self._lookahead_blocks = max(
                 LOOKAHEAD_BASE_BLOCKS,
@@ -460,9 +470,51 @@ class MPCOptimizer:
         rise = next((j for j in range(i + 1, n) if heat_target_series[j] > max(now, T_room)), None)
         if rise is None:
             return 0
+        residual = q_residual or []
+        # A short run's stored heat is spent within the radiator lookahead (two decay times),
+        # so for a block further away it cannot be the answer: skip the check there
+        if self._radiator and not continuing and rise - i <= self._lookahead_blocks:
+            # A radiator keeps heating the room long after a run: the shortest run started
+            # as late as it still reaches the target leaves the least heat behind the block
+            # (a late start needs a long run, whose stored heat lands after the block). Wait
+            # while a min run started next block still makes it; start now when only one
+            # started now does; when neither does, fall back to heating through below.
+            # Only the coming block counts: one pre-heat run is not meant to hold a later one.
+            block_end = next((j for j in range(rise, n) if heat_target_series[j] <= now), n)
+            if self._short_run_reaches(
+                1,
+                i,
+                block_end,
+                now,
+                T_room,
+                T_outdoor_series,
+                heat_target_series,
+                dt_minutes,
+                q_solar,
+                q_occupancy,
+                residual,
+                glow,
+                glow_elapsed,
+            ):
+                return 0
+            if self._short_run_reaches(
+                0,
+                i,
+                block_end,
+                now,
+                T_room,
+                T_outdoor_series,
+                heat_target_series,
+                dt_minutes,
+                q_solar,
+                q_occupancy,
+                residual,
+                glow,
+                glow_elapsed,
+            ):
+                return rise - i
         wait = max(PREHEAT_CONTINUE_BLOCKS, self.min_run_blocks) if continuing else 1
         T = T_room
-        residual = q_residual or []
         for j in range(i, n - 1):
             waiting = j < i + wait
             Q = 0.0 if waiting else self.model.Q_heat
@@ -485,6 +537,55 @@ class MPCOptimizer:
             if target > now and T < target - PREHEAT_DEADLINE_MARGIN:
                 return j + 1 - i
         return 0
+
+    def _short_run_reaches(
+        self,
+        start: int,
+        i: int,
+        n: int,
+        now: float,
+        T_room: float,
+        T_outdoor_series: list[float],
+        heat_target_series: list[float],
+        dt_minutes: float,
+        q_solar: list[float],
+        q_occupancy: list[float],
+        residual: list[float],
+        glow: tuple[float, float] | None,
+        glow_elapsed: float,
+    ) -> bool:
+        """True when a min run starting *start* blocks after *i*, then its afterglow, holds every coming higher target.
+
+        Before the run the room idles on ``glow`` (a run the plan stopped) or its own
+        ``residual``; after it, the run's own afterglow at the learned scale and decay
+        (or what was there before, if larger).
+        """
+        run = (self.min_run_blocks * dt_minutes, 1.0)
+        T = T_room
+        for j in range(i, n - 1):
+            k = j - i
+            before = glow_elapsed + (k + 0.5) * dt_minutes
+            earlier = self._afterglow(before, glow) if glow is not None else residual[k] if k < len(residual) else 0.0
+            if start <= k < start + self.min_run_blocks:
+                Q, qr = self.model.Q_heat, 0.0
+            elif k >= start + self.min_run_blocks:
+                Q = 0.0
+                qr = max(self._afterglow((k - start - self.min_run_blocks + 0.5) * dt_minutes, run), earlier)
+            else:
+                Q, qr = 0.0, earlier
+            T = self.model.predict(
+                T,
+                T_outdoor_series[j],
+                Q,
+                dt_minutes,
+                q_solar=q_solar[j] if j < len(q_solar) else 0.0,
+                q_occupancy=q_occupancy[j] if j < len(q_occupancy) else 0.0,
+                q_residual=qr,
+            )
+            target = heat_target_series[j + 1]
+            if target > now and T < target - PREHEAT_DEADLINE_MARGIN:
+                return False
+        return True
 
     def simulate_plan(
         self,
@@ -588,6 +689,9 @@ class MPCOptimizer:
             and self._lookahead_blocks > LOOKAHEAD_BASE_BLOCKS
             and self.min_run_blocks > 0
             and bool(self.heating_system_type)
+            # Radiators judge their own run's afterglow with the learned scale and decay
+            # (below); the profile's synthesis would hide the overshoot a long lookahead shows
+            and not self._radiator
         )
         heating_duration_minutes = self.min_run_blocks * dt_minutes
         run_blocks = self._min_run_for(action)
@@ -738,7 +842,9 @@ class MPCOptimizer:
     def _afterglow(self, elapsed_minutes: float, run: tuple[float, float]) -> float:
         """Residual heat fraction *elapsed_minutes* after a run of (minutes, power fraction) stopped."""
         minutes, pf = run
-        return compute_residual_heat(elapsed_minutes, self.heating_system_type, pf, minutes, self.residual_scale)
+        return compute_residual_heat(
+            elapsed_minutes, self.heating_system_type, pf, minutes, self.residual_scale, self.residual_tau
+        )
 
     def _min_run_for(self, mode: str) -> int:
         """Minimum run in blocks for *mode*."""
