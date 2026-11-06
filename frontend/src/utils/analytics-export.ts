@@ -9,7 +9,7 @@ export function buildCsvString(data: AnalyticsData): string | null {
   if (points.length === 0) return null;
 
   const header =
-    "timestamp,datetime,room_temp,outdoor_temp,target_temp,mode,predicted_temp,window_open,heating_power,solar_irradiance,blind_position,cover_reason,device_setpoint";
+    "timestamp,datetime,room_temp,outdoor_temp,target_temp,mode,predicted_temp,window_open,heating_power,solar_irradiance,blind_position,cover_reason,device_setpoint,humidity";
   const rows = points.map((p) => {
     const dt = new Date(p.ts * 1000).toISOString();
     const rt = p.room_temp ?? "";
@@ -21,7 +21,8 @@ export function buildCsvString(data: AnalyticsData): string | null {
     const bp = p.blind_position ?? "";
     const cr = p.cover_reason ?? "";
     const ds = p.device_setpoint ?? "";
-    return `${p.ts},${dt},${rt},${ot},${tt},${p.mode},${pt},${p.window_open},${hp},${si},${bp},${cr},${ds}`;
+    const hu = p.humidity ?? "";
+    return `${p.ts},${dt},${rt},${ot},${tt},${p.mode},${pt},${p.window_open},${hp},${si},${bp},${cr},${ds},${hu}`;
   });
 
   return [header, ...rows].join("\n");

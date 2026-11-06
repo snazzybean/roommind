@@ -419,6 +419,9 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                             "cover_reason": rs.get("cover_reason", ""),
                             "device_setpoint": rs.get("device_setpoint"),
                             "occupancy": rs.get("q_occupancy", 0.0) > 0,
+                            "humidity": rs.get("current_humidity"),
+                            "heat_target": rs.get("heat_target"),
+                            "cool_target": rs.get("cool_target"),
                         },
                     )
                 except Exception:  # noqa: BLE001

@@ -284,12 +284,42 @@ export interface AnalyticsDataPoint {
   blind_position?: number | null;
   cover_reason?: string;
   device_setpoint?: number | null;
+  humidity?: number | null;
+}
+
+export interface AnalyticsStats {
+  hours: number;
+  heating_hours: number;
+  cooling_hours: number;
+  window_hours: number;
+  heating_starts: number;
+  cooling_starts: number;
+  comfort: {
+    below_pct: number;
+    within_pct: number;
+    above_pct: number;
+    mean_deviation: number;
+  } | null;
+}
+
+export interface RhythmDay {
+  date: string;
+  heat: Array<number | null>;
+  cool: Array<number | null>;
+  window: Array<number | null>;
+  deviation: Array<number | null>;
+}
+
+export interface AnalyticsRhythm {
+  days: RhythmDay[];
 }
 
 export interface AnalyticsData {
   detail: AnalyticsDataPoint[];
   history: AnalyticsDataPoint[];
   forecast?: AnalyticsDataPoint[];
+  stats?: AnalyticsStats;
+  rhythm?: AnalyticsRhythm | null;
   model: {
     confidence: number;
     model: {

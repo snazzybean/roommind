@@ -9,6 +9,7 @@ import { infoIconStyles } from "../../styles/info-icon-styles";
 import {
   buildChartSeries,
   buildChartOptions,
+  chartHeight,
   type ChartBuildContext,
 } from "../../utils/chart-builder";
 
@@ -30,6 +31,8 @@ export class RsAnalyticsChart extends LitElement {
     const points = this.data ? [...this.data.history, ...this.data.detail] : [];
     const allPoints = [...points, ...(this.data?.forecast ?? [])];
 
+    const humidityPanel =
+      !this._hiddenSeries.has("humidity") && points.some((p) => p.humidity != null);
     const chartCtx: ChartBuildContext = {
       hass: this.hass,
       language: l,
@@ -38,15 +41,17 @@ export class RsAnalyticsChart extends LitElement {
       rangeEnd: this.rangeEnd,
       forecast: this.data?.forecast,
       isOutdoor: this.isOutdoor,
+      humidityPanel,
     };
     const allSeries = points.length > 0 ? buildChartSeries(points, chartCtx) : [];
 
     const visibleY: number[] = [];
-    const displaySeries = allSeries.map((s) => {
+    const chartSeries = humidityPanel ? allSeries : allSeries.filter((s) => s.xAxisIndex !== 1);
+    const displaySeries = chartSeries.map((s) => {
       const id = s.id as string;
       const ls = (s.lineStyle as Record<string, unknown>) || {};
       const isEvent = id.endsWith("_events");
-      if (this._hiddenSeries.has(id)) {
+      if (this._hiddenSeries.has(id.replace("_humidity", ""))) {
         const hidden: Record<string, unknown> = {
           ...s,
           lineStyle: { ...ls, width: 0, opacity: 0 },
@@ -56,7 +61,7 @@ export class RsAnalyticsChart extends LitElement {
         }
         return hidden;
       }
-      if (!isEvent && id !== "now_marker") {
+      if (!isEvent && id !== "now_marker" && s.yAxisIndex !== 1) {
         for (const point of s.data as Array<[number, number]>) {
           if (point && point[1] != null) {
             visibleY.push(point[1]);
@@ -98,8 +103,8 @@ export class RsAnalyticsChart extends LitElement {
                   .hass=${this.hass}
                   .data=${displaySeries}
                   .options=${options}
-                  .height=${"300px"}
-                  style="height: 300px"
+                  .height=${`${chartHeight(humidityPanel)}px`}
+                  style="height: ${chartHeight(humidityPanel)}px; --chart-max-height: ${chartHeight(humidityPanel)}px"
                 ></ha-chart-base>
                 ${this._renderSeriesLegend(allSeries)}
               `
@@ -115,7 +120,7 @@ export class RsAnalyticsChart extends LitElement {
   private _renderSeriesLegend(series: Array<Record<string, unknown>>) {
     const legendSeries = series.filter((s) => {
       const id = s.id as string;
-      return id !== "now_marker";
+      return !["now_marker", "now_humidity_marker", "window_humidity_events"].includes(id);
     });
     return html`
       <div class="series-legend">

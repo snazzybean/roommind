@@ -8,6 +8,9 @@ import { localize, type TranslationKey } from "../../utils/localize";
 import { infoIconStyles } from "../../styles/info-icon-styles";
 import { tempUnit, toDisplayDelta } from "../../utils/temperature";
 
+// Fixed reference so rooms and renovations stay comparable; the model knows no watts (C is unknown)
+const HEAT_LOSS_REFERENCE_K = 10;
+
 @customElement("rs-analytics-model")
 export class RsAnalyticsModel extends LitElement {
   @property({ attribute: false }) public hass!: HomeAssistant;
@@ -145,6 +148,20 @@ export class RsAnalyticsModel extends LitElement {
               "analytics.time_constant",
               "",
               "analytics.info.time_constant",
+            )}
+            ${stat(
+              "heat_loss",
+              hasIdleData && model && model.U > 0
+                ? toDisplayDelta(model.U * HEAT_LOSS_REFERENCE_K, this.hass).toFixed(2) +
+                    tempUnit(this.hass) +
+                    "/h"
+                : ph,
+              "analytics.heat_loss",
+              "",
+              "analytics.info.heat_loss",
+              localize("analytics.heat_loss_sub", l, {
+                delta: `${Math.round(toDisplayDelta(HEAT_LOSS_REFERENCE_K, this.hass))}\u00A0${tempUnit(this.hass)}`,
+              }),
             )}
             ${
               canHeat

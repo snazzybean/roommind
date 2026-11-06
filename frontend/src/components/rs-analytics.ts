@@ -1,13 +1,15 @@
 /**
  * rs-analytics – Analytics tab orchestrator.
- * Delegates rendering to rs-analytics-toolbar, rs-analytics-chart, rs-analytics-model.
+ * Delegates rendering to rs-analytics-toolbar, -summary, -chart, -rhythm and -model.
  */
 import { LitElement, html, css, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import type { HomeAssistant, RoomConfig, AnalyticsData } from "../types";
 import { localize } from "../utils/localize";
 import "./analytics/rs-analytics-toolbar";
+import "./analytics/rs-analytics-summary";
 import "./analytics/rs-analytics-chart";
+import "./analytics/rs-analytics-rhythm";
 import "./analytics/rs-analytics-model";
 
 @customElement("rs-analytics")
@@ -92,6 +94,7 @@ export class RsAnalytics extends LitElement {
           ? this._loading
             ? html`<div class="loading">${localize("panel.loading", l)}</div>`
             : html`
+                ${this._renderSummary()}
                 <rs-analytics-chart
                   .hass=${this.hass}
                   .data=${this._data}
@@ -101,6 +104,15 @@ export class RsAnalytics extends LitElement {
                   .language=${l}
                   .isOutdoor=${this.rooms[this._selectedRoom]?.is_outdoor ?? false}
                 ></rs-analytics-chart>
+                ${
+                  !this.rooms[this._selectedRoom]?.is_outdoor
+                    ? html`<rs-analytics-rhythm
+                        .hass=${this.hass}
+                        .rhythm=${this._data?.rhythm ?? null}
+                        .language=${l}
+                      ></rs-analytics-rhythm>`
+                    : nothing
+                }
                 ${
                   !this.rooms[this._selectedRoom]?.is_outdoor
                     ? html` <rs-analytics-model
@@ -124,6 +136,19 @@ export class RsAnalytics extends LitElement {
             `
       }
     `;
+  }
+
+  private _renderSummary() {
+    const room = this.rooms[this._selectedRoom];
+    if (!room || room.is_outdoor) return nothing;
+    return html`<rs-analytics-summary
+      .hass=${this.hass}
+      .stats=${this._data?.stats ?? null}
+      .canHeat=${room.climate_mode !== "cool_only"}
+      .canCool=${room.climate_mode !== "heat_only" && (room.devices ?? []).some((d) => d.type === "ac")}
+      .hasWindowSensor=${(room.window_sensors?.length ?? 0) > 0}
+      .language=${this.hass.language}
+    ></rs-analytics-summary>`;
   }
 
   private _onRoomSelected(e: CustomEvent) {

@@ -39,7 +39,7 @@
 - **Per-Room Climate Toggle** - Disable climate control for individual rooms while keeping other rooms active.
 - **Outdoor Areas** - Mark rooms as outdoor (e.g. balcony) to disable climate control while keeping monitoring.
 - **Dashboard Card** - A room card for any dashboard with temporary override, mode, climate control switch and comfort/eco temperatures, each part optional. See [Dashboard Card](#dashboard-card).
-- **Analytics Dashboard** - Temperature charts with heating power, solar irradiance, and model predictions over 24h to 90 days.
+- **Analytics Dashboard** - Temperature and humidity charts with heating power, solar irradiance, and model predictions over 24h to 90 days, plus time on target, running hours, a daily rhythm view and the learned heat loss.
 - **Mobile Ready** - Responsive layout with HA-native toolbar for the companion app.
 - **Multilingual** - English and German, auto-detected from your HA language setting.
 
@@ -100,7 +100,13 @@ hide_temperatures: false
 
 ![Analytics](docs/images/page-analytics.png)
 
-Select a room and time range (24h / 7d / 30d / 90d / custom) to view temperature history, heating/cooling power, solar irradiance, and model predictions. Export as CSV or diagnostics report.
+Select a room and time range (24h / 7d / 30d / 90d / custom) to view temperature and humidity history, heating/cooling power, solar irradiance, and model predictions. Export as CSV or diagnostics report.
+
+- **This period**: time on target (within 0.5° of the wanted band, open windows left out), too cold/too warm shares, mean deviation, heating and cooling hours with the number of runs, and window-open hours.
+- **Daily rhythm**: the last 14 days by hour, always, whatever range is selected. One view shows when the room heats or cools and when windows were open, the other when it missed its target. Handy for spotting a morning that always starts too cold.
+- **Heat loss** in the model card: how many degrees per hour the room loses without heating at 10° difference to outside, for comparing rooms or a renovation before and after. Degrees per hour, not watts, because RoomMind does not know the size of the room.
+
+Humidity needs a humidity sensor on the room. Humidity and time on target start with the first readings after the update, older history has neither.
 
 ## How It Works
 

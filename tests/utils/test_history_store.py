@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import csv
 import os
 import time
 
 import pytest
 
-from custom_components.roommind.utils.history_store import HistoryStore
+from custom_components.roommind.utils.history_store import DETAIL_FIELDS, HistoryStore
 
 
 @pytest.fixture
@@ -590,3 +591,26 @@ def test_downsample_takes_first_device_setpoint(history_dir):
     result = store._downsample(rows, bucket_seconds=300)
     assert len(result) == 1
     assert result[0]["device_setpoint"] == "24.0"
+
+
+def test_rotation_with_a_history_file_from_an_older_release(history_dir):
+    """New columns must not break the history file an update finds on disk."""
+    store = HistoryStore(history_dir)
+    old_fields = [f for f in DETAIL_FIELDS if f not in ("humidity", "heat_target", "cool_target")]
+    path = os.path.join(history_dir, "room_history.csv")
+    os.makedirs(history_dir, exist_ok=True)
+    now = time.time()
+    with open(path, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=old_fields)
+        writer.writeheader()
+        writer.writerow({"timestamp": now - 91 * 86400, "room_temp": 20.0, "mode": "idle"})
+        writer.writerow({"timestamp": now - 30 * 86400, "room_temp": 21.0, "mode": "idle"})
+
+    store.record("room", {"room_temp": 22.0, "mode": "idle", "humidity": 48.5, "heat_target": 21.0}, now - 3 * 86400)
+    store.rotate("room")
+
+    rows = store.read_history("room")
+    assert [float(r["room_temp"]) for r in rows] == [21.0, 22.0]
+    assert float(rows[-1]["humidity"]) == 48.5
+    assert float(rows[-1]["heat_target"]) == 21.0
+    assert rows[-1]["cool_target"] == ""

@@ -7,6 +7,14 @@ import { formatTemp, tempUnit, toDisplay } from "./temperature";
 import type { HomeAssistant } from "../types";
 
 const FORECAST_MS = 3 * 3600_000;
+const HUMIDITY_COLOR = "rgb(233, 30, 99)";
+const CHART_HEIGHT = 300;
+const PANEL_CHART_HEIGHT = 385;
+const HUMIDITY_PLOT_HEIGHT = 70;
+const PANEL_GAP = 24;
+const PANEL_BOTTOM = 24;
+// The panels share an x axis, so both plots start at a fixed left edge instead of containLabel
+const PANEL_LEFT = 46;
 
 export interface ChartBuildContext {
   hass: HomeAssistant;
@@ -16,6 +24,12 @@ export interface ChartBuildContext {
   rangeEnd: number;
   forecast?: AnalyticsDataPoint[];
   isOutdoor?: boolean;
+  /** Draw humidity as a second plot below the temperature, on the same time axis. */
+  humidityPanel?: boolean;
+}
+
+export function chartHeight(humidityPanel: boolean): number {
+  return humidityPanel ? PANEL_CHART_HEIGHT : CHART_HEIGHT;
 }
 
 export function buildChartSeries(
@@ -30,6 +44,7 @@ export function buildChartSeries(
   const predictedData: Array<[number, number]> = [];
   const outdoorData: Array<[number, number]> = [];
   const deviceTargetData: Array<[number, number]> = [];
+  const humidityData: Array<[number, number]> = [];
 
   for (const p of points) {
     const ts = p.ts * 1000;
@@ -38,6 +53,7 @@ export function buildChartSeries(
     if (!isOutdoor && p.predicted_temp !== null) predictedData.push([ts, d(p.predicted_temp)]);
     if (p.outdoor_temp !== null) outdoorData.push([ts, d(p.outdoor_temp)]);
     if (!isOutdoor && p.device_setpoint != null) deviceTargetData.push([ts, d(p.device_setpoint)]);
+    if (p.humidity != null) humidityData.push([ts, p.humidity]);
   }
 
   for (const p of forecast ?? []) {
@@ -198,6 +214,46 @@ export function buildChartSeries(
     });
   }
 
+  if (humidityData.length > 0) {
+    series.push({
+      id: "humidity",
+      type: "line",
+      name: localize("analytics.humidity", l),
+      color: HUMIDITY_COLOR,
+      data: humidityData,
+      showSymbol: false,
+      smooth: true,
+      lineStyle: { width: 2 },
+      areaStyle: { color: "rgba(233, 30, 99, 0.1)", origin: "start" },
+      xAxisIndex: 1,
+      yAxisIndex: 1,
+    });
+    if (hasWindow) {
+      series.push({
+        ...series.find((s) => s.id === "window_events"),
+        id: "window_humidity_events",
+        xAxisIndex: 1,
+        yAxisIndex: 1,
+      });
+    }
+    series.push({
+      id: "now_humidity_marker",
+      type: "line",
+      name: "",
+      color: "rgba(255,255,255,0.3)",
+      data: [
+        [chartAnchor, -999],
+        [chartAnchor, 999],
+      ],
+      showSymbol: false,
+      lineStyle: { width: 1, type: "dashed" },
+      xAxisIndex: 1,
+      yAxisIndex: 1,
+      tooltip: { show: false },
+      z: -2,
+    });
+  }
+
   // "Now" vertical marker line
   series.push({
     id: "now_marker",
@@ -223,7 +279,7 @@ export function buildChartOptions(
   points: AnalyticsDataPoint[],
   ctx: ChartBuildContext,
 ): Record<string, unknown> {
-  const { hass, language: l, chartAnchor, rangeStart, rangeEnd } = ctx;
+  const { hass, language: l, chartAnchor, rangeStart, rangeEnd, humidityPanel } = ctx;
   const unit = tempUnit(hass);
 
   const yAxis: Record<string, unknown> = {
@@ -246,17 +302,40 @@ export function buildChartOptions(
 
   const isLive = Math.abs(rangeEnd - Date.now()) < 3600_000;
 
+  const timeAxis = {
+    type: "time",
+    min: rangeStart,
+    max: isLive ? chartAnchor + FORECAST_MS : rangeEnd,
+  };
+
   return {
-    xAxis: {
-      type: "time",
-      min: rangeStart,
-      max: isLive ? chartAnchor + FORECAST_MS : rangeEnd,
-    },
-    yAxis,
+    ...(humidityPanel
+      ? {
+          xAxis: [
+            { ...timeAxis, axisLabel: { show: false }, axisTick: { show: false } },
+            { ...timeAxis, gridIndex: 1 },
+          ],
+          yAxis: [yAxis, humidityAxis(points)],
+          axisPointer: { link: [{ xAxisIndex: "all" }] },
+          grid: [
+            {
+              top: 15,
+              left: PANEL_LEFT,
+              right: 10,
+              bottom: PANEL_BOTTOM + HUMIDITY_PLOT_HEIGHT + PANEL_GAP,
+            },
+            { left: PANEL_LEFT, right: 10, bottom: PANEL_BOTTOM, height: HUMIDITY_PLOT_HEIGHT },
+          ],
+        }
+      : {
+          xAxis: timeAxis,
+          yAxis,
+          grid: { top: 15, left: 10, right: 10, bottom: 5, containLabel: true },
+        }),
     dataZoom: [
       {
         type: "inside",
-        xAxisIndex: 0,
+        xAxisIndex: humidityPanel ? [0, 1] : 0,
         filterMode: "none",
       },
     ],
@@ -282,7 +361,9 @@ export function buildChartOptions(
           if ((p.seriesId as string)?.endsWith("_events")) continue;
           const v = p.value?.[1];
           if (v == null) continue;
-          markup += `<div>${p.color ? `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${p.color};margin-right:6px"></span>` : ""}${p.seriesName}: ${v.toFixed(1)}\u00A0${unit}</div>`;
+          const value =
+            p.seriesId === "humidity" ? `${Math.round(v)}\u00A0%` : `${v.toFixed(1)}\u00A0${unit}`;
+          markup += `<div>${p.color ? `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${p.color};margin-right:6px"></span>` : ""}${p.seriesName}: ${value}</div>`;
           if (p.seriesId === "room_temp") roomVal = v;
           if (p.seriesId === "predicted_temp") predVal = v;
         }
@@ -339,12 +420,23 @@ export function buildChartOptions(
         return tooltipEl;
       },
     },
-    grid: {
-      top: 15,
-      left: 10,
-      right: 10,
-      bottom: 5,
-      containLabel: true,
-    },
+  };
+}
+
+function humidityAxis(points: AnalyticsDataPoint[]): Record<string, unknown> {
+  let min = Infinity;
+  let max = -Infinity;
+  for (const p of points) {
+    if (p.humidity == null) continue;
+    if (p.humidity < min) min = p.humidity;
+    if (p.humidity > max) max = p.humidity;
+  }
+  return {
+    type: "value",
+    gridIndex: 1,
+    min: Math.max(Math.floor((min - 2) / 10) * 10, 0),
+    max: Math.min(Math.ceil((max + 2) / 10) * 10, 100),
+    interval: 10,
+    axisLabel: { formatter: "{value} %" },
   };
 }

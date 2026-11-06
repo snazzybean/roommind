@@ -1652,8 +1652,10 @@ async def test_analytics_with_range_key(ws_hass, store, connection):
     result = connection.send_result.call_args[0][1]
     assert len(result["detail"]) == 1
     assert result["detail"][0]["ts"] == 1000.0
+    assert "stats" in result
+    assert "rhythm" in result
     # read_detail was called with max_age=86400
-    coordinator._history_store.read_detail.assert_called_once_with("room_a", 86400)
+    coordinator._history_store.read_detail.assert_any_call("room_a", 86400)
 
 
 @pytest.mark.asyncio
@@ -1688,7 +1690,7 @@ async def test_analytics_with_custom_timestamps(ws_hass, store, connection):
 
     result = connection.send_result.call_args[0][1]
     assert len(result["detail"]) == 1
-    coordinator._history_store.read_detail.assert_called_once_with(
+    coordinator._history_store.read_detail.assert_any_call(
         "room_a",
         None,
         1000.0,
