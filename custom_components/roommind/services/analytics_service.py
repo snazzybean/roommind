@@ -354,6 +354,8 @@ async def build_analytics_data(
                 # ... and only while its switch is on (scale 0 leaves no afterglow, like the controller)
                 if system_type == HEATING_SYSTEM_RADIATOR and not room_config.get("residual_heat_enabled", True):
                     sim_scale = 0.0
+                # Learned afterglow decay time (radiators); None uses the profile's
+                sim_tau = est.residual_tau if system_type == HEATING_SYSTEM_RADIATOR else None
                 sim_q_residual = 0.0
                 sim_heat_dur = 0.0
                 # Power of the run in progress or the last one (the prediction weighs its afterglow)
@@ -366,7 +368,9 @@ async def build_analytics_data(
                     sim_heat_dur = (off_since - coordinator._residual_tracker._on_since.get(area_id, off_since)) / 60.0
                     from ..control.residual_heat import compute_residual_heat
 
-                    sim_q_residual = compute_residual_heat(elapsed, system_type, sim_last_pf, sim_heat_dur, sim_scale)
+                    sim_q_residual = compute_residual_heat(
+                        elapsed, system_type, sim_last_pf, sim_heat_dur, sim_scale, sim_tau
+                    )
 
                 sim_q_occupancy = 0.0
                 for occ_eid in room_config.get("occupancy_sensors", []):
@@ -401,6 +405,7 @@ async def build_analytics_data(
                         heating_duration_minutes=sim_heat_dur,
                         last_power_fraction=sim_last_pf,
                         residual_scale=sim_scale,
+                        residual_tau=sim_tau,
                         q_occupancy=sim_q_occupancy,
                         q_rebound=coordinator._rebound_tracker.get_charge(area_id),
                         previous_mode=sim_prev_mode,
