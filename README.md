@@ -73,6 +73,69 @@ After installation, RoomMind appears as a panel in the HA sidebar.
 
 RoomMind starts controlling immediately. If MPC is enabled (default), the thermal model begins learning in the background.
 
+## Price-aware heating
+
+Configure your current price and forecast sensors in **RoomMind → Settings → Sensors & data sources**, then
+enable **Price-aware electric heating** in the **Schedule** settings of each room you want to opt in.
+See the [Control and Device Guide](docs/control-and-devices.md#price-aware-electric-heating) for the sensor format
+and room requirements.
+
+### Tibber forecast example
+
+If you use Home Assistant's [built-in Tibber integration](https://www.home-assistant.io/integrations/tibber/),
+select its existing electricity price sensor for **Current electricity price**. Use the template below to turn
+the [`tibber.get_prices` action response](https://www.home-assistant.io/actions/tibber.get_prices/) into
+a forecast sensor for RoomMind.
+
+Add this to `configuration.yaml`. If you already have a `template:` section, add the list item under it.
+Replace `YOUR_TIBBER_HOME_NICKNAME` with the exact home name under `prices` in the action response.
+This example uses Tibber's 15-minute prices.
+
+```yaml
+template:
+  - triggers:
+      - trigger: homeassistant
+        event: start
+      - trigger: time_pattern
+        minutes: "/15"
+        seconds: "30"
+    actions:
+      - action: tibber.get_prices
+        continue_on_error: true
+        data:
+          start: "{{ today_at('00:00').isoformat() }}"
+          end: "{{ (today_at('00:00') + timedelta(days=2)).isoformat() }}"
+        response_variable: tibber_response
+    sensor:
+      - name: RoomMind Tibber Forecast
+        unique_id: roommind_tibber_forecast
+        state: "ready"
+        attributes:
+          prices: >-
+            {% set home = 'YOUR_TIBBER_HOME_NICKNAME' %}
+            {% set homes = (tibber_response | default({}, true)).get('prices', {}) %}
+            {% set forecast = namespace(intervals=[]) %}
+            {% for row in homes.get(home, []) %}
+              {% set start = as_timestamp(row.start_time, none) %}
+              {% set price = row.price | float(none) %}
+              {% if start is not none and price is not none %}
+                {% set forecast.intervals = forecast.intervals + [{
+                  'start': as_datetime(start).isoformat(),
+                  'end': as_datetime(start + 900).isoformat(),
+                  'price': price | round(4)
+                }] %}
+              {% endif %}
+            {% endfor %}
+            {{ forecast.intervals }}
+```
+
+The template ends each interval 15 minutes after its own start, so missing intervals stay visible as gaps.
+It rounds forecast prices to the same four decimal places as the built-in Tibber price sensor. Tomorrow's
+prices are included when Tibber publishes them.
+
+Reload the template entities or restart Home Assistant. Select **RoomMind Tibber Forecast** for **Electricity price
+forecast** once its `prices` attribute is populated. You can inspect the attribute in **Developer tools → States**.
+
 ## Dashboard Card
 
 Put a RoomMind room on any dashboard: Edit dashboard → Add card → **RoomMind room**. The card ships with the integration, no resource needs to be added. After installing or updating RoomMind, reload the browser tab (or restart the companion app) once so the card is found.
