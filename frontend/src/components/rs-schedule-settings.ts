@@ -44,6 +44,8 @@ export class RsScheduleSettings extends RsScheduleBase {
   @property({ type: String }) public climateMode: ClimateMode = "auto";
   @property({ attribute: false }) public scheduleTempWarnings: ScheduleTempWarning[] = [];
   @property({ type: Boolean }) public preheatEnabled = true;
+  @property({ type: Boolean }) public priceAwareHeating = false;
+  @property({ type: Boolean }) public showPriceAwareHeating = false;
   @property({ type: Boolean }) public showPreheat = false;
   @property({ type: Boolean }) public followDeviceSetpoint = false;
 
@@ -281,6 +283,17 @@ export class RsScheduleSettings extends RsScheduleBase {
             ></rs-toggle-row>`
           : nothing
       }
+      ${
+        this.showPriceAwareHeating || this.priceAwareHeating
+          ? html`<rs-toggle-row
+              class="preheat-toggle"
+              .label=${localize("schedule.price_aware_heating_label", l)}
+              .hint=${localize("schedule.price_aware_heating_hint", l)}
+              .checked=${this.priceAwareHeating}
+              @toggle-changed=${this._onPriceAwareHeatingToggle}
+            ></rs-toggle-row>`
+          : nothing
+      }
       <rs-toggle-row
         class="follow-device-toggle"
         .label=${localize("schedule.follow_device_setpoint_label", l)}
@@ -296,6 +309,17 @@ export class RsScheduleSettings extends RsScheduleBase {
     this.dispatchEvent(
       new CustomEvent("follow-device-setpoint-changed", {
         detail: { value: e.detail },
+        bubbles: true,
+        composed: true,
+      }),
+    );
+  }
+
+  private _onPriceAwareHeatingToggle(e: CustomEvent<boolean>) {
+    e.stopPropagation();
+    this.dispatchEvent(
+      new CustomEvent("price-aware-heating-changed", {
+        detail: e.detail,
         bubbles: true,
         composed: true,
       }),

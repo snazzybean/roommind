@@ -32,7 +32,9 @@ from ..const import (
     DEFAULT_OUTDOOR_HEATING_MAX,
     HEATING_BOOST_TARGET,
     HOLD_OVERSHOOT_MARGIN,
+    MAX_TARGET_TEMP,
     MIN_POWER_FRACTION,
+    MIN_TARGET_TEMP,
     MODE_COOLING,
     MODE_HEATING,
     MODE_IDLE,
@@ -73,6 +75,7 @@ from .thermal_model import RoomModelManager
 if TYPE_CHECKING:
     from ..managers.head_offset_tracker import HeadOffsetTracker
     from ..managers.heat_source_orchestrator import HeatSourcePlan
+    from .electricity_tariff import ElectricityTariff
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -852,6 +855,7 @@ def _effective_ac_modes(state: Any) -> list[str]:
 MPC_MAX_PREDICTION_STD = 0.5
 
 # Planning parameters
+PRICE_HEAT_DELTA = 0.5  # °C above/below the scheduled heat target
 PLAN_DT_MINUTES = 5
 MIN_HORIZON_HOURS = 2
 MAX_HORIZON_HOURS = 12
@@ -1329,6 +1333,7 @@ class MPCController:
         q_rebound: float | None = None,
         previous_heat_sources: str = "none",
         head_offsets: HeadOffsetTracker | None = None,
+        electricity_tariff: ElectricityTariff | None = None,
     ) -> None:
         self.hass = hass
         self.room_config = room_config
@@ -1348,6 +1353,8 @@ class MPCController:
         self._model_manager = model_manager
         self._area_id = room_config.get("area_id", "unknown")
         self._target_resolver = target_resolver
+        self._electricity_tariff = electricity_tariff
+        self.price_heat_offset = 0.0
         self.last_plan: MPCPlan | None = None
         self._peak_temps_unoccupied: list[float] | None = None
         self.q_solar = q_solar
@@ -1419,6 +1426,7 @@ class MPCController:
             t = targets
             targets = TargetTemps(heat=t, cool=t) if t is not None else TargetTemps(heat=None, cool=None)
 
+        self.price_heat_offset = 0.0
         self._lead_heat = self._lead_cool = None
         self._setback_release = frozenset()
         if not self.has_external_sensor:
@@ -1580,6 +1588,41 @@ class MPCController:
             q_rebound=None if self.q_rebound is None else mean_rebound(self.q_rebound, False, dt_minutes),
         )
 
+    def _price_adjusted_heat_target(
+        self,
+        current_temp: float,
+        targets: TargetTemps,
+        horizon_blocks: int,
+        now: float,
+        can_cool: bool,
+    ) -> float | None:
+        """Shift the heat target only when the tariff and room permit it."""
+        heat = targets.heat
+        tariff = self._electricity_tariff
+        if heat is None or tariff is None or self.outdoor_temp is None:
+            return heat
+
+        change = tariff.next_change(now, now + horizon_blocks * PLAN_DT_MINUTES * 60)
+        if change is None:
+            return heat
+
+        if change.more_expensive:
+            # A short cheap window should not start a run whose minimum runtime
+            # would spill into the expensive slot.
+            min_run = get_min_run_blocks(self._heating_system_type, PLAN_DT_MINUTES) * PLAN_DT_MINUTES
+            if self.previous_mode != MODE_HEATING and change.starts_at - now < min_run * 60:
+                return heat
+            if self._predict_idle_drift(current_temp, (change.ends_at - now) / 60) >= heat:
+                return heat
+            ceiling = min(MAX_TARGET_TEMP, targets.cool) if can_cool and targets.cool is not None else MAX_TARGET_TEMP
+            return max(heat, min(heat + PRICE_HEAT_DELTA, ceiling))
+
+        # Restore ordinary heating demand as soon as the room reaches the
+        # coasting floor, so the normal start hysteresis is measured from the
+        # scheduled target instead of from the floor.
+        floor = max(MIN_TARGET_TEMP, heat - PRICE_HEAT_DELTA)
+        return floor if current_temp > floor else heat
+
     def _evaluate_mpc(
         self,
         current_temp: float | None,
@@ -1595,6 +1638,14 @@ class MPCController:
         # Use heat target for horizon computation (heating is most common)
         horizon_target = targets.heat if targets.heat is not None else targets.cool
         horizon_blocks = self._compute_horizon_blocks(model, current_temp, horizon_target)
+
+        now = time.time()
+        scheduled_heat = targets.heat
+        if can_heat and scheduled_heat is not None:
+            shifted_heat = self._price_adjusted_heat_target(current_temp, targets, horizon_blocks, now, can_cool)
+            if shifted_heat is not None and shifted_heat != scheduled_heat:
+                self.price_heat_offset = shifted_heat - scheduled_heat
+                targets = TargetTemps(heat=shifted_heat, cool=targets.cool)
 
         # Build outdoor series from forecast or current temp
         outdoor_series = self._build_outdoor_series(horizon_blocks)
@@ -1616,7 +1667,6 @@ class MPCController:
         raw_heat: list[float | None] = []
         raw_cool: list[float | None] = []
         if self._target_resolver is not None:
-            now = time.time()
             dt_seconds = PLAN_DT_MINUTES * 60
             raw_targets = [self._target_resolver(now + i * dt_seconds) for i in range(horizon_blocks)]
             # Extract separate heat and cool series from TargetTemps
@@ -1624,7 +1674,15 @@ class MPCController:
                 pairs = cast(list[TargetTemps], raw_targets)
                 raw_heat = [t.heat for t in pairs]
                 raw_cool = [t.cool for t in pairs]
-                filled = [fill_missing_targets(t.heat, t.cool, current_temp) for t in pairs]
+                if self.price_heat_offset:
+                    # Leave genuine schedule transitions in place and avoid
+                    # creating a fictitious preheat deadline at the next slot.
+                    for i, heat in enumerate(raw_heat):
+                        if heat != scheduled_heat or raw_cool[i] != targets.cool:
+                            break
+                        raw_heat[i] = targets.heat
+                    raw_heat[0] = targets.heat
+                filled = [fill_missing_targets(h, c, current_temp) for h, c in zip(raw_heat, raw_cool, strict=True)]
                 heat_target_series = [h for h, _ in filled]
                 cool_target_series = [c for _, c in filled]
             else:

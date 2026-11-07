@@ -119,6 +119,7 @@ _ROOM_SAVE_FIELDS = (
     "occupancy_eco_enabled",
     "occupancy_eco_delay",
     "preheat_enabled",
+    "price_aware_heating",
     "follow_device_setpoint",
     "climate_mode",
     "schedules",
@@ -163,6 +164,8 @@ _ROOM_SAVE_FIELDS = (
 
 _SETTINGS_SAVE_FIELDS = (
     "outdoor_temp_sensor",
+    "electricity_price_sensor",
+    "electricity_forecast_sensor",
     "outdoor_humidity_sensor",
     "outdoor_cooling_min",
     "outdoor_heating_max",
@@ -298,6 +301,7 @@ async def websocket_list_rooms(
             "current_humidity": live.get("current_humidity"),
             "target_temp": live.get("target_temp"),
             "heat_target": live.get("heat_target"),
+            "price_heat_offset": live.get("price_heat_offset", 0.0),
             "cool_target": live.get("cool_target"),
             "mode": live.get("mode", "idle"),
             "heating_power": live.get("heating_power", 0),
@@ -427,6 +431,7 @@ async def websocket_list_rooms(
             vol.Coerce(int), vol.Range(min=MIN_OCCUPANCY_ECO_DELAY_MINUTES, max=240)
         ),
         vol.Optional("preheat_enabled"): bool,
+        vol.Optional("price_aware_heating"): bool,
         vol.Optional("follow_device_setpoint"): bool,
         vol.Optional("climate_mode"): vol.In(CLIMATE_MODES),
         vol.Optional("schedules"): [{vol.Required("entity_id"): str}],
@@ -752,6 +757,8 @@ async def websocket_get_settings(
     {
         vol.Required("type"): "roommind/settings/save",
         vol.Optional("outdoor_temp_sensor"): str,
+        vol.Optional("electricity_price_sensor"): str,
+        vol.Optional("electricity_forecast_sensor"): str,
         vol.Optional("outdoor_humidity_sensor"): str,
         vol.Optional("outdoor_cooling_min"): vol.Coerce(float),
         vol.Optional("outdoor_heating_max"): vol.Coerce(float),

@@ -13,6 +13,8 @@ import "../shared/rs-toggle-row";
 export class RsSettingsSensors extends RsSettingsBase {
   @property({ attribute: false }) public hass!: HomeAssistant;
   @property({ type: String }) public outdoorTempSensor = "";
+  @property({ type: String }) public electricityPriceSensor = "";
+  @property({ type: String }) public electricityForecastSensor = "";
   @property({ type: String }) public outdoorHumiditySensor = "";
   @property({ type: String }) public weatherEntity = "";
   @property({ type: Boolean }) public outdoorUnavailableNotify = true;
@@ -115,6 +117,26 @@ export class RsSettingsSensors extends RsSettingsBase {
           }}
         ></ha-entity-picker>
         <span class="field-hint">${localize("settings.weather_entity_hint", l)}</span>
+      </div>
+
+      <div class="settings-section">
+        <div class="sensor-grid">
+          ${(["electricityPriceSensor", "electricityForecastSensor"] as const).map(
+            (field) =>
+              html`<ha-entity-picker
+                .hass=${this.hass}
+                .value=${this[field]}
+                .includeDomains=${["sensor"]}
+                .label=${localize(`settings.${field}`, l)}
+                allow-custom-entity
+                @value-changed=${(e: CustomEvent) => {
+                  const value = (e.detail?.value as string) ?? "";
+                  if (value !== this[field]) this._fire(field, value);
+                }}
+              ></ha-entity-picker>`,
+          )}
+        </div>
+        <span class="field-hint">${localize("settings.electricity_tariff_hint", l)}</span>
       </div>
 
       <div class="settings-section">

@@ -1,4 +1,11 @@
 {
+  "settings.electricityPriceSensor": "Aktueller Strompreis",
+  "settings.electricityForecastSensor": "Strompreisprognose",
+  "settings.electricity_tariff_hint": "Wähle zwei Sensoren für denselben Bezugstarif. Der Prognosesensor muss Zeitintervalle im Attribut prices bereitstellen.",
+  "schedule.price_aware_heating_label": "Strompreisabhängiges elektrisches Heizen",
+  "schedule.price_aware_heating_hint": "Nur für Räume mit elektrischer Heizung aktivieren. Bei einem gelernten Raummodell und gültigen Preisen kann RoomMind das Heizziel um bis zu 0,5 °C anheben oder absenken.",
+  "hero.price_preheat": "Vorheizen vor einem höheren Strompreis",
+  "hero.price_coast": "Temperatur bis zum günstigeren Strompreis absenken",
   "panel.title": "RoomMind",
   "panel.subtitle": "Klimasteuerung",
   "panel.tab.rooms": "Räume",

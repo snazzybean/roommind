@@ -59,6 +59,7 @@ export class RsRoomDetail extends LitElement {
   @state() private _selectedOccupancySensors: Set<string> = new Set();
   @state() private _occupancyEcoEnabled = false;
   @state() private _preheatEnabled = true;
+  @state() private _priceAwareHeating = false;
   @state() private _followDeviceSetpoint = false;
   @state() private _occupancyEcoDelay = DEFAULT_OCCUPANCY_ECO_DELAY;
   @state() private _selectedWindowSensors: Set<string> = new Set();
@@ -270,6 +271,7 @@ export class RsRoomDetail extends LitElement {
       this._selectedOccupancySensors = new Set(this.config.occupancy_sensors ?? []);
       this._occupancyEcoEnabled = this.config.occupancy_eco_enabled ?? false;
       this._preheatEnabled = this.config.preheat_enabled ?? true;
+      this._priceAwareHeating = this.config.price_aware_heating ?? false;
       this._followDeviceSetpoint = this.config.follow_device_setpoint ?? false;
       this._occupancyEcoDelay = this.config.occupancy_eco_delay ?? DEFAULT_OCCUPANCY_ECO_DELAY;
       this._selectedWindowSensors = new Set(this.config.window_sensors ?? []);
@@ -315,6 +317,7 @@ export class RsRoomDetail extends LitElement {
       this._selectedOccupancySensors = new Set();
       this._occupancyEcoEnabled = false;
       this._preheatEnabled = true;
+      this._priceAwareHeating = false;
       this._followDeviceSetpoint = false;
       this._occupancyEcoDelay = DEFAULT_OCCUPANCY_ECO_DELAY;
       this._selectedWindowSensors = new Set();
@@ -462,6 +465,7 @@ export class RsRoomDetail extends LitElement {
                       .climateMode=${this._climateMode}
                       .scheduleTempWarnings=${this.config?.live?.schedule_temp_warnings ?? []}
                       .preheatEnabled=${this._preheatEnabled}
+                      .priceAwareHeating=${this._priceAwareHeating}
                       .followDeviceSetpoint=${this._followDeviceSetpoint}
                       .showPreheat=${this._showPreheat()}
                       .editing=${false}
@@ -731,6 +735,16 @@ export class RsRoomDetail extends LitElement {
             .climateMode=${this._climateMode}
             .scheduleTempWarnings=${this.config?.live?.schedule_temp_warnings ?? []}
             .preheatEnabled=${this._preheatEnabled}
+            .priceAwareHeating=${this._priceAwareHeating}
+            .showPriceAwareHeating=${
+              this.controlMode === "mpc" &&
+              !!this._selectedTempSensor &&
+              this._climateMode !== "cool_only" &&
+              !(
+                this._devices.some((d) => d.type === "ac") &&
+                this._devices.some((d) => d.type === "trv")
+              )
+            }
             .followDeviceSetpoint=${this._followDeviceSetpoint}
             .showPreheat=${this._showPreheat()}
             .editing=${true}
@@ -741,6 +755,7 @@ export class RsRoomDetail extends LitElement {
             @eco-heat-changed=${this._onEcoHeatChanged}
             @eco-cool-changed=${this._onEcoCoolChanged}
             @preheat-changed=${this._onPreheatChanged}
+            @price-aware-heating-changed=${this._onPriceAwareHeatingChanged}
             @follow-device-setpoint-changed=${this._onFollowDeviceSetpointChanged}
           ></rs-schedule-settings>
         </rs-edit-dialog>`;
@@ -986,6 +1001,11 @@ export class RsRoomDetail extends LitElement {
     this._autoSave();
   }
 
+  private _onPriceAwareHeatingChanged(e: CustomEvent<boolean>) {
+    this._priceAwareHeating = e.detail;
+    this._autoSave();
+  }
+
   private _onFollowDeviceSetpointChanged(e: CustomEvent<{ value: boolean }>) {
     this._followDeviceSetpoint = e.detail.value;
     this._autoSave();
@@ -1184,6 +1204,7 @@ export class RsRoomDetail extends LitElement {
         occupancy_eco_enabled: this._occupancyEcoEnabled,
         occupancy_eco_delay: this._occupancyEcoDelay,
         preheat_enabled: this._preheatEnabled,
+        price_aware_heating: this._priceAwareHeating,
         follow_device_setpoint: this._followDeviceSetpoint,
         window_sensors: [...this._selectedWindowSensors],
         window_open_delay: this._windowOpenDelay,

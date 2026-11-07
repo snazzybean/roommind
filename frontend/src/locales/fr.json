@@ -1,4 +1,11 @@
 {
+  "settings.electricityPriceSensor": "Prix actuel de l’électricité",
+  "settings.electricityForecastSensor": "Prévision du prix de l’électricité",
+  "settings.electricity_tariff_hint": "Sélectionnez deux capteurs pour le même tarif d’achat. Le capteur de prévision doit fournir les intervalles horodatés dans son attribut prices.",
+  "schedule.price_aware_heating_label": "Chauffage électrique selon le tarif",
+  "schedule.price_aware_heating_hint": "Activez cette option uniquement si le chauffage de la pièce est électrique. Avec un modèle de pièce entraîné et des prix valides, RoomMind peut relever ou abaisser la consigne de 0,5 °C au maximum.",
+  "hero.price_preheat": "Préchauffage avant une hausse du prix",
+  "hero.price_coast": "Baisse temporaire de la consigne avant un prix plus bas",
   "panel.title": "RoomMind",
   "panel.subtitle": "Gestion du climat",
   "panel.tab.rooms": "Pièces",

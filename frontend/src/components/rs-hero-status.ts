@@ -713,6 +713,17 @@ export class RsHeroStatus extends LitElement {
                     : nothing
                 }
                 ${
+                  live.price_heat_offset && !this.isOutdoor
+                    ? html`<div class="hero-metric info">
+                        <ha-icon icon="mdi:cash-clock"></ha-icon>
+                        ${localize(
+                          live.price_heat_offset > 0 ? "hero.price_preheat" : "hero.price_coast",
+                          this.hass?.language ?? "en",
+                        )}
+                      </div>`
+                    : nothing
+                }
+                ${
                   live.mold_prevention_active && !this.isOutdoor
                     ? html`<div class="hero-metric info">
                         <ha-icon icon="mdi:shield-check"></ha-icon>

@@ -21,6 +21,40 @@ When a schedule block raises the target (for example eco 17 °C until 06:00, the
 
 This setting does **not** change your schedule targets, overrides, comfort temperature, or eco temperature. It only changes how aggressively MPC tries to reach and hold those targets.
 
+### Price-aware electric heating
+
+In **Settings → Sensors & data sources**, select two Home Assistant sensors for the same electricity import tariff:
+
+- **Current electricity price** has a numeric state, for example `0.19` with unit `EUR/kWh`.
+- **Electricity price forecast** has a `prices` attribute with a list of intervals. Each interval supplies
+  `start` and `end` as timezone-aware ISO 8601 timestamps and a numeric `price`. The list can include the current
+  interval or begin at the next boundary. Prices must use the same units and include the same tariff charges.
+
+```yaml
+prices:
+  - start: "2026-11-07T17:00:00+01:00"
+    end: "2026-11-07T17:15:00+01:00"
+    price: 0.19
+  - start: "2026-11-07T17:15:00+01:00"
+    end: "2026-11-07T17:30:00+01:00"
+    price: 0.33
+```
+
+An existing sensor with this structure or a Home Assistant template sensor that maps your provider's forecast into
+this format can supply the intervals. Use consecutive intervals for as many hours as your provider supplies.
+Both 15-minute and hourly prices are accepted.
+
+Enable **Price-aware electric heating** in the room's **Schedule** settings if its heat is electric. A room needs a
+temperature sensor and a trained Intelligent (MPC) model. Rooms configured with both a thermostat and a climate
+device are excluded. When the next meaningful price change is a rise and the thermal model predicts heating will be
+needed, RoomMind can raise the heating target by up to 0.5 °C. When it sees a cheaper period ahead, it can lower the
+heating target by up to 0.5 °C and restore the schedule target when the room reaches that lower point.
+
+The controller compares prices within its existing planning horizon. A change must be at least 10% of the larger
+price magnitude. Without a usable comparison, RoomMind uses the normal schedule target. The room view shows
+when the tariff is adjusting the target. Actual temperatures still depend on the room, heating device and existing
+device protections.
+
 ## Thermostat vs Climate Device
 
 Both options are Home Assistant `climate.*` entities, but RoomMind treats them differently:

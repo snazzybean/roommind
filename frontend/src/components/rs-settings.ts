@@ -43,6 +43,8 @@ export class RsSettings extends LitElement {
   @state() private _climateControlActive = true;
   @state() private _learningDisabledRooms: string[] = [];
   @state() private _outdoorTempSensor = "";
+  @state() private _electricityPriceSensor = "";
+  @state() private _electricityForecastSensor = "";
   @state() private _outdoorHumiditySensor = "";
   @state() private _outdoorCoolingMin = 16;
   @state() private _outdoorHeatingMax = 22;
@@ -106,6 +108,8 @@ export class RsSettings extends LitElement {
       this._climateControlActive = s.climate_control_active ?? true;
       this._learningDisabledRooms = s.learning_disabled_rooms ?? [];
       this._outdoorTempSensor = s.outdoor_temp_sensor ?? "";
+      this._electricityPriceSensor = s.electricity_price_sensor ?? "";
+      this._electricityForecastSensor = s.electricity_forecast_sensor ?? "";
       this._outdoorHumiditySensor = s.outdoor_humidity_sensor ?? "";
       this._outdoorCoolingMin = s.outdoor_cooling_min ?? 16;
       this._outdoorHeatingMax = s.outdoor_heating_max ?? 22;
@@ -217,6 +221,8 @@ export class RsSettings extends LitElement {
         <rs-settings-sensors
           .hass=${this.hass}
           .outdoorTempSensor=${this._outdoorTempSensor}
+          .electricityPriceSensor=${this._electricityPriceSensor}
+          .electricityForecastSensor=${this._electricityForecastSensor}
           .outdoorHumiditySensor=${this._outdoorHumiditySensor}
           .weatherEntity=${this._weatherEntity}
           .outdoorUnavailableNotify=${this._outdoorUnavailableNotify}
@@ -425,6 +431,8 @@ export class RsSettings extends LitElement {
         ...(sentClimateControl !== undefined ? { climate_control_active: sentClimateControl } : {}),
         learning_disabled_rooms: this._learningDisabledRooms,
         outdoor_temp_sensor: this._outdoorTempSensor,
+        electricity_price_sensor: this._electricityPriceSensor,
+        electricity_forecast_sensor: this._electricityForecastSensor,
         outdoor_humidity_sensor: this._outdoorHumiditySensor,
         outdoor_cooling_min: this._outdoorCoolingMin,
         outdoor_heating_max: this._outdoorHeatingMax,

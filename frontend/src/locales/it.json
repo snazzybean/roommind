@@ -1,4 +1,11 @@
 {
+  "settings.electricityPriceSensor": "Prezzo attuale dell’elettricità",
+  "settings.electricityForecastSensor": "Previsione del prezzo dell’elettricità",
+  "settings.electricity_tariff_hint": "Seleziona due sensori per la stessa tariffa di acquisto. Il sensore di previsione deve fornire intervalli con data e ora nell’attributo prices.",
+  "schedule.price_aware_heating_label": "Riscaldamento elettrico in base al prezzo",
+  "schedule.price_aware_heating_hint": "Attiva solo se la stanza ha un riscaldamento elettrico. Con un modello addestrato e prezzi validi, RoomMind può alzare o abbassare la temperatura obiettivo di 0,5 °C al massimo.",
+  "hero.price_preheat": "Preriscaldamento prima di un prezzo più alto",
+  "hero.price_coast": "Temperatura ridotta fino a un prezzo più basso",
   "panel.title": "RoomMind",
   "panel.subtitle": "Gestione climatizzazione",
   "panel.tab.rooms": "Stanze",

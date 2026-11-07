@@ -48,6 +48,7 @@ export interface RoomLiveData {
   mold_surface_rh: number | null;
   mold_surface_temp: number | null;
   mold_prevention_active: boolean;
+  price_heat_offset?: number;
   mold_prevention_delta: number;
   blind_position: number | null;
   cover_auto_paused: boolean;
@@ -129,6 +130,7 @@ export interface RoomConfig {
   occupancy_eco_enabled?: boolean;
   occupancy_eco_delay?: number;
   preheat_enabled?: boolean;
+  price_aware_heating?: boolean;
   follow_device_setpoint?: boolean;
   window_sensors: string[];
   window_open_delay: number;
@@ -178,6 +180,8 @@ export interface RoomConfig {
 
 export interface GlobalSettings {
   outdoor_temp_sensor: string;
+  electricity_price_sensor?: string;
+  electricity_forecast_sensor?: string;
   outdoor_humidity_sensor: string;
   outdoor_cooling_min?: number;
   outdoor_heating_max?: number;

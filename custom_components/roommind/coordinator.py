@@ -53,6 +53,7 @@ from .const import (
     make_roommind_context,
 )
 from .control.direct_valve import async_release_orphaned_valves, async_release_valve, held_opening
+from .control.electricity_tariff import ElectricityTariff, read_electricity_tariff
 from .control.mpc_controller import (
     DEFAULT_OUTDOOR_TEMP_FALLBACK,
     MPCController,
@@ -347,6 +348,11 @@ class RoomMindCoordinator(DataUpdateCoordinator):
 
         # Read weather forecast once for all rooms
         outdoor_forecast = await self._weather_manager.async_read_forecast(settings)
+        electricity_tariff = read_electricity_tariff(
+            self.hass,
+            settings.get("electricity_price_sensor", ""),
+            settings.get("electricity_forecast_sensor", ""),
+        )
 
         # Update cover orchestrator with cloud forecast for solar trajectory prediction
         self._cover_orchestrator.set_cloud_series(WeatherManager.extract_cloud_series(outdoor_forecast))
@@ -371,7 +377,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             if not rooms_with_area(self.hass, {area_id: room}):
                 continue
             try:
-                room_state = await self._async_process_room(room, settings, outdoor_forecast)
+                room_state = await self._async_process_room(room, settings, outdoor_forecast, electricity_tariff)
                 room_states[area_id] = room_state
             except Exception:  # noqa: BLE001
                 _LOGGER.exception("Room '%s': processing failed, skipping", area_id)
@@ -776,7 +782,13 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         default = 1.0 if ha_temp_unit_str(self.hass) == "°F" else 0.5
         return default / 2, default
 
-    async def _async_process_room(self, room: dict, settings: dict, outdoor_forecast: list[dict]) -> dict:
+    async def _async_process_room(
+        self,
+        room: dict,
+        settings: dict,
+        outdoor_forecast: list[dict],
+        electricity_tariff: ElectricityTariff | None = None,
+    ) -> dict:
         """Process a single room: read sensor, evaluate schedule, apply control."""
         room = self._without_pending_override_seed(room)
         area_id = room.get("area_id", "unknown")
@@ -952,6 +964,19 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 break
             # unavailable/unknown/off → skip (conservative: no occupancy heat)
 
+        # The room opts in only if all of its heating is electric. Mixed device
+        # rooms need source-level tariffs to distinguish their heating costs.
+        price_control_allowed = (
+            room.get("price_aware_heating", False)
+            and not force_off
+            and not mold_prevention_active_room
+            and not presence_away
+            and not occupancy_vacant
+            and not is_override_active(room)
+            and (settings.get("vacation_until") or 0) <= time.time()
+            and not (get_trv_eids(room.get("devices", [])) and get_ac_eids(room.get("devices", [])))
+        )
+
         # Determine and apply mode with MPC controller
         controller = MPCController(
             self.hass,
@@ -976,8 +1001,12 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             q_rebound=q_rebound,
             previous_heat_sources=self._heat_source_states.get(area_id, "none"),
             head_offsets=self._head_offsets,
+            electricity_tariff=electricity_tariff if price_control_allowed else None,
         )
         mode, power_fraction = await controller.async_evaluate(current_temp, targets)
+        control_targets = targets
+        if controller.price_heat_offset and targets.heat is not None:
+            control_targets = TargetTemps(heat=targets.heat + controller.price_heat_offset, cool=targets.cool)
 
         # Compute effective single target_temp for display/history (mode + climate_mode aware)
         climate_mode = room.get("climate_mode", "auto")
@@ -1243,7 +1272,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             try:
                 await controller.async_apply(
                     mode,
-                    targets,
+                    control_targets,
                     power_fraction=power_fraction,
                     current_temp=current_temp,
                     exclude_eids=cycling_eids | coil_dry.controlled_eids,
@@ -1364,6 +1393,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             compressor_held=compressor_forced_on,
         )
 
+        direct_room_target = control_targets.heat if mode == MODE_HEATING else target_temp
         return self._build_room_state_dict(
             area_id=area_id,
             room=room,
@@ -1372,7 +1402,9 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             current_temp_raw=current_temp_raw,
             current_humidity=current_humidity,
             target_temp=target_temp,
-            direct_target=controller.direct_target(mode, target_temp) if target_temp is not None else None,
+            direct_target=controller.direct_target(mode, direct_room_target)
+            if direct_room_target is not None
+            else None,
             targets=targets,
             schedule_temp_warnings=schedule_temp_warnings,
             display_mode=display_mode,
@@ -1401,6 +1433,11 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             compressor_protection_reason=compressor_protection_reason,
             compressor_protection_until=compressor_protection_until,
             coil_dry=coil_dry,
+            price_heat_offset=(
+                controller.price_heat_offset
+                if climate_active and not (window_open or waiting_for_data or force_off)
+                else 0.0
+            ),
         )
 
     async def _observe_and_train(
@@ -1675,6 +1712,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         compressor_protection_reason: str | None = None,
         compressor_protection_until: float | None = None,
         coil_dry: CoilDryRoomResult | None = None,
+        price_heat_offset: float = 0.0,
     ) -> dict:
         """Build the final room state dictionary."""
         _room_devices = room.get("devices", [])
@@ -1721,6 +1759,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             "current_humidity": current_humidity,
             "target_temp": target_temp,
             "heat_target": targets.heat,
+            **({"price_heat_offset": price_heat_offset} if price_heat_offset else {}),
             "cool_target": targets.cool,
             "schedule_temp_warnings": schedule_temp_warnings,
             "mode": display_mode,

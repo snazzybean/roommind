@@ -1,4 +1,11 @@
 {
+  "settings.electricityPriceSensor": "Current electricity price",
+  "settings.electricityForecastSensor": "Electricity price forecast",
+  "settings.electricity_tariff_hint": "Select two sensors for the same import tariff. The forecast sensor must expose timestamped intervals in its prices attribute.",
+  "schedule.price_aware_heating_label": "Price-aware electric heating",
+  "schedule.price_aware_heating_hint": "Enable only if the room’s heating is electric. With a learned room model and valid prices, RoomMind can raise or lower the heating target by up to 0.5 °C.",
+  "hero.price_preheat": "Preheating before a higher price",
+  "hero.price_coast": "Coasting until a lower price",
   "panel.title": "RoomMind",
   "panel.subtitle": "Climate management",
   "panel.tab.rooms": "Rooms",

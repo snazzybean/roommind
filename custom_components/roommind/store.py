@@ -252,6 +252,7 @@ class RoomMindStore:
             "occupancy_eco_enabled": config.get("occupancy_eco_enabled", False),
             "occupancy_eco_delay": config.get("occupancy_eco_delay", DEFAULT_OCCUPANCY_ECO_DELAY_MINUTES),
             "preheat_enabled": config.get("preheat_enabled", True),
+            "price_aware_heating": config.get("price_aware_heating", False),
             "follow_device_setpoint": config.get("follow_device_setpoint", False),
             "climate_mode": config.get("climate_mode", "auto"),
             "schedules": config.get("schedules", []),
