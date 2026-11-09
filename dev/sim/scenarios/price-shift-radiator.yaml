@@ -38,6 +38,10 @@ roommind:
   rooms:
     schlafzimmer:
       price_shift: 1.0
+    # Radiators (gas boiler in the house) next to the AC: the price picks the source
+    wohnzimmer:
+      heat_source_orchestration: true
+      heat_source_price_aware: true
 expect:
   - {invariant: target_never_empty}
   - {invariant: no_rejected_commands}
@@ -50,3 +54,9 @@ expect:
   - {metric: room.heating_h_expensive, room: schlafzimmer, max: 8.5, label: less heating while expensive}
   - {metric: room.heating_h_cheap, room: schlafzimmer, min: 18, label: heating moved to cheap hours}
   - {metric: device.commands_per_hour, entity_id: climate.schlafzimmer_trv, max: 5}
+  # Living room (radiators + AC, orchestration with heat_source_price_aware), 4 d against the same
+  # room without the price choice: AC starts 59 instead of 1 (cheap hours), radiator heat 18.9
+  # instead of 25.9 kWh, no heating without a source; in band 72.9 instead of 81.4 %: the AC alone
+  # closes medium gaps slower in a cold January house (open-points.md)
+  - {metric: room.heating_without_source_h, room: wohnzimmer, max: 0.1}
+  - {metric: device.commands_per_hour, entity_id: climate.wohnzimmer_ac, max: 4}

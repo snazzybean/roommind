@@ -20,6 +20,19 @@ roommind:
 timeline:
   - {at: "+0d11h", do: ha.service, service: input_boolean.turn_on, data: {entity_id: input_boolean.pv_ueberschuss}}
   - {at: "+0d15h", do: ha.service, service: input_boolean.turn_off, data: {entity_id: input_boolean.pv_ueberschuss}}
+  # Clouds: the surplus flips every 5 min for an hour, the target must not follow
+  - {at: "+0d16h00m", do: ha.service, service: input_boolean.turn_on, data: {entity_id: input_boolean.pv_ueberschuss}}
+  - {at: "+0d16h05m", do: ha.service, service: input_boolean.turn_off, data: {entity_id: input_boolean.pv_ueberschuss}}
+  - {at: "+0d16h10m", do: ha.service, service: input_boolean.turn_on, data: {entity_id: input_boolean.pv_ueberschuss}}
+  - {at: "+0d16h15m", do: ha.service, service: input_boolean.turn_off, data: {entity_id: input_boolean.pv_ueberschuss}}
+  - {at: "+0d16h20m", do: ha.service, service: input_boolean.turn_on, data: {entity_id: input_boolean.pv_ueberschuss}}
+  - {at: "+0d16h25m", do: ha.service, service: input_boolean.turn_off, data: {entity_id: input_boolean.pv_ueberschuss}}
+  - {at: "+0d16h30m", do: ha.service, service: input_boolean.turn_on, data: {entity_id: input_boolean.pv_ueberschuss}}
+  - {at: "+0d16h35m", do: ha.service, service: input_boolean.turn_off, data: {entity_id: input_boolean.pv_ueberschuss}}
+  - {at: "+0d16h40m", do: ha.service, service: input_boolean.turn_on, data: {entity_id: input_boolean.pv_ueberschuss}}
+  - {at: "+0d16h45m", do: ha.service, service: input_boolean.turn_off, data: {entity_id: input_boolean.pv_ueberschuss}}
+  - {at: "+0d16h50m", do: ha.service, service: input_boolean.turn_on, data: {entity_id: input_boolean.pv_ueberschuss}}
+  - {at: "+0d16h55m", do: ha.service, service: input_boolean.turn_off, data: {entity_id: input_boolean.pv_ueberschuss}}
   - {at: "+1d11h", do: ha.service, service: input_boolean.turn_on, data: {entity_id: input_boolean.pv_ueberschuss}}
   - {at: "+1d15h", do: ha.service, service: input_boolean.turn_off, data: {entity_id: input_boolean.pv_ueberschuss}}
 expect:
@@ -28,4 +41,5 @@ expect:
   - {check: "room.schlafzimmer.price_level == 'cheap' and room.schlafzimmer.heat_target == 20.0", at: "+0d12h", label: charges during the surplus}
   - {check: "room.schlafzimmer.price_level == 'normal' and room.schlafzimmer.heat_target == 19.0", at: "+0d16h", label: back on the schedule afterwards}
   # 2026-11-09: 5.21 per hour with the option, 7.44 without (generic_trv takes every setpoint)
+  - {check: "room.schlafzimmer.price_level == 'normal' and room.schlafzimmer.heat_target == 19.0", at: "+0d16h40m", label: a flapping surplus does not move the target}
   - {metric: device.commands_per_hour, entity_id: climate.schlafzimmer_trv, max: 6}

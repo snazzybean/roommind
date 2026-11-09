@@ -48,6 +48,10 @@ export interface RoomLiveData {
   mold_surface_rh: number | null;
   mold_surface_temp: number | null;
   mold_prevention_active: boolean;
+  /** Applied electricity price shift per side (K), 0 when none. */
+  price_shift_heat?: number;
+  price_shift_cool?: number;
+  price_level?: "cheap" | "normal" | "expensive" | null;
   mold_prevention_delta: number;
   blind_position: number | null;
   cover_auto_paused: boolean;

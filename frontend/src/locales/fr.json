@@ -691,5 +691,7 @@
   "analytics.price_cooling": "Refroidissement selon le prix",
   "analytics.price_shifted": "Cible déplacée par le prix pendant {value}",
   "analytics.reason_group.price": "Cible : prix de l'électricité",
-  "analytics.reason.price": "prix de l'électricité"
+  "analytics.reason.price": "prix de l'électricité",
+  "hero.price_charging": "Électricité bon marché : cible {value} pour stocker",
+  "hero.price_coasting": "Électricité chère : cible {value} pour économiser"
 }

@@ -1329,6 +1329,7 @@ class MPCController:
         q_rebound: float | None = None,
         previous_heat_sources: str = "none",
         head_offsets: HeadOffsetTracker | None = None,
+        price_level: str | None = None,
     ) -> None:
         self.hass = hass
         self.room_config = room_config
@@ -1340,6 +1341,8 @@ class MPCController:
         self._valve_entities: dict[str, ValveEntities] = get_valve_entities(self._devices)
         self.climate_mode: str = room_config.get("climate_mode", "auto")
         self.outdoor_temp = outdoor_temp
+        # Price level the orchestration follows (heat_source_price_aware), same as the coordinator's
+        self.price_level = price_level
         self.outdoor_forecast = outdoor_forecast or []
         self.previous_mode = previous_mode
         self.has_external_sensor = has_external_sensor
@@ -1550,6 +1553,7 @@ class MPCController:
                 outdoor_temp=self.outdoor_temp,
                 previous_active_sources=self._previous_heat_sources,
                 hass=self.hass,
+                price_level=self.price_level,
             )
             sources = (
                 plan.active_sources

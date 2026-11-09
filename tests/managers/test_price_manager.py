@@ -130,3 +130,20 @@ async def test_changing_the_source_forgets_what_was_seen(clock):
     assert [p for _, p in manager._observed] == [30.0]
     await manager.async_update({"price_entity": ""})
     assert manager.signal is None
+
+
+@pytest.mark.asyncio
+async def test_a_flapping_switch_does_not_move_the_level(clock):
+    states = {"binary_sensor.pv": _state("off")}
+    manager = _manager(states)
+    settings = {"price_entity": "binary_sensor.pv"}
+    assert (await manager.async_update(settings)).current_level == "normal"
+    for i in range(6):
+        clock["t"] += 300
+        states["binary_sensor.pv"] = _state("on" if i % 2 == 0 else "off")
+        assert (await manager.async_update(settings)).current_level == "normal"
+    states["binary_sensor.pv"] = _state("on")
+    clock["t"] += 300
+    assert (await manager.async_update(settings)).current_level == "normal"
+    clock["t"] += price_manager.LEVEL_HOLD_S
+    assert (await manager.async_update(settings)).current_level == "cheap"

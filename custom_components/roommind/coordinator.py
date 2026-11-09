@@ -401,7 +401,8 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         self._history_write_count += 1
         if self._history_write_count >= HISTORY_WRITE_CYCLES and self._history_store:
             self._history_write_count = 0
-            price_now = self._price_manager.signal.current_price if self._price_manager.signal else None
+            # From the forecast slot where there is one: an Octopus event entity's state is a time
+            price_now = self._price_manager.signal.price_at(time.time()) if self._price_manager.signal else None
             for area_id, rs in room_states.items():
                 if area_id in learning_disabled:
                     continue
@@ -1008,6 +1009,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             q_rebound=q_rebound,
             previous_heat_sources=self._heat_source_states.get(area_id, "none"),
             head_offsets=self._head_offsets,
+            price_level=self._price_level_for(room),
         )
         mode, power_fraction = await controller.async_evaluate(current_temp, targets)
 

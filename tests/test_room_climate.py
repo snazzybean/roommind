@@ -262,6 +262,7 @@ def test_extra_attributes(setup):
         "presence_away": True,
         "occupancy_vacant": False,
         "vacation": True,
+        "price_level": None,
     }
     assert entity.current_humidity == 55.0
 

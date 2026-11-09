@@ -499,3 +499,10 @@ def test_optimizer_knows_when_a_heating_ac_shares_the_model(monkeypatch, ac_mode
     ctrl.hass.states.get = MagicMock(return_value=_ac_state(ac_modes))
     ctrl._evaluate_mpc(20.0, TargetTemps(heat=21.0, cool=None))
     assert seen["fast_heater_shares_model"] is expected
+
+
+def test_run_rules_follow_the_price_choice_of_a_price_aware_room():
+    """Expensive electricity hands a mild-day run to the floor heating: its rules must apply,
+    else the AC's 10-min rules would stop the floor every few cycles."""
+    assert _orchestrated(12.0)._resolve_run_system(20.5, 21.0) == ""
+    assert _orchestrated(12.0, price_level="expensive")._resolve_run_system(20.5, 21.0) == "underfloor"

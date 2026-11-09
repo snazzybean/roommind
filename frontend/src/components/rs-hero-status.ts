@@ -1,6 +1,6 @@
 import { LitElement, html, css, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
-import type { HomeAssistant, HassArea, RoomConfig, OverrideType } from "../types";
+import type { HomeAssistant, HassArea, RoomConfig, RoomLiveData, OverrideType } from "../types";
 import { getModeClass, formatMode, minutesLeft } from "../utils/room-state";
 import { modeStyles } from "../styles/shared-mode-styles";
 import { formatRemaining } from "../utils/override";
@@ -32,6 +32,21 @@ export class RsHeroStatus extends LitElement {
   @state() private _nameInput = "";
   @state() private _controlModeInfoExpanded = false;
   private _countdownTimer?: ReturnType<typeof setInterval>;
+
+  /** Why the target differs from the schedule while the electricity price moves it. */
+  private _renderPriceShift(live: RoomLiveData) {
+    const shift = live.price_shift_heat || -(live.price_shift_cool ?? 0);
+    if (!shift || this.isOutdoor) return nothing;
+    const l = this.hass?.language ?? "en";
+    const value = `${new Intl.NumberFormat(l, {
+      signDisplay: "always",
+      maximumFractionDigits: 1,
+    }).format(toDisplayDelta(shift, this.hass))}\u00A0${tempUnit(this.hass)}`;
+    return html`<div class="hero-metric info">
+      <ha-icon icon="mdi:cash-clock"></ha-icon>
+      ${localize(shift > 0 ? "hero.price_charging" : "hero.price_coasting", l, { value })}
+    </div>`;
+  }
 
   static styles = [
     modeStyles,
@@ -723,6 +738,7 @@ export class RsHeroStatus extends LitElement {
                       </div>`
                     : nothing
                 }
+                ${this._renderPriceShift(live)}
                 ${
                   live.learning_paused_reason === "outdoor_unavailable" && !this.isOutdoor
                     ? html`<div class="hero-metric warning learning-paused">

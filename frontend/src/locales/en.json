@@ -691,5 +691,7 @@
   "analytics.price_cooling": "Cooling by price",
   "analytics.price_shifted": "Target moved by the price for {value}",
   "analytics.reason_group.price": "Target: electricity price",
-  "analytics.reason.price": "electricity price"
+  "analytics.reason.price": "electricity price",
+  "hero.price_charging": "Electricity cheap: target {value} to store heat",
+  "hero.price_coasting": "Electricity expensive: target {value} to save"
 }

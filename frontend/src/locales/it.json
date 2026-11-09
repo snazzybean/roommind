@@ -691,5 +691,7 @@
   "analytics.price_cooling": "Raffrescamento per prezzo",
   "analytics.price_shifted": "Obiettivo spostato dal prezzo per {value}",
   "analytics.reason_group.price": "Obiettivo: prezzo dell'elettricità",
-  "analytics.reason.price": "prezzo dell'elettricità"
+  "analytics.reason.price": "prezzo dell'elettricità",
+  "hero.price_charging": "Elettricità economica: obiettivo {value} per accumulare",
+  "hero.price_coasting": "Elettricità cara: obiettivo {value} per risparmiare"
 }

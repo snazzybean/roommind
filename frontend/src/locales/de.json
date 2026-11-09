@@ -691,5 +691,7 @@
   "analytics.price_cooling": "Kühlen nach Preis",
   "analytics.price_shifted": "Ziel durch den Preis verschoben: {value}",
   "analytics.reason_group.price": "Ziel: Strompreis",
-  "analytics.reason.price": "Strompreis"
+  "analytics.reason.price": "Strompreis",
+  "hero.price_charging": "Strom günstig: Ziel {value} zum Vorheizen",
+  "hero.price_coasting": "Strom teuer: Ziel {value} zum Sparen"
 }
