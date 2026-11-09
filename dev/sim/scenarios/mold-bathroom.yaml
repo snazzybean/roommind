@@ -3,6 +3,7 @@ description: >
   Small north-facing bathroom, daily showers, cold outside. Mold detection must raise
   the risk after showers and prevention must lift the target temperature.
 tags: [mold, humidity]
+refs: [218]
 start: 2026-01-12T00:00
 duration: 3d
 location: {latitude: 52.5, longitude: 13.4, time_zone: Europe/Berlin}
@@ -46,4 +47,5 @@ timeline:
 expect:
   - {check: "room.bad.mold_risk_level != 'ok'", at: "+0d07h45m", label: risk raised after shower}
   - {check: "room.bad.mold_prevention_active == true", at: "+0d07h25m", label: prevention active after the first shower}
+  - {check: "room.bad.mold_boost > 0 and room.bad.target_reason == ''", at: "+0d07h25m", label: mold boost recorded for the analytics chart (#218)}
   - {check: "room.bad.mold_prevention_active == true or room.bad.mold_surface_rh < 65", at: "+0d07h50m", label: prevention keeps its 5 % hysteresis}

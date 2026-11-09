@@ -49,6 +49,12 @@ DEFAULT_ECO_TEMP = 17.0
 DEFAULT_COMFORT_HEAT = 21.0
 DEFAULT_COMFORT_COOL = 24.0
 DEFAULT_ECO_HEAT = 17.0
+
+# What set a room's targets, recorded with the history for the analytics chart; "" = schedule
+TARGET_REASON_OVERRIDE = "override"
+TARGET_REASON_VACATION = "vacation"
+TARGET_REASON_AWAY = "away"
+TARGET_REASON_VACANT = "vacant"
 DEFAULT_ECO_COOL = 27.0
 
 # Minutes all occupancy sensors must report "off" before an empty room drops to eco (#180)

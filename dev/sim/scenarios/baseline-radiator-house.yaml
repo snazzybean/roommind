@@ -4,6 +4,7 @@ description: >
   weekday/weekend schedules, MPC with weather forecast. Baseline for comfort, energy,
   command load and model convergence; also the runtime benchmark.
 tags: [baseline, trv, mpc]
+refs: [218]
 start: 2026-01-12T00:00
 duration: 14d
 location: {latitude: 52.5, longitude: 13.4, time_zone: Europe/Berlin}
@@ -151,3 +152,6 @@ expect:
   - {invariant: setpoints_within_device_range}
   - {invariant: window_open_pauses}
   - {check: "room.wohnzimmer.override_active == true", at: "+9d10h30m", label: boost override active}
+  # The analytics chart marks the target line with what set it (#218)
+  - {check: "room.wohnzimmer.target_reason == 'override'", at: "+9d10h30m", label: target reason names the override}
+  - {check: "room.wohnzimmer.target_reason != 'override'", at: "+9d09h50m", label: no override reason before the boost}

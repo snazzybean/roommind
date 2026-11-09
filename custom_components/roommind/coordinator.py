@@ -44,6 +44,10 @@ from .const import (
     OVERRIDE_CUSTOM,
     OVERRIDE_TURN_ON_REFRESH_DELAY_S,
     SCHEDULE_STATE_ON,
+    TARGET_REASON_AWAY,
+    TARGET_REASON_OVERRIDE,
+    TARGET_REASON_VACANT,
+    TARGET_REASON_VACATION,
     THERMAL_SAVE_CYCLES,
     UPDATE_INTERVAL,
     TargetTemps,
@@ -422,6 +426,8 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                             "humidity": rs.get("current_humidity"),
                             "heat_target": rs.get("heat_target"),
                             "cool_target": rs.get("cool_target"),
+                            "target_reason": rs.get("target_reason", ""),
+                            "mold_boost": rs.get("mold_boost") or "",
                         },
                     )
                 except Exception:  # noqa: BLE001
@@ -872,14 +878,16 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         # Determine dual heat/cool target temperatures
         # Returns TargetTemps(heat, cool). None values mean "force off".
         occupancy_vacant = is_room_vacant(self.hass, room, time.time())
-        targets = self._resolve_target_temps(
+        targets, target_reason = self._resolve_target_temps_and_reason(
             room, settings, schedule_blocks, schedule_entity_id, room_vacant=occupancy_vacant
         )
 
         # Apply mold prevention temperature delta (heating target only).
         # Safety: mold prevention overrides "off" to prevent structural damage.
         force_off = targets.heat is None and targets.cool is None
+        mold_boost = 0.0
         if mold_prevention_active_room and mold_prevention_temp_delta > 0:
+            mold_boost = float(mold_prevention_temp_delta) if force_off or targets.heat is not None else 0.0
             if force_off:
                 eco_heat = room.get("eco_heat", room.get("eco_temp", DEFAULT_ECO_HEAT))
                 eco_cool = room.get("eco_cool", DEFAULT_ECO_COOL)
@@ -1393,6 +1401,8 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             mold_surface_temp=mold_surface_temp,
             mold_prevention_active_room=mold_prevention_active_room,
             mold_prevention_temp_delta=mold_prevention_temp_delta,
+            target_reason=target_reason,
+            mold_boost=mold_boost,
             shading_factor=shading_factor,
             q_occupancy=q_occupancy,
             cover_eids=cover_eids,
@@ -1668,6 +1678,8 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         mold_prevention_active_room: bool,
         mold_prevention_temp_delta: float,
         shading_factor: float | None,
+        target_reason: str = "",
+        mold_boost: float = 0.0,
         q_occupancy: float,
         cover_eids: list[str],
         cover_result: CoverResult,
@@ -1769,6 +1781,8 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             "mold_surface_temp": (round(mold_surface_temp, 1) if mold_surface_temp is not None else None),
             "mold_prevention_active": mold_prevention_active_room,
             "mold_prevention_delta": mold_prevention_temp_delta,
+            "target_reason": target_reason,
+            "mold_boost": mold_boost,
             "shading_factor": shading_factor,
             "q_occupancy": q_occupancy,
             "n_observations": self._model_manager.get_n_observations(area_id),
@@ -2122,7 +2136,23 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         schedule_entity_id: str | None = None,
         room_vacant: bool = False,
     ) -> TargetTemps:
-        """Resolve dual heat/cool target temperatures.
+        """Resolve dual heat/cool target temperatures (see _resolve_target_temps_and_reason)."""
+        return self._resolve_target_temps_and_reason(room, settings, schedule_blocks, schedule_entity_id, room_vacant)[
+            0
+        ]
+
+    def _resolve_target_temps_and_reason(
+        self,
+        room: dict,
+        settings: dict,
+        schedule_blocks: dict | None = None,
+        schedule_entity_id: str | None = None,
+        room_vacant: bool = False,
+    ) -> tuple[TargetTemps, str]:
+        """Resolve dual heat/cool target temperatures and what set them.
+
+        The reason is one of the TARGET_REASON_* values, empty for the schedule (or
+        comfort/eco without one); the analytics chart marks the target line with it.
 
         Priority: override > vacation > presence away > schedule block temp > comfort/eco.
         Returns TargetTemps(heat, cool). None values mean "force off".
@@ -2141,7 +2171,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             if override_until is None or time.time() < override_until:
                 presence_away_now = not room.get("ignore_presence", False) and self._is_presence_away(room, settings)
                 if not (presence_away_now and bool(settings.get("presence_clears_override", False))):
-                    return TargetTemps(heat=override_heat, cool=override_cool)
+                    return TargetTemps(heat=override_heat, cool=override_cool), TARGET_REASON_OVERRIDE
             else:
                 # Timed override has expired — auto-clear
                 area_id = room.get("area_id", "unknown")
@@ -2166,7 +2196,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 if vacation_temp is not None:
                     t = float(vacation_temp)
                     eco_cool = room.get("eco_cool", DEFAULT_ECO_COOL)
-                    return TargetTemps(heat=t, cool=max(t, eco_cool))
+                    return TargetTemps(heat=t, cool=max(t, eco_cool)), TARGET_REASON_VACATION
             else:
                 self.hass.async_create_task(
                     self.hass.data[DOMAIN]["store"].async_save_settings(
@@ -2179,21 +2209,26 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         # 2.5 Presence-based eco or off (skip if room ignores presence)
         if not room.get("ignore_presence", False) and self._is_presence_away(room, settings):
             if settings.get("presence_away_action", "eco") == "off":
-                return TargetTemps(heat=None, cool=None)
-            return TargetTemps(
-                heat=room.get("eco_heat", room.get("eco_temp", DEFAULT_ECO_HEAT)),
-                cool=room.get("eco_cool", DEFAULT_ECO_COOL),
+                return TargetTemps(heat=None, cool=None), TARGET_REASON_AWAY
+            return (
+                TargetTemps(
+                    heat=room.get("eco_heat", room.get("eco_temp", DEFAULT_ECO_HEAT)),
+                    cool=room.get("eco_cool", DEFAULT_ECO_COOL),
+                ),
+                TARGET_REASON_AWAY,
             )
 
         # 3. Schedule / comfort / eco
         targets = self._resolve_schedule_targets(room, settings, schedule_blocks, schedule_entity_id)
         if room_vacant:
-            return cap_to_eco(
+            capped = cap_to_eco(
                 targets,
                 room.get("eco_heat", room.get("eco_temp", DEFAULT_ECO_HEAT)),
                 room.get("eco_cool", DEFAULT_ECO_COOL),
             )
-        return targets
+            # Only an empty room that actually lowered the schedule is worth naming
+            return capped, TARGET_REASON_VACANT if capped != targets else ""
+        return targets, ""
 
     def _resolve_schedule_targets(
         self,

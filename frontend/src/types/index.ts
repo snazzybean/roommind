@@ -287,6 +287,9 @@ export interface AnalyticsDataPoint {
   humidity?: number | null;
   heat_target?: number | null;
   cool_target?: number | null;
+  /** What set the target: "" schedule, else a TargetReason. */
+  target_reason?: string;
+  mold_boost?: number | null;
 }
 
 export interface AnalyticsStats {
@@ -301,6 +304,8 @@ export interface AnalyticsStats {
     within_pct: number;
     above_pct: number;
     mean_deviation: number;
+    /** Mean distance while off target, null when the room never was. */
+    miss_deviation: number | null;
   } | null;
 }
 
@@ -310,9 +315,14 @@ export interface RhythmDay {
   cool: Array<number | null>;
   window: Array<number | null>;
   deviation: Array<number | null>;
+  /** Share of the judged time too cold / too warm, same tolerance as the period figures. */
+  below: Array<number | null>;
+  above: Array<number | null>;
   temp: Array<number | null>;
   humidity: Array<number | null>;
   outdoor: Array<number | null>;
+  /** The day's judged share on target, null without judged samples. */
+  within: number | null;
 }
 
 export interface AnalyticsRhythm {

@@ -91,10 +91,13 @@ export class RsAnalyticsSummary extends LitElement {
     }
     const pct = (v: number) =>
       new Intl.NumberFormat(l, { maximumFractionDigits: 0 }).format(v) + " %";
-    const deviation = new Intl.NumberFormat(l, {
-      minimumFractionDigits: 1,
-      maximumFractionDigits: 1,
-    }).format(toDisplayDelta(c.mean_deviation, this.hass));
+    const miss =
+      c.miss_deviation != null
+        ? new Intl.NumberFormat(l, {
+            minimumFractionDigits: 1,
+            maximumFractionDigits: 1,
+          }).format(toDisplayDelta(c.miss_deviation, this.hass))
+        : null;
     // 99.6 % must not read as 100 % next to "too cold 1 %"
     const onTarget = Math.floor(c.within_pct);
     return html`
@@ -122,11 +125,15 @@ export class RsAnalyticsSummary extends LitElement {
         <div class="comfort-foot">
           ${this._renderShare("cold", localize("analytics.comfort_below", l), c.below_pct, pct)}
           ${this._renderShare("warm", localize("analytics.comfort_above", l), c.above_pct, pct)}
-          <span class="deviation"
-            >${localize("analytics.mean_deviation", l, {
-              value: `${deviation} ${tempUnit(this.hass)}`,
-            })}</span
-          >
+          ${
+            miss != null
+              ? html`<span class="deviation"
+                  >${localize("analytics.miss_deviation", l, {
+                    value: `${miss} ${tempUnit(this.hass)}`,
+                  })}</span
+                >`
+              : nothing
+          }
         </div>
       </div>
     `;

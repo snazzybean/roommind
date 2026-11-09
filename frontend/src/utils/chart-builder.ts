@@ -5,13 +5,13 @@ import type { AnalyticsDataPoint } from "../types";
 import { localize } from "./localize";
 import { formatTemp, tempUnit, toDisplay } from "./temperature";
 import type { HomeAssistant } from "../types";
+import { HUMIDITY_LEVELS, humidityAxis, humidityLevel } from "./humidity";
+import { REASON_LABELS, TARGET_REASON_GROUPS, targetReasons } from "./target-reason";
 
 const FORECAST_MS = 3 * 3600_000;
 const HUMIDITY_COLOR = "rgb(233, 30, 99)";
 // Same cap as MAX_SAMPLE_GAP_S in analytics_stats.py: a sample counts until the next one
 const MAX_SAMPLE_GAP_MS = 900_000;
-// Indoor relative humidity: 40-60 % is the usual comfort range
-export const HUMIDITY_LEVELS = { veryDry: 30, dry: 40, humid: 60, veryHumid: 70 };
 const CHART_HEIGHT = 300;
 const PANEL_CHART_HEIGHT = 385;
 const HUMIDITY_PLOT_HEIGHT = 70;
@@ -19,6 +19,8 @@ const PANEL_GAP = 24;
 const PANEL_BOTTOM = 24;
 // The panels share an x axis, so both plots start at a fixed left edge instead of containLabel
 const PANEL_LEFT = 46;
+// Visible on light and dark cards alike
+const NOW_MARKER_COLOR = "rgba(128, 128, 128, 0.6)";
 
 export interface ChartBuildContext {
   hass: HomeAssistant;
@@ -32,56 +34,80 @@ export interface ChartBuildContext {
   humidityPanel?: boolean;
   /** Shade the band between heat and cool target (auto rooms, judged on both sides). */
   targetBand?: boolean;
-}
-
-export interface HumidityColors {
-  good: string;
-  fair: string;
-  poor: string;
-}
-
-export type HumidityLevel = "very_dry" | "dry" | "good" | "humid" | "very_humid";
-
-export function humidityLevel(rh: number): HumidityLevel {
-  if (rh < HUMIDITY_LEVELS.veryDry) return "very_dry";
-  if (rh < HUMIDITY_LEVELS.dry) return "dry";
-  if (rh <= HUMIDITY_LEVELS.humid) return "good";
-  if (rh <= HUMIDITY_LEVELS.veryHumid) return "humid";
-  return "very_humid";
-}
-
-function humidityColor(rh: number, colors: HumidityColors): string {
-  const level = humidityLevel(rh);
-  if (level === "good") return colors.good;
-  return level === "dry" || level === "humid" ? colors.fair : colors.poor;
+  /** Touch screen: pinch zooms, one finger pans only once zoomed so the page still scrolls. */
+  touch?: boolean;
+  zoomed?: boolean;
 }
 
 /**
- * Colours the humidity line and the area under it by level. Pieces run along time, not value:
- * by value the area below a line at 50 % would show the 30-40 % strip as "dry".
+ * Zoom like HA's own history charts, on both panels at once: drag a range (the toolbox select,
+ * armed by the chart component), Ctrl + wheel or a trackpad pinch zooms, Shift + wheel pans.
+ * A plain wheel keeps scrolling the page. Own config, so it is the same on every HA version.
  */
-export function humidityVisualMap(
-  seriesIndex: number,
-  data: Array<[number, number]>,
-  colors: HumidityColors,
-) {
-  const pieces: Array<Record<string, number | string>> = [];
-  let start = data.length > 0 ? data[0][0] : 0;
-  let current: string | null = null;
-  for (const [ts, rh] of data) {
-    const color = humidityColor(rh, colors);
-    if (color === current) continue;
-    if (current !== null) pieces.push({ gte: start, lt: ts, color: current });
-    start = ts;
-    current = color;
-  }
-  if (current !== null) pieces.push({ gte: start, lte: data[data.length - 1][0], color: current });
-  return { type: "piecewise", show: false, seriesIndex, dimension: 0, pieces };
+function zoomOptions(axes: number[], touch: boolean, zoomed: boolean): Record<string, unknown> {
+  return {
+    dataZoom: [
+      {
+        // HA's zoom handler (reset button, zoom state) reads the component with this id and
+        // resets every zoom to 100 % when it is missing
+        id: "dataZoom",
+        type: "inside",
+        xAxisIndex: axes,
+        filterMode: "none",
+        zoomOnMouseWheel: touch ? true : "ctrl",
+        moveOnMouseWheel: touch ? false : "shift",
+        moveOnMouseMove: touch && zoomed,
+        preventDefaultMouseMove: touch && zoomed,
+      },
+    ],
+    toolbox: {
+      show: !touch,
+      top: Number.MAX_SAFE_INTEGER,
+      left: Number.MAX_SAFE_INTEGER,
+      feature: {
+        dataZoom: {
+          show: true,
+          xAxisIndex: axes,
+          yAxisIndex: false,
+          filterMode: "none",
+          showTitle: false,
+        },
+      },
+      iconStyle: { opacity: 0 },
+    },
+  };
 }
 
 export function chartHeight(humidityPanel: boolean): number {
   return humidityPanel ? PANEL_CHART_HEIGHT : CHART_HEIGHT;
 }
+
+/**
+ * One value per sample, held until the next sample (at most MAX_SAMPLE_GAP_MS) and null where
+ * `value` gives null. A sample stands for that time, so a run of a single sample keeps its width.
+ */
+function stretch(
+  points: AnalyticsDataPoint[],
+  value: (p: AnalyticsDataPoint) => number | null,
+): Array<[number, number | null]> {
+  const out: Array<[number, number | null]> = [];
+  points.forEach((p, i) => {
+    const ts = p.ts * 1000;
+    const v = value(p);
+    if (v == null) {
+      out.push([ts, null]);
+      return;
+    }
+    const next = points[i + 1];
+    const nextTs = next ? next.ts * 1000 : ts;
+    const end = Math.min(nextTs, ts + MAX_SAMPLE_GAP_MS);
+    out.push([ts, v]);
+    if (end > ts && (end < nextTs || value(next) !== v)) out.push([end, v], [end, null]);
+  });
+  return out;
+}
+
+const hasValue = (data: Array<[number, number | null]>) => data.some(([, v]) => v != null);
 
 export function buildChartSeries(
   points: AnalyticsDataPoint[],
@@ -153,9 +179,29 @@ export function buildChartSeries(
       lineStyle: { width: 2, type: "dashed" },
       yAxisIndex: 0,
     });
+    // The target line in the colour of what set it, where that was not the schedule
+    for (const group of TARGET_REASON_GROUPS) {
+      const data = stretch(points, (p) =>
+        p.target_temp != null && targetReasons(p).some((r) => group.reasons.includes(r))
+          ? d(p.target_temp)
+          : null,
+      );
+      if (!hasValue(data)) continue;
+      series.push({
+        id: `target_reason_${group.id}`,
+        type: "line",
+        name: localize(group.label, l),
+        color: group.color,
+        data,
+        showSymbol: false,
+        lineStyle: { width: 3 },
+        yAxisIndex: 0,
+        connectNulls: false,
+      });
+    }
   }
 
-  if (bandData.some((v) => v[1] != null)) {
+  if (hasValue(bandData)) {
     // Stacked pair: an invisible base at the heat target, the band fills up to the cool target
     series.push(
       {
@@ -234,37 +280,14 @@ export function buildChartSeries(
     });
   }
 
-  // Event band series
-  const heatingBandData: Array<[number, number | null]> = [];
-  const coolingBandData: Array<[number, number | null]> = [];
-  const windowBandData: Array<[number, number | null]> = [];
-  let hasHeating = false,
-    hasCooling = false,
-    hasWindow = false;
-
-  // A sample stands for the time until the next one, so a run of a single sample keeps its width
-  points.forEach((p, i) => {
-    const ts = p.ts * 1000;
-    const next = points[i + 1];
-    const nextTs = next ? next.ts * 1000 : ts;
-    const end = Math.min(nextTs, ts + MAX_SAMPLE_GAP_MS);
-    const pushEvent = (band: Array<[number, number | null]>, on: boolean, nextOn: boolean) => {
-      if (!on) {
-        band.push([ts, null]);
-        return;
-      }
-      band.push([ts, 999]);
-      if (end > ts && (!nextOn || end < nextTs)) band.push([end, 999], [end, null]);
-    };
-    const heating = p.mode === "heating";
-    const cooling = p.mode === "cooling";
-    pushEvent(heatingBandData, heating, next?.mode === "heating");
-    pushEvent(coolingBandData, cooling, next?.mode === "cooling");
-    pushEvent(windowBandData, p.window_open, !!next?.window_open);
-    hasHeating ||= heating;
-    hasCooling ||= cooling;
-    hasWindow ||= p.window_open;
-  });
+  const band = (on: (p: AnalyticsDataPoint) => boolean) =>
+    stretch(points, (p) => (on(p) ? 999 : null));
+  const heatingBandData = band((p) => p.mode === "heating");
+  const coolingBandData = band((p) => p.mode === "cooling");
+  const windowBandData = band((p) => p.window_open);
+  const hasHeating = hasValue(heatingBandData);
+  const hasCooling = hasValue(coolingBandData);
+  const hasWindow = hasValue(windowBandData);
 
   if (hasHeating) {
     series.push({
@@ -367,7 +390,7 @@ export function buildChartSeries(
       id: "now_humidity_marker",
       type: "line",
       name: "",
-      color: "rgba(255,255,255,0.3)",
+      color: NOW_MARKER_COLOR,
       data: [
         [chartAnchor, -999],
         [chartAnchor, 999],
@@ -386,7 +409,7 @@ export function buildChartSeries(
     id: "now_marker",
     type: "line",
     name: "",
-    color: "rgba(255,255,255,0.3)",
+    color: NOW_MARKER_COLOR,
     data: [
       [chartAnchor, -999],
       [chartAnchor, 999],
@@ -423,8 +446,9 @@ export function buildChartOptions(
     }
     const range = maxVal - minVal;
     const pad = Math.max(range * 0.1, 0.5);
-    yAxis.min = Math.floor((minVal - pad) * 2) / 2;
-    yAxis.max = Math.ceil((maxVal + pad) * 2) / 2;
+    // Whole degrees: half-degree bounds put "24.5" right on top of the "24" tick
+    yAxis.min = Math.floor(minVal - pad);
+    yAxis.max = Math.ceil(maxVal + pad);
   }
 
   const isLive = Math.abs(rangeEnd - Date.now()) < 3600_000;
@@ -459,17 +483,11 @@ export function buildChartOptions(
           yAxis,
           grid: { top: 15, left: 10, right: 10, bottom: 5, containLabel: true },
         }),
-    dataZoom: [
-      {
-        type: "inside",
-        xAxisIndex: humidityPanel ? [0, 1] : 0,
-        filterMode: "none",
-      },
-    ],
+    ...zoomOptions(humidityPanel ? [0, 1] : [0], ctx.touch ?? false, ctx.zoomed ?? false),
     tooltip: {
       trigger: "axis",
       axisPointer: { snap: false },
-      valueFormatter: (v: number) => v.toFixed(1) + "\u00A0" + unit,
+      valueFormatter: (v: number | null) => (v == null ? "" : v.toFixed(1) + "\u00A0" + unit),
       formatter: (
         params: Array<{
           seriesName: string;
@@ -484,11 +502,22 @@ export function buildChartOptions(
         let markup = `<div style="font-weight:500;margin-bottom:4px">${time}</div>`;
         let roomVal: number | null = null;
         let predVal: number | null = null;
+        const hoverTs = params[0].value[0] / 1000;
+        let closest: AnalyticsDataPoint | null = null;
+        let minDist = Infinity;
+        for (const pt of points) {
+          const dist = Math.abs(pt.ts - hoverTs);
+          if (dist < minDist) {
+            minDist = dist;
+            closest = pt;
+          }
+        }
         for (const p of params) {
           const sid = (p.seriesId as string) ?? "";
           if (
             sid.endsWith("_events") ||
             sid.startsWith("target_band") ||
+            sid.startsWith("target_reason_") ||
             sid === "humidity_limits"
           ) {
             continue;
@@ -501,6 +530,10 @@ export function buildChartOptions(
             value = `${Math.round(v)}\u00A0%`;
             if (level !== "good") value += ` (${localize(`analytics.humidity_${level}`, l)})`;
           }
+          if (sid === "target_temp" && closest) {
+            const reasons = targetReasons(closest).map((r) => localize(REASON_LABELS[r], l));
+            if (reasons.length > 0) value += ` (${reasons.join(", ")})`;
+          }
           markup += `<div>${p.color ? `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${p.color};margin-right:6px"></span>` : ""}${p.seriesName}: ${value}</div>`;
           if (p.seriesId === "room_temp") roomVal = v;
           if (p.seriesId === "predicted_temp") predVal = v;
@@ -508,44 +541,32 @@ export function buildChartOptions(
         if (roomVal !== null && predVal !== null) {
           const delta = roomVal - predVal;
           const sign = delta >= 0 ? "+" : "";
-          markup += `<div style="border-top:1px solid rgba(128,128,128,0.3);margin-top:4px;padding-top:4px">Delta: ${sign}${delta.toFixed(2)}\u00A0${unit}</div>`;
+          markup += `<div style="border-top:1px solid rgba(128,128,128,0.3);margin-top:4px;padding-top:4px">${localize("analytics.prediction_delta", l)}: ${sign}${delta.toFixed(2)}\u00A0${unit}</div>`;
         }
-        if (points.length > 0) {
-          const hoverTs = params[0].value[0] / 1000;
-          let closest: AnalyticsDataPoint | null = null;
-          let minDist = Infinity;
-          for (const pt of points) {
-            const dist = Math.abs(pt.ts - hoverTs);
-            if (dist < minDist) {
-              minDist = dist;
-              closest = pt;
+        if (closest) {
+          const parts: string[] = [];
+          if (closest.mode === "heating") {
+            const hp = closest.heating_power;
+            if (hp != null && hp > 0 && hp < 100) {
+              parts.push(`${localize("analytics.heating_period", l)} ${hp}%`);
+            } else {
+              parts.push(localize("analytics.heating_period", l));
+            }
+            if (closest.device_setpoint != null) {
+              parts.push(`TRV ${formatTemp(closest.device_setpoint, hass)}\u00A0${unit}`);
+            }
+          } else if (closest.mode === "cooling") {
+            parts.push(localize("analytics.cooling_period", l));
+            if (closest.device_setpoint != null) {
+              parts.push(`AC ${formatTemp(closest.device_setpoint, hass)}\u00A0${unit}`);
             }
           }
-          if (closest) {
-            const parts: string[] = [];
-            if (closest.mode === "heating") {
-              const hp = closest.heating_power;
-              if (hp != null && hp > 0 && hp < 100) {
-                parts.push(`${localize("analytics.heating_period", l)} ${hp}%`);
-              } else {
-                parts.push(localize("analytics.heating_period", l));
-              }
-              if (closest.device_setpoint != null) {
-                parts.push(`TRV ${formatTemp(closest.device_setpoint, hass)}\u00A0${unit}`);
-              }
-            } else if (closest.mode === "cooling") {
-              parts.push(localize("analytics.cooling_period", l));
-              if (closest.device_setpoint != null) {
-                parts.push(`AC ${formatTemp(closest.device_setpoint, hass)}\u00A0${unit}`);
-              }
-            }
-            if (closest.window_open) parts.push(localize("analytics.window_open_period", l));
-            if (parts.length > 0) {
-              markup += `<div style="border-top:1px solid rgba(128,128,128,0.3);margin-top:4px;padding-top:4px;color:rgba(255,255,255,0.7)">${parts.join(" \u00B7 ")}</div>`;
-            }
-            if (closest.blind_position != null) {
-              markup += `<div style="color:rgba(255,255,255,0.7)">${localize("analytics.blind_position", l)} ${100 - closest.blind_position}%</div>`;
-            }
+          if (closest.window_open) parts.push(localize("analytics.window_open_period", l));
+          if (parts.length > 0) {
+            markup += `<div style="border-top:1px solid rgba(128,128,128,0.3);margin-top:4px;padding-top:4px;opacity:0.75">${parts.join(" \u00B7 ")}</div>`;
+          }
+          if (closest.blind_position != null) {
+            markup += `<div style="opacity:0.75">${localize("analytics.blind_position", l)} ${100 - closest.blind_position}%</div>`;
           }
         }
         // HA 2026.6's ha-chart-base pipes the tooltip formatter result through
@@ -558,23 +579,5 @@ export function buildChartOptions(
         return tooltipEl;
       },
     },
-  };
-}
-
-function humidityAxis(points: AnalyticsDataPoint[]): Record<string, unknown> {
-  let min = Infinity;
-  let max = -Infinity;
-  for (const p of points) {
-    if (p.humidity == null) continue;
-    if (p.humidity < min) min = p.humidity;
-    if (p.humidity > max) max = p.humidity;
-  }
-  return {
-    type: "value",
-    gridIndex: 1,
-    min: Math.max(Math.floor((min - 2) / 10) * 10, 0),
-    max: Math.min(Math.ceil((max + 2) / 10) * 10, 100),
-    interval: 10,
-    axisLabel: { formatter: "{value} %" },
   };
 }

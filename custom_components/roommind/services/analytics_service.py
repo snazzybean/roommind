@@ -86,6 +86,8 @@ def _csv_to_points(rows: list[dict]) -> list[dict]:
                 "humidity": _safe_float(row.get("humidity", "")),
                 "heat_target": _safe_float(row.get("heat_target", "")),
                 "cool_target": _safe_float(row.get("cool_target", "")),
+                "target_reason": row.get("target_reason", ""),
+                "mold_boost": _safe_float(row.get("mold_boost", "")),
             }
         )
     return result

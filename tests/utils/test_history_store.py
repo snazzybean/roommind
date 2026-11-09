@@ -614,3 +614,15 @@ def test_rotation_with_a_history_file_from_an_older_release(history_dir):
     assert float(rows[-1]["humidity"]) == 48.5
     assert float(rows[-1]["heat_target"]) == 21.0
     assert rows[-1]["cool_target"] == ""
+
+
+def test_target_reason_and_mold_boost_are_recorded_and_downsampled(history_dir):
+    store = HistoryStore(history_dir)
+    store.record("room_a", {"room_temp": 20.0, "mode": "idle", "target_reason": "override", "mold_boost": 2.0}, 1000)
+    store.record("room_a", {"room_temp": 20.0, "mode": "idle", "target_reason": "", "mold_boost": 0.0}, 1060)
+    rows = store.read_detail("room_a")
+    assert rows[0]["target_reason"] == "override"
+    assert rows[0]["mold_boost"] == "2.0"
+    bucket = store._downsample(rows, bucket_seconds=300)[0]
+    assert bucket["target_reason"] == "override"
+    assert bucket["mold_boost"] == 1.0

@@ -1,7 +1,7 @@
 /**
  * rs-analytics-chart – Chart card with ha-chart-base and series legend.
  */
-import { LitElement, html, css, nothing } from "lit";
+import { LitElement, html, css, nothing, type PropertyValues } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import type { HomeAssistant, AnalyticsData } from "../../types";
 import { localize } from "../../utils/localize";
@@ -10,10 +10,9 @@ import {
   buildChartSeries,
   buildChartOptions,
   chartHeight,
-  humidityVisualMap,
   type ChartBuildContext,
-  type HumidityColors,
 } from "../../utils/chart-builder";
+import { humidityVisualMap, type HumidityColors } from "../../utils/humidity";
 
 // Series drawn for another legend entry: hiding that entry hides them too
 const LEGEND_OWNER: Record<string, string> = {
@@ -31,6 +30,12 @@ const NOT_IN_LEGEND = new Set([
   "humidity_limits",
 ]);
 
+interface EChartsLike {
+  on(event: string, handler: () => void): void;
+  getOption(): { dataZoom?: Array<{ id?: string; start: number; end: number }> };
+  dispatchAction(action: Record<string, unknown>): void;
+}
+
 @customElement("rs-analytics-chart")
 export class RsAnalyticsChart extends LitElement {
   @property({ attribute: false }) public hass!: HomeAssistant;
@@ -45,6 +50,49 @@ export class RsAnalyticsChart extends LitElement {
 
   @state() private _hiddenSeries = new Set(["outdoor_temp", "device_target"]);
   @state() private _chartInfoExpanded = false;
+  @state() private _zoomed = false;
+
+  private readonly _touch = matchMedia("(pointer: coarse)").matches;
+  // The ECharts instance the zoom listener sits on; ha-chart-base creates it lazily
+  private _chart: EChartsLike | null = null;
+  private _armRetry?: number;
+
+  protected updated(changed: PropertyValues) {
+    super.updated(changed);
+    this._armZoom();
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    clearTimeout(this._armRetry);
+    this._chart = null;
+  }
+
+  /** Drag-to-zoom stays armed across option updates; zoom state drives touch panning. */
+  private _armZoom(attempt = 0) {
+    clearTimeout(this._armRetry);
+    const base = this.renderRoot.querySelector("ha-chart-base") as { chart?: EChartsLike } | null;
+    const chart = base?.chart;
+    if (!chart) {
+      if (base && attempt < 20)
+        this._armRetry = window.setTimeout(() => this._armZoom(attempt + 1), 150);
+      return;
+    }
+    if (chart !== this._chart) {
+      this._chart = chart;
+      chart.on("datazoom", () => {
+        const zoom = chart.getOption().dataZoom?.find((z) => z.id === "dataZoom");
+        this._zoomed = !!zoom && (zoom.start > 0 || zoom.end < 100);
+      });
+    }
+    if (!this._touch) {
+      chart.dispatchAction({
+        type: "takeGlobalCursor",
+        key: "dataZoomSelect",
+        dataZoomSelectActive: true,
+      });
+    }
+  }
 
   render() {
     const l = this.language;
@@ -63,6 +111,8 @@ export class RsAnalyticsChart extends LitElement {
       isOutdoor: this.isOutdoor,
       humidityPanel,
       targetBand: this.targetBand,
+      touch: this._touch,
+      zoomed: this._zoomed,
     };
     const allSeries = points.length > 0 ? buildChartSeries(points, chartCtx) : [];
 
@@ -98,11 +148,11 @@ export class RsAnalyticsChart extends LitElement {
     });
 
     const options = buildChartOptions(visibleY, allPoints, chartCtx);
-    const humidityIndex = displaySeries.findIndex((s) => s.id === "humidity");
-    if (humidityPanel && humidityIndex >= 0) {
+    const humidity = displaySeries.find((s) => s.id === "humidity");
+    if (humidityPanel && humidity) {
       options.visualMap = humidityVisualMap(
-        humidityIndex,
-        displaySeries[humidityIndex].data as Array<[number, number]>,
+        "humidity",
+        humidity.data as Array<[number, number]>,
         this._humidityColors(),
       );
     }
@@ -137,6 +187,9 @@ export class RsAnalyticsChart extends LitElement {
                   style="height: ${chartHeight(humidityPanel)}px; --chart-max-height: ${chartHeight(humidityPanel)}px"
                 ></ha-chart-base>
                 ${this._renderSeriesLegend(allSeries)}
+                <div class="zoom-hint">
+                  ${localize(this._touch ? "analytics.zoom_hint_touch" : "analytics.zoom_hint", l)}
+                </div>
               `
             : html`<div class="chart-empty">
                 <ha-icon icon="mdi:chart-line"></ha-icon>
@@ -259,11 +312,18 @@ export class RsAnalyticsChart extends LitElement {
         color: var(--primary-text-color);
       }
 
+      .zoom-hint {
+        padding: 0 16px 12px;
+        font-size: 12px;
+        text-align: center;
+        color: var(--secondary-text-color);
+      }
+
       .series-legend {
         display: flex;
         justify-content: center;
         gap: 6px;
-        padding: 8px 16px 12px;
+        padding: 8px 16px 4px;
         flex-wrap: wrap;
       }
 

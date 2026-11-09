@@ -51,12 +51,21 @@ def _deviations(points: list[dict], climate_mode: str) -> list[float | None]:
     return result
 
 
+def _comfort_side(deviation: float) -> str:
+    if deviation < -COMFORT_TOLERANCE_K:
+        return "below"
+    if deviation > COMFORT_TOLERANCE_K:
+        return "above"
+    return "within"
+
+
 def compute_period_stats(points: list[dict], climate_mode: str) -> dict:
     """Sum up a time-sorted list of history points."""
     seconds = {"total": 0.0, "heating": 0.0, "cooling": 0.0, "window": 0.0}
     starts = {MODE_HEATING: 0, MODE_COOLING: 0}
     comfort = {"below": 0.0, "within": 0.0, "above": 0.0}
     deviation_sum = 0.0
+    miss_sum = 0.0
     previous_mode = None
     for (point, weight), deviation in zip(_weighted(points), _deviations(points, climate_mode), strict=True):
         mode = point.get("mode")
@@ -71,14 +80,13 @@ def compute_period_stats(points: list[dict], climate_mode: str) -> dict:
         if deviation is None:
             continue
         deviation_sum += abs(deviation) * weight
-        if deviation < -COMFORT_TOLERANCE_K:
-            comfort["below"] += weight
-        elif deviation > COMFORT_TOLERANCE_K:
-            comfort["above"] += weight
-        else:
-            comfort["within"] += weight
+        side = _comfort_side(deviation)
+        comfort[side] += weight
+        if side != "within":
+            miss_sum += abs(deviation) * weight
 
     judged = sum(comfort.values())
+    missed = comfort["below"] + comfort["above"]
     return {
         "hours": round(seconds["total"] / 3600, 2),
         "heating_hours": round(seconds[MODE_HEATING] / 3600, 2),
@@ -92,6 +100,8 @@ def compute_period_stats(points: list[dict], climate_mode: str) -> dict:
                 "within_pct": round(100 * comfort["within"] / judged, 1),
                 "above_pct": round(100 * comfort["above"] / judged, 1),
                 "mean_deviation": round(deviation_sum / judged, 2),
+                # How far off the room was while it was off target, None when it never was
+                "miss_deviation": round(miss_sum / missed, 2) if missed > 0 else None,
             }
             if judged > 0
             else None
@@ -118,15 +128,17 @@ def rhythm_window(start_ts: float, end_ts: float, now: float) -> tuple[int, floa
 
 
 def _empty_day(date_str: str) -> dict:
-    keys = ("heat", "cool", "window", "deviation", *RHYTHM_MEANS)
-    return {"date": date_str, **{key: [None] * 24 for key in keys}}
+    keys = ("heat", "cool", "window", "deviation", "below", "above", *RHYTHM_MEANS)
+    return {"date": date_str, **{key: [None] * 24 for key in keys}, "within": None}
 
 
 def compute_rhythm(points: list[dict], climate_mode: str, end_ts: float, days_shown: int = RHYTHM_DAYS) -> dict | None:
     """Hour-by-day grid of the local days up to end_ts, newest day first.
 
-    heat, cool and window are shares of the hour (0-1), deviation is the mean signed
-    distance from the wanted band in K, temp, humidity and outdoor are hourly means.
+    heat, cool and window are shares of the hour (0-1), below and above the shares of the
+    judged time too cold / too warm with the same tolerance as the period figures,
+    deviation is the mean signed distance from the wanted band in K, temp, humidity and
+    outdoor are hourly means; within is the day's judged share on target.
     An hour without samples is None. None overall while fewer than RHYTHM_MIN_DAYS days
     have data, a single row says nothing.
     """
@@ -149,6 +161,10 @@ def compute_rhythm(points: list[dict], climate_mode: str, end_ts: float, days_sh
             ("window", bool(point.get("window_open"))),
         ):
             cell[key] = cell.get(key, 0.0) + (weight if on else 0.0)
+        if deviation is not None:
+            side = _comfort_side(deviation)
+            cell["judged"] = cell.get("judged", 0.0) + weight
+            cell[side] = cell.get(side, 0.0) + weight
         values = {key: point.get(field) for key, field in RHYTHM_MEANS.items()}
         for key, value in {**values, "deviation": deviation}.items():
             if value is not None:
@@ -162,6 +178,15 @@ def compute_rhythm(points: list[dict], climate_mode: str, end_ts: float, days_sh
         for key in ("deviation", *RHYTHM_MEANS):
             if f"{key}_seconds" in cell:
                 day[key][hour] = round(cell[f"{key}_sum"] / cell[f"{key}_seconds"], 2)
+        if cell.get("judged"):
+            for key in ("below", "above"):
+                day[key][hour] = round(cell.get(key, 0.0) / cell["judged"], 2)
+
+    for row, day in enumerate(days):
+        judged = sum(cell.get("judged", 0.0) for (r, _), cell in cells.items() if r == row)
+        if judged > 0:
+            within = sum(cell.get("within", 0.0) for (r, _), cell in cells.items() if r == row)
+            day["within"] = round(within / judged, 3)
 
     if len({row for row, _ in cells}) < RHYTHM_MIN_DAYS:
         return None

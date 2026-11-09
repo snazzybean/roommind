@@ -201,3 +201,45 @@ def test_window_never_ends_in_the_future():
     days, end = rhythm_window(_local_ts(1, 0) - 86400 * 40, now + 86400, now)
     assert days == RHYTHM_MAX_DAYS
     assert end == now
+
+
+def test_miss_deviation_is_the_mean_while_off_target():
+    points = [
+        _point(0, room_temp=20.0),
+        _point(1, room_temp=21.0),
+        _point(2, room_temp=21.0),
+        _point(3, room_temp=25.0),
+    ]
+    comfort = compute_period_stats(points, "auto")["comfort"]
+    assert comfort["miss_deviation"] == pytest.approx(1.0)
+
+
+def test_miss_deviation_is_none_without_misses():
+    points = [_point(0, room_temp=20.8), _point(1, room_temp=24.4)]
+    assert compute_period_stats(points, "auto")["comfort"]["miss_deviation"] is None
+
+
+def test_rhythm_hours_split_like_the_period_figures():
+    # 10 minutes 1.5 K too cold inside an hour on target: the hourly mean (-0.25 K) hides it,
+    # the share does not
+    samples = _hour_of_samples(5, 7)
+    for s in samples[:4]:
+        s["room_temp"] = 19.5
+    for s in samples[4:6]:
+        s["room_temp"] = 24.4  # past the cool target, inside the tolerance
+    rhythm = compute_rhythm(_hour_of_samples(4, 7) + samples, "auto", _local_ts(5, 20))
+    assert rhythm is not None
+    day = rhythm["days"][0]
+    assert day["below"][7] == 0.2
+    assert day["above"][7] == 0
+    assert day["below"][8] is None
+    assert day["within"] == 0.8
+    assert rhythm["days"][1]["within"] == 1
+
+
+def test_rhythm_day_without_judged_samples_has_no_share():
+    samples = _hour_of_samples(5, 7, window_open=True)
+    rhythm = compute_rhythm(_hour_of_samples(4, 7) + samples, "auto", _local_ts(5, 20))
+    assert rhythm is not None
+    assert rhythm["days"][0]["within"] is None
+    assert rhythm["days"][0]["below"][7] is None

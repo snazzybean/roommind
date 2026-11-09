@@ -62,6 +62,8 @@ NORMAL_ROOM_KEYS = {
     "mold_surface_temp",
     "mold_prevention_active",
     "mold_prevention_delta",
+    "target_reason",
+    "mold_boost",
     "shading_factor",
     "q_occupancy",
     "n_observations",

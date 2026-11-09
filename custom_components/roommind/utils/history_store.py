@@ -26,6 +26,8 @@ DETAIL_FIELDS = [
     "humidity",
     "heat_target",
     "cool_target",
+    "target_reason",
+    "mold_boost",
 ]
 DETAIL_MAX_AGE = 48 * 3600  # 48 hours
 HISTORY_MAX_AGE = 90 * 24 * 3600  # 90 days
@@ -94,6 +96,8 @@ class HistoryStore:
                     "humidity": data.get("humidity", ""),
                     "heat_target": data.get("heat_target", ""),
                     "cool_target": data.get("cool_target", ""),
+                    "target_reason": data.get("target_reason", ""),
+                    "mold_boost": data.get("mold_boost", ""),
                 }
             )
 
@@ -207,6 +211,7 @@ class HistoryStore:
                 "mode": bucket[0]["mode"],
                 "window_open": bucket[0].get("window_open", ""),
                 "device_setpoint": bucket[0].get("device_setpoint", ""),
+                "target_reason": bucket[0].get("target_reason", ""),
             }
             for field in (
                 "room_temp",
@@ -219,6 +224,7 @@ class HistoryStore:
                 "humidity",
                 "heat_target",
                 "cool_target",
+                "mold_boost",
             ):
                 vals = []
                 for r in bucket:

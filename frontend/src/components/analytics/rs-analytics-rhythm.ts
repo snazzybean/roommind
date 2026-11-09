@@ -6,16 +6,13 @@ import { LitElement, html, css, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import type { AnalyticsRhythm, HomeAssistant, RhythmDay } from "../../types";
 import { localize } from "../../utils/localize";
-import { tempUnit, toDisplay, toDisplayDelta } from "../../utils/temperature";
+import { tempUnit, toDisplay } from "../../utils/temperature";
 import "../shared/rs-chip-group";
 
 type RhythmView = "activity" | "comfort";
 
 const HOURS = Array.from({ length: 24 }, (_, h) => h);
 const AXIS_HOURS = [0, 6, 12, 18];
-// Darkest colour at this distance from the target; a cell inside the dead zone reads as on target
-const DEVIATION_FULL_K = 2;
-const DEVIATION_DEAD_ZONE_K = 0.25;
 const POPUP_WIDTH = 190;
 // Sticky toolbars plus the popup itself; closer to the top it opens below the cell
 const POPUP_MIN_TOP = 300;
@@ -38,6 +35,9 @@ export class RsAnalyticsRhythm extends LitElement {
   @property({ type: String }) public language = "en";
 
   @state() private _view: RhythmView = "activity";
+  // Touch keeps the popup open and offers the day in it; a mouse picks the day by clicking
+  @state() private _tapped = false;
+  private _popupPressed = false;
   @state() private _selected: {
     row: number;
     hour: number;
@@ -47,7 +47,9 @@ export class RsAnalyticsRhythm extends LitElement {
   } | null = null;
 
   private _closeOnOutside = (e: Event) => {
-    if (!e.composedPath().includes(this)) this._selected = null;
+    if (e.composedPath().includes(this)) return;
+    this._popupPressed = false;
+    this._selected = null;
   };
 
   connectedCallback() {
@@ -64,7 +66,7 @@ export class RsAnalyticsRhythm extends LitElement {
     const days = this.rhythm?.days;
     if (!days?.length) return nothing;
     const l = this.language;
-    const hasComfort = days.some((d) => d.deviation.some((v) => v != null));
+    const hasComfort = days.some((d) => d.within != null);
     const view = hasComfort ? this._view : "activity";
     return html`
       <ha-card>
@@ -107,7 +109,8 @@ export class RsAnalyticsRhythm extends LitElement {
             @pointerleave=${this._onPointerLeave}
             @keydown=${(e: KeyboardEvent) => this._onKey(e, days.length)}
             @blur=${() => {
-              this._selected = null;
+              // Tapping the popup's button blurs the grid first; the popup must outlive that
+              if (!this._popupPressed) this._selected = null;
             }}
           >
             <span></span>
@@ -147,6 +150,7 @@ export class RsAnalyticsRhythm extends LitElement {
           view === "activity" ? this._activityColor(day, hour) : this._comfortColor(day, hour);
         const window = view === "activity" && (day.window[hour] ?? 0) > 0;
         return html`<span
+          @click=${(e: PointerEvent) => this._onCellClick(e, day.date)}
           class="cell ${selected ? "selected" : ""} ${window ? "window" : ""}"
           data-row=${row}
           data-hour=${hour}
@@ -166,13 +170,11 @@ export class RsAnalyticsRhythm extends LitElement {
   }
 
   private _comfortColor(day: RhythmDay, hour: number): string | null {
-    const value = day.deviation[hour];
-    if (value == null) return null;
-    if (Math.abs(value) < DEVIATION_DEAD_ZONE_K) return "var(--rs-idle)";
-    return shade(
-      value < 0 ? "--rs-cold" : "--rs-warm",
-      Math.min(Math.abs(value) / DEVIATION_FULL_K, 1),
-    );
+    const below = day.below[hour];
+    const above = day.above[hour];
+    if (below == null || above == null) return null;
+    if (below === 0 && above === 0) return "var(--rs-ok)";
+    return below >= above ? shade("--rs-cold", below) : shade("--rs-warm", above);
   }
 
   private _rowTotal(day: RhythmDay, view: RhythmView): string {
@@ -184,10 +186,9 @@ export class RsAnalyticsRhythm extends LitElement {
       const hours = sum(day.heat) + sum(day.cool);
       return hours > 0 ? `${number(hours)} h` : "";
     }
-    const known = day.deviation.filter((v): v is number => v != null);
-    if (known.length === 0) return "";
-    const mean = known.reduce((a, v) => a + Math.abs(v), 0) / known.length;
-    return mean >= 0.05 ? `±${number(toDisplayDelta(mean, this.hass))}` : "";
+    if (day.within == null) return "";
+    // Floor: 99.6 % on target must not read as 100 %
+    return `${number(Math.floor(day.within * 100))} %`;
   }
 
   private _renderLegend(view: RhythmView) {
@@ -200,9 +201,9 @@ export class RsAnalyticsRhythm extends LitElement {
       </div>`;
     }
     return html`<div class="legend">
-      <span>${localize("analytics.comfort_below", l)}</span>
-      <i class="scale"></i>
-      <span>${localize("analytics.comfort_above", l)}</span>
+      <span><i class="key cold"></i>${localize("analytics.comfort_below", l)}</span>
+      <span><i class="key ok"></i>${localize("analytics.comfort_on_target", l)}</span>
+      <span><i class="key warm"></i>${localize("analytics.comfort_above", l)}</span>
     </div>`;
   }
 
@@ -227,18 +228,14 @@ export class RsAnalyticsRhythm extends LitElement {
         minimumFractionDigits: 1,
         maximumFractionDigits: 1,
       }).format(toDisplay(v, this.hass))}\u00A0${unit}`;
-    const delta = (v: number) =>
-      `${new Intl.NumberFormat(l, {
-        signDisplay: "exceptZero",
-        maximumFractionDigits: 1,
-      }).format(toDisplayDelta(v, this.hass))}\u00A0${unit}`;
     const lines: Array<[string, string]> = [];
     const add = (label: string, value: number | null, format: (v: number) => string) => {
       if (value != null) lines.push([label, format(value)]);
     };
     const share = (label: string, value: number | null) => add(label, value || null, percent);
     add(localize("analytics.temperature", l), day.temp[hour], temp);
-    add(localize("analytics.rhythm_comfort", l), day.deviation[hour], delta);
+    share(localize("analytics.comfort_below", l), day.below[hour]);
+    share(localize("analytics.comfort_above", l), day.above[hour]);
     share(localize("analytics.heating_period", l), day.heat[hour]);
     share(localize("analytics.cooling_period", l), day.cool[hour]);
     share(localize("analytics.window_open_period", l), day.window[hour]);
@@ -246,8 +243,11 @@ export class RsAnalyticsRhythm extends LitElement {
     add(localize("analytics.outdoor", l), day.outdoor[hour], temp);
     return html`
       <div
-        class="popup ${below ? "below" : ""}"
-        role="tooltip"
+        class="popup ${below ? "below" : ""} ${this._tapped ? "tapped" : ""}"
+        role=${this._tapped ? "group" : "tooltip"}
+        @pointerdown=${() => {
+          this._popupPressed = true;
+        }}
         style="left: ${x}px; top: ${y}px; width: ${POPUP_WIDTH}px"
       >
         <div class="popup-title">${this._when(days)}</div>
@@ -260,12 +260,26 @@ export class RsAnalyticsRhythm extends LitElement {
               )
             : html`<div class="popup-line">${localize("analytics.no_data", l)}</div>`
         }
+        ${
+          this._tapped
+            ? html`<button class="popup-action" @click=${() => this._selectDay(day.date)}>
+                ${localize("analytics.rhythm_show_day", l)}
+              </button>`
+            : nothing
+        }
       </div>
     `;
   }
 
   private _selectDay(date: string) {
+    this._popupPressed = false;
+    this._selected = null;
     this.dispatchEvent(new CustomEvent("day-selected", { detail: date }));
+  }
+
+  // A mouse sees the hour on hover, so its click picks the day; a tap opens the hour instead
+  private _onCellClick(e: PointerEvent, date: string) {
+    if (e.pointerType === "mouse") this._selectDay(date);
   }
 
   private _formatDay(date: string, options: Intl.DateTimeFormatOptions): string {
@@ -283,6 +297,10 @@ export class RsAnalyticsRhythm extends LitElement {
   }
 
   private _onPointer(e: PointerEvent) {
+    if (e.type === "pointerdown") {
+      this._tapped = e.pointerType !== "mouse";
+      this._popupPressed = false;
+    }
     const cell = (e.target as HTMLElement).closest<HTMLElement>("[data-row]");
     if (!cell) return;
     const row = Number(cell.dataset.row);
@@ -321,6 +339,11 @@ export class RsAnalyticsRhythm extends LitElement {
       ArrowRight: [0, 1],
     };
     if (e.key === "Escape") this._selected = null;
+    if (e.key === "Enter" && this._selected) {
+      const day = this.rhythm?.days[this._selected.row];
+      if (day) this._selectDay(day.date);
+      return;
+    }
     const move = moves[e.key];
     if (!move) return;
     e.preventDefault();
@@ -337,6 +360,7 @@ export class RsAnalyticsRhythm extends LitElement {
       --rs-cold: var(--state-climate-cool-color, #2b9af9);
       --rs-warm: var(--state-climate-heat-color, #ff8100);
       --rs-idle: color-mix(in srgb, var(--primary-text-color) 7%, var(--card-background-color));
+      --rs-ok: color-mix(in srgb, var(--success-color, #4caf50) 35%, var(--rs-idle));
     }
 
     ha-card {
@@ -425,7 +449,7 @@ export class RsAnalyticsRhythm extends LitElement {
       position: relative;
       height: 18px;
       border-radius: 3px;
-      cursor: crosshair;
+      cursor: pointer;
     }
 
     .cell.selected {
@@ -488,11 +512,8 @@ export class RsAnalyticsRhythm extends LitElement {
       background: var(--primary-text-color);
     }
 
-    .scale {
-      width: 96px;
-      height: 8px;
-      border-radius: 4px;
-      background: linear-gradient(90deg, var(--rs-cold), var(--rs-idle), var(--rs-warm));
+    .key.ok {
+      background: var(--rs-ok);
     }
 
     .popup {
@@ -516,6 +537,28 @@ export class RsAnalyticsRhythm extends LitElement {
 
     .popup.below {
       transform: translate(-50%, 6px);
+    }
+
+    .popup.tapped {
+      pointer-events: auto;
+    }
+
+    .popup-action {
+      width: 100%;
+      min-height: 44px;
+      margin-top: 6px;
+      border: none;
+      border-radius: 6px;
+      background: color-mix(in srgb, var(--primary-color) 14%, transparent);
+      color: var(--primary-color);
+      font: inherit;
+      font-weight: 500;
+      cursor: pointer;
+      touch-action: manipulation;
+    }
+
+    .popup-action:focus-visible {
+      outline: 2px solid var(--primary-color);
     }
 
     .popup-title {
