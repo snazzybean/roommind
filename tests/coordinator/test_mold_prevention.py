@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+
+from custom_components.roommind.const import MOLD_PREVENTION_RELEASE_MINUTES
 
 from .conftest import (
     SAMPLE_ROOM,
@@ -307,7 +310,8 @@ class TestMoldRiskDetection:
         room = data["rooms"]["living_room_abc12345"]
         assert room["mold_prevention_active"] is True
 
-        # Cycle 2: Conditions improve (warm outside) -> risk ok, surface RH well below threshold
+        # Cycle 2: Conditions improve (warm outside) -> risk ok, surface RH well below threshold;
+        # the boost holds MOLD_PREVENTION_RELEASE_MINUTES before it ends
         hass.states.get = MagicMock(
             side_effect=make_mock_states_get(
                 humidity="40.0",
@@ -315,6 +319,11 @@ class TestMoldRiskDetection:
             ),
         )
         data = await coordinator._async_update_data()
+        assert data["rooms"]["living_room_abc12345"]["mold_prevention_active"] is True
+
+        later = time.time() + MOLD_PREVENTION_RELEASE_MINUTES * 60 + 1
+        with patch("custom_components.roommind.managers.mold_manager.time.time", return_value=later):
+            data = await coordinator._async_update_data()
         room = data["rooms"]["living_room_abc12345"]
         assert room["mold_prevention_active"] is False
         assert room["mold_prevention_delta"] == 0.0

@@ -81,6 +81,10 @@ def _room_metrics(run: RunData, area: str) -> dict[str, Any]:
 
     ``heating_without_source_h``: RoomMind decided to heat, but heat source
     orchestration picked no source, so nothing ran.
+
+    ``mold_prevention_switches`` / ``mold_prevention_h``: how often mold prevention
+    switched on or off and how long it ran; a boost that drops right below the
+    warning flaps every few minutes.
     """
     under = over = over_heat = coast_kh = above_band = in_band = covered = 0.0
     upcoming = _upcoming_heat(run, area)
@@ -163,8 +167,21 @@ def _room_metrics(run: RunData, area: str) -> dict[str, Any]:
         later = run.sample_at(o["t"] + 1800)
         if later and later["t"] > o["t"] + 1700:
             pred_err.append(abs(later["rooms"][area]["t_air"] - pred))
+    mold_switches = 0
+    mold_h = 0.0
+    prev_mold: tuple[float, bool] | None = None
+    for o in run.observer:
+        active = bool((o["rooms"].get(area) or {}).get("mold_prevention_active"))
+        if prev_mold is not None:
+            if active != prev_mold[1]:
+                mold_switches += 1
+            if prev_mold[1]:
+                mold_h += (o["t"] - prev_mold[0]) / 3600
+        prev_mold = (o["t"], active)
     temps = [s["rooms"][area]["t_air"] for s in run.samples]
     return {
+        "mold_prevention_switches": mold_switches,
+        "mold_prevention_h": round(mold_h, 2),
         "undershoot_kh": round(under, 3),
         "overshoot_kh": round(over, 3),
         "heat_overshoot_kh": round(over_heat, 3),

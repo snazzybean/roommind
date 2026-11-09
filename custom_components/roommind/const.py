@@ -159,6 +159,8 @@ DEFAULT_MOLD_SUSTAINED_MINUTES = 30  # minutes risk must persist before notifica
 DEFAULT_MOLD_COOLDOWN_MINUTES = 60  # minutes between repeated notifications per room
 MOLD_PREVENTION_DELTAS = {"light": 1.0, "medium": 2.0, "strong": 3.0}
 MOLD_HYSTERESIS = 5.0  # surface RH must drop this much below warning to clear
+# ...and stay there this long: the estimate follows the air, which a heater warms in minutes
+MOLD_PREVENTION_RELEASE_MINUTES = 30
 MIN_MOLD_GROWTH_TEMP = 5.0  # °C — below this surface temp, mold risk negligible
 DEFAULT_MOLD_F_RSI = 0.80  # DIN 4108-2 temperature factor; realistic for standard existing buildings
 

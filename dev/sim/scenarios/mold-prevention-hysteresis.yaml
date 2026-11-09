@@ -1,0 +1,29 @@
+name: mold-prevention-hysteresis
+description: >
+  Living room with laundry drying indoors on a November day, mold prevention on. The boost
+  lowers the surface RH; a boost that ends right below the warning let the wall cool back over
+  it and switched on and off every few minutes at night (found with the analytics page,
+  2026-11-09: 94 switches in 17 days). It must hold until the surface RH is 5 % below the warning.
+refs: [218]
+tags: [mold, humidity]
+extends: room-climate-entity-house
+start: 2026-11-02T00:00
+duration: 3d
+roommind:
+  settings:
+    mold_detection_enabled: true
+    mold_prevention_enabled: true
+    mold_prevention_intensity: medium
+timeline:
+  - {at: "+0d10h", do: humidity.event, room: wohnzimmer, grams: 1400, for: 8h}
+  - {at: "+0d18h30m", do: humidity.event, room: wohnzimmer, grams: 200, for: 40m}
+  - {at: "+1d10h", do: humidity.event, room: wohnzimmer, grams: 1400, for: 8h}
+  - {at: "+1d18h30m", do: humidity.event, room: wohnzimmer, grams: 200, for: 40m}
+  - {at: "+2d18h30m", do: humidity.event, room: wohnzimmer, grams: 200, for: 40m}
+expect:
+  - {metric: room.mold_prevention_h, room: wohnzimmer, min: 1, label: prevention ran}
+  # v1.8.2: 335 switches in 3 days (boost ended right below the warning). Now the boost holds
+  # until the surface RH stays 5 % below the warning for 30 min: 9, evening cycles of 45-60 min
+  # left where the heat-capable AC warms the air (and so the estimate) much faster than the wall
+  - {metric: room.mold_prevention_switches, room: wohnzimmer, max: 12, label: no flapping at the warning threshold}
+  - {invariant: target_never_empty}

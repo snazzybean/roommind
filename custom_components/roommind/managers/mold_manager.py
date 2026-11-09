@@ -15,6 +15,7 @@ from ..const import (
     DEFAULT_MOLD_HUMIDITY_THRESHOLD,
     DEFAULT_MOLD_SUSTAINED_MINUTES,
     MOLD_HYSTERESIS,
+    MOLD_PREVENTION_RELEASE_MINUTES,
     MOLD_RISK_CRITICAL,
     MOLD_RISK_OK,
     MOLD_RISK_WARNING,
@@ -48,6 +49,7 @@ class MoldManager:
         self.hass = hass
         self._risk_since: dict[str, float] = {}
         self._prevention_active: dict[str, bool] = {}
+        self._clear_since: dict[str, float] = {}
         self._throttler = NotificationThrottler()
 
     async def evaluate(
@@ -134,64 +136,85 @@ class MoldManager:
                     )
                     self._throttler.record_sent(f"detect_{area_id}")
 
-            # Activate prevention
-            if settings.get("mold_prevention_enabled") and risk_level in (MOLD_RISK_WARNING, MOLD_RISK_CRITICAL):
-                intensity = settings.get("mold_prevention_intensity", "medium")
-                result.prevention_delta = mold_prevention_delta(intensity)
-
-                if not self._prevention_active.get(area_id):
-                    self._prevention_active[area_id] = True
-                    if (
-                        settings.get("mold_prevention_notify_enabled")
-                        and settings.get("mold_notifications_enabled", True)
-                        and celsius_delta_to_ha_fn is not None
-                        and ha_temp_unit_str_fn is not None
-                    ):
-                        prev_targets = settings.get(
-                            "mold_prevention_notify_targets",
-                            [],
-                        )
-                        await async_send_mold_notification(
-                            self.hass,
-                            area_id,
-                            area_name,
-                            prev_targets,
-                            message=(
-                                f"Mold prevention active in {area_name}: "
-                                f"temperature raised by "
-                                f"{celsius_delta_to_ha_fn(result.prevention_delta):.0f}{ha_temp_unit_str_fn()}"
-                            ),
-                            title="RoomMind: Mold Prevention",
-                            tag_suffix="prevention",
-                        )
-                        self._throttler.record_sent(
-                            f"prevent_{area_id}",
-                        )
-                result.prevention_active = True
         else:
             # Risk cleared -- use hysteresis for deactivation
             if surface_rh is not None and surface_rh < (MOLD_SURFACE_RH_WARNING - MOLD_HYSTERESIS):
                 self._risk_since.pop(area_id, None)
-                if self._prevention_active.get(area_id):
-                    self._prevention_active[area_id] = False
-                    dismiss_mold_notification(
-                        self.hass,
-                        area_id,
-                        "risk",
-                    )
-                    dismiss_mold_notification(
-                        self.hass,
-                        area_id,
-                        "prevention",
-                    )
                 self._throttler.clear(f"detect_{area_id}")
                 self._throttler.clear(f"prevent_{area_id}")
 
+        await self._apply_prevention(
+            result, area_id, area_name, risk_level, surface_rh, settings, celsius_delta_to_ha_fn, ha_temp_unit_str_fn
+        )
         return result
+
+    async def _apply_prevention(
+        self,
+        result: MoldResult,
+        area_id: str,
+        area_name: str,
+        risk_level: str,
+        surface_rh: float | None,
+        settings: dict,
+        celsius_delta_to_ha_fn: Callable[[float], float] | None,
+        ha_temp_unit_str_fn: Callable[[], str] | None,
+    ) -> None:
+        """Raise the target while the wall is at risk, with hysteresis on the way out.
+
+        The boost itself lowers the surface RH; switching it off right below the warning let the
+        wall cool back over it within minutes. A running boost holds until the surface RH has been
+        MOLD_HYSTERESIS below the warning for MOLD_PREVENTION_RELEASE_MINUTES: the estimate follows
+        the room air, which a heater warms in minutes while the wall lags behind.
+        """
+        enabled = bool(settings.get("mold_prevention_enabled"))
+        was_active = self._prevention_active.get(area_id, False)
+        at_risk = risk_level in (MOLD_RISK_WARNING, MOLD_RISK_CRITICAL)
+        in_band = surface_rh is not None and surface_rh >= MOLD_SURFACE_RH_WARNING - MOLD_HYSTERESIS
+        wanted = enabled and (at_risk or (was_active and in_band))
+        if was_active and enabled and not wanted:
+            clear_since = self._clear_since.setdefault(area_id, time.time())
+            wanted = time.time() - clear_since < MOLD_PREVENTION_RELEASE_MINUTES * 60
+        else:
+            self._clear_since.pop(area_id, None)
+        if not wanted:
+            if was_active:
+                self._prevention_active[area_id] = False
+                self._clear_since.pop(area_id, None)
+                dismiss_mold_notification(self.hass, area_id, "risk")
+                dismiss_mold_notification(self.hass, area_id, "prevention")
+            return
+
+        intensity = settings.get("mold_prevention_intensity", "medium")
+        result.prevention_delta = mold_prevention_delta(intensity)
+        result.prevention_active = True
+        if was_active:
+            return
+        self._prevention_active[area_id] = True
+        if (
+            settings.get("mold_prevention_notify_enabled")
+            and settings.get("mold_notifications_enabled", True)
+            and celsius_delta_to_ha_fn is not None
+            and ha_temp_unit_str_fn is not None
+        ):
+            await async_send_mold_notification(
+                self.hass,
+                area_id,
+                area_name,
+                settings.get("mold_prevention_notify_targets", []),
+                message=(
+                    f"Mold prevention active in {area_name}: "
+                    f"temperature raised by "
+                    f"{celsius_delta_to_ha_fn(result.prevention_delta):.0f}{ha_temp_unit_str_fn()}"
+                ),
+                title="RoomMind: Mold Prevention",
+                tag_suffix="prevention",
+            )
+            self._throttler.record_sent(f"prevent_{area_id}")
 
     def remove_room(self, area_id: str) -> None:
         """Clean up state for a removed room."""
         self._risk_since.pop(area_id, None)
         self._prevention_active.pop(area_id, None)
+        self._clear_since.pop(area_id, None)
         self._throttler.clear(f"detect_{area_id}")
         self._throttler.clear(f"prevent_{area_id}")
