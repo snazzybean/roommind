@@ -105,6 +105,7 @@ export class RsAnalytics extends LitElement {
                   .chartAnchor=${this._chartAnchor}
                   .language=${l}
                   .isOutdoor=${this.rooms[this._selectedRoom]?.is_outdoor ?? false}
+                  .targetBand=${(this.rooms[this._selectedRoom]?.climate_mode ?? "auto") === "auto"}
                 ></rs-analytics-chart>
                 ${
                   !this.rooms[this._selectedRoom]?.is_outdoor

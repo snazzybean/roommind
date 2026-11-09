@@ -1859,6 +1859,9 @@ async def test_analytics_mold_delta_from_live(ws_hass, store, connection):
     result = connection.send_result.call_args[0][1]
     # Target forecast should include the mold delta
     assert result["forecast"][0]["target_temp"] == 23.0
+    # Both sides go along so the chart can draw the target band ahead of now
+    assert result["forecast"][0]["heat_target"] == 23.0
+    assert result["forecast"][0]["cool_target"] is not None
 
 
 @pytest.mark.asyncio

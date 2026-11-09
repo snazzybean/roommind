@@ -285,6 +285,8 @@ export interface AnalyticsDataPoint {
   cover_reason?: string;
   device_setpoint?: number | null;
   humidity?: number | null;
+  heat_target?: number | null;
+  cool_target?: number | null;
 }
 
 export interface AnalyticsStats {

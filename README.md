@@ -39,7 +39,7 @@
 - **Per-Room Climate Toggle** - Disable climate control for individual rooms while keeping other rooms active.
 - **Outdoor Areas** - Mark rooms as outdoor (e.g. balcony) to disable climate control while keeping monitoring.
 - **Dashboard Card** - A room card for any dashboard with temporary override, mode, climate control switch and comfort/eco temperatures, each part optional. See [Dashboard Card](#dashboard-card).
-- **Analytics Dashboard** - Temperature and humidity charts with heating power, solar irradiance, and model predictions over 24h to 90 days, plus time on target, running hours, a daily rhythm view and the learned heat loss.
+- **Analytics Dashboard** - Temperature chart with the target range, humidity chart coloured by comfort level, heating power, solar irradiance, and model predictions over 24h to 90 days, plus time on target, running hours, a daily rhythm view and the learned heat loss.
 - **Mobile Ready** - Responsive layout with HA-native toolbar for the companion app.
 - **Multilingual** - English and German, auto-detected from your HA language setting.
 

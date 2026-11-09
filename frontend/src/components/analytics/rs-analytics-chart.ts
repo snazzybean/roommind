@@ -10,8 +10,26 @@ import {
   buildChartSeries,
   buildChartOptions,
   chartHeight,
+  humidityVisualMap,
   type ChartBuildContext,
+  type HumidityColors,
 } from "../../utils/chart-builder";
+
+// Series drawn for another legend entry: hiding that entry hides them too
+const LEGEND_OWNER: Record<string, string> = {
+  window_humidity_events: "window_events",
+  target_band_base: "target_temp",
+  target_band: "target_temp",
+  humidity_limits: "humidity",
+};
+const NOT_IN_LEGEND = new Set([
+  "now_marker",
+  "now_humidity_marker",
+  "window_humidity_events",
+  "target_band_base",
+  "target_band",
+  "humidity_limits",
+]);
 
 @customElement("rs-analytics-chart")
 export class RsAnalyticsChart extends LitElement {
@@ -22,6 +40,8 @@ export class RsAnalyticsChart extends LitElement {
   @property({ type: Number }) public chartAnchor = 0;
   @property({ type: String }) public language = "en";
   @property({ type: Boolean }) public isOutdoor = false;
+  /** Room judged on both sides (auto): shade the band between heat and cool target. */
+  @property({ type: Boolean }) public targetBand = false;
 
   @state() private _hiddenSeries = new Set(["outdoor_temp", "device_target"]);
   @state() private _chartInfoExpanded = false;
@@ -42,6 +62,7 @@ export class RsAnalyticsChart extends LitElement {
       forecast: this.data?.forecast,
       isOutdoor: this.isOutdoor,
       humidityPanel,
+      targetBand: this.targetBand,
     };
     const allSeries = points.length > 0 ? buildChartSeries(points, chartCtx) : [];
 
@@ -51,7 +72,7 @@ export class RsAnalyticsChart extends LitElement {
       const id = s.id as string;
       const ls = (s.lineStyle as Record<string, unknown>) || {};
       const isEvent = id.endsWith("_events");
-      if (this._hiddenSeries.has(id.replace("_humidity", ""))) {
+      if (this._hiddenSeries.has(LEGEND_OWNER[id] ?? id)) {
         const hidden: Record<string, unknown> = {
           ...s,
           lineStyle: { ...ls, width: 0, opacity: 0 },
@@ -61,7 +82,7 @@ export class RsAnalyticsChart extends LitElement {
         }
         return hidden;
       }
-      if (!isEvent && id !== "now_marker" && s.yAxisIndex !== 1) {
+      if (!isEvent && !id.startsWith("target_band") && id !== "now_marker" && s.yAxisIndex !== 1) {
         for (const point of s.data as Array<[number, number]>) {
           if (point && point[1] != null) {
             visibleY.push(point[1]);
@@ -70,12 +91,21 @@ export class RsAnalyticsChart extends LitElement {
       }
       const visible: Record<string, unknown> = { ...s, lineStyle: { ...ls, opacity: 1 } };
       if (s.areaStyle) {
-        visible.areaStyle = { ...(s.areaStyle as Record<string, unknown>), opacity: 1 };
+        const area = s.areaStyle as Record<string, unknown>;
+        visible.areaStyle = { ...area, opacity: area.opacity ?? 1 };
       }
       return visible;
     });
 
     const options = buildChartOptions(visibleY, allPoints, chartCtx);
+    const humidityIndex = displaySeries.findIndex((s) => s.id === "humidity");
+    if (humidityPanel && humidityIndex >= 0) {
+      options.visualMap = humidityVisualMap(
+        humidityIndex,
+        displaySeries[humidityIndex].data as Array<[number, number]>,
+        this._humidityColors(),
+      );
+    }
 
     return html`
       <ha-card>
@@ -118,10 +148,8 @@ export class RsAnalyticsChart extends LitElement {
   }
 
   private _renderSeriesLegend(series: Array<Record<string, unknown>>) {
-    const legendSeries = series.filter((s) => {
-      const id = s.id as string;
-      return !["now_marker", "now_humidity_marker", "window_humidity_events"].includes(id);
-    });
+    const legendSeries = series.filter((s) => !NOT_IN_LEGEND.has(s.id as string));
+    const { good, fair, poor } = this._humidityColors();
     return html`
       <div class="series-legend">
         ${legendSeries.map((s) => {
@@ -132,13 +160,31 @@ export class RsAnalyticsChart extends LitElement {
               class="legend-item ${hidden ? "legend-hidden" : ""}"
               @click=${() => this._toggleSeries(id)}
             >
-              <span class="legend-dot" style="background: ${s.color}"></span>
+              <span
+                class="legend-dot"
+                style="background: ${
+                  id === "humidity"
+                    ? `linear-gradient(90deg, ${good} 0 50%, ${fair} 50% 75%, ${poor} 75%)`
+                    : s.color
+                }"
+              ></span>
               ${s.name}
             </button>
           `;
         })}
       </div>
     `;
+  }
+
+  private _humidityColors(): HumidityColors {
+    const style = getComputedStyle(this);
+    const token = (name: string, fallback: string) =>
+      style.getPropertyValue(name).trim() || fallback;
+    return {
+      good: token("--success-color", "#4caf50"),
+      fair: token("--warning-color", "#ffa600"),
+      poor: token("--error-color", "#db4437"),
+    };
   }
 
   private _renderMarkdown(text: string) {

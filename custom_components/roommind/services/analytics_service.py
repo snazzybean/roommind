@@ -438,6 +438,8 @@ async def build_analytics_data(
                 "room_temp": None,
                 "outdoor_temp": None,
                 "target_temp": tf["target_temp"],
+                "heat_target": tf["heat_target"],
+                "cool_target": tf["cool_target"],
                 "mode": "forecast",
                 "predicted_temp": pred_temps[i] if i < len(pred_temps) else None,
                 "window_open": False,
