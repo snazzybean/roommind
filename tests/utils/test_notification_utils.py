@@ -83,7 +83,8 @@ async def test_send_notification_with_targets():
         assert call[0][0] == "notify"
         assert call[0][1] == "send_message"
         assert call[0][2]["message"] == "Test mold alert"
-        assert call[0][2]["data"]["tag"] == "roommind_mold_living_room_risk"
+        assert call[0][2]["title"] == "RoomMind: Test"
+        assert "data" not in call[0][2]
 
 
 @pytest.mark.asyncio
@@ -194,26 +195,26 @@ async def test_send_notification_person_unavailable_treated_as_home():
 
 @pytest.mark.asyncio
 async def test_send_notification_custom_tag_suffix():
-    """Custom tag_suffix should be reflected in notification tag."""
+    """Custom tag_suffix should be reflected in fallback notification ID."""
     hass = MagicMock()
-    hass.services.async_call = AsyncMock()
 
-    targets = [
-        {"entity_id": "notify.mobile_app_kevin", "person_entity": "", "notify_when": "always"},
-    ]
+    with patch("custom_components.roommind.utils.notification_utils.async_create") as mock_create:
+        await async_send_mold_notification(
+            hass,
+            "bedroom",
+            "Schlafzimmer",
+            [],
+            message="Prevention active",
+            title="RoomMind",
+            tag_suffix="prevention",
+        )
 
-    await async_send_mold_notification(
+    mock_create.assert_called_once_with(
         hass,
-        "bedroom",
-        "Schlafzimmer",
-        targets,
-        message="Prevention active",
+        "Prevention active",
         title="RoomMind",
-        tag_suffix="prevention",
+        notification_id="roommind_mold_bedroom_prevention",
     )
-
-    call_data = hass.services.async_call.call_args[0][2]["data"]
-    assert call_data["tag"] == "roommind_mold_bedroom_prevention"
 
 
 # --- dismiss_mold_notification ---
@@ -262,7 +263,7 @@ async def test_send_notification_skips_target_with_empty_entity_id():
 
 
 @pytest.mark.asyncio
-async def test_send_notification_service_exception_triggers_fallback():
+async def test_send_notification_service_exception_triggers_fallback(caplog):
     """If notify service raises, warning is logged and fallback is used."""
     hass = MagicMock()
     hass.services.async_call = AsyncMock(side_effect=Exception("service unavailable"))
@@ -280,3 +281,29 @@ async def test_send_notification_service_exception_triggers_fallback():
         )
 
     mock_create.assert_called_once()
+    assert "Failed to send mold notification to notify.test: service unavailable" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_send_notification_payload_no_unsupported_data():
+    """Service call payload for notify.send_message must only include supported fields (no 'data' key)."""
+    hass = MagicMock()
+    hass.services.async_call = AsyncMock()
+
+    targets = [
+        {"entity_id": "notify.mobile_app_kevin", "person_entity": "", "notify_when": "always"},
+    ]
+
+    await async_send_mold_notification(
+        hass,
+        "living_room",
+        "Wohnzimmer",
+        targets,
+        message="Test mold alert",
+        title="RoomMind: Test",
+    )
+
+    assert hass.services.async_call.call_count == 1
+    call_args = hass.services.async_call.call_args[0]
+    payload = call_args[2]
+    assert "data" not in payload

@@ -110,15 +110,11 @@ async def async_send_mold_notification(
                     "entity_id": entity_id,
                     "message": message,
                     "title": title,
-                    "data": {
-                        "tag": tag,
-                        "group": "roommind",
-                    },
                 },
             )
             sent_any = True
-        except Exception:  # noqa: BLE001
-            _LOGGER.warning("Failed to send mold notification to %s", entity_id)
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.warning("Failed to send mold notification to %s: %s", entity_id, err)
 
     if not sent_any:
         # All targets were skipped or failed → persistent fallback
