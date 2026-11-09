@@ -85,6 +85,9 @@ def _room_metrics(run: RunData, area: str) -> dict[str, Any]:
     ``mold_prevention_switches`` / ``mold_prevention_h``: how often mold prevention
     switched on or off and how long it ran; a boost that drops right below the
     warning flaps every few minutes.
+
+    ``heating_h_cheap`` / ``_normal`` / ``_expensive``: heating hours by the electricity
+    price level RoomMind reported, ``price_shift_h`` how long the price moved the target.
     """
     under = over = over_heat = coast_kh = above_band = in_band = covered = 0.0
     upcoming = _upcoming_heat(run, area)
@@ -170,6 +173,19 @@ def _room_metrics(run: RunData, area: str) -> dict[str, Any]:
     mold_switches = 0
     mold_h = 0.0
     prev_mold: tuple[float, bool] | None = None
+    by_level = {"cheap": 0.0, "normal": 0.0, "expensive": 0.0}
+    shifted_h = 0.0
+    prev_obs: tuple[float, dict[str, Any]] | None = None
+    for o in run.observer:
+        room_o = o["rooms"].get(area) or {}
+        if prev_obs is not None:
+            dt = (o["t"] - prev_obs[0]) / 3600
+            level = prev_obs[1].get("price_level")
+            if decided_mode(prev_obs[1]) == "heating" and level in by_level:
+                by_level[level] += dt
+            if prev_obs[1].get("price_shift_heat") or prev_obs[1].get("price_shift_cool"):
+                shifted_h += dt
+        prev_obs = (o["t"], room_o)
     for o in run.observer:
         active = bool((o["rooms"].get(area) or {}).get("mold_prevention_active"))
         if prev_mold is not None:
@@ -180,6 +196,10 @@ def _room_metrics(run: RunData, area: str) -> dict[str, Any]:
         prev_mold = (o["t"], active)
     temps = [s["rooms"][area]["t_air"] for s in run.samples]
     return {
+        "heating_h_cheap": round(by_level["cheap"], 2),
+        "heating_h_normal": round(by_level["normal"], 2),
+        "heating_h_expensive": round(by_level["expensive"], 2),
+        "price_shift_h": round(shifted_h, 2),
         "mold_prevention_switches": mold_switches,
         "mold_prevention_h": round(mold_h, 2),
         "undershoot_kh": round(under, 3),

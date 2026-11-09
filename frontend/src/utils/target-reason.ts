@@ -6,7 +6,7 @@
 import type { AnalyticsDataPoint } from "../types";
 import type { TranslationKey } from "./localize";
 
-export type TargetReason = "override" | "vacation" | "away" | "vacant" | "mold";
+export type TargetReason = "override" | "vacation" | "away" | "vacant" | "mold" | "price";
 
 export interface TargetReasonGroup {
   id: string;
@@ -34,6 +34,12 @@ export const TARGET_REASON_GROUPS: readonly TargetReasonGroup[] = [
     label: "analytics.reason_group.mold",
     reasons: ["mold"],
   },
+  {
+    id: "price",
+    color: "rgb(191, 144, 0)",
+    label: "analytics.reason_group.price",
+    reasons: ["price"],
+  },
 ];
 
 export const REASON_LABELS: Record<TargetReason, TranslationKey> = {
@@ -42,14 +48,16 @@ export const REASON_LABELS: Record<TargetReason, TranslationKey> = {
   away: "analytics.reason.away",
   vacant: "analytics.reason.vacant",
   mold: "analytics.reason.mold",
+  price: "analytics.reason.price",
 };
 
 const isReason = (value: string | undefined): value is TargetReason =>
   value != null && value in REASON_LABELS;
 
-/** Reasons in force for a sample; the mold boost adds to whatever else set the target. */
+/** Reasons in force for a sample; mold boost and price shift add to what else set the target. */
 export function targetReasons(p: AnalyticsDataPoint): TargetReason[] {
   const reasons: TargetReason[] = isReason(p.target_reason) ? [p.target_reason] : [];
+  if (p.price_shift) reasons.push("price");
   if ((p.mold_boost ?? 0) > 0) reasons.push("mold");
   return reasons;
 }

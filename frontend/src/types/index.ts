@@ -129,6 +129,8 @@ export interface RoomConfig {
   occupancy_eco_enabled?: boolean;
   occupancy_eco_delay?: number;
   preheat_enabled?: boolean;
+  /** K the schedule target may move with the electricity price, 0 = off. */
+  price_shift?: number;
   follow_device_setpoint?: boolean;
   window_sensors: string[];
   window_open_delay: number;
@@ -172,12 +174,27 @@ export interface RoomConfig {
   heat_source_primary_delta?: number;
   heat_source_outdoor_threshold?: number;
   heat_source_ac_min_outdoor?: number;
+  /** Orchestration: expensive electricity prefers the primary source, cheap the AC. */
+  heat_source_price_aware?: boolean;
   climate_control_enabled?: boolean;
   live?: RoomLiveData;
 }
 
+/** What RoomMind reads from the price source (rooms/list ``price_status``). */
+export interface PriceStatus {
+  entity_id: string;
+  readable: boolean;
+  kind: "forecast" | "history" | "switch" | null;
+  price: number | null;
+  level: "cheap" | "normal" | "expensive" | null;
+  forecast_hours: number;
+  history_hours: number;
+  history_needed: number;
+}
+
 export interface GlobalSettings {
   outdoor_temp_sensor: string;
+  price_entity?: string;
   outdoor_humidity_sensor: string;
   outdoor_cooling_min?: number;
   outdoor_heating_max?: number;
@@ -290,6 +307,10 @@ export interface AnalyticsDataPoint {
   /** What set the target: "" schedule, else a TargetReason. */
   target_reason?: string;
   mold_boost?: number | null;
+  price?: number | null;
+  price_level?: string;
+  /** Heat-side shift the electricity price applied (cool side moves the other way). */
+  price_shift?: number | null;
 }
 
 export interface RunOvershoot {
@@ -307,6 +328,12 @@ export interface AnalyticsStats {
   cooling_starts: number;
   /** How far past the target the room went after the runs, null without runs. */
   heat_overshoot?: RunOvershoot | null;
+  /** Run hours by price level, null without a price source. */
+  price?: {
+    heating_hours: Partial<Record<"cheap" | "normal" | "expensive", number>>;
+    cooling_hours: Partial<Record<"cheap" | "normal" | "expensive", number>>;
+    shifted_hours: number;
+  } | null;
   cool_overshoot?: RunOvershoot | null;
   comfort: {
     below_pct: number;

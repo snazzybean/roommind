@@ -24,12 +24,14 @@ const PANEL_BOTTOM = 24;
  * shows while its series has data and is not hidden in the legend. A new panel = an entry
  * here plus its series tagged with `panel` in buildChartSeries.
  */
-export type SubPanel = "outdoor" | "humidity";
+export type SubPanel = "outdoor" | "humidity" | "price";
 export const SUB_PANELS: Record<SubPanel, { height: number; series: string }> = {
   outdoor: { height: 56, series: "outdoor_temp" },
   humidity: { height: 70, series: "humidity" },
+  price: { height: 56, series: "price" },
 };
-export const SUB_PANEL_ORDER: readonly SubPanel[] = ["outdoor", "humidity"];
+export const SUB_PANEL_ORDER: readonly SubPanel[] = ["outdoor", "humidity", "price"];
+const PRICE_COLOR = "rgb(191, 144, 0)";
 // The panels share an x axis, so both plots start at a fixed left edge instead of containLabel
 const PANEL_LEFT = 46;
 // Visible on light and dark cards alike
@@ -423,6 +425,45 @@ export function buildChartSeries(
     });
   }
 
+  const priceData = points.flatMap((p): Array<[number, number]> =>
+    p.price != null ? [[p.ts * 1000, p.price]] : [],
+  );
+  if (priceData.length > 0) {
+    series.push({
+      id: "price",
+      type: "line",
+      name: localize("analytics.price", l),
+      color: PRICE_COLOR,
+      data: priceData,
+      showSymbol: false,
+      step: "end",
+      lineStyle: { width: 1.5 },
+      panel: "price",
+    });
+    for (const [level, color] of [
+      ["cheap", "rgba(76, 175, 80, 0.18)"],
+      ["expensive", "rgba(244, 67, 54, 0.14)"],
+    ] as const) {
+      const data = stretch(points, (p) => (p.price_level === level ? 1e9 : null));
+      if (!hasValue(data)) continue;
+      series.push({
+        id: `price_${level}_events`,
+        type: "line",
+        name: "",
+        color,
+        data,
+        showSymbol: false,
+        lineStyle: { width: 0 },
+        areaStyle: { color, origin: "start" },
+        tooltip: { show: false },
+        silent: true,
+        connectNulls: false,
+        z: -1,
+        panel: "price",
+      });
+    }
+  }
+
   const nowMarker = {
     type: "line",
     name: "",
@@ -503,12 +544,7 @@ export function buildChartOptions(
                 : {}),
             })),
           ],
-          yAxis: [
-            yAxis,
-            ...panels.map((p, i) =>
-              p === "humidity" ? humidityAxis(points, i + 1) : outdoorAxis(points, i + 1, hass),
-            ),
-          ],
+          yAxis: [yAxis, ...panels.map((p, i) => panelAxis(p, points, i + 1, hass))],
           axisPointer: { link: [{ xAxisIndex: "all" }] },
           grid: [
             {
@@ -576,6 +612,13 @@ export function buildChartOptions(
             const level = humidityLevel(v);
             value = `${Math.round(v)}\u00A0%`;
             if (level !== "good") value += ` (${localize(`analytics.humidity_${level}`, l)})`;
+          }
+          if (sid === "price") {
+            value = new Intl.NumberFormat(l, { maximumSignificantDigits: 4 }).format(v);
+            const level = closest?.price_level;
+            if (level === "cheap" || level === "normal" || level === "expensive") {
+              value += ` (${localize(`settings.price_level_${level}`, l)})`;
+            }
           }
           if (sid === "target_temp" && closest) {
             const reasons = targetReasons(closest).map((r) => localize(REASON_LABELS[r], l));
@@ -647,5 +690,33 @@ function outdoorAxis(
     max: Math.ceil(max + 1),
     splitNumber: 2,
     axisLabel: { formatter: `{value}${tempUnit(hass)}` },
+  };
+}
+
+function panelAxis(
+  panel: SubPanel,
+  points: AnalyticsDataPoint[],
+  gridIndex: number,
+  hass: HomeAssistant,
+): Record<string, unknown> {
+  if (panel === "humidity") return humidityAxis(points, gridIndex);
+  if (panel === "outdoor") return outdoorAxis(points, gridIndex, hass);
+  // Price: whatever unit the source uses; bounds from the prices, the level bands reach far above
+  const prices = points.map((p) => p.price).filter((v): v is number => v != null);
+  const low = prices.length > 0 ? prices.reduce((a, b) => Math.min(a, b)) : 0;
+  const high = prices.length > 0 ? prices.reduce((a, b) => Math.max(a, b)) : 1;
+  // Round bounds to the magnitude of the span: 20-38 ct reads 20 / 30 / 40, not 19.2 / 39.9
+  const span = Math.max(high - low, Math.abs(high) * 0.1, 1e-6);
+  const step = 10 ** Math.floor(Math.log10(span));
+  return {
+    type: "value",
+    gridIndex,
+    min: Math.floor(low / step) * step,
+    max: Math.ceil(high / step) * step,
+    splitNumber: 2,
+    axisLabel: {
+      formatter: (v: number) =>
+        new Intl.NumberFormat(hass.language, { maximumSignificantDigits: 3 }).format(v),
+    },
   };
 }

@@ -43,6 +43,8 @@ export class RsRoomDetail extends LitElement {
   @property({ attribute: false }) public config: RoomConfig | null = null;
   @property({ attribute: false }) public hass!: HomeAssistant;
   @property({ type: Boolean }) public presenceEnabled = false;
+  /** A price source is set in the settings: shows the per-room price options. */
+  @property({ type: Boolean }) public priceConfigured = false;
   @property({ attribute: false }) public presencePersons: string[] = [];
   @property({ type: Boolean }) public climateControlActive = true;
 
@@ -60,6 +62,8 @@ export class RsRoomDetail extends LitElement {
   @state() private _occupancyEcoEnabled = false;
   @state() private _preheatEnabled = true;
   @state() private _followDeviceSetpoint = false;
+  @state() private _priceShift = 0;
+  @state() private _heatSourcePriceAware = false;
   @state() private _occupancyEcoDelay = DEFAULT_OCCUPANCY_ECO_DELAY;
   @state() private _selectedWindowSensors: Set<string> = new Set();
   @state() private _windowOpenDelay = 0;
@@ -271,6 +275,8 @@ export class RsRoomDetail extends LitElement {
       this._occupancyEcoEnabled = this.config.occupancy_eco_enabled ?? false;
       this._preheatEnabled = this.config.preheat_enabled ?? true;
       this._followDeviceSetpoint = this.config.follow_device_setpoint ?? false;
+      this._priceShift = this.config.price_shift ?? 0;
+      this._heatSourcePriceAware = this.config.heat_source_price_aware ?? false;
       this._occupancyEcoDelay = this.config.occupancy_eco_delay ?? DEFAULT_OCCUPANCY_ECO_DELAY;
       this._selectedWindowSensors = new Set(this.config.window_sensors ?? []);
       this._windowOpenDelay = this.config.window_open_delay ?? 0;
@@ -316,6 +322,8 @@ export class RsRoomDetail extends LitElement {
       this._occupancyEcoEnabled = false;
       this._preheatEnabled = true;
       this._followDeviceSetpoint = false;
+      this._priceShift = 0;
+      this._heatSourcePriceAware = false;
       this._occupancyEcoDelay = DEFAULT_OCCUPANCY_ECO_DELAY;
       this._selectedWindowSensors = new Set();
       this._windowOpenDelay = 0;
@@ -463,6 +471,8 @@ export class RsRoomDetail extends LitElement {
                       .scheduleTempWarnings=${this.config?.live?.schedule_temp_warnings ?? []}
                       .preheatEnabled=${this._preheatEnabled}
                       .followDeviceSetpoint=${this._followDeviceSetpoint}
+                      .priceShift=${this._priceShift}
+                      .priceConfigured=${this.priceConfigured}
                       .showPreheat=${this._showPreheat()}
                       .editing=${false}
                       @schedules-changed=${this._onSchedulesChanged}
@@ -637,6 +647,8 @@ export class RsRoomDetail extends LitElement {
                     .primaryDelta=${this._heatSourcePrimaryDelta}
                     .outdoorThreshold=${this._heatSourceOutdoorThreshold}
                     .acMinOutdoor=${this._heatSourceAcMinOutdoor}
+                    .priceAware=${this._heatSourcePriceAware}
+                    .priceConfigured=${this.priceConfigured}
                     @setting-changed=${this._onHeatSourceSettingChanged}
                   ></rs-heat-source-section>
                 </rs-section-card>`
@@ -732,6 +744,8 @@ export class RsRoomDetail extends LitElement {
             .scheduleTempWarnings=${this.config?.live?.schedule_temp_warnings ?? []}
             .preheatEnabled=${this._preheatEnabled}
             .followDeviceSetpoint=${this._followDeviceSetpoint}
+            .priceShift=${this._priceShift}
+            .priceConfigured=${this.priceConfigured}
             .showPreheat=${this._showPreheat()}
             .editing=${true}
             @schedules-changed=${this._onSchedulesChanged}
@@ -742,6 +756,7 @@ export class RsRoomDetail extends LitElement {
             @eco-cool-changed=${this._onEcoCoolChanged}
             @preheat-changed=${this._onPreheatChanged}
             @follow-device-setpoint-changed=${this._onFollowDeviceSetpointChanged}
+            @price-shift-changed=${this._onPriceShiftChanged}
           ></rs-schedule-settings>
         </rs-edit-dialog>`;
       case "devices":
@@ -924,6 +939,8 @@ export class RsRoomDetail extends LitElement {
             .primaryDelta=${this._heatSourcePrimaryDelta}
             .outdoorThreshold=${this._heatSourceOutdoorThreshold}
             .acMinOutdoor=${this._heatSourceAcMinOutdoor}
+            .priceAware=${this._heatSourcePriceAware}
+            .priceConfigured=${this.priceConfigured}
             @setting-changed=${this._onHeatSourceSettingChanged}
           ></rs-heat-source-section>
         </rs-edit-dialog>`;
@@ -983,6 +1000,11 @@ export class RsRoomDetail extends LitElement {
 
   private _onPreheatChanged(e: CustomEvent<{ value: boolean }>) {
     this._preheatEnabled = e.detail.value;
+    this._autoSave();
+  }
+
+  private _onPriceShiftChanged(e: CustomEvent<{ value: number }>) {
+    this._priceShift = e.detail.value;
     this._autoSave();
   }
 
@@ -1141,6 +1163,7 @@ export class RsRoomDetail extends LitElement {
     else if (key === "heat_source_outdoor_threshold")
       this._heatSourceOutdoorThreshold = value as number;
     else if (key === "heat_source_ac_min_outdoor") this._heatSourceAcMinOutdoor = value as number;
+    else if (key === "heat_source_price_aware") this._heatSourcePriceAware = value as boolean;
     this._autoSave();
   }
 
@@ -1185,6 +1208,7 @@ export class RsRoomDetail extends LitElement {
         occupancy_eco_delay: this._occupancyEcoDelay,
         preheat_enabled: this._preheatEnabled,
         follow_device_setpoint: this._followDeviceSetpoint,
+        price_shift: this._priceShift,
         window_sensors: [...this._selectedWindowSensors],
         window_open_delay: this._windowOpenDelay,
         window_close_delay: this._windowCloseDelay,
@@ -1221,6 +1245,7 @@ export class RsRoomDetail extends LitElement {
         heat_source_primary_delta: this._heatSourcePrimaryDelta,
         heat_source_outdoor_threshold: this._heatSourceOutdoorThreshold,
         heat_source_ac_min_outdoor: this._heatSourceAcMinOutdoor,
+        heat_source_price_aware: this._heatSourcePriceAware,
       });
 
       this._dirty = false;

@@ -29,7 +29,7 @@ SCENARIO_DIR = SIM_ROOT / "scenarios"
 
 _ENTITY_RE = re.compile(r"^[a-z_]+\.[a-z0-9_]+$")
 _DEVICE_KEYS = {"entity_id", "profile", "name"}
-_HELPER_DOMAINS = {"schedule", "input_boolean", "input_number", "input_select"}
+_HELPER_DOMAINS = {"schedule", "input_boolean", "input_number", "input_select", "template"}
 DEVICE_MODELS = {"trv", "ac", "heat_pump", "heater", "boiler", "ufh"}
 SENSOR_KINDS = {"temperature", "humidity", "occupancy"}
 
@@ -156,6 +156,8 @@ def load_scenario_dict(data: dict[str, Any]) -> Scenario:
     for domain in helpers:
         if domain not in _HELPER_DOMAINS:
             raise ScenarioError(f"unknown helper domain {domain!r} (allowed: {sorted(_HELPER_DOMAINS)})", "helpers")
+    if "template" in helpers and not isinstance(helpers["template"], list):
+        raise ScenarioError("helpers.template must be a list (HA's template YAML)", "helpers")
 
     weather = {"entity_id": "weather.simhome", "profile": "temperate"} | (data.get("weather") or {})
 

@@ -74,6 +74,7 @@ export class RsAnalyticsSummary extends LitElement {
             }
           </div>
         </div>
+        ${s.price ? this._renderPrice(s.price) : nothing}
         ${
           this._infoExpanded
             ? html`<div class="info-panel summary-info">
@@ -139,6 +140,39 @@ export class RsAnalyticsSummary extends LitElement {
         </div>
       </div>
     `;
+  }
+
+  private _renderPrice(price: NonNullable<AnalyticsStats["price"]>) {
+    const l = this.language;
+    const levels = ["cheap", "normal", "expensive"] as const;
+    const line = (key: "heating" | "cooling", hours: Partial<Record<string, number>>) => {
+      const parts = levels
+        .filter((lv) => (hours[lv] ?? 0) > 0)
+        .map(
+          (lv) =>
+            html`<span class="price-part"
+              ><i class="key price-${lv}"></i>${this._formatDuration(hours[lv] ?? 0)}
+              ${localize(`settings.price_level_${lv}`, l)}</span
+            >`,
+        );
+      return parts.length > 0
+        ? html`<div class="price-line">
+            <span class="price-label">${localize(`analytics.price_${key}`, l)}</span>${parts}
+          </div>`
+        : nothing;
+    };
+    return html`<div class="price-row">
+      ${line("heating", price.heating_hours)} ${line("cooling", price.cooling_hours)}
+      ${
+        price.shifted_hours > 0
+          ? html`<div class="price-line muted">
+              ${localize("analytics.price_shifted", l, {
+                value: this._formatDuration(price.shifted_hours),
+              })}
+            </div>`
+          : nothing
+      }
+    </div>`;
   }
 
   private _renderShare(kind: string, label: string, value: number, pct: (v: number) => string) {
@@ -287,6 +321,46 @@ export class RsAnalyticsSummary extends LitElement {
       .bar .cold,
       .key.cold {
         background: var(--rs-cold);
+      }
+
+      .key.price-cheap {
+        background: var(--success-color, #43a047);
+      }
+
+      .key.price-normal {
+        background: var(--disabled-text-color, #bdbdbd);
+      }
+
+      .key.price-expensive {
+        background: var(--error-color, #db4437);
+      }
+
+      .price-row {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        padding: 0 16px 14px;
+        font-size: 12px;
+        color: var(--secondary-text-color);
+        font-variant-numeric: tabular-nums;
+      }
+
+      .price-line {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 4px 12px;
+      }
+
+      .price-label {
+        color: var(--primary-text-color);
+        font-weight: 500;
+      }
+
+      .price-part {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
       }
 
       .bar .within {

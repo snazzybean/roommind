@@ -6,6 +6,7 @@ import {
   formatTemp,
   tempUnit,
   toDisplay,
+  toDisplayDelta,
   toCelsius,
   isPlausibleTargetTemp,
   MIN_TARGET_TEMP_C,
@@ -16,9 +17,13 @@ import {
 import { RsScheduleBase } from "./shared/rs-schedule-base";
 import { inputStyles } from "../styles/input-styles";
 import "./shared/rs-toggle-row";
+import "./shared/rs-chip-group";
 
 /** Mirrors _WEEKDAYS in the backend's schedule_utils.py. */
 const WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
+
+// Matches MAX_PRICE_SHIFT_K in const.py
+const PRICE_SHIFT_STEPS = [0, 0.5, 1, 1.5, 2];
 
 @customElement("rs-schedule-settings")
 export class RsScheduleSettings extends RsScheduleBase {
@@ -46,6 +51,10 @@ export class RsScheduleSettings extends RsScheduleBase {
   @property({ type: Boolean }) public preheatEnabled = true;
   @property({ type: Boolean }) public showPreheat = false;
   @property({ type: Boolean }) public followDeviceSetpoint = false;
+  /** K the schedule target may move with the electricity price (0 = off). */
+  @property({ type: Number }) public priceShift = 0;
+  /** A price source is set in the settings; without one the option is hidden. */
+  @property({ type: Boolean }) public priceConfigured = false;
 
   static styles = [
     RsScheduleBase.sharedStyles,
@@ -76,8 +85,20 @@ export class RsScheduleSettings extends RsScheduleBase {
       }
 
       .preheat-toggle,
-      .follow-device-toggle {
+      .follow-device-toggle,
+      .price-shift {
         margin-top: 16px;
+      }
+
+      .price-shift-label {
+        font-size: 14px;
+        margin-bottom: 4px;
+      }
+
+      .price-shift-hint {
+        font-size: 12px;
+        color: var(--secondary-text-color);
+        margin-bottom: 8px;
       }
 
       .view-temps {
@@ -233,6 +254,13 @@ export class RsScheduleSettings extends RsScheduleBase {
           : nothing
       }
       ${
+        this.priceConfigured && this.priceShift > 0
+          ? html`<div class="view-selector-info">
+              ${localize("schedule.view_price_shift", l, { value: this._shiftLabel(this.priceShift) })}
+            </div>`
+          : nothing
+      }
+      ${
         this.scheduleSelectorEntity
           ? html`<div class="view-selector-info">
               ${localize("schedule.view_selector_prefix", l)}
@@ -288,7 +316,40 @@ export class RsScheduleSettings extends RsScheduleBase {
         .checked=${this.followDeviceSetpoint}
         @toggle-changed=${this._onFollowDeviceSetpointToggle}
       ></rs-toggle-row>
+      ${this.priceConfigured ? this._renderPriceShift(l) : nothing}
     `;
+  }
+
+  private _renderPriceShift(l: string) {
+    return html`<div class="price-shift">
+      <div class="price-shift-label">${localize("schedule.price_shift_label", l)}</div>
+      <div class="price-shift-hint">${localize("schedule.price_shift_hint", l)}</div>
+      <rs-chip-group
+        .chips=${PRICE_SHIFT_STEPS.map((k) => ({
+          id: String(k),
+          label: k === 0 ? localize("schedule.price_shift_off", l) : `±${this._shiftLabel(k)}`,
+          active: Math.abs(this.priceShift - k) < 0.01,
+        }))}
+        @chip-clicked=${this._onPriceShiftChip}
+      ></rs-chip-group>
+    </div>`;
+  }
+
+  private _shiftLabel(k: number): string {
+    return `${new Intl.NumberFormat(this.hass.language, { maximumFractionDigits: 1 }).format(
+      toDisplayDelta(k, this.hass),
+    )}\u00A0${tempUnit(this.hass)}`;
+  }
+
+  private _onPriceShiftChip(e: CustomEvent<string>) {
+    e.stopPropagation();
+    this.dispatchEvent(
+      new CustomEvent("price-shift-changed", {
+        detail: { value: Number(e.detail) },
+        bubbles: true,
+        composed: true,
+      }),
+    );
   }
 
   private _onFollowDeviceSetpointToggle(e: CustomEvent<boolean>) {

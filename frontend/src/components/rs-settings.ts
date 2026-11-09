@@ -12,6 +12,7 @@ import type {
   NotificationTarget,
   CompressorGroup,
   RoomWithoutArea,
+  PriceStatus,
 } from "../types";
 import { localize } from "../utils/localize";
 import { fireSaveStatus } from "../utils/events";
@@ -19,6 +20,7 @@ import { VACATION_SENTINEL } from "../utils/constants";
 import "./settings/rs-settings-panel";
 import "./settings/rs-settings-general";
 import "./settings/rs-settings-sensors";
+import "./settings/rs-settings-price";
 import "./settings/rs-settings-control";
 import "./settings/rs-settings-presence";
 import "./settings/rs-settings-vacation";
@@ -37,12 +39,14 @@ export class RsSettings extends LitElement {
   @property({ attribute: false }) public rooms: Record<string, RoomConfig> = {};
   @property({ attribute: false }) public roomsWithoutArea: RoomWithoutArea[] = [];
   @property({ type: Boolean }) public climateControlActive = true;
+  @property({ attribute: false }) public priceStatus: PriceStatus | null = null;
   @state() private _deletedOrphans: ReadonlySet<string> = new Set();
 
   @state() private _groupByFloor = false;
   @state() private _climateControlActive = true;
   @state() private _learningDisabledRooms: string[] = [];
   @state() private _outdoorTempSensor = "";
+  @state() private _priceEntity = "";
   @state() private _outdoorHumiditySensor = "";
   @state() private _outdoorCoolingMin = 16;
   @state() private _outdoorHeatingMax = 22;
@@ -106,6 +110,7 @@ export class RsSettings extends LitElement {
       this._climateControlActive = s.climate_control_active ?? true;
       this._learningDisabledRooms = s.learning_disabled_rooms ?? [];
       this._outdoorTempSensor = s.outdoor_temp_sensor ?? "";
+      this._priceEntity = s.price_entity ?? "";
       this._outdoorHumiditySensor = s.outdoor_humidity_sensor ?? "";
       this._outdoorCoolingMin = s.outdoor_cooling_min ?? 16;
       this._outdoorHeatingMax = s.outdoor_heating_max ?? 22;
@@ -222,6 +227,19 @@ export class RsSettings extends LitElement {
           .outdoorUnavailableNotify=${this._outdoorUnavailableNotify}
           @setting-changed=${this._onSettingChanged}
         ></rs-settings-sensors>
+      </rs-settings-panel>
+
+      <rs-settings-panel
+        icon="mdi:cash-clock"
+        .heading=${localize("settings.price_title", l)}
+        .intro=${localize("settings.intro.price", l)}
+      >
+        <rs-settings-price
+          .hass=${this.hass}
+          .priceEntity=${this._priceEntity}
+          .status=${this.priceStatus}
+          @setting-changed=${this._onSettingChanged}
+        ></rs-settings-price>
       </rs-settings-panel>
 
       <rs-settings-panel
@@ -425,6 +443,7 @@ export class RsSettings extends LitElement {
         ...(sentClimateControl !== undefined ? { climate_control_active: sentClimateControl } : {}),
         learning_disabled_rooms: this._learningDisabledRooms,
         outdoor_temp_sensor: this._outdoorTempSensor,
+        price_entity: this._priceEntity,
         outdoor_humidity_sensor: this._outdoorHumiditySensor,
         outdoor_cooling_min: this._outdoorCoolingMin,
         outdoor_heating_max: this._outdoorHeatingMax,

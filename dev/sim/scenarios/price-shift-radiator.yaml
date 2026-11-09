@@ -1,0 +1,52 @@
+name: price-shift-radiator
+description: >
+  Dynamic electricity tariff (Nordpool-style template sensor with raw_today/raw_tomorrow,
+  cheap night, expensive morning and evening). The heat-only bedroom (radiator, constant
+  19 °C) follows the price by up to 1 K: it charges in cheap hours before an expensive
+  stretch and coasts while it is expensive. Rooms without the option stay unchanged.
+  Compare against the same run with price_shift 0 (--set roommind.rooms.schlafzimmer.price_shift=0).
+refs: [257]
+tags: [price]
+extends: room-climate-entity-house
+start: 2026-01-12T00:00
+duration: 4d
+helpers:
+  template:
+    - sensor:
+        - name: Strompreis
+          unique_id: sim_strompreis
+          unit_of_measurement: ct/kWh
+          state: >-
+            {% set p = [22,21,20,20,21,24,30,34,31,27,25,24,23,23,24,26,30,36,38,35,30,27,25,23] %}
+            {{ p[now().hour] }}
+          attributes:
+            raw_today: >-
+              {% set p = [22,21,20,20,21,24,30,34,31,27,25,24,23,23,24,26,30,36,38,35,30,27,25,23] %}
+              {% set ns = namespace(out=[]) %}
+              {% for h in range(24) %}{% set s = today_at('00:00') + timedelta(hours=h) %}
+              {% set ns.out = ns.out + [{'start': s.isoformat(), 'end': (s + timedelta(hours=1)).isoformat(), 'value': p[h]}] %}
+              {% endfor %}{{ ns.out }}
+            raw_tomorrow: >-
+              {% set p = [22,21,20,20,21,24,30,34,31,27,25,24,23,23,24,26,30,36,38,35,30,27,25,23] %}
+              {% set ns = namespace(out=[]) %}
+              {% for h in range(24) %}{% set s = today_at('00:00') + timedelta(days=1, hours=h) %}
+              {% set ns.out = ns.out + [{'start': s.isoformat(), 'end': (s + timedelta(hours=1)).isoformat(), 'value': p[h]}] %}
+              {% endfor %}{{ ns.out }}
+roommind:
+  settings:
+    price_entity: sensor.strompreis
+  rooms:
+    schlafzimmer:
+      price_shift: 1.0
+expect:
+  - {invariant: target_never_empty}
+  - {invariant: no_rejected_commands}
+  - {check: "room.schlafzimmer.price_level == 'expensive' and room.schlafzimmer.heat_target == 18.0", at: "+1d18h30m", label: coasts while expensive}
+  - {check: "room.schlafzimmer.price_level == 'cheap' and room.schlafzimmer.heat_target == 20.0", at: "+1d03h30m", label: charges before the expensive morning}
+  - {check: "room.bad.price_shift_heat == 0 and room.bad.heat_target == 22.0", at: "+1d18h30m", label: rooms without the option are untouched}
+  # 2026-11-09, 4 d: with the option 6.3 h of heating in expensive hours, 25.4 h in cheap ones;
+  # without it 11.5 / 8.9 h. Heat +2 %, commands 3.2 instead of 7.3 per hour (fewer, longer runs),
+  # in band 90 % instead of 99.5 % (the room coasts 1 K below the schedule while expensive)
+  - {metric: room.heating_h_expensive, room: schlafzimmer, max: 8.5, label: less heating while expensive}
+  - {metric: room.heating_h_cheap, room: schlafzimmer, min: 18, label: heating moved to cheap hours}
+  - {metric: device.commands_per_hour, entity_id: climate.schlafzimmer_trv, max: 5}

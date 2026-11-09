@@ -99,6 +99,9 @@ def build_configuration(
     for domain in ("input_boolean", "input_number", "input_select"):
         if helpers.get(domain):
             conf[domain] = {_object_id(k, domain): (v or {}) for k, v in helpers[domain].items()}
+    # Template entities as HA's own YAML (a list), e.g. a price sensor with a forecast attribute
+    if helpers.get("template"):
+        conf["template"] = helpers["template"]
     conf["logger"] = {
         "default": log_level,
         "logs": {

@@ -1,6 +1,6 @@
 import { LitElement, html, css, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
-import type { HomeAssistant, HassArea, RoomConfig, RoomWithoutArea } from "./types";
+import type { HomeAssistant, HassArea, PriceStatus, RoomConfig, RoomWithoutArea } from "./types";
 import { getEntitiesForArea } from "./utils/room-state";
 import { loadHaElements } from "./load-ha-elements";
 import { localize } from "./utils/localize";
@@ -49,6 +49,8 @@ export class RoomMindPanel extends LitElement {
   @state() private _controlMode: "mpc" | "bangbang" = "mpc";
   @state() private _climateControlActive = true;
   @state() private _presenceEnabled = false;
+  @state() private _priceEntity = "";
+  @state() private _priceStatus: PriceStatus | null = null;
   @state() private _valveProtectionEnabled = false;
   @state() private _coilDryEnabled = false;
   @state() private _coilDryMinutes = 20;
@@ -489,6 +491,7 @@ export class RoomMindPanel extends LitElement {
             .config=${config}
             .hass=${this.hass}
             .presenceEnabled=${this._presenceEnabled}
+            .priceConfigured=${!!this._priceEntity}
             .presencePersons=${this._presencePersons}
             .climateControlActive=${this._climateControlActive}
             .valveProtectionEnabled=${this._valveProtectionEnabled}
@@ -687,6 +690,7 @@ export class RoomMindPanel extends LitElement {
       .rooms=${this._rooms}
       .roomsWithoutArea=${this._roomsWithoutArea}
       .climateControlActive=${this._climateControlActive}
+      .priceStatus=${this._priceStatus}
     ></rs-settings>`;
   }
 
@@ -796,6 +800,8 @@ export class RoomMindPanel extends LitElement {
         control_mode: "mpc" | "bangbang";
         climate_control_active: boolean;
         presence_enabled: boolean;
+        price_entity?: string;
+        price_status?: PriceStatus | null;
         anyone_home: boolean;
         presence_persons: string[];
         presence_away_action: "eco" | "off";
@@ -819,6 +825,8 @@ export class RoomMindPanel extends LitElement {
       this._controlMode = result.control_mode ?? "mpc";
       this._climateControlActive = result.climate_control_active ?? true;
       this._presenceEnabled = result.presence_enabled ?? false;
+      this._priceEntity = result.price_entity ?? "";
+      this._priceStatus = result.price_status ?? null;
       this._valveProtectionEnabled = result.valve_protection_enabled ?? false;
       this._coilDryEnabled = result.coil_dry_enabled ?? false;
       this._coilDryMinutes = result.coil_dry_minutes ?? 20;

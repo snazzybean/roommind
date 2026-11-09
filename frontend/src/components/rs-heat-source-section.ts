@@ -5,6 +5,7 @@ import { localize } from "../utils/localize";
 import { inputStyles } from "../styles/input-styles";
 
 import "./shared/rs-info-icon";
+import "./shared/rs-toggle-row";
 
 @customElement("rs-heat-source-section")
 export class RsHeatSourceSection extends LitElement {
@@ -14,6 +15,9 @@ export class RsHeatSourceSection extends LitElement {
   @property({ type: Number }) public outdoorThreshold = 5.0;
   @property({ type: Number }) public acMinOutdoor = -15.0;
   @property({ type: Boolean }) public editing = false;
+  @property({ type: Boolean }) public priceAware = false;
+  /** A price source is set in the settings; without one the option is hidden. */
+  @property({ type: Boolean }) public priceConfigured = false;
 
   static styles = [
     inputStyles,
@@ -117,6 +121,10 @@ export class RsHeatSourceSection extends LitElement {
       .threshold-cell ha-textfield {
         width: 100%;
       }
+
+      .price-aware {
+        margin-top: 16px;
+      }
     `,
   ];
 
@@ -138,6 +146,11 @@ export class RsHeatSourceSection extends LitElement {
         >
         · ${localize("heat_source.ac_min_outdoor", lang)}:
         <strong>${this.acMinOutdoor}${localize("heat_source.ac_min_outdoor_suffix", lang)}</strong>
+        ${
+          this.priceConfigured && this.priceAware
+            ? html`<br />${localize("heat_source.price_aware_summary", lang)}`
+            : nothing
+        }
       </div>`;
     }
 
@@ -185,6 +198,20 @@ export class RsHeatSourceSection extends LitElement {
                   key: "heat_source_ac_min_outdoor",
                 })}
               </div>
+              ${
+                this.priceConfigured
+                  ? html`<rs-toggle-row
+                      class="price-aware"
+                      .label=${localize("heat_source.price_aware", lang)}
+                      .hint=${localize("heat_source.price_aware_hint", lang)}
+                      .checked=${this.priceAware}
+                      @toggle-changed=${(e: CustomEvent<boolean>) => {
+                        e.stopPropagation();
+                        this._emit("heat_source_price_aware", e.detail);
+                      }}
+                    ></rs-toggle-row>`
+                  : nothing
+              }
             `
           : nothing
       }

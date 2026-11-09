@@ -1,0 +1,31 @@
+name: price-switch-pv-surplus
+description: >
+  The price source is a switch that is on while there is PV surplus (input_boolean toggled by
+  the timeline, 11:00-15:00). Without a forecast "cheap" means charge: the heat-only bedroom
+  (19 °C) heats to 20 °C while the switch is on and is back on its schedule afterwards.
+refs: [248, 257]
+tags: [price]
+extends: room-climate-entity-house
+start: 2026-01-12T00:00
+duration: 2d
+helpers:
+  input_boolean:
+    pv_ueberschuss: {name: PV-Überschuss}
+roommind:
+  settings:
+    price_entity: input_boolean.pv_ueberschuss
+  rooms:
+    schlafzimmer:
+      price_shift: 1.0
+timeline:
+  - {at: "+0d11h", do: ha.service, service: input_boolean.turn_on, data: {entity_id: input_boolean.pv_ueberschuss}}
+  - {at: "+0d15h", do: ha.service, service: input_boolean.turn_off, data: {entity_id: input_boolean.pv_ueberschuss}}
+  - {at: "+1d11h", do: ha.service, service: input_boolean.turn_on, data: {entity_id: input_boolean.pv_ueberschuss}}
+  - {at: "+1d15h", do: ha.service, service: input_boolean.turn_off, data: {entity_id: input_boolean.pv_ueberschuss}}
+expect:
+  - {invariant: target_never_empty}
+  - {invariant: no_rejected_commands}
+  - {check: "room.schlafzimmer.price_level == 'cheap' and room.schlafzimmer.heat_target == 20.0", at: "+0d12h", label: charges during the surplus}
+  - {check: "room.schlafzimmer.price_level == 'normal' and room.schlafzimmer.heat_target == 19.0", at: "+0d16h", label: back on the schedule afterwards}
+  # 2026-11-09: 5.21 per hour with the option, 7.44 without (generic_trv takes every setpoint)
+  - {metric: device.commands_per_hour, entity_id: climate.schlafzimmer_trv, max: 6}
