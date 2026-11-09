@@ -56,7 +56,10 @@ export function humidityVisualMap(
   return { type: "piecewise", show: false, seriesId, dimension: 0, pieces };
 }
 
-export function humidityAxis(points: AnalyticsDataPoint[]): Record<string, unknown> {
+export function humidityAxis(
+  points: AnalyticsDataPoint[],
+  gridIndex: number,
+): Record<string, unknown> {
   let min = AXIS_MIN;
   let max = AXIS_MAX;
   for (const p of points) {
@@ -66,7 +69,7 @@ export function humidityAxis(points: AnalyticsDataPoint[]): Record<string, unkno
   }
   return {
     type: "value",
-    gridIndex: 1,
+    gridIndex,
     min: Math.max(Math.floor(min / 20) * 20, 0),
     max: Math.min(Math.ceil(max / 20) * 20, 100),
     interval: 20,

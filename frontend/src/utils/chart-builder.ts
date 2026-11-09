@@ -13,10 +13,23 @@ const HUMIDITY_COLOR = "rgb(233, 30, 99)";
 // Same cap as MAX_SAMPLE_GAP_S in analytics_stats.py: a sample counts until the next one
 const MAX_SAMPLE_GAP_MS = 900_000;
 const CHART_HEIGHT = 300;
-const PANEL_CHART_HEIGHT = 385;
-const HUMIDITY_PLOT_HEIGHT = 70;
+const MAIN_PLOT_HEIGHT = 252;
+const MAIN_TOP = 15;
 const PANEL_GAP = 24;
 const PANEL_BOTTOM = 24;
+
+/**
+ * Plots below the temperature on the same time axis, each with its own scale (a second y axis
+ * on the temperature would be ambiguous, an outdoor line on it squashes the room). A panel
+ * shows while its series has data and is not hidden in the legend. A new panel = an entry
+ * here plus its series tagged with `panel` in buildChartSeries.
+ */
+export type SubPanel = "outdoor" | "humidity";
+export const SUB_PANELS: Record<SubPanel, { height: number; series: string }> = {
+  outdoor: { height: 56, series: "outdoor_temp" },
+  humidity: { height: 70, series: "humidity" },
+};
+export const SUB_PANEL_ORDER: readonly SubPanel[] = ["outdoor", "humidity"];
 // The panels share an x axis, so both plots start at a fixed left edge instead of containLabel
 const PANEL_LEFT = 46;
 // Visible on light and dark cards alike
@@ -30,8 +43,8 @@ export interface ChartBuildContext {
   rangeEnd: number;
   forecast?: AnalyticsDataPoint[];
   isOutdoor?: boolean;
-  /** Draw humidity as a second plot below the temperature, on the same time axis. */
-  humidityPanel?: boolean;
+  /** Panels shown below the temperature, top to bottom (see SUB_PANELS). */
+  panels?: SubPanel[];
   /** Shade the band between heat and cool target (auto rooms, judged on both sides). */
   targetBand?: boolean;
   /** Touch screen: pinch zooms, one finger pans only once zoomed so the page still scrolls. */
@@ -78,8 +91,40 @@ function zoomOptions(axes: number[], touch: boolean, zoomed: boolean): Record<st
   };
 }
 
-export function chartHeight(humidityPanel: boolean): number {
-  return humidityPanel ? PANEL_CHART_HEIGHT : CHART_HEIGHT;
+export function chartHeight(panels: readonly SubPanel[]): number {
+  if (panels.length === 0) return CHART_HEIGHT;
+  return MAIN_TOP + MAIN_PLOT_HEIGHT + panelsHeight(panels) + PANEL_BOTTOM;
+}
+
+function panelsHeight(panels: readonly SubPanel[]): number {
+  return panels.reduce((sum, p) => sum + SUB_PANELS[p].height + PANEL_GAP, 0);
+}
+
+/** Panels whose series has data and is not hidden. */
+export function visiblePanels(
+  series: Array<Record<string, unknown>>,
+  hidden: ReadonlySet<string>,
+): SubPanel[] {
+  return SUB_PANEL_ORDER.filter((p) => {
+    const id = SUB_PANELS[p].series;
+    return !hidden.has(id) && series.some((s) => s.id === id);
+  });
+}
+
+/**
+ * Put series tagged with a `panel` on that panel's axes and drop those of panels not shown.
+ * The legend keeps working off the untouched list.
+ */
+export function placeOnPanels(
+  series: Array<Record<string, unknown>>,
+  panels: readonly SubPanel[],
+): Array<Record<string, unknown>> {
+  return series.flatMap((s) => {
+    const { panel, ...rest } = s;
+    if (panel == null) return [rest];
+    const index = panels.indexOf(panel as SubPanel) + 1;
+    return index > 0 ? [{ ...rest, xAxisIndex: index, yAxisIndex: index }] : [];
+  });
 }
 
 /**
@@ -275,8 +320,8 @@ export function buildChartSeries(
       data: outdoorData,
       showSymbol: false,
       smooth: true,
-      lineStyle: { width: 1 },
-      yAxisIndex: 0,
+      lineStyle: { width: 1.5 },
+      panel: "outdoor",
     });
   }
 
@@ -352,8 +397,7 @@ export function buildChartSeries(
       lineStyle: { width: 2 },
       // No colour: the area takes the level colours of the visualMap
       areaStyle: { opacity: 0.12, origin: "start" },
-      xAxisIndex: 1,
-      yAxisIndex: 1,
+      panel: "humidity",
     });
     const x0 = ctx.rangeStart;
     const x1 = chartAnchor + FORECAST_MS;
@@ -371,42 +415,15 @@ export function buildChartSeries(
       ],
       showSymbol: false,
       lineStyle: { width: 1, type: "dashed" },
-      xAxisIndex: 1,
-      yAxisIndex: 1,
+      panel: "humidity",
       tooltip: { show: false },
       silent: true,
       connectNulls: false,
       z: -1,
     });
-    if (hasWindow) {
-      series.push({
-        ...series.find((s) => s.id === "window_events"),
-        id: "window_humidity_events",
-        xAxisIndex: 1,
-        yAxisIndex: 1,
-      });
-    }
-    series.push({
-      id: "now_humidity_marker",
-      type: "line",
-      name: "",
-      color: NOW_MARKER_COLOR,
-      data: [
-        [chartAnchor, -999],
-        [chartAnchor, 999],
-      ],
-      showSymbol: false,
-      lineStyle: { width: 1, type: "dashed" },
-      xAxisIndex: 1,
-      yAxisIndex: 1,
-      tooltip: { show: false },
-      z: -2,
-    });
   }
 
-  // "Now" vertical marker line
-  series.push({
-    id: "now_marker",
+  const nowMarker = {
     type: "line",
     name: "",
     color: NOW_MARKER_COLOR,
@@ -416,10 +433,23 @@ export function buildChartSeries(
     ],
     showSymbol: false,
     lineStyle: { width: 1, type: "dashed" },
-    yAxisIndex: 0,
     tooltip: { show: false },
     z: -2,
-  });
+  };
+  // Open windows and "now" run through every panel; placeOnPanels drops those not shown
+  for (const panel of SUB_PANEL_ORDER) {
+    if (!series.some((s) => s.panel === panel)) continue;
+    if (hasWindow) {
+      series.push({
+        ...series.find((s) => s.id === "window_events"),
+        id: `window_events_${panel}`,
+        panel,
+      });
+    }
+    series.push({ ...nowMarker, id: `now_marker_${panel}`, panel });
+  }
+
+  series.push({ ...nowMarker, id: "now_marker", yAxisIndex: 0 });
 
   return series;
 }
@@ -429,7 +459,8 @@ export function buildChartOptions(
   points: AnalyticsDataPoint[],
   ctx: ChartBuildContext,
 ): Record<string, unknown> {
-  const { hass, language: l, chartAnchor, rangeStart, rangeEnd, humidityPanel } = ctx;
+  const { hass, language: l, chartAnchor, rangeStart, rangeEnd } = ctx;
+  const panels = ctx.panels ?? [];
   const unit = tempUnit(hass);
 
   const yAxis: Record<string, unknown> = {
@@ -460,30 +491,46 @@ export function buildChartOptions(
   };
 
   return {
-    ...(humidityPanel
+    ...(panels.length > 0
       ? {
           xAxis: [
             { ...timeAxis, axisLabel: { show: false }, axisTick: { show: false } },
-            { ...timeAxis, gridIndex: 1 },
+            ...panels.map((_, i) => ({
+              ...timeAxis,
+              gridIndex: i + 1,
+              ...(i < panels.length - 1
+                ? { axisLabel: { show: false }, axisTick: { show: false } }
+                : {}),
+            })),
           ],
-          yAxis: [yAxis, humidityAxis(points)],
+          yAxis: [
+            yAxis,
+            ...panels.map((p, i) =>
+              p === "humidity" ? humidityAxis(points, i + 1) : outdoorAxis(points, i + 1, hass),
+            ),
+          ],
           axisPointer: { link: [{ xAxisIndex: "all" }] },
           grid: [
             {
-              top: 15,
+              top: MAIN_TOP,
               left: PANEL_LEFT,
               right: 10,
-              bottom: PANEL_BOTTOM + HUMIDITY_PLOT_HEIGHT + PANEL_GAP,
+              bottom: PANEL_BOTTOM + panelsHeight(panels),
             },
-            { left: PANEL_LEFT, right: 10, bottom: PANEL_BOTTOM, height: HUMIDITY_PLOT_HEIGHT },
+            ...panels.map((p, i) => ({
+              left: PANEL_LEFT,
+              right: 10,
+              bottom: PANEL_BOTTOM + panelsHeight(panels.slice(i + 1)),
+              height: SUB_PANELS[p].height,
+            })),
           ],
         }
       : {
           xAxis: timeAxis,
           yAxis,
-          grid: { top: 15, left: 10, right: 10, bottom: 5, containLabel: true },
+          grid: { top: MAIN_TOP, left: 10, right: 10, bottom: 5, containLabel: true },
         }),
-    ...zoomOptions(humidityPanel ? [0, 1] : [0], ctx.touch ?? false, ctx.zoomed ?? false),
+    ...zoomOptions(panels.map((_, i) => i + 1).concat(0), ctx.touch ?? false, ctx.zoomed ?? false),
     tooltip: {
       trigger: "axis",
       axisPointer: { snap: false },
@@ -579,5 +626,26 @@ export function buildChartOptions(
         return tooltipEl;
       },
     },
+  };
+}
+
+function outdoorAxis(
+  points: AnalyticsDataPoint[],
+  gridIndex: number,
+  hass: HomeAssistant,
+): Record<string, unknown> {
+  const temps = points
+    .map((p) => p.outdoor_temp)
+    .filter((t): t is number => t != null)
+    .map((t) => toDisplay(t, hass));
+  const min = temps.length > 0 ? temps.reduce((a, b) => Math.min(a, b)) : 0;
+  const max = temps.length > 0 ? temps.reduce((a, b) => Math.max(a, b)) : 10;
+  return {
+    type: "value",
+    gridIndex,
+    min: Math.floor(min - 1),
+    max: Math.ceil(max + 1),
+    splitNumber: 2,
+    axisLabel: { formatter: `{value}${tempUnit(hass)}` },
   };
 }

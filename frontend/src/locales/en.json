@@ -440,7 +440,7 @@
   "analytics.rhythm_hint": "Tap a date to show that day above. Tapping an hour shows its figures.",
   "analytics.heat_loss": "Heat loss",
   "analytics.heat_loss_sub": "at {delta} warmer than outside",
-  "analytics.info.summary": "On target means the room was at most 0.5 °C below its heating target or above its cooling target. A room that only heats can only be too cold, one that only cools only too warm. Times with an open window do not count. Runs come from one reading every 3 to 5 minutes, so very short runs can be missing.",
+  "analytics.info.summary": "On target means the room was at most 0.5 °C below its heating target or above its cooling target. A room that only heats can only be too cold, one that only cools only too warm. Times with an open window do not count. Runs come from one reading every 3 to 5 minutes, so very short runs can be missing. After a heating run the room often keeps warming for a while: \"then avg.\" is how far it went past the target within the hour after a run (cooling likewise below the target).",
   "analytics.info.heat_loss": "How fast the room cools down without heating at the difference to outside shown above (twice that difference means twice the loss). A lower value means a better insulated room. To compare a renovation, look at this value before and after. Learned from the room's own behaviour; shown per hour because the model does not know the size of the room, so it cannot give watts.",
   "analytics.info.time_constant": "How long it takes your room to naturally cool down halfway toward the outdoor temperature when heating is off. A longer time constant means better insulation — the room holds warmth longer. A short time constant means the room cools quickly. The model learns this by observing temperature drops during idle periods.",
   "analytics.info.heating_rate": "How strongly your heating affects the room temperature. A higher value means your heating system warms the room faster relative to its thermal mass. The model learns this by observing how quickly the temperature rises during active heating, and uses it to predict how long heating needs to run.",
@@ -660,5 +660,8 @@
   "analytics.reason.mold": "mould protection",
   "analytics.prediction_delta": "Off from forecast",
   "analytics.zoom_hint": "Drag across the chart to zoom, Ctrl + scroll to zoom in steps, Shift + scroll to move.",
-  "analytics.zoom_hint_touch": "Pinch to zoom, then move with one finger."
+  "analytics.zoom_hint_touch": "Pinch to zoom, then move with one finger.",
+  "analytics.overshoot_heat": "then avg. {value} over target",
+  "analytics.overshoot_cool": "then avg. {value} under target",
+  "analytics.overshoot_max": "Largest: {value}"
 }

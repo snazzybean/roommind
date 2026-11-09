@@ -17,6 +17,8 @@ RHYTHM_DAYS = 14
 RHYTHM_MAX_DAYS = 31
 RHYTHM_MIN_DAYS = 2
 RHYTHM_MEANS = {"temp": "room_temp", "humidity": "humidity", "outdoor": "outdoor_temp"}
+# How long after a run the room may still carry it past the target (radiators keep giving heat)
+OVERSHOOT_WINDOW_S = 3600
 
 
 def _weighted(points: list[dict]) -> Iterator[tuple[dict, float]]:
@@ -59,6 +61,39 @@ def _comfort_side(deviation: float) -> str:
     return "within"
 
 
+def _run_overshoot(points: list[dict], mode: str, target_key: str, sign: int) -> dict | None:
+    """How far the room went past the target after each run of ``mode``.
+
+    Measured against the target in force when the run ended, up to OVERSHOOT_WINDOW_S
+    later or until the next run of the same mode; samples with an open window are left out.
+    ``sign`` is +1 for heating (above the heat target), -1 for cooling (below the cool target).
+    """
+    overshoots: list[float] = []
+    for i, point in enumerate(points[:-1]):
+        if point.get("mode") != mode or points[i + 1].get("mode") == mode:
+            continue
+        target = point.get(target_key)
+        if target is None:
+            continue
+        peak: float | None = None
+        for later in points[i:]:
+            if later["ts"] - point["ts"] > OVERSHOOT_WINDOW_S or (later is not point and later.get("mode") == mode):
+                break
+            temp = later.get("room_temp")
+            if temp is None or later.get("window_open"):
+                continue
+            peak = temp if peak is None else (max(peak, temp) if sign > 0 else min(peak, temp))
+        if peak is not None:
+            overshoots.append(max(0.0, sign * (peak - target)))
+    if not overshoots:
+        return None
+    return {
+        "runs": len(overshoots),
+        "mean": round(sum(overshoots) / len(overshoots), 2),
+        "max": round(max(overshoots), 2),
+    }
+
+
 def compute_period_stats(points: list[dict], climate_mode: str) -> dict:
     """Sum up a time-sorted list of history points."""
     seconds = {"total": 0.0, "heating": 0.0, "cooling": 0.0, "window": 0.0}
@@ -94,6 +129,12 @@ def compute_period_stats(points: list[dict], climate_mode: str) -> dict:
         "window_hours": round(seconds["window"] / 3600, 2),
         "heating_starts": starts[MODE_HEATING],
         "cooling_starts": starts[MODE_COOLING],
+        "heat_overshoot": (
+            _run_overshoot(points, MODE_HEATING, "heat_target", 1) if climate_mode != CLIMATE_MODE_COOL_ONLY else None
+        ),
+        "cool_overshoot": (
+            _run_overshoot(points, MODE_COOLING, "cool_target", -1) if climate_mode != CLIMATE_MODE_HEAT_ONLY else None
+        ),
         "comfort": (
             {
                 "below_pct": round(100 * comfort["below"] / judged, 1),

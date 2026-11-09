@@ -440,7 +440,7 @@
   "analytics.rhythm_hint": "Tippe auf ein Datum, um den Tag oben anzuzeigen. Ein Kästchen zeigt die Werte der Stunde.",
   "analytics.heat_loss": "Wärmeverlust",
   "analytics.heat_loss_sub": "bei {delta} wärmer als draußen",
-  "analytics.info.summary": "Im Zielbereich heißt: Der Raum lag höchstens 0,5 °C unter dem Heizziel oder über dem Kühlziel. Ein Raum, der nur heizt, kann nur zu kalt sein, einer, der nur kühlt, nur zu warm. Zeiten mit offenem Fenster zählen nicht mit. Läufe stammen aus einem Messpunkt alle 3 bis 5 Minuten, sehr kurze Läufe können fehlen.",
+  "analytics.info.summary": "Im Zielbereich heißt: Der Raum lag höchstens 0,5 °C unter dem Heizziel oder über dem Kühlziel. Ein Raum, der nur heizt, kann nur zu kalt sein, einer, der nur kühlt, nur zu warm. Zeiten mit offenem Fenster zählen nicht mit. Läufe stammen aus einem Messpunkt alle 3 bis 5 Minuten, sehr kurze Läufe können fehlen. Nach einem Heizlauf wird der Raum oft noch eine Weile wärmer: „danach Ø“ sagt, wie weit er in der Stunde nach einem Lauf im Schnitt über das Ziel ging (Kühlen entsprechend darunter).",
   "analytics.info.heat_loss": "So schnell kühlt der Raum ohne Heizung ab, beim oben genannten Unterschied zu draußen (bei doppeltem Unterschied doppelt so schnell). Je kleiner, desto besser gedämmt. Für eine Sanierung den Wert vorher und nachher vergleichen. Gelernt aus dem Verhalten des Raums; pro Stunde statt in Watt, weil das Modell die Größe des Raums nicht kennt.",
   "analytics.info.time_constant": "Wie lange es dauert, bis sich die Raumtemperatur bei ausgeschalteter Heizung halbwegs der Außentemperatur annähert. Eine längere Zeitkonstante bedeutet bessere Dämmung — der Raum hält die Wärme länger. Eine kurze Zeitkonstante bedeutet schnelles Auskühlen. Das Modell lernt diesen Wert, indem es Temperaturabfälle im Leerlauf beobachtet.",
   "analytics.info.heating_rate": "Wie stark deine Heizung die Raumtemperatur beeinflusst. Ein höherer Wert bedeutet, dass dein Heizsystem den Raum schneller erwärmt relativ zur thermischen Masse. Das Modell lernt dies durch Beobachtung der Temperaturanstiege beim Heizen und nutzt es um vorherzusagen, wie lange geheizt werden muss.",
@@ -660,5 +660,8 @@
   "analytics.reason.mold": "Schimmelschutz",
   "analytics.prediction_delta": "Abstand zur Vorhersage",
   "analytics.zoom_hint": "Zum Zoomen einen Bereich im Diagramm aufziehen, Strg + Mausrad zoomt schrittweise, Umschalt + Mausrad verschiebt.",
-  "analytics.zoom_hint_touch": "Mit zwei Fingern zoomen, danach mit einem Finger verschieben."
+  "analytics.zoom_hint_touch": "Mit zwei Fingern zoomen, danach mit einem Finger verschieben.",
+  "analytics.overshoot_heat": "danach Ø {value} über Ziel",
+  "analytics.overshoot_cool": "danach Ø {value} unter Ziel",
+  "analytics.overshoot_max": "Höchstens: {value}"
 }

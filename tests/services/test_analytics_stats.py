@@ -243,3 +243,38 @@ def test_rhythm_day_without_judged_samples_has_no_share():
     assert rhythm is not None
     assert rhythm["days"][0]["within"] is None
     assert rhythm["days"][0]["below"][7] is None
+
+
+def _run(temps_and_modes: list[tuple[float, str]], **kw) -> list[dict]:
+    return [_point(i, room_temp=t, mode=m, **kw) for i, (t, m) in enumerate(temps_and_modes)]
+
+
+def test_overshoot_is_the_peak_after_each_heating_run():
+    points = _run(
+        [(20.5, "heating"), (21.0, "heating"), (21.4, "idle"), (21.8, "idle"), (21.5, "idle")]
+        + [(20.6, "idle")] * 25
+        + [(20.7, "heating"), (21.0, "idle"), (21.2, "idle")]
+    )
+    over = compute_period_stats(points, "auto")["heat_overshoot"]
+    assert over == {"runs": 2, "mean": pytest.approx(0.5), "max": pytest.approx(0.8)}
+
+
+def test_overshoot_window_ends_after_an_hour_and_at_the_next_run():
+    late_rise = [(21.0, "heating")] + [(21.0, "idle")] * 25 + [(23.0, "idle")]
+    assert compute_period_stats(_run(late_rise), "auto")["heat_overshoot"]["max"] == 0
+    next_run = [(21.0, "heating"), (21.2, "idle"), (21.0, "heating"), (21.0, "idle")]
+    assert compute_period_stats(_run(next_run), "auto")["heat_overshoot"]["max"] == pytest.approx(0.2)
+
+
+def test_overshoot_ignores_open_windows_and_counts_cooling_downwards():
+    points = _run([(21.0, "heating"), (21.0, "idle")]) + [_point(2, room_temp=25.0, mode="idle", window_open=True)]
+    assert compute_period_stats(points, "auto")["heat_overshoot"]["max"] == 0
+    cooling = _run([(24.5, "cooling"), (24.0, "idle"), (23.6, "idle")])
+    assert compute_period_stats(cooling, "auto")["cool_overshoot"]["max"] == pytest.approx(0.4)
+
+
+def test_overshoot_only_for_the_controlled_side():
+    points = _run([(21.0, "heating"), (21.5, "idle")])
+    assert compute_period_stats(points, "cool_only")["heat_overshoot"] is None
+    assert compute_period_stats(points, "heat_only")["cool_overshoot"] is None
+    assert compute_period_stats(_run([(21.0, "idle")]), "auto")["heat_overshoot"] is None

@@ -3,7 +3,7 @@
  */
 import { LitElement, html, css, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
-import type { AnalyticsStats, HomeAssistant } from "../../types";
+import type { AnalyticsStats, HomeAssistant, RunOvershoot } from "../../types";
 import { localize } from "../../utils/localize";
 import { infoIconStyles } from "../../styles/info-icon-styles";
 import { tempUnit, toDisplayDelta } from "../../utils/temperature";
@@ -46,6 +46,7 @@ export class RsAnalyticsSummary extends LitElement {
                     localize("analytics.heating_period", l),
                     s.heating_hours,
                     s.heating_starts,
+                    s.heat_overshoot,
                   )
                 : nothing
             }
@@ -57,6 +58,7 @@ export class RsAnalyticsSummary extends LitElement {
                     localize("analytics.cooling_period", l),
                     s.cooling_hours,
                     s.cooling_starts,
+                    s.cool_overshoot,
                   )
                 : nothing
             }
@@ -145,8 +147,20 @@ export class RsAnalyticsSummary extends LitElement {
       : nothing;
   }
 
-  private _renderTile(icon: string, kind: string, label: string, hours: number, starts?: number) {
+  private _renderTile(
+    icon: string,
+    kind: string,
+    label: string,
+    hours: number,
+    starts?: number,
+    overshoot?: RunOvershoot | null,
+  ) {
     const l = this.language;
+    const delta = (v: number) =>
+      `${new Intl.NumberFormat(l, {
+        minimumFractionDigits: 1,
+        maximumFractionDigits: 1,
+      }).format(toDisplayDelta(v, this.hass))}\u00A0${tempUnit(this.hass)}`;
     return html`
       <div class="tile">
         <ha-icon class=${kind} icon=${icon}></ha-icon>
@@ -159,6 +173,19 @@ export class RsAnalyticsSummary extends LitElement {
                   >${localize(starts === 1 ? "analytics.run" : "analytics.runs", l, {
                     count: new Intl.NumberFormat(l).format(starts),
                   })}</span
+                >`
+              : nothing
+          }
+          ${
+            overshoot
+              ? html`<span
+                  class="tile-sub"
+                  title=${localize("analytics.overshoot_max", l, { value: delta(overshoot.max) })}
+                  >${localize(
+                    kind === "cool" ? "analytics.overshoot_cool" : "analytics.overshoot_heat",
+                    l,
+                    { value: delta(overshoot.mean) },
+                  )}</span
                 >`
               : nothing
           }

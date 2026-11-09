@@ -440,7 +440,7 @@
   "analytics.rhythm_hint": "Touchez une date pour afficher ce jour ci-dessus. Une case montre les valeurs de l'heure.",
   "analytics.heat_loss": "Perte de chaleur",
   "analytics.heat_loss_sub": "à {delta} au-dessus de l'extérieur",
-  "analytics.info.summary": "Dans la cible signifie que la pièce était au plus 0,5 °C sous sa consigne de chauffage ou au-dessus de sa consigne de climatisation. Une pièce uniquement chauffée ne peut être que trop froide, une pièce uniquement climatisée que trop chaude. Les périodes avec fenêtre ouverte ne comptent pas. Les cycles viennent d'une mesure toutes les 3 à 5 minutes, les cycles très courts peuvent manquer.",
+  "analytics.info.summary": "Dans la cible signifie que la pièce était au plus 0,5 °C sous sa consigne de chauffage ou au-dessus de sa consigne de climatisation. Une pièce uniquement chauffée ne peut être que trop froide, une pièce uniquement climatisée que trop chaude. Les périodes avec fenêtre ouverte ne comptent pas. Les cycles viennent d'une mesure toutes les 3 à 5 minutes, les cycles très courts peuvent manquer. Après un cycle de chauffage, la pièce continue souvent de se réchauffer : « puis en moy. » indique de combien elle a dépassé la cible dans l'heure qui suit un cycle (refroidissement : en dessous de la cible).",
   "analytics.info.heat_loss": "La vitesse à laquelle la pièce refroidit sans chauffage avec l'écart à l'extérieur indiqué ci-dessus (deux fois plus vite avec un écart double). Plus la valeur est basse, mieux la pièce est isolée. Pour juger une rénovation, comparez la valeur avant et après. Appris du comportement de la pièce ; par heure et non en watts, car le modèle ne connaît pas la taille de la pièce.",
   "analytics.info.time_constant": "Durée nécessaire à votre pièce pour se refroidir naturellement jusqu'à la moitié de la différence avec la température extérieure lorsque le chauffage est éteint. Un temps constant plus long indique une meilleure isolation — la pièce conserve la chaleur plus longtemps. Un temps constant court signifie que la pièce se refroidit rapidement. Le modèle apprend cela en observant les baisses de température pendant les périodes d'inactivité.",
   "analytics.info.heating_rate": "Intensité de l'effet de votre chauffage sur la température de la pièce. Une valeur plus élevée signifie que votre système de chauffage réchauffe la pièce plus rapidement par rapport à sa masse thermique. Le modèle apprend cela en observant la vitesse à laquelle la température augmente pendant que le chauffage est actif, et l'utilise pour prévoir la durée nécessaire du chauffage.",
@@ -660,5 +660,8 @@
   "analytics.reason.mold": "protection moisissures",
   "analytics.prediction_delta": "Écart à la prévision",
   "analytics.zoom_hint": "Faites glisser sur le graphique pour zoomer, Ctrl + molette zoome par paliers, Maj + molette déplace.",
-  "analytics.zoom_hint_touch": "Pincez pour zoomer, puis déplacez avec un doigt."
+  "analytics.zoom_hint_touch": "Pincez pour zoomer, puis déplacez avec un doigt.",
+  "analytics.overshoot_heat": "puis en moy. {value} au-dessus",
+  "analytics.overshoot_cool": "puis en moy. {value} en dessous",
+  "analytics.overshoot_max": "Au plus : {value}"
 }

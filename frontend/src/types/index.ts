@@ -292,6 +292,12 @@ export interface AnalyticsDataPoint {
   mold_boost?: number | null;
 }
 
+export interface RunOvershoot {
+  runs: number;
+  mean: number;
+  max: number;
+}
+
 export interface AnalyticsStats {
   hours: number;
   heating_hours: number;
@@ -299,6 +305,9 @@ export interface AnalyticsStats {
   window_hours: number;
   heating_starts: number;
   cooling_starts: number;
+  /** How far past the target the room went after the runs, null without runs. */
+  heat_overshoot?: RunOvershoot | null;
+  cool_overshoot?: RunOvershoot | null;
   comfort: {
     below_pct: number;
     within_pct: number;

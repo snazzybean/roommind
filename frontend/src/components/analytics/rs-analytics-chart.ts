@@ -10,25 +10,23 @@ import {
   buildChartSeries,
   buildChartOptions,
   chartHeight,
+  placeOnPanels,
+  visiblePanels,
   type ChartBuildContext,
 } from "../../utils/chart-builder";
 import { humidityVisualMap, type HumidityColors } from "../../utils/humidity";
 
 // Series drawn for another legend entry: hiding that entry hides them too
 const LEGEND_OWNER: Record<string, string> = {
-  window_humidity_events: "window_events",
   target_band_base: "target_temp",
   target_band: "target_temp",
   humidity_limits: "humidity",
 };
-const NOT_IN_LEGEND = new Set([
-  "now_marker",
-  "now_humidity_marker",
-  "window_humidity_events",
-  "target_band_base",
-  "target_band",
-  "humidity_limits",
-]);
+// Per-panel copies of the window band and the "now" line carry the panel in their id
+const legendOwner = (id: string) =>
+  id.startsWith("window_events_") ? "window_events" : (LEGEND_OWNER[id] ?? id);
+const inLegend = (id: string) =>
+  !(id in LEGEND_OWNER) && !id.startsWith("window_events_") && !id.startsWith("now_marker");
 
 interface EChartsLike {
   on(event: string, handler: () => void): void;
@@ -48,7 +46,7 @@ export class RsAnalyticsChart extends LitElement {
   /** Room judged on both sides (auto): shade the band between heat and cool target. */
   @property({ type: Boolean }) public targetBand = false;
 
-  @state() private _hiddenSeries = new Set(["outdoor_temp", "device_target"]);
+  @state() private _hiddenSeries = new Set(["device_target"]);
   @state() private _chartInfoExpanded = false;
   @state() private _zoomed = false;
 
@@ -99,8 +97,6 @@ export class RsAnalyticsChart extends LitElement {
     const points = this.data ? [...this.data.history, ...this.data.detail] : [];
     const allPoints = [...points, ...(this.data?.forecast ?? [])];
 
-    const humidityPanel =
-      !this._hiddenSeries.has("humidity") && points.some((p) => p.humidity != null);
     const chartCtx: ChartBuildContext = {
       hass: this.hass,
       language: l,
@@ -109,20 +105,21 @@ export class RsAnalyticsChart extends LitElement {
       rangeEnd: this.rangeEnd,
       forecast: this.data?.forecast,
       isOutdoor: this.isOutdoor,
-      humidityPanel,
       targetBand: this.targetBand,
       touch: this._touch,
       zoomed: this._zoomed,
     };
     const allSeries = points.length > 0 ? buildChartSeries(points, chartCtx) : [];
+    const panels = visiblePanels(allSeries, this._hiddenSeries);
+    chartCtx.panels = panels;
 
     const visibleY: number[] = [];
-    const chartSeries = humidityPanel ? allSeries : allSeries.filter((s) => s.xAxisIndex !== 1);
+    const chartSeries = placeOnPanels(allSeries, panels);
     const displaySeries = chartSeries.map((s) => {
       const id = s.id as string;
       const ls = (s.lineStyle as Record<string, unknown>) || {};
       const isEvent = id.endsWith("_events");
-      if (this._hiddenSeries.has(LEGEND_OWNER[id] ?? id)) {
+      if (this._hiddenSeries.has(legendOwner(id))) {
         const hidden: Record<string, unknown> = {
           ...s,
           lineStyle: { ...ls, width: 0, opacity: 0 },
@@ -132,7 +129,7 @@ export class RsAnalyticsChart extends LitElement {
         }
         return hidden;
       }
-      if (!isEvent && !id.startsWith("target_band") && id !== "now_marker" && s.yAxisIndex !== 1) {
+      if (!isEvent && !id.startsWith("target_band") && id !== "now_marker" && !s.xAxisIndex) {
         for (const point of s.data as Array<[number, number]>) {
           if (point && point[1] != null) {
             visibleY.push(point[1]);
@@ -149,7 +146,7 @@ export class RsAnalyticsChart extends LitElement {
 
     const options = buildChartOptions(visibleY, allPoints, chartCtx);
     const humidity = displaySeries.find((s) => s.id === "humidity");
-    if (humidityPanel && humidity) {
+    if (humidity) {
       options.visualMap = humidityVisualMap(
         "humidity",
         humidity.data as Array<[number, number]>,
@@ -183,8 +180,8 @@ export class RsAnalyticsChart extends LitElement {
                   .hass=${this.hass}
                   .data=${displaySeries}
                   .options=${options}
-                  .height=${`${chartHeight(humidityPanel)}px`}
-                  style="height: ${chartHeight(humidityPanel)}px; --chart-max-height: ${chartHeight(humidityPanel)}px"
+                  .height=${`${chartHeight(panels)}px`}
+                  style="height: ${chartHeight(panels)}px; --chart-max-height: ${chartHeight(panels)}px"
                 ></ha-chart-base>
                 ${this._renderSeriesLegend(allSeries)}
                 <div class="zoom-hint">
@@ -201,7 +198,7 @@ export class RsAnalyticsChart extends LitElement {
   }
 
   private _renderSeriesLegend(series: Array<Record<string, unknown>>) {
-    const legendSeries = series.filter((s) => !NOT_IN_LEGEND.has(s.id as string));
+    const legendSeries = series.filter((s) => inLegend(s.id as string) && s.name);
     const { good, fair, poor } = this._humidityColors();
     return html`
       <div class="series-legend">
