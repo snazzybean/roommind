@@ -55,6 +55,9 @@ TARGET_REASON_OVERRIDE = "override"
 TARGET_REASON_VACATION = "vacation"
 TARGET_REASON_AWAY = "away"
 TARGET_REASON_VACANT = "vacant"
+
+# Per room: how far the schedule target may move with the electricity price (0 = off)
+MAX_PRICE_SHIFT_K = 2.0
 DEFAULT_ECO_COOL = 27.0
 
 # Minutes all occupancy sensors must report "off" before an empty room drops to eco (#180)

@@ -28,6 +28,7 @@ from ..const import (
     MODE_HEATING,
 )
 from ..utils.device_utils import get_ac_eids, get_trv_eids, has_reliable_hvac_modes
+from ..utils.price_utils import LEVEL_CHEAP, LEVEL_EXPENSIVE
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -87,8 +88,13 @@ def evaluate_heat_sources(
     outdoor_temp: float | None,
     previous_active_sources: str,
     hass: HomeAssistant,
+    price_level: str | None = None,
 ) -> HeatSourcePlan | None:
     """Evaluate which heating devices to activate.
+
+    ``price_level`` (only for rooms with ``heat_source_price_aware``): expensive electricity
+    prefers the primary source, cheap electricity the AC, instead of the outdoor rule; a
+    large gap still runs both and the AC minimum outdoor temperature still applies.
 
     Returns a HeatSourcePlan for MODE_HEATING, or None if orchestration
     should not apply (wrong mode, disabled, or missing data).
@@ -184,6 +190,10 @@ def evaluate_heat_sources(
             prefer_ac = outdoor_temp > outdoor_threshold
     else:
         prefer_ac = None
+    if price_level == LEVEL_EXPENSIVE:
+        prefer_ac = False
+    elif price_level == LEVEL_CHEAP:
+        prefer_ac = True
 
     # "both" when gap is large, or hysteresis holds "both" state
     if delta_t >= large_gap_threshold + HEAT_SOURCE_HYSTERESIS:
@@ -225,6 +235,8 @@ def evaluate_heat_sources(
     elif active == "secondary":
         outdoor_str = f"{outdoor_temp}°C" if outdoor_temp is not None else "n/a"
         reason_parts.append(f"AC preferred ({delta_t:.1f}°C gap, outdoor {outdoor_str})")
+    if price_level in (LEVEL_CHEAP, LEVEL_EXPENSIVE) and active in ("primary", "secondary"):
+        reason_parts.append(f"electricity {price_level}")
 
     for eid, device_type in primary_devices:
         is_active = active in ("primary", "both")

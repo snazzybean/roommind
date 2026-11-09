@@ -252,6 +252,7 @@ class RoomMindStore:
             "occupancy_eco_enabled": config.get("occupancy_eco_enabled", False),
             "occupancy_eco_delay": config.get("occupancy_eco_delay", DEFAULT_OCCUPANCY_ECO_DELAY_MINUTES),
             "preheat_enabled": config.get("preheat_enabled", True),
+            "price_shift": config.get("price_shift", 0.0),
             "follow_device_setpoint": config.get("follow_device_setpoint", False),
             "climate_mode": config.get("climate_mode", "auto"),
             "schedules": config.get("schedules", []),
@@ -293,6 +294,7 @@ class RoomMindStore:
                 "heat_source_outdoor_threshold", DEFAULT_HEAT_SOURCE_OUTDOOR_THRESHOLD
             ),
             "heat_source_ac_min_outdoor": config.get("heat_source_ac_min_outdoor", DEFAULT_HEAT_SOURCE_AC_MIN_OUTDOOR),
+            "heat_source_price_aware": config.get("heat_source_price_aware", False),
             "climate_control_enabled": config.get("climate_control_enabled", True),
         }
         _single_temps_to_cool_side(room, config, room["climate_mode"])

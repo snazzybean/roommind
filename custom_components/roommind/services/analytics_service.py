@@ -26,6 +26,7 @@ from ..control.mpc_controller import (
     is_mpc_active,
 )
 from ..control.solar import compute_q_solar_norm
+from ..utils.price_utils import PriceSignal
 from .analytics_stats import compute_period_stats, compute_rhythm, rhythm_window
 
 _LOGGER = logging.getLogger(__name__)
@@ -88,6 +89,9 @@ def _csv_to_points(rows: list[dict]) -> list[dict]:
                 "cool_target": _safe_float(row.get("cool_target", "")),
                 "target_reason": row.get("target_reason", ""),
                 "mold_boost": _safe_float(row.get("mold_boost", "")),
+                "price": _safe_float(row.get("price", "")),
+                "price_level": row.get("price_level", ""),
+                "price_shift": _safe_float(row.get("price_shift", "")),
             }
         )
     return result
@@ -102,6 +106,7 @@ async def _compute_target_forecast(
     interval_minutes: int = 5,
     schedule_blocks_cache: dict[str, dict] | None = None,
     room_vacant: bool = False,
+    price_signal: PriceSignal | None = None,
 ) -> list[dict]:
     """Compute target temperature forecast for the next N hours.
 
@@ -112,6 +117,7 @@ async def _compute_target_forecast(
     from ..utils.schedule_utils import (
         cap_cool_only_heat,
         get_active_schedule_entity,
+        price_shifted,
         read_schedule_blocks,
         resolve_targets_at_time,
     )
@@ -160,6 +166,9 @@ async def _compute_target_forecast(
             schedule_off_action=settings.get("schedule_off_action", "eco"),
             presence_clears_override=bool(settings.get("presence_clears_override", False)),
             room_vacant=room_vacant,
+        )
+        targets, _ = price_shifted(
+            targets, ts, room, settings, price_signal, presence_away=presence_away, room_vacant=room_vacant
         )
         heat_target = targets.heat
         cool_target = targets.cool
@@ -323,6 +332,7 @@ async def build_analytics_data(
             mold_prevention_delta=mold_delta,
             schedule_blocks_cache=getattr(coordinator, "_schedule_blocks_cache", None),
             room_vacant=room_vacant,
+            price_signal=coordinator.price_signal if coordinator else None,
         )
     except Exception:  # noqa: BLE001
         _LOGGER.debug("Target forecast computation failed for '%s'", area_id)

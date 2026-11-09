@@ -40,8 +40,12 @@ def _deviations(points: list[dict], climate_mode: str) -> list[float | None]:
     result: list[float | None] = []
     for point in points:
         temp = point.get("room_temp")
+        # Judged against the schedule: a price shift is the user's trade, its cost shows here
+        shift = point.get("price_shift") or 0.0
         low = None if climate_mode == CLIMATE_MODE_COOL_ONLY else point.get("heat_target")
         high = None if climate_mode == CLIMATE_MODE_HEAT_ONLY else point.get("cool_target")
+        low = low - shift if low is not None else None
+        high = high + shift if high is not None else None
         if temp is None or (low is None and high is None) or point.get("window_open"):
             result.append(None)
         elif low is not None and temp < low:
@@ -99,6 +103,8 @@ def compute_period_stats(points: list[dict], climate_mode: str) -> dict:
     seconds = {"total": 0.0, "heating": 0.0, "cooling": 0.0, "window": 0.0}
     starts = {MODE_HEATING: 0, MODE_COOLING: 0}
     comfort = {"below": 0.0, "within": 0.0, "above": 0.0}
+    by_price: dict[str, dict[str, float]] = {MODE_HEATING: {}, MODE_COOLING: {}}
+    priced = shifted = 0.0
     deviation_sum = 0.0
     miss_sum = 0.0
     previous_mode = None
@@ -112,6 +118,13 @@ def compute_period_stats(points: list[dict], climate_mode: str) -> dict:
         previous_mode = mode
         if point.get("window_open"):
             seconds["window"] += weight
+        level = point.get("price_level")
+        if level:
+            priced += weight
+            if mode in by_price:
+                by_price[mode][level] = by_price[mode].get(level, 0.0) + weight
+            if point.get("price_shift"):
+                shifted += weight
         if deviation is None:
             continue
         deviation_sum += abs(deviation) * weight
@@ -129,6 +142,16 @@ def compute_period_stats(points: list[dict], climate_mode: str) -> dict:
         "window_hours": round(seconds["window"] / 3600, 2),
         "heating_starts": starts[MODE_HEATING],
         "cooling_starts": starts[MODE_COOLING],
+        # Run hours by price level and how long the price moved the target, None without a price
+        "price": (
+            {
+                "heating_hours": {lv: round(v / 3600, 2) for lv, v in by_price[MODE_HEATING].items()},
+                "cooling_hours": {lv: round(v / 3600, 2) for lv, v in by_price[MODE_COOLING].items()},
+                "shifted_hours": round(shifted / 3600, 2),
+            }
+            if priced > 0
+            else None
+        ),
         "heat_overshoot": (
             _run_overshoot(points, MODE_HEATING, "heat_target", 1) if climate_mode != CLIMATE_MODE_COOL_ONLY else None
         ),

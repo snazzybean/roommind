@@ -20,6 +20,7 @@ from .const import (
     DEFAULT_CONFLICT_RESOLUTION,
     DEFAULT_CONTROL_MODE,
     DOMAIN,
+    MAX_PRICE_SHIFT_K,
     MIN_OCCUPANCY_ECO_DELAY_MINUTES,
     OVERRIDE_CUSTOM,
     OVERRIDE_TYPES,
@@ -119,6 +120,7 @@ _ROOM_SAVE_FIELDS = (
     "occupancy_eco_enabled",
     "occupancy_eco_delay",
     "preheat_enabled",
+    "price_shift",
     "follow_device_setpoint",
     "climate_mode",
     "schedules",
@@ -157,12 +159,14 @@ _ROOM_SAVE_FIELDS = (
     "heat_source_primary_delta",
     "heat_source_outdoor_threshold",
     "heat_source_ac_min_outdoor",
+    "heat_source_price_aware",
     "valve_protection_exclude",
     "climate_control_enabled",
 )
 
 _SETTINGS_SAVE_FIELDS = (
     "outdoor_temp_sensor",
+    "price_entity",
     "outdoor_humidity_sensor",
     "outdoor_cooling_min",
     "outdoor_heating_max",
@@ -360,6 +364,8 @@ async def websocket_list_rooms(
             "control_mode": settings.get("control_mode", DEFAULT_CONTROL_MODE),
             "climate_control_active": settings.get("climate_control_active", True),
             "presence_enabled": settings.get("presence_enabled", False),
+            "price_entity": settings.get("price_entity", ""),
+            "price_status": coordinator.price_status() if coordinator else None,
             "presence_persons": settings.get("presence_persons", []),
             "presence_away_action": settings.get("presence_away_action", "eco"),
             "presence_clears_override": settings.get("presence_clears_override", False),
@@ -427,6 +433,7 @@ async def websocket_list_rooms(
             vol.Coerce(int), vol.Range(min=MIN_OCCUPANCY_ECO_DELAY_MINUTES, max=240)
         ),
         vol.Optional("preheat_enabled"): bool,
+        vol.Optional("price_shift"): vol.All(vol.Coerce(float), vol.Range(min=0, max=MAX_PRICE_SHIFT_K)),
         vol.Optional("follow_device_setpoint"): bool,
         vol.Optional("climate_mode"): vol.In(CLIMATE_MODES),
         vol.Optional("schedules"): [{vol.Required("entity_id"): str}],
@@ -471,6 +478,7 @@ async def websocket_list_rooms(
         vol.Optional("heat_source_primary_delta"): vol.All(vol.Coerce(float), vol.Range(min=0.5, max=5.0)),
         vol.Optional("heat_source_outdoor_threshold"): vol.All(vol.Coerce(float), vol.Range(min=-20, max=25)),
         vol.Optional("heat_source_ac_min_outdoor"): vol.All(vol.Coerce(float), vol.Range(min=-30, max=5)),
+        vol.Optional("heat_source_price_aware"): bool,
         vol.Optional("climate_control_enabled"): bool,
     }
 )
@@ -752,6 +760,7 @@ async def websocket_get_settings(
     {
         vol.Required("type"): "roommind/settings/save",
         vol.Optional("outdoor_temp_sensor"): str,
+        vol.Optional("price_entity"): str,
         vol.Optional("outdoor_humidity_sensor"): str,
         vol.Optional("outdoor_cooling_min"): vol.Coerce(float),
         vol.Optional("outdoor_heating_max"): vol.Coerce(float),

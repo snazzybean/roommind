@@ -84,6 +84,8 @@ async def test_list_rooms_empty(ws_hass, store, connection):
             "control_mode": "mpc",
             "climate_control_active": True,
             "presence_enabled": False,
+            "price_entity": "",
+            "price_status": None,
             "presence_persons": [],
             "presence_away_action": "eco",
             "presence_clears_override": False,

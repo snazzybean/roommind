@@ -626,3 +626,15 @@ def test_target_reason_and_mold_boost_are_recorded_and_downsampled(history_dir):
     bucket = store._downsample(rows, bucket_seconds=300)[0]
     assert bucket["target_reason"] == "override"
     assert bucket["mold_boost"] == 1.0
+
+
+def test_price_columns_are_recorded_and_downsampled(history_dir):
+    store = HistoryStore(history_dir)
+    store.record("room_a", {"mode": "idle", "price": 30.0, "price_level": "expensive", "price_shift": -1.0}, 1000)
+    store.record("room_a", {"mode": "idle", "price": 20.0, "price_level": "normal", "price_shift": 0.0}, 1060)
+    rows = store.read_detail("room_a")
+    assert rows[0]["price_level"] == "expensive"
+    bucket = store._downsample(rows, bucket_seconds=300)[0]
+    assert bucket["price"] == 25.0
+    assert bucket["price_level"] == "expensive"
+    assert bucket["price_shift"] == -0.5

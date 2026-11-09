@@ -365,3 +365,32 @@ class TestEvaluateHeatSources:
 
         assert isinstance(result, HeatSourcePlan)
         assert result.active_sources == "primary"
+
+
+class TestPriceAwareSourceChoice:
+    """Rooms with heat_source_price_aware follow the electricity price level (#84, #257, #314)."""
+
+    def test_expensive_electricity_prefers_the_primary_source_on_a_mild_day(self):
+        hass = _make_hass(["heat", "cool", "off"])
+        # Mild outdoor: the outdoor rule alone would pick the AC
+        result = evaluate_heat_sources(_make_room(), MODE_HEATING, 0.5, 20.5, 21.0, 12.0, "none", hass, "expensive")
+        assert result.active_sources == "primary"
+        assert "electricity expensive" in result.reason
+
+    def test_cheap_electricity_prefers_the_ac_on_a_cold_day(self):
+        hass = _make_hass(["heat", "cool", "off"])
+        result = evaluate_heat_sources(_make_room(), MODE_HEATING, 0.5, 20.5, 21.0, 0.0, "none", hass, "cheap")
+        assert result.active_sources == "secondary"
+
+    def test_large_gap_and_ac_minimum_outdoor_still_win(self):
+        hass = _make_hass(["heat", "cool", "off"])
+        both = evaluate_heat_sources(_make_room(), MODE_HEATING, 1.0, 16.0, 21.0, 12.0, "none", hass, "expensive")
+        assert both.active_sources == "both"
+        frozen = evaluate_heat_sources(_make_room(), MODE_HEATING, 0.5, 20.5, 21.0, -20.0, "none", hass, "cheap")
+        assert frozen.active_sources == "primary"
+
+    def test_normal_or_unknown_level_keeps_the_outdoor_rule(self):
+        hass = _make_hass(["heat", "cool", "off"])
+        for level in ("normal", None):
+            result = evaluate_heat_sources(_make_room(), MODE_HEATING, 0.5, 20.5, 21.0, 12.0, "none", hass, level)
+            assert result.active_sources == "secondary"

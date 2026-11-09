@@ -52,7 +52,13 @@ from .coordinator import RoomMindCoordinator, _get_area_name
 from .deprecation import warn_deprecated_use
 from .utils.area_utils import rooms_with_area
 from .utils.device_utils import get_ac_eids, get_trv_eids
-from .utils.schedule_utils import band_in_force, mask_override_band, next_schedule_change, override_preset_band
+from .utils.schedule_utils import (
+    band_in_force,
+    mask_override_band,
+    next_schedule_change,
+    override_preset_band,
+    without_temporary_shifts,
+)
 
 _CLIMATE_MODE_TO_HVAC = {
     CLIMATE_MODE_AUTO: HVACMode.HEAT_COOL,
@@ -476,15 +482,13 @@ class RoomMindRoomClimate(CoordinatorEntity, ClimateEntity):
         return float(val) if isinstance(val, (int, float)) else None
 
     def _band(self) -> tuple[float | None, float | None]:
-        """The band the room is held at, without mold prevention (not part of the user's band)."""
+        """The band the room is held at, without mold prevention and price shift (not the user's band)."""
         room = self._room()
         if self._override_in_force():
             heat, cool = room.get("override_heat"), room.get("override_cool")
         else:
             live = self._live()
-            heat, cool = live.get("heat_target"), live.get("cool_target")
-            if heat is not None and live.get("mold_prevention_active"):
-                heat -= live.get("mold_prevention_delta") or 0
+            heat, cool = without_temporary_shifts(live.get("heat_target"), live.get("cool_target"), live)
         if self._climate_mode() == CLIMATE_MODE_AUTO:
             # The dual slider sends both sides, HA rejects a call with only one of them
             return _fill_auto_band(heat, cool, room)

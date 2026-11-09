@@ -28,6 +28,9 @@ DETAIL_FIELDS = [
     "cool_target",
     "target_reason",
     "mold_boost",
+    "price",
+    "price_level",
+    "price_shift",
 ]
 DETAIL_MAX_AGE = 48 * 3600  # 48 hours
 HISTORY_MAX_AGE = 90 * 24 * 3600  # 90 days
@@ -98,6 +101,9 @@ class HistoryStore:
                     "cool_target": data.get("cool_target", ""),
                     "target_reason": data.get("target_reason", ""),
                     "mold_boost": data.get("mold_boost", ""),
+                    "price": data.get("price", ""),
+                    "price_level": data.get("price_level", ""),
+                    "price_shift": data.get("price_shift", ""),
                 }
             )
 
@@ -212,6 +218,7 @@ class HistoryStore:
                 "window_open": bucket[0].get("window_open", ""),
                 "device_setpoint": bucket[0].get("device_setpoint", ""),
                 "target_reason": bucket[0].get("target_reason", ""),
+                "price_level": bucket[0].get("price_level", ""),
             }
             for field in (
                 "room_temp",
@@ -225,6 +232,8 @@ class HistoryStore:
                 "heat_target",
                 "cool_target",
                 "mold_boost",
+                "price",
+                "price_shift",
             ):
                 vals = []
                 for r in bucket:

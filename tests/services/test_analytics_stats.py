@@ -278,3 +278,27 @@ def test_overshoot_only_for_the_controlled_side():
     assert compute_period_stats(points, "cool_only")["heat_overshoot"] is None
     assert compute_period_stats(points, "heat_only")["cool_overshoot"] is None
     assert compute_period_stats(_run([(21.0, "idle")]), "auto")["heat_overshoot"] is None
+
+
+def test_run_hours_by_price_level():
+    points = [
+        _point(0, mode="heating", price_level="cheap", price_shift=1.0, heat_target=22.0, cool_target=23.0),
+        _point(1, mode="heating", price_level="cheap", price_shift=1.0, heat_target=22.0, cool_target=23.0),
+        _point(2, mode="heating", price_level="expensive"),
+        _point(3, mode="idle", price_level="normal"),
+        _point(4, mode="idle", price_level="normal"),
+    ]
+    price = compute_period_stats(points, "auto")["price"]
+    assert price["heating_hours"] == {"cheap": 0.1, "expensive": 0.05}
+    assert price["cooling_hours"] == {}
+    assert price["shifted_hours"] == 0.1
+
+
+def test_no_price_figures_without_price_data():
+    assert compute_period_stats(_modes("heating", "idle"), "auto")["price"] is None
+
+
+def test_comfort_is_judged_against_the_schedule_not_the_price_shift():
+    # Coasting 1 K below a 21 °C schedule while expensive: the room at 19.9 °C is too cold
+    coast = _point(0, room_temp=19.9, heat_target=20.0, cool_target=25.0, price_shift=-1.0)
+    assert compute_period_stats([coast, _point(1)], "auto")["comfort"]["below_pct"] == 50

@@ -84,6 +84,7 @@ from .managers.ekf_training_manager import EkfTrainingManager
 from .managers.head_offset_tracker import HeadOffsetTracker
 from .managers.heat_source_orchestrator import HeatSourcePlan, evaluate_heat_sources
 from .managers.mold_manager import MoldManager
+from .managers.price_manager import PriceManager
 from .managers.residual_heat_tracker import AcReboundTracker, ResidualHeatTracker
 from .managers.valve_manager import ValveManager
 from .managers.weather_manager import WeatherManager
@@ -103,10 +104,12 @@ from .utils.device_utils import (
 )
 from .utils.history_store import HistoryStore
 from .utils.presence_utils import is_room_vacant
+from .utils.price_utils import PriceSignal
 from .utils.schedule_utils import (
     band_in_force,
     cap_to_eco,
     next_schedule_change,
+    price_shifted,
     resolve_schedule_index,
     set_band_sides,
 )
@@ -231,6 +234,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         self._valve_manager = ValveManager(hass)
         # Mold risk tracking
         self._mold_manager = MoldManager(hass)
+        self._price_manager = PriceManager(hass)
         # Residual heat tracking (heating → idle transition)
         self._residual_tracker = ResidualHeatTracker()
         # AC rebound charge (air pulled below the building mass while cooling)
@@ -349,8 +353,9 @@ class RoomMindCoordinator(DataUpdateCoordinator):
 
         room_states: dict[str, dict] = {}
 
-        # Read weather forecast once for all rooms
+        # Read weather forecast and electricity price once for all rooms
         outdoor_forecast = await self._weather_manager.async_read_forecast(settings)
+        await self._price_manager.async_update(settings, self._async_load_price_history)
 
         # Update cover orchestrator with cloud forecast for solar trajectory prediction
         self._cover_orchestrator.set_cloud_series(WeatherManager.extract_cloud_series(outdoor_forecast))
@@ -396,6 +401,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         self._history_write_count += 1
         if self._history_write_count >= HISTORY_WRITE_CYCLES and self._history_store:
             self._history_write_count = 0
+            price_now = self._price_manager.signal.current_price if self._price_manager.signal else None
             for area_id, rs in room_states.items():
                 if area_id in learning_disabled:
                     continue
@@ -428,6 +434,10 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                             "cool_target": rs.get("cool_target"),
                             "target_reason": rs.get("target_reason", ""),
                             "mold_boost": rs.get("mold_boost") or "",
+                            "price": price_now if price_now is not None else "",
+                            "price_level": rs.get("price_level") or "",
+                            # Signed like the heat side; a cool-only room moves its cool side the other way
+                            "price_shift": (rs.get("price_shift_heat") or -(rs.get("price_shift_cool") or 0.0)) or "",
                         },
                     )
                 except Exception:  # noqa: BLE001
@@ -881,6 +891,19 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         targets, target_reason = self._resolve_target_temps_and_reason(
             room, settings, schedule_blocks, schedule_entity_id, room_vacant=occupancy_vacant
         )
+        # Rooms that opted in move their schedule target with the electricity price; the
+        # mold boost below still comes on top
+        price_shift = (0.0, 0.0)
+        if not target_reason:
+            targets, price_shift = price_shifted(
+                targets,
+                time.time(),
+                room,
+                settings,
+                self._price_manager.signal,
+                presence_away=False,
+                room_vacant=occupancy_vacant,
+            )
 
         # Apply mold prevention temperature delta (heating target only).
         # Safety: mold prevention overrides "off" to prevent structural damage.
@@ -911,6 +934,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             presence_away=presence_away,
             mold_prevention_delta=mold_prevention_temp_delta,
             room_vacant=occupancy_vacant,
+            price_signal=self._price_manager.signal,
         )
 
         # After a reload or restart the previous mode is unknown; seed it from what the
@@ -1104,6 +1128,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 outdoor_temp=self.outdoor_temp_effective,
                 previous_active_sources=self._heat_source_states.get(area_id, "none"),
                 hass=self.hass,
+                price_level=self._price_level_for(room),
             )
             if heat_source_plan is not None:
                 self._heat_source_states[area_id] = heat_source_plan.active_sources
@@ -1403,6 +1428,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             mold_prevention_temp_delta=mold_prevention_temp_delta,
             target_reason=target_reason,
             mold_boost=mold_boost,
+            price_shift=price_shift,
             shading_factor=shading_factor,
             q_occupancy=q_occupancy,
             cover_eids=cover_eids,
@@ -1680,6 +1706,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         shading_factor: float | None,
         target_reason: str = "",
         mold_boost: float = 0.0,
+        price_shift: tuple[float, float] = (0.0, 0.0),
         q_occupancy: float,
         cover_eids: list[str],
         cover_result: CoverResult,
@@ -1783,6 +1810,9 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             "mold_prevention_delta": mold_prevention_temp_delta,
             "target_reason": target_reason,
             "mold_boost": mold_boost,
+            "price_shift_heat": price_shift[0],
+            "price_shift_cool": price_shift[1],
+            "price_level": self._price_manager.signal.current_level if self._price_manager.signal else None,
             "shading_factor": shading_factor,
             "q_occupancy": q_occupancy,
             "n_observations": self._model_manager.get_n_observations(area_id),
@@ -2127,6 +2157,40 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             MIN_TARGET_TEMP,
             MAX_TARGET_TEMP,
         )
+
+    @property
+    def price_signal(self) -> PriceSignal | None:
+        """The electricity price signal of the current cycle, None without a price source."""
+        return self._price_manager.signal
+
+    def price_status(self) -> dict | None:
+        return self._price_manager.status()
+
+    def _price_level_for(self, room: dict) -> str | None:
+        """Price level the heat source orchestration may follow (opt-in per room)."""
+        signal = self._price_manager.signal
+        if signal is None or not room.get("heat_source_price_aware", False):
+            return None
+        return signal.current_level
+
+    async def _async_load_price_history(self) -> list[tuple[float, float]]:
+        """Prices recorded with the history, so ranking without a forecast survives a restart."""
+        if self._history_store is None:
+            return []
+        store = self.hass.data.get(DOMAIN, {}).get("store")
+        area_ids = list(store.get_rooms()) if store else []
+        for area_id in area_ids:
+            rows = await self.hass.async_add_executor_job(self._history_store.read_detail, area_id)
+            rows += await self.hass.async_add_executor_job(self._history_store.read_history, area_id)
+            prices = []
+            for row in rows:
+                try:
+                    prices.append((float(row["timestamp"]), float(row["price"])))
+                except (KeyError, TypeError, ValueError):
+                    continue
+            if prices:
+                return prices
+        return []
 
     def _resolve_target_temps(
         self,
