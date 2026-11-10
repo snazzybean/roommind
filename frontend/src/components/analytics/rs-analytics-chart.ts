@@ -24,6 +24,10 @@ import { tempUnit } from "../../utils/temperature";
 const LEGEND_OWNER: Record<string, string> = {
   target_band_base: "target_temp",
   target_band: "target_temp",
+  target_band_cold_base: "target_temp",
+  target_band_cold: "target_temp",
+  target_band_warm_base: "target_temp",
+  target_band_warm: "target_temp",
   humidity_limits: "humidity",
   humidity_band_base: "humidity",
   humidity_band: "humidity",
@@ -316,7 +320,7 @@ export class RsAnalyticsChart extends LitElement {
       /* Heading of each plot below the temperature, in the gap above it (chart-builder PANEL_GAP) */
       .panel-title {
         position: absolute;
-        left: 46px;
+        left: 56px;
         font-size: 11px;
         line-height: 14px;
         color: var(--secondary-text-color);

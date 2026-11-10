@@ -38,7 +38,7 @@ const COMFORT_TOLERANCE_K = 0.5;
 // Far past any axis: a one-sided band runs off the plot (series are clipped to the grid)
 const BAND_OPEN_K = 100;
 // The panels share an x axis, so both plots start at a fixed left edge instead of containLabel
-const PANEL_LEFT = 46;
+const PANEL_LEFT = 56;
 // Visible on light and dark cards alike
 const NOW_MARKER_COLOR = "rgba(128, 128, 128, 0.6)";
 
@@ -111,7 +111,7 @@ const PANEL_TITLE_KEYS: Record<SubPanel | "main", TranslationKey> = {
   price: "analytics.price",
 };
 
-/** Heading of a plot, all alike with the unit in brackets (the axes carry plain numbers). */
+/** Heading of a plot, all alike with the unit in brackets. */
 export function panelTitle(
   panel: SubPanel | "main",
   language: string,
@@ -223,6 +223,29 @@ function stretch(
 
 const hasValue = (data: Array<[number, number | null]>) => data.some(([, v]) => v != null);
 
+/** Stacked pair: an invisible base, the second series fills from it by its height. */
+function bandPair(
+  id: string,
+  base: Array<[number, number | null]>,
+  data: Array<[number, number | null]>,
+  style: Record<string, unknown>,
+): Array<Record<string, unknown>> {
+  const common = {
+    stack: id,
+    showSymbol: false,
+    lineStyle: { width: 0 },
+    tooltip: { show: false },
+    yAxisIndex: 0,
+    z: -1,
+    connectNulls: false,
+    silent: true,
+  };
+  return [
+    { ...common, id: `${id}_base`, type: "line", name: "", data: base },
+    { ...common, id, type: "line", ...style, data },
+  ];
+}
+
 export function buildChartSeries(
   points: AnalyticsDataPoint[],
   ctx: ChartBuildContext,
@@ -238,6 +261,11 @@ export function buildChartSeries(
   const humidityData: Array<[number, number]> = [];
   const bandBaseData: Array<[number, number | null]> = [];
   const bandData: Array<[number, number | null]> = [];
+  // Outside the judged sides: too cold below the heat side, too warm above the cool side
+  const coldBaseData: Array<[number, number | null]> = [];
+  const coldData: Array<[number, number | null]> = [];
+  const warmBaseData: Array<[number, number | null]> = [];
+  const warmData: Array<[number, number | null]> = [];
   const tol = toDisplayDelta(COMFORT_TOLERANCE_K, hass);
   const open = toDisplayDelta(BAND_OPEN_K, hass);
   const pushBand = (p: AnalyticsDataPoint) => {
@@ -253,6 +281,10 @@ export function buildChartSeries(
       bandBaseData.push([ts, null]);
       bandData.push([ts, null]);
     }
+    coldBaseData.push([ts, heat != null ? heat - open : null]);
+    coldData.push([ts, heat != null ? open : null]);
+    warmBaseData.push([ts, cool]);
+    warmData.push([ts, cool != null ? open : null]);
   };
 
   for (const p of points) {
@@ -322,38 +354,25 @@ export function buildChartSeries(
   }
 
   if (hasValue(bandData)) {
-    // Stacked pair: an invisible base at the heat target, the band fills up to the cool target
     series.push(
-      {
-        id: "target_band_base",
-        type: "line",
-        name: "",
-        data: bandBaseData,
-        stack: "target_band",
-        showSymbol: false,
-        lineStyle: { width: 0 },
-        tooltip: { show: false },
-        yAxisIndex: 0,
-        z: -1,
-        connectNulls: false,
-        silent: true,
-      },
-      {
-        id: "target_band",
-        type: "line",
+      ...bandPair("target_band", bandBaseData, bandData, {
         name: localize("analytics.target_band", l),
         color: "rgb(76, 175, 80)",
-        data: bandData,
-        stack: "target_band",
-        showSymbol: false,
-        lineStyle: { width: 0 },
         areaStyle: { color: "rgba(76, 175, 80, 0.1)" },
-        tooltip: { show: false },
-        yAxisIndex: 0,
-        z: -1,
-        connectNulls: false,
-        silent: true,
-      },
+      }),
+    );
+  }
+
+  for (const [side, base, data, color] of [
+    ["cold", coldBaseData, coldData, "rgba(33, 150, 243, 0.08)"],
+    ["warm", warmBaseData, warmData, "rgba(244, 67, 54, 0.06)"],
+  ] as const) {
+    if (!hasValue(data)) continue;
+    series.push(
+      ...bandPair(`target_band_${side}`, base, data, {
+        name: "",
+        areaStyle: { color },
+      }),
     );
   }
 
@@ -593,8 +612,7 @@ export function buildChartOptions(
   const panels = ctx.panels ?? [];
   const unit = tempUnit(hass);
 
-  // The unit sits in the heading above the plot (panelTitle)
-  const yAxis: Record<string, unknown> = { type: "value" };
+  const yAxis: Record<string, unknown> = { type: "value", axisLabel: unitLabel(unit, hass) };
 
   if (visibleY.length > 0) {
     let minVal = Infinity;
@@ -631,7 +649,10 @@ export function buildChartOptions(
                 : {}),
             })),
           ],
-          yAxis: [yAxis, ...panels.map((p, i) => panelAxis(p, points, i + 1, hass))],
+          yAxis: [
+            yAxis,
+            ...panels.map((p, i) => panelAxis(p, points, i + 1, hass, ctx.priceUnit ?? "")),
+          ],
           axisPointer: { link: [{ xAxisIndex: "all" }] },
           grid: [
             {
@@ -776,6 +797,14 @@ export function buildChartOptions(
   };
 }
 
+/** Axis numbers with their unit, in the user's number format. */
+function unitLabel(unit: string, hass: HomeAssistant, digits: Intl.NumberFormatOptions = {}) {
+  const fmt = new Intl.NumberFormat(hass.language, { maximumFractionDigits: 1, ...digits });
+  return {
+    formatter: (v: number) => (unit ? `${fmt.format(v)}\u00A0${unit}` : fmt.format(v)),
+  };
+}
+
 function outdoorAxis(
   points: AnalyticsDataPoint[],
   gridIndex: number,
@@ -793,6 +822,7 @@ function outdoorAxis(
     min: Math.floor(min - 1),
     max: Math.ceil(max + 1),
     splitNumber: 2,
+    axisLabel: unitLabel(tempUnit(hass), hass),
   };
 }
 
@@ -801,8 +831,10 @@ function panelAxis(
   points: AnalyticsDataPoint[],
   gridIndex: number,
   hass: HomeAssistant,
+  priceUnit: string,
 ): Record<string, unknown> {
-  if (panel === "humidity") return humidityAxis(points, gridIndex);
+  if (panel === "humidity")
+    return { ...humidityAxis(points, gridIndex), axisLabel: unitLabel("%", hass) };
   if (panel === "outdoor") return outdoorAxis(points, gridIndex, hass);
   // Price: whatever unit the source uses; bounds from the prices, the level bands reach far above
   const prices = points.map((p) => p.price).filter((v): v is number => v != null);
@@ -817,9 +849,10 @@ function panelAxis(
     min: Math.floor(low / step) * step,
     max: Math.ceil(high / step) * step,
     splitNumber: 2,
-    axisLabel: {
-      formatter: (v: number) =>
-        new Intl.NumberFormat(hass.language, { maximumSignificantDigits: 3 }).format(v),
-    },
+    // "ct/kWh" reads "38 ct" on the axis, the heading carries the whole unit
+    axisLabel: unitLabel(priceUnit.split("/")[0].trim(), hass, {
+      maximumFractionDigits: undefined,
+      maximumSignificantDigits: 3,
+    }),
   };
 }
