@@ -134,16 +134,19 @@ def heat_min_run_blocks(
     q_heat: float = 0.0,
     scale: float = 1.0,
     tau_minutes: float | None = None,
+    fast_heater: bool = False,
 ) -> int:
     """Minimum heating run in blocks, shortened for radiators that store a lot of heat.
 
     The rise the stored heat of one regular min run gives after the stop (learned
     ``scale`` and decay ``tau_minutes``, full power, losses left out) above
     ``RADIATOR_SHORT_RUN_AFTERGLOW_K`` makes the run a single block: the heat of the
-    regular one alone would carry the room past its target.
+    regular one alone would carry the room past its target. Not with a heat-capable AC
+    in the room (``fast_heater``): ``q_heat`` is then the split's, and its compressor
+    must not run 5-min cycles.
     """
     base = get_min_run_blocks(system_type, dt_minutes)
-    if system_type != HEATING_SYSTEM_RADIATOR or q_heat <= 0 or dt_minutes <= 0:
+    if fast_heater or system_type != HEATING_SYSTEM_RADIATOR or q_heat <= 0 or dt_minutes <= 0:
         return base
     q0 = compute_residual_heat(0.0, system_type, 1.0, base * dt_minutes, scale, tau_minutes)
     rise = q_heat * q0 * residual_tau(system_type, tau_minutes) / 60.0

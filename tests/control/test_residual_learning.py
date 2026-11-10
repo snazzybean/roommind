@@ -396,12 +396,12 @@ def test_real_room_stops_early_on_its_learned_scale():
 # ---------------------------------------------------------------------------
 
 # A real bedroom's learned model; its 20 °C block starts in two blocks (10 min)
-OLIVER = RCModel(C=1.0, U=0.005, Q_heat=1.935, Q_cool=4.0)
+BEDROOM = RCModel(C=1.0, U=0.005, Q_heat=1.935, Q_cool=4.0)
 SHORT_BLOCK = [18.5] * 2 + [20.0] * 2 + [12.0] * 20
 
 
 def _deadline(scale: float, **kwargs) -> int:
-    opt = MPCOptimizer(OLIVER, can_cool=False, heating_system_type="radiator", residual_scale=scale)
+    opt = MPCOptimizer(BEDROOM, can_cool=False, heating_system_type="radiator", residual_scale=scale)
     return opt._preheat_deadline(
         0, 19.3, [6.4] * 24, SHORT_BLOCK, 5.0, q_solar=[], q_occupancy=[], continuing=True, **kwargs
     )
@@ -425,7 +425,7 @@ def test_preheat_stops_earlier_with_large_stored_heat():
     """The morning that overshot by 0.9 K: with the learned heat the plan stops sooner and peaks lower."""
 
     def plan(scale: float):
-        opt = MPCOptimizer(OLIVER, can_cool=False, heating_system_type="radiator", residual_scale=scale)
+        opt = MPCOptimizer(BEDROOM, can_cool=False, heating_system_type="radiator", residual_scale=scale)
         targets = [18.5 if i * 5 < 13 else 20.0 if i * 5 < 43 else 12.0 for i in range(24)]
         return opt.optimize(
             T_room=19.3,

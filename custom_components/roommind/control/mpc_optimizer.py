@@ -136,6 +136,7 @@ class MPCOptimizer:
         # Set before optimize() runs so callers / patched optimize() still expose
         # a sensible default. optimize() refreshes this from dt_minutes per call.
         self._lookahead_blocks = LOOKAHEAD_BASE_BLOCKS
+        self._glow_cache: dict[tuple[float, tuple[float, float]], float] = {}
 
     def optimize(
         self,
@@ -176,6 +177,7 @@ class MPCOptimizer:
         its own runs the same way: idle blocks after a planned run see that run's
         afterglow instead of ``residual_series`` (the real room's).
         """
+        self._glow_cache.clear()  # scale and decay may have changed since the last plan
         if cool_target_series is None:
             cool_target_series = list(heat_target_series)
 
@@ -189,9 +191,10 @@ class MPCOptimizer:
         # horizon without a matching cooling-side synthesis would shift the
         # energy/comfort ratio for COOLING and cause more aggressive AC use.
         profile = HEATING_SYSTEM_PROFILES.get(self.heating_system_type) if self.heating_system_type else None
-        if profile and dt_minutes > 0 and self._radiator:
+        if profile and dt_minutes > 0 and self._radiator and not self.can_cool:
             # Radiators: far enough to see where the run's stored heat takes the room
-            # (its learned decay time; the profile's gives the base lookahead)
+            # (its learned decay time; the profile's gives the base lookahead). Not with
+            # an AC in the room, for the same reason as UFH+AC below.
             tau_blocks = math.ceil(
                 RADIATOR_LOOKAHEAD_TAUS * residual_tau(self.heating_system_type, self.residual_tau) / dt_minutes
             )
@@ -778,6 +781,11 @@ class MPCOptimizer:
             T = max(temp_lo, min(temp_hi, T))
             h_tgt = future_heat_targets[j] if j < len(future_heat_targets) else heat_target
             c_tgt = future_cool_targets[j] if j < len(future_cool_targets) else cool_target
+            if self._radiator and j >= LOOKAHEAD_BASE_BLOCKS and future_heat_targets:
+                # The longer radiator lookahead is for the run's own afterglow, not for
+                # targets rising later: pre-heating stays with the deadline and its cap
+                # (preheat_max_blocks, the per-room switch #478)
+                h_tgt = min(h_tgt, future_heat_targets[min(LOOKAHEAD_BASE_BLOCKS, len(future_heat_targets)) - 1])
             # Dead-band-aware comfort cost: zero inside the band
             if T < h_tgt:
                 total_cost += self.w_comfort * (T - h_tgt) ** 2
@@ -840,11 +848,20 @@ class MPCOptimizer:
         return self.heating_system_type == HEATING_SYSTEM_RADIATOR
 
     def _afterglow(self, elapsed_minutes: float, run: tuple[float, float]) -> float:
-        """Residual heat fraction *elapsed_minutes* after a run of (minutes, power fraction) stopped."""
-        minutes, pf = run
-        return compute_residual_heat(
-            elapsed_minutes, self.heating_system_type, pf, minutes, self.residual_scale, self.residual_tau
-        )
+        """Residual heat fraction *elapsed_minutes* after a run of (minutes, power fraction) stopped.
+
+        Memoized per optimizer: the plan asks for the same few runs at block multiples
+        thousands of times (lookahead x actions x blocks), which tripled ``optimize``.
+        """
+        key = (elapsed_minutes, run)
+        cached = self._glow_cache.get(key)
+        if cached is None:
+            minutes, pf = run
+            cached = compute_residual_heat(
+                elapsed_minutes, self.heating_system_type, pf, minutes, self.residual_scale, self.residual_tau
+            )
+            self._glow_cache[key] = cached
+        return cached
 
     def _min_run_for(self, mode: str) -> int:
         """Minimum run in blocks for *mode*."""
