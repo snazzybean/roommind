@@ -1,0 +1,103 @@
+name: radiator-afterglow-overshoot
+description: >
+  Flat with heavy radiators on a fixed 55 °C supply and rooms whose air follows the
+  radiator slowly, calibrated to a real house: an 18-min full-power run lifts the sensor
+  ~0.5 K and the stored heat lifts it ~0.9 K more, peaking ~40 min after the stop
+  (real rooms: 0.6-1.4 K, 20-75 min). Short comfort blocks with deep eco setbacks, so most
+  runs are pre-heats. The fixed radiator profile (30 % residual, tau 10 min) expected
+  ~0.1 K after a stop; RoomMind heated to the target and the room overshot by about 1 K.
+tags: [trv, mpc, radiator, residual-heat]
+refs: [493, 495]
+start: 2026-11-02T00:00
+duration: 10d
+location: {latitude: 52.5, longitude: 13.4, time_zone: Europe/Berlin}
+weather: {profile: temperate}
+house:
+  building: bestand_teilsaniert
+  floors: {eg: Erdgeschoss}
+  outdoor: {sensors: {temperature: sensor.aussen_temp}}
+  rooms:
+    wohnzimmer:
+      name: Wohnzimmer
+      floor: eg
+      floor_area_m2: 25
+      exterior_wall_m2: 14
+      initial: {temperature: 19.0}
+      thermal: {air_capacity_factor: 6, h_air_mass_w_per_m2: 6}
+      windows: [{orientation: S, area_m2: 3.0}]
+      devices:
+        - {entity_id: climate.wohnzimmer_trv, profile: generic_trv, design_factor: 3.0, capacity_kj_per_h: 4.0, heating_curve: false}
+        - {entity_id: climate.heizung_kessel, profile: generic_boiler, heating_curve: false}
+      sensors:
+        temperature: {entity_id: sensor.wohnzimmer_temp}
+    kinderzimmer:
+      name: Kinderzimmer
+      floor: eg
+      floor_area_m2: 14
+      exterior_wall_m2: 9
+      initial: {temperature: 18.0}
+      thermal: {air_capacity_factor: 6, h_air_mass_w_per_m2: 6}
+      windows: [{orientation: E, area_m2: 1.5}]
+      devices:
+        - {entity_id: climate.kinderzimmer_trv, profile: generic_trv, design_factor: 3.0, capacity_kj_per_h: 4.0, heating_curve: false}
+      sensors:
+        temperature: {entity_id: sensor.kinderzimmer_temp}
+    schlafzimmer:
+      name: Schlafzimmer
+      floor: eg
+      floor_area_m2: 16
+      exterior_wall_m2: 11
+      initial: {temperature: 18.0}
+      thermal: {air_capacity_factor: 6, h_air_mass_w_per_m2: 6}
+      windows: [{orientation: N, area_m2: 1.8}]
+      devices:
+        - {entity_id: climate.schlafzimmer_trv, profile: generic_trv, design_factor: 3.0, capacity_kj_per_h: 4.0, heating_curve: false}
+      sensors:
+        temperature: {entity_id: sensor.schlafzimmer_temp}
+helpers:
+  schedule:
+    plan_wohnen: {weekdays: ["06:00-07:30", "15:00-21:30"], weekend: ["07:30-21:30"]}
+    plan_kind: {weekdays: ["06:30-07:30", "15:00-18:00"], weekend: ["08:00-18:00"]}
+    plan_schlafen: {weekdays: ["06:30-14:30"]}
+roommind:
+  settings:
+    outdoor_temp_sensor: sensor.aussen_temp
+    weather_entity: weather.simhome
+    control_mode: mpc
+    comfort_weight: 50
+    compressor_groups:
+      - id: kessel
+        name: Kessel
+        members: [climate.wohnzimmer_trv, climate.kinderzimmer_trv, climate.schlafzimmer_trv]
+        master_entity: climate.heizung_kessel
+        min_run_minutes: 5
+        min_off_minutes: 5
+  rooms:
+    wohnzimmer:
+      devices: [{entity_id: climate.wohnzimmer_trv, type: trv, heating_system_type: radiator}]
+      temperature_sensor: sensor.wohnzimmer_temp
+      climate_mode: heat_only
+      schedules: [{entity_id: schedule.plan_wohnen}]
+      comfort_temp: 20.0
+      eco_temp: 16.5
+    kinderzimmer:
+      devices: [{entity_id: climate.kinderzimmer_trv, type: trv, heating_system_type: radiator}]
+      temperature_sensor: sensor.kinderzimmer_temp
+      climate_mode: heat_only
+      schedules: [{entity_id: schedule.plan_kind}]
+      comfort_temp: 18.5
+      eco_temp: 17.0
+    schlafzimmer:
+      devices: [{entity_id: climate.schlafzimmer_trv, type: trv, heating_system_type: radiator}]
+      temperature_sensor: sensor.schlafzimmer_temp
+      climate_mode: heat_only
+      schedules: [{entity_id: schedule.plan_schlafen}]
+      comfort_temp: 19.0
+      eco_temp: 16.0
+expect:
+  - {invariant: no_rejected_commands}
+  # a run may end a little past the target; the stored heat must not carry the room ~1 K over
+  - {metric: room.run_overshoot_mean_k, room: wohnzimmer, max: 0.4, label: stored heat counted, known_failure: 'candidate (#493, PR #495): the fixed radiator profile expects ~0.1 K after a stop, this house gives ~0.9 K. v1.8.2: mean 1.0/1.04/0.82 K past the target per run, 28/30/32 runs over 0.5 K'}
+  - {metric: room.run_overshoot_mean_k, room: kinderzimmer, max: 0.4, label: stored heat counted, known_failure: 'candidate (#493, PR #495): the fixed radiator profile expects ~0.1 K after a stop, this house gives ~0.9 K. v1.8.2: mean 1.0/1.04/0.82 K past the target per run, 28/30/32 runs over 0.5 K'}
+  - {metric: room.run_overshoot_mean_k, room: schlafzimmer, max: 0.4, label: stored heat counted, known_failure: 'candidate (#493, PR #495): the fixed radiator profile expects ~0.1 K after a stop, this house gives ~0.9 K. v1.8.2: mean 1.0/1.04/0.82 K past the target per run, 28/30/32 runs over 0.5 K'}
+  - {metric: comfort.in_band_pct, room: wohnzimmer, min: 95}
