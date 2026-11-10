@@ -38,7 +38,7 @@
 | custom\_components/roommind/repairs.py                             |       15 |        0 |    100% |           |
 | custom\_components/roommind/sensor.py                              |       55 |        0 |    100% |           |
 | custom\_components/roommind/services/\_\_init\_\_.py               |        0 |        0 |    100% |           |
-| custom\_components/roommind/services/analytics\_service.py         |      192 |        0 |    100% |           |
+| custom\_components/roommind/services/analytics\_service.py         |      196 |        0 |    100% |           |
 | custom\_components/roommind/services/analytics\_stats.py           |      154 |        1 |     99% |        81 |
 | custom\_components/roommind/store.py                               |      184 |        0 |    100% |           |
 | custom\_components/roommind/switch.py                              |      114 |        0 |    100% |           |
@@ -54,7 +54,7 @@
 | custom\_components/roommind/utils/sensor\_utils.py                 |       29 |        1 |     97% |        25 |
 | custom\_components/roommind/utils/temp\_utils.py                   |       26 |        0 |    100% |           |
 | custom\_components/roommind/websocket\_api.py                      |      342 |        3 |     99% |619, 852-857 |
-| **TOTAL**                                                          | **9167** |  **220** | **98%** |           |
+| **TOTAL**                                                          | **9171** |  **220** | **98%** |           |
 
 
 ## Setup coverage badge
