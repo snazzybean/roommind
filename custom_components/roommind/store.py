@@ -296,7 +296,6 @@ class RoomMindStore:
             "heat_source_ac_min_outdoor": config.get("heat_source_ac_min_outdoor", DEFAULT_HEAT_SOURCE_AC_MIN_OUTDOOR),
             "heat_source_price_aware": config.get("heat_source_price_aware", False),
             "climate_control_enabled": config.get("climate_control_enabled", True),
-            "residual_heat_enabled": config.get("residual_heat_enabled", True),
         }
         _single_temps_to_cool_side(room, config, room["climate_mode"])
         # Directional device sync for new rooms (truthiness check, not just presence)

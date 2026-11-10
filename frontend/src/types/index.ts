@@ -181,7 +181,6 @@ export interface RoomConfig {
   /** Orchestration: expensive electricity prefers the primary source, cheap the AC. */
   heat_source_price_aware?: boolean;
   climate_control_enabled?: boolean;
-  residual_heat_enabled?: boolean;
   live?: RoomLiveData;
 }
 

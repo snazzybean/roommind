@@ -472,36 +472,7 @@ class TestResidualHeatLearning:
         assert coordinator._residual_learner._obs == {}
 
     @pytest.mark.asyncio
-    async def test_switch_off_keeps_residual_heat_out_of_control_only(self, hass, mock_config_entry):
-        """Residual heat switch off: the controller sees no afterglow, training still does."""
-        coordinator, aid = self._radiator_coordinator(hass, mock_config_entry)
-        room = coordinator.hass.data["roommind"]["store"].get_rooms.return_value[aid]
-        room["residual_heat_enabled"] = False
-        coordinator._model_manager.update_residual_scale(aid, 3.0)
-        await coordinator._async_update_data()
-        assert coordinator._previous_modes.get(aid) == "heating"
-        # The run stopped 5 min ago after an hour: the radiators still release heat
-        now = time.time()
-        coordinator._residual_tracker._on_since[aid] = now - 3900
-        coordinator._residual_tracker._off_since[aid] = now - 300
-        coordinator._residual_tracker._off_power[aid] = 1.0
-        coordinator._previous_modes[aid] = "idle"
-        with (
-            patch.object(coordinator._residual_learner, "step", return_value=None) as step,
-            patch("custom_components.roommind.coordinator.MPCController", wraps=MPCController) as ctrl,
-            patch.object(coordinator, "_observe_and_train", wraps=coordinator._observe_and_train) as train,
-        ):
-            await coordinator._async_update_data()
-        kwargs = ctrl.call_args.kwargs
-        assert kwargs["q_residual"] == 0.0
-        assert kwargs["residual_scale"] == 0.0
-        assert kwargs["heat_run"] is None
-        # The learner and the EKF keep the real afterglow
-        assert step.call_args.kwargs["system_type"] == "radiator"
-        assert train.call_args.kwargs["q_residual"] > 0.0
-
-    @pytest.mark.asyncio
-    async def test_switch_on_passes_residual_heat_to_control(self, hass, mock_config_entry):
+    async def test_radiator_room_passes_residual_heat_to_control(self, hass, mock_config_entry):
         coordinator, aid = self._radiator_coordinator(hass, mock_config_entry)
         coordinator._model_manager.update_residual_scale(aid, 3.0)
         await coordinator._async_update_data()
