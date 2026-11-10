@@ -3204,16 +3204,27 @@ async def test_analytics_model_reports_solar_gain_now_and_today(ws_hass, store, 
 
 
 @pytest.mark.asyncio
-async def test_analytics_model_reports_residual_heat_now(ws_hass, store, connection):
-    """Residual heat in the heating strength's unit: learned Q_heat times the room's live q_residual."""
+@pytest.mark.parametrize(
+    ("system", "learned", "expected"),
+    [("radiator", True, {"afterglow_k": 0.95, "afterglow_minutes": 23, "afterglow_learned": True}), ("", False, None)],
+)
+async def test_analytics_model_reports_the_afterglow(ws_hass, store, connection, system, learned, expected):
+    """Radiator rooms: how far a regular run's stored heat lifts the room after the stop
+    (learned scale and decay time), so the page shows why a room overshoots."""
     await store.async_load()
-    await store.async_save_room("room_a", {"thermostats": ["climate.trv1"]})
+    await store.async_save_room(
+        "room_a",
+        {"devices": [{"entity_id": "climate.trv1", "type": "trv", "heating_system_type": system}]},
+    )
 
-    est = _make_mock_estimator(model_dict={"Q_heat": 3.0, "Q_solar": 0.0, "Q_occupancy": 0.0})
-    est.get_model.return_value.Q_heat = 3.0
+    est = _make_mock_estimator(model_dict={"Q_heat": 1.95, "Q_solar": 0.0, "Q_occupancy": 0.0})
+    est.get_model.return_value.Q_heat = 1.95
     est.get_model.return_value.Q_solar = 0.0
+    est.residual_scale = 8.75
+    est.residual_tau = 22.9
+    est.residual_scale_n = 3 if learned else 0
     coordinator = _make_analytics_coordinator(
-        history_rows=[], estimator=est, rooms_live={"room_a": {"shading_factor": 1.0, "q_residual": 0.25}}
+        history_rows=[], estimator=est, rooms_live={"room_a": {"shading_factor": 1.0}}
     )
     coordinator._current_q_solar = 0.0
     ws_hass.data[DOMAIN]["coordinator"] = coordinator
@@ -3222,7 +3233,11 @@ async def test_analytics_model_reports_residual_heat_now(ws_hass, store, connect
     with patch("custom_components.roommind.services.analytics_service.clear_sky_peak_today", return_value=0.0):
         await _get_analytics(ws_hass, connection, msg)
 
-    assert connection.send_result.call_args[0][1]["model"]["residual_heat_now"] == pytest.approx(0.75)
+    model = connection.send_result.call_args[0][1]["model"]
+    if expected is None:
+        assert "afterglow_k" not in model
+    else:
+        assert {k: model[k] for k in expected} == pytest.approx(expected, abs=0.01)
 
 
 def test_clear_sky_peak_today_follows_the_season():

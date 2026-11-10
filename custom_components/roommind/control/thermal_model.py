@@ -507,6 +507,11 @@ class ThermalEKF:
         return self._k_window
 
     @property
+    def residual_scale_n(self) -> int:
+        """Afterglow samples the scale has learned from (0 = the profile's guess)."""
+        return self._residual_scale_n
+
+    @property
     def residual_scale(self) -> float:
         """Learned multiplier on the heating system's residual heat profile."""
         return self._residual_scale

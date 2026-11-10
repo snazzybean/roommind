@@ -43,7 +43,6 @@ export class RsAnalyticsModel extends LitElement {
     const hasCooled = n_cooling >= 10;
     const hasIdleData = n_samples - n_heating - n_cooling >= 10;
     const n_observations = m?.n_observations ?? n_samples;
-    const residualHeat = toDisplayDelta(m?.residual_heat_now ?? 0, this.hass);
     const ph = "\u2014";
 
     const statItems: Array<{ id: string; labelKey: TranslationKey; infoKey: TranslationKey }> = [];
@@ -180,14 +179,14 @@ export class RsAnalyticsModel extends LitElement {
                 : nothing
             }
             ${
-              // Only while the radiators hold heat (rounded, so "0.0" never shows)
-              canHeat && hasHeated && residualHeat >= 0.05
+              canHeat && hasHeated && m?.afterglow_k != null
                 ? stat(
-                    "residual_heat",
-                    residualHeat.toFixed(1) + tempUnit(this.hass) + "/h",
-                    "analytics.residual_heat",
+                    "afterglow",
+                    this._afterglowValue(m.afterglow_k),
+                    "analytics.afterglow",
                     "",
-                    "analytics.info.residual_heat",
+                    "analytics.info.afterglow",
+                    this._afterglowSub(m),
                   )
                 : nothing
             }
@@ -282,6 +281,21 @@ export class RsAnalyticsModel extends LitElement {
     return localize("analytics.solar_gain_sub", this.language)
       .replace("{now}", fmt(m.solar_gain_now))
       .replace("{today}", fmt(m.solar_gain_today_max));
+  }
+
+  private _afterglowValue(kelvin: number): string {
+    const value = toDisplayDelta(kelvin, this.hass);
+    const unit = tempUnit(this.hass);
+    // Rounded to "+0.0" it read like a broken value: light radiators store almost nothing
+    return value < 0.05 ? `< 0.1${unit}` : `+${value.toFixed(1)}${unit}`;
+  }
+
+  private _afterglowSub(m: AnalyticsData["model"]): string {
+    if (!m.afterglow_learned) return localize("analytics.afterglow_unmeasured", this.language);
+    return localize("analytics.afterglow_sub", this.language).replace(
+      "{min}",
+      String(m.afterglow_minutes ?? 0),
+    );
   }
 
   private _toggleStat(id: string) {

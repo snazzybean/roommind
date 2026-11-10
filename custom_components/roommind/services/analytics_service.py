@@ -26,6 +26,7 @@ from ..control.mpc_controller import (
     get_can_heat_cool,
     is_mpc_active,
 )
+from ..control.residual_heat import afterglow_rise_k, get_min_run_blocks, residual_tau
 from ..control.solar import compute_q_solar_norm
 from ..utils.price_utils import PriceSignal
 from .analytics_stats import compute_period_stats, compute_rhythm, rhythm_window
@@ -42,6 +43,25 @@ def clear_sky_peak_today(latitude: float, longitude: float, now: float) -> float
         compute_q_solar_norm(latitude, longitude, start + i * SOLAR_PEAK_STEP_S)
         for i in range(86400 // SOLAR_PEAK_STEP_S)
     )
+
+
+def _afterglow_figures(room_config: dict, est: Any, q_heat: float) -> dict:
+    """What the radiators' stored heat does after a regular run (radiator rooms only).
+
+    ``afterglow_k``: how far a full-power min run lifts the room after the stop, with the
+    learned scale and decay time; ``afterglow_minutes``: that decay time;
+    ``afterglow_learned``: whether a run has been measured yet (else the profile's guess).
+    """
+    if room_config.get("heating_system_type", "") != HEATING_SYSTEM_RADIATOR:
+        return {}
+    minutes = get_min_run_blocks(HEATING_SYSTEM_RADIATOR) * 5.0
+    return {
+        "afterglow_k": round(
+            afterglow_rise_k(HEATING_SYSTEM_RADIATOR, q_heat, minutes, est.residual_scale, est.residual_tau), 2
+        ),
+        "afterglow_minutes": round(residual_tau(HEATING_SYSTEM_RADIATOR, est.residual_tau)),
+        "afterglow_learned": est.residual_scale_n > 0,
+    }
 
 
 def _safe_float(value: str) -> float | None:
@@ -316,9 +336,7 @@ async def build_analytics_data(
                     rc.Q_solar * clear_sky_peak_today(hass.config.latitude, hass.config.longitude, time.time()),
                     3,
                 ),
-                # Same unit as the heating strength: heat still released by the radiators
-                # now, or while heating, what stopping now would leave behind
-                "residual_heat_now": round(rc.Q_heat * coordinator.rooms.get(area_id, {}).get("q_residual", 0.0), 3),
+                **_afterglow_figures(room_config, est, rc.Q_heat),
             }
 
     # Build merged forecast: same format as history points, on a shared 5-min grid

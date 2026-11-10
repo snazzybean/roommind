@@ -148,9 +148,23 @@ def heat_min_run_blocks(
     base = get_min_run_blocks(system_type, dt_minutes)
     if fast_heater or system_type != HEATING_SYSTEM_RADIATOR or q_heat <= 0 or dt_minutes <= 0:
         return base
-    q0 = compute_residual_heat(0.0, system_type, 1.0, base * dt_minutes, scale, tau_minutes)
-    rise = q_heat * q0 * residual_tau(system_type, tau_minutes) / 60.0
+    rise = afterglow_rise_k(system_type, q_heat, base * dt_minutes, scale, tau_minutes)
     return 1 if rise > RADIATOR_SHORT_RUN_AFTERGLOW_K else base
+
+
+def afterglow_rise_k(
+    system_type: str,
+    q_heat: float,
+    run_minutes: float,
+    scale: float = 1.0,
+    tau_minutes: float | None = None,
+) -> float:
+    """How far the stored heat of a full-power run of *run_minutes* lifts the room after the stop.
+
+    The whole afterglow (initial share x decay time), losses left out.
+    """
+    q0 = compute_residual_heat(0.0, system_type, 1.0, run_minutes, scale, tau_minutes)
+    return q_heat * q0 * residual_tau(system_type, tau_minutes) / 60.0
 
 
 def advance_rebound(charge: float, drive: float, dt_minutes: float) -> float:

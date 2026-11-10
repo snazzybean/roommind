@@ -398,7 +398,10 @@ export interface AnalyticsData {
     has_occupancy_sensors: boolean;
     solar_gain_now?: number;
     solar_gain_today_max?: number;
-    residual_heat_now?: number;
+    /** Radiator rooms: rise a regular run's stored heat gives after the stop (°C), its decay time */
+    afterglow_k?: number;
+    afterglow_minutes?: number;
+    afterglow_learned?: boolean;
   };
 }
 
