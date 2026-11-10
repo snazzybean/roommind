@@ -35,6 +35,8 @@ PREHEAT_MAX_LEAD_HOURS = 12.0
 # Predictions are clamped to [temp_min, temp_max], but never closer than this to where the
 # room starts: a room already past a bound must still see which action moves it back.
 CLAMP_HEADROOM_K = 5.0
+# A radiator run the plan would pause for at most this many blocks runs on instead
+RADIATOR_PAUSE_BLOCKS = 2
 
 
 def preheat_max_blocks(comfort_weight: float, dt_minutes: float = 5.0, *, enabled: bool = True) -> int | None:
@@ -424,6 +426,19 @@ class MPCOptimizer:
 
             current_temp = next_temp
 
+        if (
+            self._radiator
+            and initial_mode == MODE_HEATING
+            and actions
+            and actions[0] == MODE_IDLE
+            and MODE_HEATING in actions[1 : 1 + RADIATOR_PAUSE_BLOCKS]
+        ):
+            # A pause of a block or two in a radiator run saves nothing (the heat is in the
+            # radiator either way) and costs a stop and a restart: the IDLE hypothesis is
+            # credited the whole run's afterglow, the plan heats again right after.
+            resume = actions.index(MODE_HEATING, 1)
+            actions[0] = MODE_HEATING
+            power_fractions[0] = power_fractions[resume]
         return MPCPlan(
             actions=actions,
             temperatures=temperatures,

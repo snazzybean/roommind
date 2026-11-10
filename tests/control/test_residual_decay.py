@@ -372,3 +372,25 @@ def test_a_heat_capable_ac_keeps_the_regular_min_run():
     from custom_components.roommind.control.residual_heat import heat_min_run_blocks
 
     assert heat_min_run_blocks("radiator", 5.0, q_heat=1.95, scale=8.75, tau_minutes=22.9, fast_heater=True) == 2
+
+
+def test_a_radiator_run_is_not_paused_for_a_block():
+    """The stop hypothesis gets the whole run's afterglow, so the plan stopped for one block
+    and heated again right after: two commands and a restart for nothing (sim, a radiator
+    that barely holds its target)."""
+    model = RCModel(C=1.0, U=0.0272, Q_heat=1.094, Q_cool=4.0, Q_solar=0.317, Q_occupancy=0.3)
+    opt = MPCOptimizer(
+        model,
+        can_cool=False,
+        heating_system_type="radiator",
+        min_run_blocks=2,
+        residual_scale=6.66,
+        w_comfort=7.0,
+        w_energy=3.0,
+    )
+    n = 36
+    # cheap-price target for two more blocks, then the schedule again
+    heat = [20.0] * 2 + [19.0] * (n - 2)
+    plan = opt.optimize(19.3, [-1.0] * n, heat, [24.0] * n, 5.0, initial_mode=MODE_HEATING, heat_run=(13.0, 1.0))
+    assert plan.actions[0] == MODE_HEATING
+    assert plan.get_current_power_fraction() > 0
