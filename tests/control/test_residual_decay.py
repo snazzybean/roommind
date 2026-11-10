@@ -24,7 +24,7 @@ from custom_components.roommind.managers.residual_heat_tracker import ResidualHe
 ROOM = RCModel(C=1.0, U=0.1, Q_heat=4.0, Q_cool=0.0)
 DT = 0.5  # coordinator cycle, minutes
 # A real bedroom's learned model (its afterglow fitted a 30-40 min decay)
-OLIVER = RCModel(C=1.0, U=0.005, Q_heat=1.935, Q_cool=4.0)
+BEDROOM = RCModel(C=1.0, U=0.005, Q_heat=1.935, Q_cool=4.0)
 
 
 def _replay(
@@ -213,7 +213,7 @@ MORNING = [18.5] * 8 + [20.0] * 6 + [12.0] * 16
 
 
 def _optimizer(system: str = "radiator", **kwargs) -> MPCOptimizer:
-    return MPCOptimizer(OLIVER, can_cool=False, heating_system_type=system, min_run_blocks=2, **kwargs)
+    return MPCOptimizer(BEDROOM, can_cool=False, heating_system_type=system, min_run_blocks=2, **kwargs)
 
 
 def _run(opt: MPCOptimizer, targets: list[float], T: float = 19.3, **kwargs):
@@ -317,7 +317,7 @@ def test_controller_min_run_follows_the_learned_afterglow():
     from .conftest import build_hass, make_room
 
     manager = MagicMock()
-    manager.get_model.return_value = OLIVER
+    manager.get_model.return_value = BEDROOM
     room = make_room(heating_system_type="radiator")
 
     def ctrl(scale):
@@ -341,3 +341,34 @@ def test_controller_min_run_follows_the_learned_afterglow():
     assert light._heat_min_run("radiator") == 2
     assert not heavy._within_min_run(MODE_HEATING)
     assert light._within_min_run(MODE_HEATING)
+
+
+def test_a_long_afterglow_lookahead_does_not_pre_heat_past_the_switch():
+    """Pre-heat switched off (#478): the radiator's long lookahead must not start a run
+    for a target two hours away, only the greedy 30 min may see it."""
+    targets = [15.0] * 24 + [21.0] * 24
+    for tau in (10.0, 40.0, 60.0):
+        opt = MPCOptimizer(
+            BEDROOM,
+            can_cool=False,
+            heating_system_type="radiator",
+            min_run_blocks=2,
+            residual_scale=5.0,
+            residual_tau=tau,
+            preheat_max_blocks=0,
+        )
+        plan = _run(opt, targets, T=17.5)
+        # the greedy 30 min: the run starts at most 6 blocks before the rise (block 24)
+        assert plan.actions.index(MODE_HEATING) >= 24 - LOOKAHEAD_BASE_BLOCKS, tau
+
+
+def test_a_radiator_room_with_an_ac_keeps_the_base_lookahead():
+    opt = MPCOptimizer(BEDROOM, can_cool=True, heating_system_type="radiator", min_run_blocks=2, residual_tau=60.0)
+    _run(opt, [20.0] * 48)
+    assert opt._lookahead_blocks == LOOKAHEAD_BASE_BLOCKS
+
+
+def test_a_heat_capable_ac_keeps_the_regular_min_run():
+    from custom_components.roommind.control.residual_heat import heat_min_run_blocks
+
+    assert heat_min_run_blocks("radiator", 5.0, q_heat=1.95, scale=8.75, tau_minutes=22.9, fast_heater=True) == 2

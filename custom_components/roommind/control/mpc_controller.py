@@ -1530,6 +1530,7 @@ class MPCController:
             q_heat=self._model_manager.get_model(self._area_id).Q_heat,
             scale=self._residual_scale,
             tau_minutes=self._residual_tau,
+            fast_heater=check_acs_can_heat(self.hass, self.room_config),
         )
 
     def _direct_unit_running(self, mode: str, current_temp: float, targets: TargetTemps) -> bool:

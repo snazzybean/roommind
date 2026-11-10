@@ -349,7 +349,12 @@ def _simulate_mpc(
 
     rules = heating_system_type if run_system is None else run_system
     min_run = heat_min_run_blocks(
-        rules, PLAN_DT_MINUTES, q_heat=model.Q_heat, scale=residual_scale, tau_minutes=residual_tau
+        rules,
+        PLAN_DT_MINUTES,
+        q_heat=model.Q_heat,
+        scale=residual_scale,
+        tau_minutes=residual_tau,
+        fast_heater=acs_can_heat,
     )
     cool_min_run = get_min_run_blocks("", PLAN_DT_MINUTES)
     slow_heat = is_slow_heat(min_run)
