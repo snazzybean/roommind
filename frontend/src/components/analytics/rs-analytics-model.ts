@@ -31,6 +31,8 @@ export class RsAnalyticsModel extends LitElement {
     const n_heating = m?.n_heating ?? 0;
     const n_cooling = m?.n_cooling ?? 0;
     const applicable_modes = m?.applicable_modes ?? [];
+    const predStdIdle = m?.prediction_std_idle;
+    const predStdHeat = m?.prediction_std_heating;
 
     const mpcActive = m?.mpc_active ?? false;
     const confidencePct = Math.round(confidence * 100);
@@ -233,6 +235,30 @@ export class RsAnalyticsModel extends LitElement {
                     "analytics.occupancy_gain",
                     "",
                     "analytics.info.occupancy_gain",
+                  )
+                : nothing
+            }
+            ${stat(
+              "accuracy_idle",
+              hasIdleData && predStdIdle != null
+                ? "\u00B1" + toDisplayDelta(predStdIdle, this.hass).toFixed(2) + tempUnit(this.hass)
+                : ph,
+              "analytics.accuracy_idle",
+              "",
+              "analytics.info.accuracy_idle",
+            )}
+            ${
+              canHeat
+                ? stat(
+                    "accuracy_heating",
+                    hasHeated && predStdHeat != null
+                      ? "\u00B1" +
+                          toDisplayDelta(predStdHeat, this.hass).toFixed(2) +
+                          tempUnit(this.hass)
+                      : ph,
+                    "analytics.accuracy_heating",
+                    "",
+                    "analytics.info.accuracy_heating",
                   )
                 : nothing
             }
