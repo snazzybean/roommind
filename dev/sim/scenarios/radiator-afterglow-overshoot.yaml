@@ -97,7 +97,9 @@ roommind:
 expect:
   - {invariant: no_rejected_commands}
   # a run may end a little past the target; the stored heat must not carry the room ~1 K over
-  - {metric: room.run_overshoot_mean_k, room: wohnzimmer, max: 0.4, label: stored heat counted, known_failure: 'candidate (#493, PR #495): the fixed radiator profile expects ~0.1 K after a stop, this house gives ~0.9 K. v1.8.2: mean 1.0/1.04/0.82 K past the target per run, 28/30/32 runs over 0.5 K'}
-  - {metric: room.run_overshoot_mean_k, room: kinderzimmer, max: 0.4, label: stored heat counted, known_failure: 'candidate (#493, PR #495): the fixed radiator profile expects ~0.1 K after a stop, this house gives ~0.9 K. v1.8.2: mean 1.0/1.04/0.82 K past the target per run, 28/30/32 runs over 0.5 K'}
-  - {metric: room.run_overshoot_mean_k, room: schlafzimmer, max: 0.4, label: stored heat counted, known_failure: 'candidate (#493, PR #495): the fixed radiator profile expects ~0.1 K after a stop, this house gives ~0.9 K. v1.8.2: mean 1.0/1.04/0.82 K past the target per run, 28/30/32 runs over 0.5 K'}
+  # (v1.8.2: mean 1.0/1.04/0.82 K per run, 28/30/32 runs over 0.5 K; learned residual heat
+  # alone 0.55/0.59/0.63 K, with the single-block min run 0.26/0.24/0.30 K)
+  - {metric: room.run_overshoot_mean_k, room: wohnzimmer, max: 0.4, label: stored heat counted}
+  - {metric: room.run_overshoot_mean_k, room: kinderzimmer, max: 0.4, label: stored heat counted}
+  - {metric: room.run_overshoot_mean_k, room: schlafzimmer, max: 0.4, label: stored heat counted}
   - {metric: comfort.in_band_pct, room: wohnzimmer, min: 95}

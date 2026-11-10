@@ -70,7 +70,7 @@ from ..utils.device_utils import (
 from ..utils.temp_utils import celsius_delta_to_ha, celsius_to_ha_temp
 from .direct_valve import async_release_valve, async_set_valve, clear_valve_cache
 from .mpc_optimizer import MPCOptimizer, MPCPlan, preheat_max_blocks, slow_start_penalty
-from .residual_heat import get_min_run_blocks, mean_rebound
+from .residual_heat import get_min_run_blocks, heat_min_run_blocks, mean_rebound
 from .thermal_model import RoomModelManager
 
 if TYPE_CHECKING:
@@ -1514,9 +1514,23 @@ class MPCController:
         if self.previous_mode != mode or self._mode_on_since is None:
             return False
         # Cooling always runs on an AC; the UFH profile of a hybrid room is not its run time.
-        system = self._run_system if mode == MODE_HEATING else ""
-        min_run_seconds = get_min_run_blocks(system, PLAN_DT_MINUTES) * PLAN_DT_MINUTES * 60
-        return (time.time() - self._mode_on_since) < min_run_seconds
+        if mode == MODE_HEATING:
+            blocks = self._heat_min_run(self._run_system)
+        else:
+            blocks = get_min_run_blocks("", PLAN_DT_MINUTES)
+        return (time.time() - self._mode_on_since) < blocks * PLAN_DT_MINUTES * 60
+
+    def _heat_min_run(self, system: str) -> int:
+        """Heating min run in blocks; one block for radiators whose learned stored heat is large."""
+        if not self._mpc_enabled:
+            return get_min_run_blocks(system, PLAN_DT_MINUTES)
+        return heat_min_run_blocks(
+            system,
+            PLAN_DT_MINUTES,
+            q_heat=self._model_manager.get_model(self._area_id).Q_heat,
+            scale=self._residual_scale,
+            tau_minutes=self._residual_tau,
+        )
 
     def _direct_unit_running(self, mode: str, current_temp: float, targets: TargetTemps) -> bool:
         """Whether a run of *mode* is still a direct AC's own compressor run, which it ends itself.
@@ -1688,7 +1702,7 @@ class MPCController:
         # more with the rules of those sources, else the AC was started on the floor's
         # schedule and stopped by its own rules the next cycle.
         for _pass in range(2):
-            min_run = get_min_run_blocks(run_system, PLAN_DT_MINUTES)
+            min_run = self._heat_min_run(run_system)
 
             cooling_min, heating_max = outdoor_gate_limits(
                 self.outdoor_temp is not None or bool(self.outdoor_forecast),

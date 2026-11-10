@@ -232,6 +232,11 @@ RESIDUAL_TAU_MIN_RISE_K = 0.3  # the shape of a smaller rise is lost in the sens
 # stored-heat afterglow causes 30-60 min after a stop is inside what the plan weighs.
 # At the profile's 10 min this gives the base lookahead (6 blocks).
 RADIATOR_LOOKAHEAD_TAUS = 2.0
+# A radiator room whose learned afterglow of one regular min run lifts the room more than
+# this runs for a single block instead: the stored heat of a 10-min run overshot heavy
+# radiators by ~0.5 K even at the lowest power (the TRV opens fully once its head sits below
+# a boosted setpoint), so holding the target needs a smaller quantum.
+RADIATOR_SHORT_RUN_AFTERGLOW_K = 0.3
 
 # AC rebound: while an AC cools, the air drops below the building mass; after it
 # stops the air relaxes back within minutes. Charge relaxes towards the cooling

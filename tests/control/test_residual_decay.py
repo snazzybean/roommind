@@ -287,3 +287,57 @@ def test_short_run_check_is_skipped_for_a_far_block():
     opt._short_run_reaches = lambda *a, **k: calls.append(a) or original(*a, **k)
     opt._preheat_deadline(0, 19.3, [6.4] * len(far), far, 5.0, q_solar=[], q_occupancy=[])
     assert calls == []
+
+
+def test_heavy_radiators_get_a_single_block_min_run():
+    """A room that learned a large afterglow (real-house fit: scale ~9, tau ~23 min) heats in
+    5-min runs: the stored heat of a 10-min run alone carried it ~0.9 K past its target."""
+    from custom_components.roommind.control.residual_heat import get_min_run_blocks, heat_min_run_blocks
+
+    base = get_min_run_blocks("radiator", 5.0)
+    assert base == 2
+    assert heat_min_run_blocks("radiator", 5.0, q_heat=1.95, scale=8.75, tau_minutes=22.9) == 1
+
+
+def test_light_radiators_keep_the_regular_min_run():
+    from custom_components.roommind.control.residual_heat import heat_min_run_blocks
+
+    assert heat_min_run_blocks("radiator", 5.0, q_heat=3.0) == 2  # the profile: ~0.07 K
+    assert heat_min_run_blocks("radiator", 5.0, q_heat=0.0, scale=10.0) == 2
+    assert heat_min_run_blocks("underfloor", 5.0, q_heat=3.0, scale=10.0) == 6
+    assert heat_min_run_blocks("", 5.0, q_heat=3.0, scale=10.0) == 2
+
+
+def test_controller_min_run_follows_the_learned_afterglow():
+    import time
+    from unittest.mock import MagicMock
+
+    from custom_components.roommind.control.mpc_controller import MPCController
+
+    from .conftest import build_hass, make_room
+
+    manager = MagicMock()
+    manager.get_model.return_value = OLIVER
+    room = make_room(heating_system_type="radiator")
+
+    def ctrl(scale):
+        c = MPCController(
+            build_hass(),
+            room,
+            model_manager=manager,
+            outdoor_temp=0.0,
+            settings={},
+            has_external_sensor=True,
+            heating_system_type="radiator",
+            residual_scale=scale,
+            residual_tau=30.0,
+        )
+        c.previous_mode = MODE_HEATING
+        c._mode_on_since = time.time() - 6 * 60
+        return c
+
+    heavy, light = ctrl(9.0), ctrl(1.0)
+    assert heavy._heat_min_run("radiator") == 1
+    assert light._heat_min_run("radiator") == 2
+    assert not heavy._within_min_run(MODE_HEATING)
+    assert light._within_min_run(MODE_HEATING)
