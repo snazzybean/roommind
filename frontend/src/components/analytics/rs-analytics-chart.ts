@@ -18,6 +18,7 @@ import {
   priceVisualMap,
 } from "../../utils/chart-builder";
 import { humidityVisualMap, type HumidityColors } from "../../utils/humidity";
+import { tempUnit } from "../../utils/temperature";
 
 // Series drawn for another legend entry: hiding that entry hides them too
 const LEGEND_OWNER: Record<string, string> = {
@@ -169,7 +170,7 @@ export class RsAnalyticsChart extends LitElement {
     return html`
       <ha-card>
         <div class="card-header">
-          <span>${localize("analytics.temperature", l)}</span>
+          <span>${localize("analytics.history_chart", l)}</span>
           <ha-icon
             class="info-icon chart-info-toggle ${this._chartInfoExpanded ? "info-active" : ""}"
             icon="mdi:information-outline"
@@ -196,10 +197,13 @@ export class RsAnalyticsChart extends LitElement {
                     .height=${`${chartHeight(panels)}px`}
                     style="height: ${chartHeight(panels)}px; --chart-max-height: ${chartHeight(panels)}px"
                   ></ha-chart-base>
-                  ${panels.map(
+                  ${(["main", ...panels] as const).map(
                     (p, i) =>
                       html`<div class="panel-title" style="top: ${tops[i] - 17}px">
-                        ${panelTitle(p, l, this.data?.price_unit ?? "")}
+                        ${panelTitle(p, l, {
+                          temp: tempUnit(this.hass),
+                          price: this.data?.price_unit ?? "",
+                        })}
                       </div>`,
                   )}
                 </div>

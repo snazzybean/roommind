@@ -34,12 +34,8 @@ export const TARGET_REASON_GROUPS: readonly TargetReasonGroup[] = [
     label: "analytics.reason_group.mold",
     reasons: ["mold"],
   },
-  {
-    id: "price",
-    color: "rgb(191, 144, 0)",
-    label: "analytics.reason_group.price",
-    reasons: ["price"],
-  },
+  // No group for the price: the price has its own plot below, a gold line on the target
+  // repeated it and confused (owner 2026-11-10); the tooltip still names it
 ];
 
 export const REASON_LABELS: Record<TargetReason, TranslationKey> = {

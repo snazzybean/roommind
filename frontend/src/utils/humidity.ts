@@ -73,6 +73,5 @@ export function humidityAxis(
     min: Math.max(Math.floor(min / 20) * 20, 0),
     max: Math.min(Math.ceil(max / 20) * 20, 100),
     interval: 20,
-    axisLabel: { formatter: "{value} %" },
   };
 }

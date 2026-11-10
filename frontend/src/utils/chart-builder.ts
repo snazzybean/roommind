@@ -14,7 +14,7 @@ const HUMIDITY_COLOR = "rgb(233, 30, 99)";
 const MAX_SAMPLE_GAP_MS = 900_000;
 const CHART_HEIGHT = 300;
 const MAIN_PLOT_HEIGHT = 252;
-const MAIN_TOP = 15;
+const MAIN_TOP = 22;
 const PANEL_GAP = 24;
 const PANEL_BOTTOM = 24;
 
@@ -104,24 +104,33 @@ function zoomOptions(axes: number[], touch: boolean, zoomed: boolean): Record<st
   };
 }
 
-const PANEL_TITLE_KEYS: Record<SubPanel, TranslationKey> = {
+const PANEL_TITLE_KEYS: Record<SubPanel | "main", TranslationKey> = {
+  main: "analytics.temperature",
   outdoor: "analytics.panel_outdoor",
   humidity: "analytics.humidity",
   price: "analytics.price",
 };
 
-/** Heading of a panel below the temperature (also groups its values in the tooltip). */
-export function panelTitle(panel: SubPanel, language: string, priceUnit = ""): string {
+/** Heading of a plot, all alike with the unit in brackets (the axes carry plain numbers). */
+export function panelTitle(
+  panel: SubPanel | "main",
+  language: string,
+  units: { temp: string; price: string },
+): string {
   const title = localize(PANEL_TITLE_KEYS[panel], language);
-  return panel === "price" && priceUnit ? `${title} (${priceUnit})` : title;
+  const unit = panel === "humidity" ? "%" : panel === "price" ? units.price : units.temp;
+  return unit ? `${title} (${unit})` : title;
 }
 
-/** Distance from the chart top to the top of each panel's plot, in panel order. */
+/** Distance from the chart top to the top of each plot: the temperature first, then the panels. */
 export function panelTops(panels: readonly SubPanel[]): number[] {
   const total = chartHeight(panels);
-  return panels.map(
-    (p, i) => total - PANEL_BOTTOM - panelsHeight(panels.slice(i + 1)) - SUB_PANELS[p].height,
-  );
+  return [
+    MAIN_TOP,
+    ...panels.map(
+      (p, i) => total - PANEL_BOTTOM - panelsHeight(panels.slice(i + 1)) - SUB_PANELS[p].height,
+    ),
+  ];
 }
 
 /**
@@ -584,10 +593,8 @@ export function buildChartOptions(
   const panels = ctx.panels ?? [];
   const unit = tempUnit(hass);
 
-  const yAxis: Record<string, unknown> = {
-    type: "value",
-    name: unit,
-  };
+  // The unit sits in the heading above the plot (panelTitle)
+  const yAxis: Record<string, unknown> = { type: "value" };
 
   if (visibleY.length > 0) {
     let minVal = Infinity;
@@ -786,7 +793,6 @@ function outdoorAxis(
     min: Math.floor(min - 1),
     max: Math.ceil(max + 1),
     splitNumber: 2,
-    axisLabel: { formatter: `{value}${tempUnit(hass)}` },
   };
 }
 

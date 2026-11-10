@@ -45,23 +45,29 @@ export class RsAnalyticsModel extends LitElement {
     const n_observations = m?.n_observations ?? n_samples;
     const ph = "\u2014";
 
-    const statItems: Array<{ id: string; labelKey: TranslationKey; infoKey: TranslationKey }> = [];
+    const statItems: Array<{
+      id: string;
+      labelKey: TranslationKey;
+      infoKey: TranslationKey;
+      detail?: string;
+    }> = [];
+    // ``detail`` (reference, current figures) goes into the info panel, not under the value:
+    // second lines in some tiles made the grid look restless
     const stat = (
       id: string,
       value: string | number,
       labelKey: TranslationKey,
       unit: string,
       infoKey: TranslationKey,
-      sub?: string,
+      detail?: string,
     ) => {
-      statItems.push({ id, labelKey, infoKey });
+      statItems.push({ id, labelKey, infoKey, detail });
       const active = this._expandedStat === id;
       return html`
         <div class="model-stat ${active ? "active" : ""}" @click=${() => this._toggleStat(id)}>
           <div class="stat-content">
             <span class="model-value ${value === ph ? "pending" : ""}">${value}</span>
             <span class="model-label">${localize(labelKey, l)}${unit ? ` (${unit})` : ""}</span>
-            ${sub ? html`<span class="model-sub">${sub}</span>` : nothing}
           </div>
           <ha-icon
             class="info-icon ${active ? "info-active" : ""}"
@@ -182,7 +188,7 @@ export class RsAnalyticsModel extends LitElement {
               canHeat && hasHeated && m?.afterglow_k != null
                 ? stat(
                     "afterglow",
-                    this._afterglowValue(m.afterglow_k),
+                    m.afterglow_learned ? this._afterglowValue(m.afterglow_k) : ph,
                     "analytics.afterglow",
                     "",
                     "analytics.info.afterglow",
@@ -267,6 +273,13 @@ export class RsAnalyticsModel extends LitElement {
                     )}</strong
                   >
                   ${localize(statItems.find((s) => s.id === this._expandedStat)!.infoKey, l)}
+                  ${
+                    statItems.find((s) => s.id === this._expandedStat)!.detail
+                      ? html`<div class="stat-detail">
+                          ${statItems.find((s) => s.id === this._expandedStat)!.detail}
+                        </div>`
+                      : nothing
+                  }
                 </div>`
               : nothing
           }
@@ -455,9 +468,8 @@ export class RsAnalyticsModel extends LitElement {
         color: var(--secondary-text-color);
       }
 
-      .model-sub {
-        font-size: 11px;
-        color: var(--secondary-text-color);
+      .stat-detail {
+        margin-top: 6px;
       }
 
       .info-panel.stat-info-panel {
