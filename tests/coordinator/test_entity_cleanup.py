@@ -439,8 +439,8 @@ class TestRoomClimateEntity:
         coordinator.async_request_refresh.assert_awaited_once()
 
 
-def test_cleanup_removes_residual_switch_outside_radiator_rooms(hass, mock_config_entry):
-    """The residual heat switch is orphaned once a room no longer heats with radiators."""
+def test_cleanup_removes_leftover_residual_heat_switches(hass, mock_config_entry):
+    """The per-room residual heat switch is gone: entities a pre-release build created are orphaned."""
     from custom_components.roommind.const import DOMAIN
 
     coordinator = _create_coordinator(hass, mock_config_entry)
@@ -465,23 +465,4 @@ def test_cleanup_removes_residual_switch_outside_radiator_rooms(hass, mock_confi
         coordinator.cleanup_orphaned_entities()
 
     removed_ids = [c.args[0] for c in mock_registry.async_remove.call_args_list]
-    assert removed_ids == ["switch.roommind_bathroom_residual_heat"]
-
-
-@pytest.mark.asyncio
-async def test_room_added_creates_residual_switch_once_for_radiator_room(hass, mock_config_entry):
-    coordinator = _create_coordinator(hass, mock_config_entry)
-    coordinator.async_request_refresh = AsyncMock()
-    coordinator.async_add_entities = MagicMock()
-    coordinator.async_add_switch_entities = MagicMock()
-
-    from custom_components.roommind.switch import RoomMindResidualHeatSwitch
-
-    await coordinator.async_room_added({"area_id": "living_room", "heating_system_type": "radiator"})
-    await coordinator.async_room_added({"area_id": "living_room", "heating_system_type": "radiator"})
-    await coordinator.async_room_added({"area_id": "bathroom", "heating_system_type": "underfloor"})
-
-    added = [e for c in coordinator.async_add_switch_entities.call_args_list for e in c.args[0]]
-    residual = [e for e in added if isinstance(e, RoomMindResidualHeatSwitch)]
-    assert [e._area_id for e in residual] == ["living_room"]
-    assert coordinator._residual_switch_areas == {"living_room"}
+    assert removed_ids == ["switch.roommind_living_room_residual_heat", "switch.roommind_bathroom_residual_heat"]
