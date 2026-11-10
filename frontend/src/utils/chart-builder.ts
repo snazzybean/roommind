@@ -26,9 +26,9 @@ const PANEL_BOTTOM = 24;
  */
 export type SubPanel = "outdoor" | "humidity" | "price";
 export const SUB_PANELS: Record<SubPanel, { height: number; series: string }> = {
-  outdoor: { height: 56, series: "outdoor_temp" },
-  humidity: { height: 70, series: "humidity" },
-  price: { height: 56, series: "price" },
+  outdoor: { height: 68, series: "outdoor_temp" },
+  humidity: { height: 84, series: "humidity" },
+  price: { height: 68, series: "price" },
 };
 export const SUB_PANEL_ORDER: readonly SubPanel[] = ["outdoor", "humidity", "price"];
 // Neutral: the line and area take the level colours (priceVisualMap), gold is the price target
