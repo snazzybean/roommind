@@ -788,7 +788,10 @@ def _parser() -> argparse.ArgumentParser:
     shot.add_argument("--wait", type=float, default=4.0, help="seconds to let the panel settle")
     shot.add_argument("--full", action="store_true", help="full page")
     shot.add_argument(
-        "--do", action="append", default=[], help="click:<text> | css:<selector> | wait:<ms> | scroll:<px>, repeatable"
+        "--do",
+        action="append",
+        default=[],
+        help="click:<text> | css:<selector> | hover:<selector>[@x,y] | wait:<ms> | scroll:<px>, repeatable",
     )
     shot.add_argument("--out")
     shot.set_defaults(func=cmd_shot)

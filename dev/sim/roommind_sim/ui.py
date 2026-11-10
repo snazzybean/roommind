@@ -106,7 +106,7 @@ def screenshot(
 
 
 def _run_ui_action(page: Any, action: str) -> None:
-    """``click:<text>`` / ``css:<selector>`` / ``wait:<ms>`` / ``scroll:<px>`` for simple flows before the shot.
+    """``click:<text>`` / ``css:<selector>`` / ``hover:<selector>`` / ``wait:<ms>`` / ``scroll:<px>`` before the shot.
 
     ``css:`` clicks the first match of a selector (Playwright pierces shadow roots), for
     icon buttons without text, e.g. ``css:rs-section-card:has-text("Sensoren") .edit-btn``.
@@ -118,10 +118,19 @@ def _run_ui_action(page: Any, action: str) -> None:
     elif kind == "css":
         page.locator(arg).first.click()
         page.wait_for_timeout(1200)
+    elif kind == "hover":
+        # Pointer over the element (centre, or ``@x,y`` from its top left), e.g. a chart tooltip
+        selector, _, at = arg.partition("@")
+        if at:
+            x, _, y = at.partition(",")
+            page.locator(selector).first.hover(position={"x": float(x), "y": float(y)})
+        else:
+            page.locator(selector).first.hover()
+        page.wait_for_timeout(800)
     elif kind == "wait":
         page.wait_for_timeout(float(arg))
     elif kind == "scroll":
         page.mouse.wheel(0, float(arg))
         page.wait_for_timeout(600)
     else:
-        raise ValueError(f"unknown ui action {action!r} (click:, css:, wait:, scroll:)")
+        raise ValueError(f"unknown ui action {action!r} (click:, css:, hover:, wait:, scroll:)")

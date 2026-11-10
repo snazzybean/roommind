@@ -13,6 +13,9 @@ import {
   placeOnPanels,
   visiblePanels,
   type ChartBuildContext,
+  panelTitle,
+  panelTops,
+  priceVisualMap,
 } from "../../utils/chart-builder";
 import { humidityVisualMap, type HumidityColors } from "../../utils/humidity";
 
@@ -21,6 +24,8 @@ const LEGEND_OWNER: Record<string, string> = {
   target_band_base: "target_temp",
   target_band: "target_temp",
   humidity_limits: "humidity",
+  humidity_band_base: "humidity",
+  humidity_band: "humidity",
 };
 // Per-panel copies of the window band and the "now" line carry the panel in their id
 const legendOwner = (id: string) =>
@@ -43,8 +48,8 @@ export class RsAnalyticsChart extends LitElement {
   @property({ type: Number }) public chartAnchor = 0;
   @property({ type: String }) public language = "en";
   @property({ type: Boolean }) public isOutdoor = false;
-  /** Room judged on both sides (auto): shade the band between heat and cool target. */
-  @property({ type: Boolean }) public targetBand = false;
+  /** Sides the room is judged on (auto both, heat only, cool only): shades that range. */
+  @property({ attribute: false }) public targetBand: "both" | "heat" | "cool" | null = null;
 
   @state() private _hiddenSeries = new Set(["device_target"]);
   @state() private _chartInfoExpanded = false;
@@ -106,6 +111,7 @@ export class RsAnalyticsChart extends LitElement {
       forecast: this.data?.forecast,
       isOutdoor: this.isOutdoor,
       targetBand: this.targetBand,
+      priceUnit: this.data?.price_unit ?? "",
       touch: this._touch,
       zoomed: this._zoomed,
     };
@@ -145,14 +151,20 @@ export class RsAnalyticsChart extends LitElement {
     });
 
     const options = buildChartOptions(visibleY, allPoints, chartCtx);
+    const visualMaps: Array<Record<string, unknown>> = [];
     const humidity = displaySeries.find((s) => s.id === "humidity");
     if (humidity) {
-      options.visualMap = humidityVisualMap(
-        "humidity",
-        humidity.data as Array<[number, number]>,
-        this._humidityColors(),
+      visualMaps.push(
+        humidityVisualMap(
+          "humidity",
+          humidity.data as Array<[number, number]>,
+          this._humidityColors(),
+        ),
       );
     }
+    if (panels.includes("price")) visualMaps.push(priceVisualMap(points, this._priceColors()));
+    if (visualMaps.length > 0) options.visualMap = visualMaps;
+    const tops = panelTops(panels);
 
     return html`
       <ha-card>
@@ -176,13 +188,21 @@ export class RsAnalyticsChart extends LitElement {
         ${
           points.length > 0
             ? html`
-                <ha-chart-base
-                  .hass=${this.hass}
-                  .data=${displaySeries}
-                  .options=${options}
-                  .height=${`${chartHeight(panels)}px`}
-                  style="height: ${chartHeight(panels)}px; --chart-max-height: ${chartHeight(panels)}px"
-                ></ha-chart-base>
+                <div class="chart-wrap">
+                  <ha-chart-base
+                    .hass=${this.hass}
+                    .data=${displaySeries}
+                    .options=${options}
+                    .height=${`${chartHeight(panels)}px`}
+                    style="height: ${chartHeight(panels)}px; --chart-max-height: ${chartHeight(panels)}px"
+                  ></ha-chart-base>
+                  ${panels.map(
+                    (p, i) =>
+                      html`<div class="panel-title" style="top: ${tops[i] - 17}px">
+                        ${panelTitle(p, l, this.data?.price_unit ?? "")}
+                      </div>`,
+                  )}
+                </div>
                 ${this._renderSeriesLegend(allSeries)}
                 <div class="zoom-hint">
                   ${localize(this._touch ? "analytics.zoom_hint_touch" : "analytics.zoom_hint", l)}
@@ -224,6 +244,17 @@ export class RsAnalyticsChart extends LitElement {
         })}
       </div>
     `;
+  }
+
+  private _priceColors() {
+    const style = getComputedStyle(this);
+    const token = (name: string, fallback: string) =>
+      style.getPropertyValue(name).trim() || fallback;
+    return {
+      cheap: token("--success-color", "#4caf50"),
+      normal: token("--secondary-text-color", "#8a8a8a"),
+      expensive: token("--error-color", "#db4437"),
+    };
   }
 
   private _humidityColors(): HumidityColors {
@@ -272,6 +303,20 @@ export class RsAnalyticsChart extends LitElement {
 
       ha-card {
         margin-bottom: 16px;
+      }
+
+      .chart-wrap {
+        position: relative;
+      }
+
+      /* Heading of each plot below the temperature, in the gap above it (chart-builder PANEL_GAP) */
+      .panel-title {
+        position: absolute;
+        left: 46px;
+        font-size: 11px;
+        line-height: 14px;
+        color: var(--secondary-text-color);
+        pointer-events: none;
       }
 
       .card-header {

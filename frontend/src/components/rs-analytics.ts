@@ -12,6 +12,13 @@ import "./analytics/rs-analytics-chart";
 import "./analytics/rs-analytics-rhythm";
 import "./analytics/rs-analytics-model";
 
+/** Sides a room is judged on, same rule as the summary (one-sided rooms on their own side only). */
+function bandSides(mode: string | undefined): "both" | "heat" | "cool" {
+  if (mode === "heat_only") return "heat";
+  if (mode === "cool_only") return "cool";
+  return "both";
+}
+
 @customElement("rs-analytics")
 export class RsAnalytics extends LitElement {
   @property({ attribute: false }) public hass!: HomeAssistant;
@@ -105,7 +112,7 @@ export class RsAnalytics extends LitElement {
                   .chartAnchor=${this._chartAnchor}
                   .language=${l}
                   .isOutdoor=${this.rooms[this._selectedRoom]?.is_outdoor ?? false}
-                  .targetBand=${(this.rooms[this._selectedRoom]?.climate_mode ?? "auto") === "auto"}
+                  .targetBand=${bandSides(this.rooms[this._selectedRoom]?.climate_mode)}
                 ></rs-analytics-chart>
                 ${
                   !this.rooms[this._selectedRoom]?.is_outdoor

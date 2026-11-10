@@ -2,8 +2,8 @@
  * Pure functions to build ECharts series and options for analytics charts.
  */
 import type { AnalyticsDataPoint } from "../types";
-import { localize } from "./localize";
-import { formatTemp, tempUnit, toDisplay } from "./temperature";
+import { localize, type TranslationKey } from "./localize";
+import { formatTemp, tempUnit, toDisplay, toDisplayDelta } from "./temperature";
 import type { HomeAssistant } from "../types";
 import { HUMIDITY_LEVELS, humidityAxis, humidityLevel } from "./humidity";
 import { REASON_LABELS, TARGET_REASON_GROUPS, targetReasons } from "./target-reason";
@@ -31,7 +31,12 @@ export const SUB_PANELS: Record<SubPanel, { height: number; series: string }> = 
   price: { height: 56, series: "price" },
 };
 export const SUB_PANEL_ORDER: readonly SubPanel[] = ["outdoor", "humidity", "price"];
-const PRICE_COLOR = "rgb(191, 144, 0)";
+// Neutral: the line and area take the level colours (priceVisualMap), gold is the price target
+const PRICE_COLOR = "rgb(128, 128, 128)";
+/** Mirrors COMFORT_TOLERANCE_K (analytics_stats): the summary counts this far outside as on target. */
+const COMFORT_TOLERANCE_K = 0.5;
+// Far past any axis: a one-sided band runs off the plot (series are clipped to the grid)
+const BAND_OPEN_K = 100;
 // The panels share an x axis, so both plots start at a fixed left edge instead of containLabel
 const PANEL_LEFT = 46;
 // Visible on light and dark cards alike
@@ -47,8 +52,14 @@ export interface ChartBuildContext {
   isOutdoor?: boolean;
   /** Panels shown below the temperature, top to bottom (see SUB_PANELS). */
   panels?: SubPanel[];
-  /** Shade the band between heat and cool target (auto rooms, judged on both sides). */
-  targetBand?: boolean;
+  /**
+   * Shade the range the summary counts as on target: between heat and cool target (auto),
+   * from the heat target up (heat only) or from the cool target down (cool only), widened by
+   * the comfort tolerance. None: no band.
+   */
+  targetBand?: "both" | "heat" | "cool" | null;
+  /** Unit of the price source (ct/kWh, EUR/kWh, ...), empty when unknown or a switch. */
+  priceUnit?: string;
   /** Touch screen: pinch zooms, one finger pans only once zoomed so the page still scrolls. */
   touch?: boolean;
   zoomed?: boolean;
@@ -91,6 +102,53 @@ function zoomOptions(axes: number[], touch: boolean, zoomed: boolean): Record<st
       iconStyle: { opacity: 0 },
     },
   };
+}
+
+const PANEL_TITLE_KEYS: Record<SubPanel, TranslationKey> = {
+  outdoor: "analytics.panel_outdoor",
+  humidity: "analytics.humidity",
+  price: "analytics.price",
+};
+
+/** Heading of a panel below the temperature (also groups its values in the tooltip). */
+export function panelTitle(panel: SubPanel, language: string, priceUnit = ""): string {
+  const title = localize(PANEL_TITLE_KEYS[panel], language);
+  return panel === "price" && priceUnit ? `${title} (${priceUnit})` : title;
+}
+
+/** Distance from the chart top to the top of each panel's plot, in panel order. */
+export function panelTops(panels: readonly SubPanel[]): number[] {
+  const total = chartHeight(panels);
+  return panels.map(
+    (p, i) => total - PANEL_BOTTOM - panelsHeight(panels.slice(i + 1)) - SUB_PANELS[p].height,
+  );
+}
+
+/**
+ * Colours the price line and the area under it by the level RoomMind saw (cheap, normal,
+ * expensive), along time like the humidity. Bounds stay finite (see humidityVisualMap).
+ */
+export function priceVisualMap(
+  points: AnalyticsDataPoint[],
+  colors: { cheap: string; normal: string; expensive: string },
+) {
+  const pieces: Array<Record<string, number | string>> = [];
+  const priced = points.filter((p) => p.price != null);
+  let start = priced.length > 0 ? priced[0].ts * 1000 : 0;
+  let current: string | null = null;
+  for (const p of priced) {
+    const level =
+      p.price_level === "cheap" || p.price_level === "expensive" ? p.price_level : "normal";
+    const color = colors[level];
+    if (color === current) continue;
+    if (current !== null) pieces.push({ gte: start, lt: p.ts * 1000, color: current });
+    start = p.ts * 1000;
+    current = color;
+  }
+  if (current !== null) {
+    pieces.push({ gte: start, lte: priced[priced.length - 1].ts * 1000, color: current });
+  }
+  return { type: "piecewise", show: false, seriesId: "price", dimension: 0, pieces };
 }
 
 export function chartHeight(panels: readonly SubPanel[]): number {
@@ -171,11 +229,17 @@ export function buildChartSeries(
   const humidityData: Array<[number, number]> = [];
   const bandBaseData: Array<[number, number | null]> = [];
   const bandData: Array<[number, number | null]> = [];
+  const tol = toDisplayDelta(COMFORT_TOLERANCE_K, hass);
+  const open = toDisplayDelta(BAND_OPEN_K, hass);
   const pushBand = (p: AnalyticsDataPoint) => {
     const ts = p.ts * 1000;
-    if (p.heat_target != null && p.cool_target != null && p.cool_target >= p.heat_target) {
-      bandBaseData.push([ts, d(p.heat_target)]);
-      bandData.push([ts, d(p.cool_target) - d(p.heat_target)]);
+    const heat = targetBand !== "cool" && p.heat_target != null ? d(p.heat_target) - tol : null;
+    const cool = targetBand !== "heat" && p.cool_target != null ? d(p.cool_target) + tol : null;
+    const low = targetBand === "cool" ? (cool != null ? cool - open : null) : heat;
+    const high = targetBand === "heat" ? (heat != null ? heat + open : null) : cool;
+    if (low != null && high != null && high >= low) {
+      bandBaseData.push([ts, low]);
+      bandData.push([ts, high - low]);
     } else {
       bandBaseData.push([ts, null]);
       bandData.push([ts, null]);
@@ -397,12 +461,48 @@ export function buildChartSeries(
       showSymbol: false,
       smooth: true,
       lineStyle: { width: 2 },
-      // No colour: the area takes the level colours of the visualMap
-      areaStyle: { opacity: 0.12, origin: "start" },
       panel: "humidity",
     });
     const x0 = ctx.rangeStart;
     const x1 = chartAnchor + FORECAST_MS;
+    // The good range as a fixed band, like the target range on the temperature: whether the
+    // line is inside reads at a glance, an area under the curve said nothing about it
+    const goodSpan = HUMIDITY_LEVELS.humid - HUMIDITY_LEVELS.dry;
+    series.push(
+      {
+        id: "humidity_band_base",
+        type: "line",
+        name: "",
+        data: [
+          [x0, HUMIDITY_LEVELS.dry],
+          [x1, HUMIDITY_LEVELS.dry],
+        ],
+        stack: "humidity_band",
+        showSymbol: false,
+        lineStyle: { width: 0 },
+        tooltip: { show: false },
+        silent: true,
+        z: -1,
+        panel: "humidity",
+      },
+      {
+        id: "humidity_band",
+        type: "line",
+        name: "",
+        data: [
+          [x0, goodSpan],
+          [x1, goodSpan],
+        ],
+        stack: "humidity_band",
+        showSymbol: false,
+        lineStyle: { width: 0 },
+        areaStyle: { color: "rgba(76, 175, 80, 0.12)" },
+        tooltip: { show: false },
+        silent: true,
+        z: -1,
+        panel: "humidity",
+      },
+    );
     series.push({
       id: "humidity_limits",
       type: "line",
@@ -437,31 +537,11 @@ export function buildChartSeries(
       data: priceData,
       showSymbol: false,
       step: "end",
-      lineStyle: { width: 1.5 },
+      lineStyle: { width: 2 },
+      // No colour: line and area take the level colours of priceVisualMap
+      areaStyle: { opacity: 0.15, origin: "start" },
       panel: "price",
     });
-    for (const [level, color] of [
-      ["cheap", "rgba(76, 175, 80, 0.18)"],
-      ["expensive", "rgba(244, 67, 54, 0.14)"],
-    ] as const) {
-      const data = stretch(points, (p) => (p.price_level === level ? 1e9 : null));
-      if (!hasValue(data)) continue;
-      series.push({
-        id: `price_${level}_events`,
-        type: "line",
-        name: "",
-        color,
-        data,
-        showSymbol: false,
-        lineStyle: { width: 0 },
-        areaStyle: { color, origin: "start" },
-        tooltip: { show: false },
-        silent: true,
-        connectNulls: false,
-        z: -1,
-        panel: "price",
-      });
-    }
   }
 
   const nowMarker = {
@@ -583,6 +663,10 @@ export function buildChartOptions(
         const date = new Date(params[0].value[0]);
         const time = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
         let markup = `<div style="font-weight:500;margin-bottom:4px">${time}</div>`;
+        // Rows per panel, each panel under its own heading, so a value reads with its plot
+        const groups = new Map<SubPanel | "main", string[]>();
+        const panelOf = (sid: string): SubPanel | "main" =>
+          SUB_PANEL_ORDER.find((p) => SUB_PANELS[p].series === sid) ?? "main";
         let roomVal: number | null = null;
         let predVal: number | null = null;
         const hoverTs = params[0].value[0] / 1000;
@@ -601,6 +685,7 @@ export function buildChartOptions(
             sid.endsWith("_events") ||
             sid.startsWith("target_band") ||
             sid.startsWith("target_reason_") ||
+            sid.startsWith("humidity_band") ||
             sid === "humidity_limits"
           ) {
             continue;
@@ -615,6 +700,7 @@ export function buildChartOptions(
           }
           if (sid === "price") {
             value = new Intl.NumberFormat(l, { maximumSignificantDigits: 4 }).format(v);
+            if (ctx.priceUnit) value += `\u00A0${ctx.priceUnit}`;
             const level = closest?.price_level;
             if (level === "cheap" || level === "normal" || level === "expensive") {
               value += ` (${localize(`settings.price_level_${level}`, l)})`;
@@ -624,14 +710,25 @@ export function buildChartOptions(
             const reasons = targetReasons(closest).map((r) => localize(REASON_LABELS[r], l));
             if (reasons.length > 0) value += ` (${reasons.join(", ")})`;
           }
-          markup += `<div>${p.color ? `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${p.color};margin-right:6px"></span>` : ""}${p.seriesName}: ${value}</div>`;
+          const group = panelOf(sid);
+          const rows = groups.get(group) ?? [];
+          rows.push(
+            `<div>${p.color ? `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${p.color};margin-right:6px"></span>` : ""}${p.seriesName}: ${value}</div>`,
+          );
+          groups.set(group, rows);
           if (p.seriesId === "room_temp") roomVal = v;
           if (p.seriesId === "predicted_temp") predVal = v;
         }
+        markup += (groups.get("main") ?? []).join("");
         if (roomVal !== null && predVal !== null) {
           const delta = roomVal - predVal;
           const sign = delta >= 0 ? "+" : "";
           markup += `<div style="border-top:1px solid rgba(128,128,128,0.3);margin-top:4px;padding-top:4px">${localize("analytics.prediction_delta", l)}: ${sign}${delta.toFixed(2)}\u00A0${unit}</div>`;
+        }
+        for (const panel of SUB_PANEL_ORDER) {
+          const rows = groups.get(panel);
+          if (!rows) continue;
+          markup += `<div style="border-top:1px solid rgba(128,128,128,0.3);margin-top:4px;padding-top:4px">${rows.join("")}</div>`;
         }
         if (closest) {
           const parts: string[] = [];

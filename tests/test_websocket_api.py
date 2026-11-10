@@ -3205,10 +3205,15 @@ async def test_analytics_model_reports_solar_gain_now_and_today(ws_hass, store, 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("system", "learned", "expected"),
-    [("radiator", True, {"afterglow_k": 0.95, "afterglow_minutes": 23, "afterglow_learned": True}), ("", False, None)],
+    ("system", "learned", "ac_heats", "expected"),
+    [
+        ("radiator", True, False, {"afterglow_k": 0.95, "afterglow_minutes": 23, "afterglow_learned": True}),
+        ("", False, False, None),
+        # a heat-capable AC: the room never learns its afterglow, no "not measured yet" for good
+        ("radiator", False, True, None),
+    ],
 )
-async def test_analytics_model_reports_the_afterglow(ws_hass, store, connection, system, learned, expected):
+async def test_analytics_model_reports_the_afterglow(ws_hass, store, connection, system, learned, ac_heats, expected):
     """Radiator rooms: how far a regular run's stored heat lifts the room after the stop
     (learned scale and decay time), so the page shows why a room overshoots."""
     await store.async_load()
@@ -3230,7 +3235,10 @@ async def test_analytics_model_reports_the_afterglow(ws_hass, store, connection,
     ws_hass.data[DOMAIN]["coordinator"] = coordinator
 
     msg = {"id": 63, "type": "roommind/analytics/get", "area_id": "room_a"}
-    with patch("custom_components.roommind.services.analytics_service.clear_sky_peak_today", return_value=0.0):
+    with (
+        patch("custom_components.roommind.services.analytics_service.clear_sky_peak_today", return_value=0.0),
+        patch("custom_components.roommind.services.analytics_service.check_acs_can_heat", return_value=ac_heats),
+    ):
         await _get_analytics(ws_hass, connection, msg)
 
     model = connection.send_result.call_args[0][1]["model"]
@@ -3329,3 +3337,21 @@ def test_setback_auto_off_schema_has_no_default():
     assert on["setback_auto_off"] is True
     with pytest.raises(vol.Invalid):
         _validate({"entity_id": "climate.ac", "type": "ac", "setback_auto_off": "yes"})
+
+
+@pytest.mark.asyncio
+async def test_analytics_reports_the_price_unit(ws_hass, store, connection):
+    """The price panel labels its axis with the source's unit (ct/kWh, EUR/kWh, ...)."""
+    await store.async_load()
+    await store.async_save_room("room_a", {"thermostats": ["climate.trv1"]})
+    await store.async_save_settings({"price_entity": "sensor.strompreis"})
+    price_state = MagicMock()
+    price_state.attributes = {"unit_of_measurement": "ct/kWh"}
+    ws_hass.states.get = MagicMock(side_effect=lambda eid: price_state if eid == "sensor.strompreis" else None)
+    coordinator = _make_analytics_coordinator(history_rows=[])
+    ws_hass.data[DOMAIN]["coordinator"] = coordinator
+
+    msg = {"id": 64, "type": "roommind/analytics/get", "area_id": "room_a"}
+    await _get_analytics(ws_hass, connection, msg)
+
+    assert connection.send_result.call_args[0][1]["price_unit"] == "ct/kWh"

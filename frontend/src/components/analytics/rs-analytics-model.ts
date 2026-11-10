@@ -413,10 +413,12 @@ export class RsAnalyticsModel extends LitElement {
         gap: 12px;
       }
 
+      /* Everything from the top: centred, a tile with a second line shifted its value up */
       .model-stat {
         display: flex;
-        align-items: center;
+        align-items: flex-start;
         justify-content: space-between;
+        gap: 4px;
         padding: 10px 12px;
         border-radius: 8px;
         border: 1px solid var(--divider-color);
@@ -432,11 +434,15 @@ export class RsAnalyticsModel extends LitElement {
         display: flex;
         flex-direction: column;
         gap: 2px;
+        min-width: 0;
       }
 
       .model-value {
         font-size: 18px;
+        line-height: 24px;
         font-weight: 500;
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
         color: var(--primary-text-color);
       }
 

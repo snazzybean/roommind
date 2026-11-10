@@ -45,14 +45,16 @@ def clear_sky_peak_today(latitude: float, longitude: float, now: float) -> float
     )
 
 
-def _afterglow_figures(room_config: dict, est: Any, q_heat: float) -> dict:
+def _afterglow_figures(room_config: dict, est: Any, q_heat: float, acs_can_heat: bool) -> dict:
     """What the radiators' stored heat does after a regular run (radiator rooms only).
 
     ``afterglow_k``: how far a full-power min run lifts the room after the stop, with the
     learned scale and decay time; ``afterglow_minutes``: that decay time;
     ``afterglow_learned``: whether a run has been measured yet (else the profile's guess).
+    Not with a heat-capable AC: the room never learns it there (its heat mixes in), the
+    tile would say "not measured yet" for good.
     """
-    if room_config.get("heating_system_type", "") != HEATING_SYSTEM_RADIATOR:
+    if acs_can_heat or room_config.get("heating_system_type", "") != HEATING_SYSTEM_RADIATOR:
         return {}
     minutes = get_min_run_blocks(HEATING_SYSTEM_RADIATOR) * 5.0
     return {
@@ -336,7 +338,7 @@ async def build_analytics_data(
                     rc.Q_solar * clear_sky_peak_today(hass.config.latitude, hass.config.longitude, time.time()),
                     3,
                 ),
-                **_afterglow_figures(room_config, est, rc.Q_heat),
+                **_afterglow_figures(room_config, est, rc.Q_heat, check_acs_can_heat(hass, room_config)),
             }
 
     # Build merged forecast: same format as history points, on a shared 5-min grid
@@ -496,4 +498,12 @@ async def build_analytics_data(
         "forecast": forecast,
         "stats": stats,
         "rhythm": rhythm,
+        "price_unit": _price_unit(hass, settings),
     }
+
+
+def _price_unit(hass: HomeAssistant, settings: dict) -> str:
+    """Unit of the price source (ct/kWh, EUR/kWh, ...), empty for a switch or none."""
+    entity_id = settings.get("price_entity") or ""
+    state = hass.states.get(entity_id) if entity_id else None
+    return str(state.attributes.get("unit_of_measurement") or "") if state else ""

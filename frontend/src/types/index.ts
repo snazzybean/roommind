@@ -375,6 +375,8 @@ export interface AnalyticsData {
   forecast?: AnalyticsDataPoint[];
   stats?: AnalyticsStats;
   rhythm?: AnalyticsRhythm | null;
+  /** Unit of the price source (ct/kWh, EUR/kWh, ...), empty for a switch or none. */
+  price_unit?: string;
   model: {
     confidence: number;
     model: {
