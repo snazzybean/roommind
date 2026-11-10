@@ -14,7 +14,14 @@ from __future__ import annotations
 
 import math
 
-from ..const import AC_REBOUND_CUTOFF, AC_REBOUND_TAU_MINUTES, HEATING_SYSTEM_PROFILES, RESIDUAL_HEAT_CUTOFF
+from ..const import (
+    AC_REBOUND_CUTOFF,
+    AC_REBOUND_TAU_MINUTES,
+    HEATING_SYSTEM_PROFILES,
+    HEATING_SYSTEM_RADIATOR,
+    RADIATOR_SHORT_RUN_AFTERGLOW_K,
+    RESIDUAL_HEAT_CUTOFF,
+)
 
 
 def compute_residual_heat(
@@ -118,6 +125,29 @@ def get_min_run_blocks(system_type: str, dt_minutes: float = 5.0) -> int:
     if not profile or dt_minutes <= 0:
         return 2  # existing default
     return max(2, math.ceil(profile["min_run_minutes"] / dt_minutes))
+
+
+def heat_min_run_blocks(
+    system_type: str,
+    dt_minutes: float = 5.0,
+    *,
+    q_heat: float = 0.0,
+    scale: float = 1.0,
+    tau_minutes: float | None = None,
+) -> int:
+    """Minimum heating run in blocks, shortened for radiators that store a lot of heat.
+
+    The rise the stored heat of one regular min run gives after the stop (learned
+    ``scale`` and decay ``tau_minutes``, full power, losses left out) above
+    ``RADIATOR_SHORT_RUN_AFTERGLOW_K`` makes the run a single block: the heat of the
+    regular one alone would carry the room past its target.
+    """
+    base = get_min_run_blocks(system_type, dt_minutes)
+    if system_type != HEATING_SYSTEM_RADIATOR or q_heat <= 0 or dt_minutes <= 0:
+        return base
+    q0 = compute_residual_heat(0.0, system_type, 1.0, base * dt_minutes, scale, tau_minutes)
+    rise = q_heat * q0 * residual_tau(system_type, tau_minutes) / 60.0
+    return 1 if rise > RADIATOR_SHORT_RUN_AFTERGLOW_K else base
 
 
 def advance_rebound(charge: float, drive: float, dt_minutes: float) -> float:

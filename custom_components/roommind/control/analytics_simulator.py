@@ -42,6 +42,7 @@ from .residual_heat import (
     build_residual_series,
     compute_residual_heat,
     get_min_run_blocks,
+    heat_min_run_blocks,
     mean_rebound,
 )
 from .thermal_model import RCModel, ThermalEKF
@@ -347,7 +348,9 @@ def _simulate_mpc(
     )
 
     rules = heating_system_type if run_system is None else run_system
-    min_run = get_min_run_blocks(rules, PLAN_DT_MINUTES)
+    min_run = heat_min_run_blocks(
+        rules, PLAN_DT_MINUTES, q_heat=model.Q_heat, scale=residual_scale, tau_minutes=residual_tau
+    )
     cool_min_run = get_min_run_blocks("", PLAN_DT_MINUTES)
     slow_heat = is_slow_heat(min_run)
     start_penalty = slow_start_penalty(min_run, PLAN_DT_MINUTES)
