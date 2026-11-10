@@ -236,7 +236,7 @@ RADIATOR_LOOKAHEAD_TAUS = 2.0
 # this runs for a single block instead: the stored heat of a 10-min run overshot heavy
 # radiators by ~0.5 K even at the lowest power (the TRV opens fully once its head sits below
 # a boosted setpoint), so holding the target needs a smaller quantum.
-RADIATOR_SHORT_RUN_AFTERGLOW_K = 0.3
+RADIATOR_SHORT_RUN_AFTERGLOW_K = 0.5
 
 # AC rebound: while an AC cools, the air drops below the building mass; after it
 # stops the air relaxes back within minutes. Charge relaxes towards the cooling
