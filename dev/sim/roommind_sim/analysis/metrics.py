@@ -60,6 +60,69 @@ def _upcoming_heat(run: RunData, area: str) -> list[tuple[float, float | None]]:
     return out
 
 
+RUN_OVERSHOOT_WINDOW_S = 5400  # after a heating run, the peak within this window (or until the next run)
+RUN_PEAK_LOOKAHEAD_S = 3600  # targets this far past the peak count (the block a pre-heat was for)
+RUN_MERGE_GAP_S = 600  # idle stretches up to this long inside a run (a one-cycle blip) do not split it
+
+
+def _run_overshoot(run: RunData, area: str) -> dict[str, Any]:
+    """Peak of the reported room temperature after each heating run, past the highest heat
+    target of the run itself and from its end to an hour past the peak (a pre-heat is judged
+    against the block it was for, a run into a setback against the block it ended in).
+
+    Runs with an open window are left out; a run still going at the end of the scenario is
+    none. ``run_overshoot_mean_k`` averages the overshoot over all judged runs, a run that
+    stayed below its target counting as 0.
+    """
+    rows = [(o["t"], o["rooms"].get(area) or {}) for o in run.observer]
+    rows = [(t, r) for t, r in rows if r.get("current_temp") is not None]
+    peaks: list[float] = []
+    i, n = 0, len(rows)
+    while i < n:
+        if rows[i][1].get("mode") != "heating":
+            i += 1
+            continue
+        j = i
+        while True:
+            while j < n and rows[j][1].get("mode") == "heating":
+                j += 1
+            k = j
+            while k < n and rows[k][1].get("mode") != "heating" and rows[k][0] - rows[j - 1][0] <= RUN_MERGE_GAP_S:
+                k += 1
+            if k < n and k > j and rows[k][1].get("mode") == "heating":
+                j = k
+                continue
+            break
+        if j >= n:
+            break
+        end = rows[j][0]
+        targets = [r["heat_target"] for _, r in rows[i:j] if r.get("heat_target") is not None]
+        window = any(r.get("window_open") for _, r in rows[i:j])
+        peak = rows[j][1]["current_temp"]
+        k = j
+        while k < n and rows[k][0] - end <= RUN_OVERSHOOT_WINDOW_S and rows[k][1].get("mode") != "heating":
+            r = rows[k][1]
+            window = window or bool(r.get("window_open"))
+            if r["current_temp"] > peak:
+                peak = r["current_temp"]
+            k += 1
+        peak_k = max(range(j, k), key=lambda m: rows[m][1]["current_temp"]) if k > j else j
+        # up to an hour past the peak: a pre-heat may peak just before its block starts
+        m = peak_k
+        while m < n and rows[m][0] - rows[peak_k][0] <= RUN_PEAK_LOOKAHEAD_S:
+            m += 1
+        targets += [r["heat_target"] for _, r in rows[j:m] if r.get("heat_target") is not None]
+        if targets and not window:
+            peaks.append(peak - max(targets))
+        i = j
+    return {
+        "heat_runs_judged": len(peaks),
+        "run_overshoot_max_k": round(max(peaks), 2) if peaks else None,
+        "run_overshoot_mean_k": round(sum(max(p, 0.0) for p in peaks) / len(peaks), 2) if peaks else None,
+        "runs_over_half_k": sum(1 for p in peaks if p > 0.5),
+    }
+
+
 def _room_metrics(run: RunData, area: str) -> dict[str, Any]:
     """Comfort metrics against the targets RoomMind reported.
 
@@ -196,6 +259,7 @@ def _room_metrics(run: RunData, area: str) -> dict[str, Any]:
         prev_mold = (o["t"], active)
     temps = [s["rooms"][area]["t_air"] for s in run.samples]
     return {
+        **_run_overshoot(run, area),
         "heating_h_cheap": round(by_level["cheap"], 2),
         "heating_h_normal": round(by_level["normal"], 2),
         "heating_h_expensive": round(by_level["expensive"], 2),
@@ -224,10 +288,22 @@ def _device_metrics(run: RunData, eid: str, duration_h: float) -> dict[str, Any]
     ``valve_travel_per_day`` (TRVs): summed valve movement in full strokes per day, from the
     samples, so reversals within one sample interval are missed. ``valve_commands_per_hour``
     (TRVs with direct valve control): ``number.set_value`` calls on its opening/closing entities.
+    ``setpoint_lost_h``: in heat, RoomMind's last accepted setpoint lies above the room, but the
+    device's own setpoint does not (it dropped the value), so the device cannot heat.
     """
     cmds = [c for c in run.commands if c["entity_id"] == eid]
+    lost_h = 0.0
+    sent_i = -1
     spec = next(d for d in run.scenario.all_devices() if d.entity_id == eid)
     numbers = set(spec.valve_numbers().values())
+    unit_f = str(spec.capabilities.get("unit", "C")).upper() == "F"
+    sent_temps = [
+        (c["t"], float(c["data"]["temperature"]))
+        for c in cmds
+        if c["service"] == "set_temperature"
+        and c["data"].get("temperature") is not None
+        and str(c.get("result", "")).startswith("accepted")
+    ]
     valve_cmds = [c for c in run.commands if c["entity_id"] in numbers]
     travel: float | None = None
     last_valve: float | None = None
@@ -243,8 +319,15 @@ def _device_metrics(run: RunData, eid: str, duration_h: float) -> dict[str, Any]
         d = s["devices"].get(eid)
         if d is None:
             continue
+        while sent_i + 1 < len(sent_temps) and sent_temps[sent_i + 1][0] <= s["t"]:
+            sent_i += 1
         if prev is not None:
             dt_h = (s["t"] - prev) / 3600
+            if sent_i >= 0 and d.get("mode") == "heat" and d.get("target") is not None:
+                room_t = s["rooms"][spec.room]["t_air"]
+                to_c = (lambda v: (v - 32.0) * 5.0 / 9.0) if unit_f else (lambda v: v)
+                if to_c(sent_temps[sent_i][1]) > room_t and to_c(float(d["target"])) <= room_t:
+                    lost_h += dt_h
             electric_wh += d["electric_w"] * dt_h
             heat_wh += d["heat_w"] * dt_h
             if d["active"]:
@@ -274,6 +357,7 @@ def _device_metrics(run: RunData, eid: str, duration_h: float) -> dict[str, Any]
         # every device gets the keys: the report table takes its columns from the first row
         "valve_travel_per_day": round(travel / days, 2) if travel is not None else None,
         "valve_commands_per_hour": round(len(valve_cmds) / duration_h, 2) if numbers else None,
+        "setpoint_lost_h": round(lost_h, 2),
     }
 
 

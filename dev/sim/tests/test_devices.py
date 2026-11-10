@@ -285,3 +285,17 @@ def test_split_ac_max_output_caps_the_eco_mode():
     d.call("set_temperature", {"temperature": 16, "hvac_mode": "cool"}, w.now)
     run(w, 600)
     assert d.modulation == pytest.approx(0.35)
+
+
+def test_tado_x_falls_back_to_its_setpoint_after_switching_on():
+    w, d = _one("tado_x_matter")
+    d.call("set_hvac_mode", {"hvac_mode": "off"}, w.now)
+    d.call("set_temperature", {"temperature": 5}, w.now)
+    d.call("set_hvac_mode", {"hvac_mode": "heat"}, w.now)
+    d.call("set_temperature", {"temperature": 29, "hvac_mode": "heat"}, w.now)
+    assert d.target == 29
+    run(w, 10)
+    assert d.hvac_mode == "heat" and d.target == 5
+    d.call("set_temperature", {"temperature": 29}, w.now)
+    run(w, 10)
+    assert d.target == 29

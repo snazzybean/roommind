@@ -6,7 +6,13 @@ import pytest
 from helpers import scenario
 
 from roommind_sim.analysis.load import RunData
-from roommind_sim.analysis.metrics import _cover_metrics, _room_metrics, _truth_beta_device, _truth_beta_s
+from roommind_sim.analysis.metrics import (
+    _cover_metrics,
+    _device_metrics,
+    _room_metrics,
+    _truth_beta_device,
+    _truth_beta_s,
+)
 from roommind_sim.scenario import load_scenario_dict
 
 
@@ -224,3 +230,85 @@ def test_heating_without_source_counts_heating_decisions_the_orchestration_left_
     run.observer[3]["rooms"]["r"]["mode"] = "idle"
     # t1 heating without source (1 h); t2 has a source, t3 is idle
     assert _room_metrics(run, "r")["heating_without_source_h"] == pytest.approx(1.0)
+
+
+def _overshoot_run(rows: list[tuple[float, float, str]], window: list[bool] | None = None) -> RunData:
+    """Observer rows (reported temp, heat target, mode), one every 5 min."""
+    scn = load_scenario_dict(scenario({"r": {}}))
+    t0 = scn.start
+    win = window or [False] * len(rows)
+    observer = [
+        {
+            "t": t0 + 300 * i,
+            "rooms": {"r": {"current_temp": t, "heat_target": h, "mode": m, "window_open": win[i]}},
+        }
+        for i, (t, h, m) in enumerate(rows)
+    ]
+    samples = [{"t": t0 + 300 * i, "rooms": {"r": {"t_air": t}}} for i, (t, _, _) in enumerate(rows)]
+    return RunData(None, scn, samples, observer, [], t0 + 300 * len(rows), {})  # type: ignore[arg-type]
+
+
+def test_run_overshoot_takes_the_peak_after_the_stop_against_the_coming_target():
+    """A pre-heat under eco is judged against the comfort block it was for."""
+    rows = [
+        (19.4, 16.5, "heating"),
+        (19.9, 16.5, "heating"),
+        (20.2, 16.5, "idle"),
+        (20.6, 20.0, "idle"),
+        (21.3, 20.0, "idle"),
+        (21.0, 20.0, "idle"),
+    ]
+    m = _room_metrics(_overshoot_run(rows), "r")
+    assert m["heat_runs_judged"] == 1
+    assert m["run_overshoot_max_k"] == pytest.approx(1.3)
+    assert m["runs_over_half_k"] == 1
+
+
+def test_run_overshoot_leaves_out_runs_with_an_open_window_and_runs_still_going():
+    rows = [(19.0, 20.0, "heating"), (20.5, 20.0, "idle"), (21.5, 20.0, "idle"), (20.0, 20.0, "heating")]
+    m = _room_metrics(_overshoot_run(rows, window=[False, True, False, False]), "r")
+    assert m["heat_runs_judged"] == 0
+    assert m["run_overshoot_max_k"] is None
+
+
+def test_setpoint_lost_counts_heat_time_with_a_dropped_setpoint():
+    devices = [{"entity_id": "climate.d", "profile": "tado_x_matter"}]
+    scn = load_scenario_dict(scenario({"r": {"devices": devices}}, duration="1d"))
+    t0 = scn.start
+    samples = [
+        {
+            "t": t0 + 600 * i,
+            "rooms": {"r": {"t_air": 18.0}},
+            "devices": {"climate.d": {"active": False, "heat_w": 0, "electric_w": 0, "mode": "heat", "target": target}},
+        }
+        for i, target in enumerate([29.0, 5.0, 5.0, 29.0, 29.0])
+    ]
+    cmd = {"type": "command", "t": t0, "entity_id": "climate.d", "service": "set_temperature"}
+    events = [{**cmd, "data": {"temperature": 29.0, "hvac_mode": "heat"}, "result": "accepted"}]
+    run_data = RunData(None, scn, samples, [], events, t0 + 86400, {})  # type: ignore[arg-type]
+    assert _device_metrics(run_data, "climate.d", 24.0)["setpoint_lost_h"] == pytest.approx(round(2 * 600 / 3600, 2))
+
+
+def test_run_overshoot_judges_a_run_into_a_setback_against_its_own_block():
+    rows = [(19.5, 20.0, "heating"), (20.0, 20.0, "heating"), (20.6, 16.5, "idle"), (20.9, 16.5, "idle")]
+    m = _room_metrics(_overshoot_run(rows), "r")
+    assert m["run_overshoot_max_k"] == pytest.approx(0.9)
+
+
+def test_a_one_cycle_blip_does_not_split_a_run():
+    rows = [
+        (19.0, 16.5, "heating"),
+        (19.3, 16.5, "idle"),
+        (19.5, 16.5, "heating"),
+        (19.9, 20.0, "idle"),
+        (20.4, 20.0, "idle"),
+    ]
+    m = _room_metrics(_overshoot_run(rows), "r")
+    assert m["heat_runs_judged"] == 1
+    assert m["run_overshoot_max_k"] == pytest.approx(0.4)
+
+
+def test_a_preheat_peaking_before_its_block_is_judged_against_the_block():
+    rows = [(18.5, 16.5, "heating"), (19.5, 16.5, "idle"), (20.1, 16.5, "idle"), (20.0, 20.0, "idle")]
+    m = _room_metrics(_overshoot_run(rows), "r")
+    assert m["run_overshoot_max_k"] == pytest.approx(0.1)

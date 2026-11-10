@@ -1,0 +1,5 @@
+description: tado X radiator thermostat over Matter. Switched on from off it takes the new setpoint and shows its previous one again a few seconds later.
+extends: generic_trv
+capabilities: {min_temp: 5, max_temp: 30}
+quirks:
+  - {type: mode_switch_restores_setpoint, delay_s: 3}

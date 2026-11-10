@@ -105,6 +105,12 @@ AC_BOOST_DELTA_MAX = 50.0  # Comfort-end AC cap (°C); finite value above any re
 PROPORTIONAL_DEADBAND_C = 0.5  # Minimum proportional setpoint change (°C) to resend, in the gentle regime
 PROPORTIONAL_DEADBAND_NEAR_TARGET_C = 0.2  # Finer proportional deadband (°C) within 1°C of target
 PROPORTIONAL_SETPOINT_DWELL_SECONDS = 300  # Minimum time a proportional setpoint stays on the device before a recomputed one replaces it (one MPC block, #317)
+PROPORTIONAL_SETPOINT_REPORT_SECONDS = (
+    60  # A device still showing another setpoint this long after a send dropped it; sent again once within the dwell
+)
+PROPORTIONAL_SETPOINT_REPORT_TOLERANCE = (
+    0.5  # K a shown setpoint may differ from the sent one (device rounding) before it counts as dropped
+)
 BOOST_CAP_FALLBACK_STEP = 0.5  # Distance kept below a device's max_temp for proportional heating setpoints when it reports no target_temp_step (#396)
 # Direct valve control (#413): TRVs whose valve opening RoomMind sets through number entities
 VALVE_DWELL_SECONDS = 600  # Minimum time a valve position stays before a small correction moves the motor again

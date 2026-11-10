@@ -6,6 +6,7 @@ import logging
 import math
 import time
 from collections.abc import Callable
+from dataclasses import dataclass, replace
 from functools import partial
 from typing import TYPE_CHECKING, Any, cast
 
@@ -39,6 +40,8 @@ from ..const import (
     PROPORTIONAL_DEADBAND_C,
     PROPORTIONAL_DEADBAND_NEAR_TARGET_C,
     PROPORTIONAL_SETPOINT_DWELL_SECONDS,
+    PROPORTIONAL_SETPOINT_REPORT_SECONDS,
+    PROPORTIONAL_SETPOINT_REPORT_TOLERANCE,
     VALVE_OVERSHOOT_STOP_K,
     VALVE_PROPORTIONAL_BAND_K,
     TargetTemps,
@@ -99,9 +102,10 @@ _active_targets: dict[str, tuple[float | None, float | None]] = {}
 _overshoot_sent: set[str] = set()
 # Devices the hold already throttled to minimum (room past its target), one send per hold (#416).
 _hold_modulated: set[str] = set()
-# Last proportional setpoint send per device: (monotonic send time, (heat, cool) targets it was
-# computed for). Any other command to the device drops the entry (#317).
-_proportional_sent: dict[str, tuple[float, tuple[float | None, float | None]]] = {}
+# Last proportional setpoint send per device (#317). Any other command to the device drops the entry.
+_proportional_sent: dict[str, _ProportionalSend] = {}
+# Switch-on time of a dropped setpoint sent again this cycle: the dwell still ends from there
+_dwell_reasserting: dict[str, float] = {}
 # hvac states in which a lower setpoint means more cooling, not less output
 # Outcome of MPCController._call
 _CALL_SENT = "sent"  # a command went to the device
@@ -115,6 +119,30 @@ _COOLING_CAPABLE_STATES = ("heat_cool", "auto")
 
 def _now() -> float:
     return time.monotonic()
+
+
+def _controlled_setpoints(data: dict, temp_intent: str) -> dict[str, float]:
+    """The setpoint values of a send that RoomMind computed (a range device's other side is copied)."""
+    if data.get("temperature") is not None:
+        return {"temperature": float(data["temperature"])}
+    keys = {"heat": ("target_temp_low",), "cool": ("target_temp_high",)}.get(
+        temp_intent, ("target_temp_low", "target_temp_high")
+    )
+    return {k: float(data[k]) for k in keys if data.get(k) is not None}
+
+
+@dataclass(frozen=True)
+class _ProportionalSend:
+    """A proportional setpoint as sent: when, for which targets, which values.
+
+    ``switched_on``: the send also switched the device on from another mode; only then
+    is the value checked for a fallback (``_setpoint_dropped``).
+    """
+
+    at: float
+    targets: tuple[float | None, float | None]
+    values: dict[str, float]
+    switched_on: bool = False
 
 
 def _cache_entry(service: str, data: dict) -> dict[str, Any]:
@@ -288,6 +316,7 @@ def clear_command_cache() -> None:
     _last_by_service.clear()
     _sent_at.clear()
     _proportional_sent.clear()
+    _dwell_reasserting.clear()
     _setpoint_override_warned.clear()
     _active_targets.clear()
     _overshoot_sent.clear()
@@ -2887,7 +2916,8 @@ class MPCController:
         first setpoint after any other command that was actually sent (mode
         change, idle), a changed room target, a device that is not running in
         the commanded mode, and devices without usable state, whose
-        sent-command cache (#416) stays as it is. A compressor hold that sends
+        sent-command cache (#416) stays as it is, and a device that dropped the
+        value it was switched on with (``_setpoint_dropped``). A compressor hold that sends
         nothing keeps the record; it only matters if the hold ends within the
         dwell, since a hold lasts the group's minimum run. Dual-setpoint devices
         get the proportional value on ``target_temp_low``/``high`` and dwell the same way.
@@ -2897,16 +2927,43 @@ class MPCController:
         if state is None or _should_use_cache(state):
             return False
         record = _proportional_sent.get(eid)
-        if record is None or _now() - record[0] >= PROPORTIONAL_SETPOINT_DWELL_SECONDS:
+        if record is None or _now() - record.at >= PROPORTIONAL_SETPOINT_DWELL_SECONDS:
             return False
-        sent_heat, sent_cool = record[1]
+        sent_heat, sent_cool = record.targets
         heat, cool = self._current_target_pair()
         if _target_moved(sent_heat, heat) or _target_moved(sent_cool, cool):
             return False
         desired_mode = data.get("hvac_mode")
-        if desired_mode is not None:
-            return bool(state.state == desired_mode)
-        return bool(state.state != "off")
+        if desired_mode is not None and state.state != desired_mode:
+            return False
+        if desired_mode is None and state.state == "off":
+            return False
+        if self._setpoint_dropped(record, state):
+            # One more send per switch-on, also when it fails
+            _proportional_sent[eid] = replace(record, switched_on=False)
+            _dwell_reasserting[eid] = record.at
+            return False
+        return True
+
+    def _setpoint_dropped(self, record: _ProportionalSend, state: Any) -> bool:
+        """True when a device switched on with this setpoint shows another one well after the send.
+
+        Some devices take the value and fall back to their own one moments later
+        (tado X over Matter restores its pre-switch-on setpoint), so the dwell held a
+        value the device no longer had. Only after a switch-on: a device that clamps
+        the value or reports it late is not commanded again within every dwell (#317).
+        """
+        if not record.switched_on or _now() - record.at < PROPORTIONAL_SETPOINT_REPORT_SECONDS:
+            return False
+        tolerance = max(
+            _resolve_step(self.hass, state.attributes) or 0.0,
+            celsius_delta_to_ha(self.hass, PROPORTIONAL_SETPOINT_REPORT_TOLERANCE),
+        )
+        for key, sent in record.values.items():
+            shown = state.attributes.get(key)
+            if isinstance(shown, (int, float)) and abs(shown - sent) > tolerance:
+                return True
+        return False
 
     async def _call(self, service: str, data: dict, *, temp_intent: str = "", deadband: float | None = None) -> str:
         """Send a climate service call unless the device already holds the value.
@@ -3171,6 +3228,12 @@ class MPCController:
                 _active_targets.setdefault(eid, (self._idle_targets.heat, self._idle_targets.cool))
             return _CALL_CONFIRMED if confirmed or cache_checked else _CALL_SKIPPED
 
+        # A switch-on goes out as set_hvac_mode first, then the setpoint with the mode again
+        previous = _last_commands.get(eid) if eid else None
+        switches_on = bool(data.get("hvac_mode")) and (
+            (state.state if state else None) != data["hvac_mode"]
+            or (previous is not None and previous.get("service") == "set_hvac_mode")
+        )
         try:
             await self.hass.services.async_call(
                 "climate",
@@ -3184,7 +3247,12 @@ class MPCController:
                 if self._idle_targets is not None:
                     _active_targets[eid] = (self._idle_targets.heat, self._idle_targets.cool)
                 if deadband is not None and service == "set_temperature" and _carries_setpoint(data):
-                    _proportional_sent[eid] = (_now(), self._current_target_pair())
+                    _proportional_sent[eid] = _ProportionalSend(
+                        at=_dwell_reasserting.get(eid, _now()),
+                        targets=self._current_target_pair(),
+                        values=_controlled_setpoints(data, temp_intent),
+                        switched_on=switches_on,
+                    )
         except Exception:  # noqa: BLE001
             _LOGGER.warning(
                 "Area '%s': climate.%s failed on '%s'",
@@ -3194,4 +3262,7 @@ class MPCController:
                 exc_info=True,
             )
             return _CALL_FAILED
+        finally:
+            if eid:
+                _dwell_reasserting.pop(eid, None)
         return _CALL_SENT

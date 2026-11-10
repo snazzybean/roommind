@@ -362,3 +362,201 @@ async def test_range_device_target_change_skips_the_dwell():
         clock["t"] += 30
         await _heat(hass, ctrl, 0.5, heat=20.5)
     assert len(_range_sends(hass)) == 2
+
+
+def _reverting_device(hass, revert_to=5.0, times=1):
+    """A TRV that takes a setpoint and then falls back to its own one (tado X over Matter
+    restores the value it had before the mode change a few seconds later)."""
+    dev = _device(hass, state="off", setpoint=revert_to)
+    left = {"n": times}
+
+    async def _apply(domain, service, data, **kwargs):
+        if "hvac_mode" in data:
+            dev.state = data["hvac_mode"]
+        if "temperature" in data:
+            value = data["temperature"]
+            if left["n"] > 0:
+                left["n"] -= 1
+                value = revert_to
+            dev.attributes = {**dev.attributes, "temperature": value}
+
+    hass.services.async_call = AsyncMock(side_effect=_apply)
+    return dev
+
+
+@pytest.mark.asyncio
+async def test_a_setpoint_the_device_dropped_is_sent_again_within_the_dwell():
+    """The device fell back to 5 °C right after the boost went out: waiting for the dwell
+    left the radiator cold for five minutes of a run."""
+    hass = build_hass()
+    dev = _reverting_device(hass)
+    ctrl = _ctrl(hass)
+    clock = {"t": 1000.0}
+    with patch(_NOW, side_effect=lambda: clock["t"]):
+        await _heat(hass, ctrl, 1.0)
+        assert dev.attributes["temperature"] == 5.0
+        for _ in range(4):  # two minutes of 30 s cycles
+            clock["t"] += 30
+            await _heat(hass, ctrl, 1.0)
+    assert _setpoints(hass) == [30.0, 30.0]
+    assert dev.attributes["temperature"] == 30.0
+
+
+@pytest.mark.asyncio
+async def test_a_dropped_setpoint_waits_for_a_slow_state_report():
+    """A device that reports a send late must not get the value twice right away."""
+    hass = build_hass()
+    _reverting_device(hass)
+    ctrl = _ctrl(hass)
+    clock = {"t": 1000.0}
+    with patch(_NOW, side_effect=lambda: clock["t"]):
+        await _heat(hass, ctrl, 1.0)
+        clock["t"] += 30
+        await _heat(hass, ctrl, 1.0)
+    assert _setpoints(hass) == [30.0]
+
+
+@pytest.mark.asyncio
+async def test_a_device_that_keeps_refusing_is_reasserted_once_per_dwell():
+    """No command every cycle for a device that never takes the value (#317 duty cycles)."""
+    hass = build_hass()
+    _reverting_device(hass, times=1000)
+    ctrl = _ctrl(hass)
+    clock = {"t": 1000.0}
+    with patch(_NOW, side_effect=lambda: clock["t"]):
+        for _ in range(20):  # 10 min of 30 s cycles
+            await _heat(hass, ctrl, 1.0)
+            clock["t"] += 30
+    # switch-on at t=0, one reassert at t=60, the dwell still ends at t=300
+    sends = _setpoints(hass)
+    assert len(sends) == 3
+
+
+@pytest.mark.asyncio
+async def test_a_device_that_clamps_a_running_setpoint_waits_for_the_dwell():
+    """Not switched on by the send: a device that shows another value (own limit, late
+    report) keeps the plain dwell, no extra frame (#317)."""
+    hass = build_hass()
+    dev = _device(hass, state="heat", setpoint=20.0)
+
+    async def _clamp(domain, service, data, **kwargs):
+        if "temperature" in data:
+            dev.attributes = {**dev.attributes, "temperature": min(data["temperature"], 25.0)}
+
+    hass.services.async_call = AsyncMock(side_effect=_clamp)
+    ctrl = _ctrl(hass)
+    clock = {"t": 1000.0}
+    with patch(_NOW, side_effect=lambda: clock["t"]):
+        for _ in range(9):  # 4.5 min
+            await _heat(hass, ctrl, 1.0)
+            clock["t"] += 30
+    assert _setpoints(hass) == [30.0]
+
+
+@pytest.mark.asyncio
+async def test_rounding_on_the_device_is_no_dropped_setpoint():
+    hass = build_hass()
+    dev = _device(hass, state="off")
+
+    async def _round(domain, service, data, **kwargs):
+        if "hvac_mode" in data:
+            dev.state = data["hvac_mode"]
+        if "temperature" in data:
+            dev.attributes = {**dev.attributes, "temperature": round(data["temperature"])}
+
+    hass.services.async_call = AsyncMock(side_effect=_round)
+    ctrl = _ctrl(hass)
+    clock = {"t": 1000.0}
+    with patch(_NOW, side_effect=lambda: clock["t"]):
+        await _heat(hass, ctrl, 0.25)
+        for _ in range(8):
+            clock["t"] += 30
+            await _heat(hass, ctrl, 0.25)
+    assert len(_setpoints(hass)) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_failed_reassert_is_not_repeated_every_cycle():
+    hass = build_hass()
+    dev = _reverting_device(hass)
+    ok = hass.services.async_call.side_effect
+    ctrl = _ctrl(hass)
+    clock = {"t": 1000.0}
+    with patch(_NOW, side_effect=lambda: clock["t"]):
+        await _heat(hass, ctrl, 1.0)
+        assert dev.attributes["temperature"] == 5.0
+
+        async def _fail(domain, service, data, **kwargs):
+            raise TimeoutError
+
+        hass.services.async_call = AsyncMock(side_effect=_fail)
+        for _ in range(8):  # up to 4 min, inside the dwell
+            clock["t"] += 30
+            await _heat(hass, ctrl, 1.0)
+    assert ok is not None  # the device worked for the switch-on itself
+    assert hass.services.async_call.await_count == 1
+
+
+def test_a_range_send_records_only_the_side_roommind_computed():
+    data = {"target_temp_low": 30.0, "target_temp_high": 31.5}
+    assert mpc_controller._controlled_setpoints(data, "heat") == {"target_temp_low": 30.0}
+    assert mpc_controller._controlled_setpoints(data, "cool") == {"target_temp_high": 31.5}
+    assert mpc_controller._controlled_setpoints({"temperature": 22.0}, "heat") == {"temperature": 22.0}
+
+
+@pytest.mark.asyncio
+async def test_a_reassert_does_not_move_the_end_of_the_dwell():
+    hass = build_hass()
+    _reverting_device(hass, times=1000)
+    ctrl = _ctrl(hass)
+    clock = {"t": 1000.0}
+    sent_at = []
+
+    with patch(_NOW, side_effect=lambda: clock["t"]):
+        for _ in range(12):  # 6 min
+            before = len(_setpoints(hass))
+            await _heat(hass, ctrl, 1.0)
+            if len(_setpoints(hass)) > before:
+                sent_at.append(clock["t"] - 1000.0)
+            clock["t"] += 30
+    assert sent_at == [0.0, 60.0, 300.0]
+
+
+@pytest.mark.asyncio
+async def test_a_value_shown_at_once_is_not_checked_before_the_report_time():
+    hass = build_hass()
+    _reverting_device(hass)
+    ctrl = _ctrl(hass)
+    clock = {"t": 1000.0}
+    with patch(_NOW, side_effect=lambda: clock["t"]):
+        await _heat(hass, ctrl, 1.0)
+        clock["t"] += mpc_controller.PROPORTIONAL_SETPOINT_REPORT_SECONDS - 1
+        await _heat(hass, ctrl, 1.0)
+        assert len(_setpoints(hass)) == 1
+        clock["t"] += 1
+        await _heat(hass, ctrl, 1.0)
+    assert len(_setpoints(hass)) == 2
+
+
+@pytest.mark.asyncio
+async def test_a_switch_on_by_the_setpoint_call_alone_counts_too():
+    """set_hvac_mode failed, the setpoint call with the mode switched the device on."""
+    hass = build_hass()
+    dev = _reverting_device(hass)
+    revert = hass.services.async_call.side_effect
+
+    async def _mode_fails(domain, service, data, **kwargs):
+        if service == "set_hvac_mode":
+            raise TimeoutError
+        await revert(domain, service, data, **kwargs)
+
+    hass.services.async_call = AsyncMock(side_effect=_mode_fails)
+    ctrl = _ctrl(hass)
+    clock = {"t": 1000.0}
+    with patch(_NOW, side_effect=lambda: clock["t"]):
+        await _heat(hass, ctrl, 1.0)
+        assert dev.state == "heat" and dev.attributes["temperature"] == 5.0
+        for _ in range(3):
+            clock["t"] += 30
+            await _heat(hass, ctrl, 1.0)
+    assert _setpoints(hass) == [30.0, 30.0]
