@@ -797,11 +797,17 @@ export class RsScheduleEditor extends LitElement {
     </ha-card>`;
   }
 
-  private _stripBlocks(day: ScheduleBlock[], nowMinute = -1) {
+  private _stripBlocks(
+    day: ScheduleBlock[],
+    nowMinute = -1,
+    look?: (b: ScheduleBlock) => BlockLook,
+  ) {
     return html`${day.map(
       (b) =>
         html`<i
-          style="left:${(b.start / 1440) * 100}%;width:${((b.end - b.start) / 1440) * 100}%"
+          style="left:${(b.start / 1440) * 100}%;width:${((b.end - b.start) / 1440) * 100}%${
+            look ? `;--strip-color:${look(b).color}` : ""
+          }"
         ></i>`,
     )}${
       nowMinute >= 0 ? html`<i class="now" style="left:${(nowMinute / 1440) * 100}%"></i>` : nothing
@@ -961,7 +967,7 @@ export class RsScheduleEditor extends LitElement {
           : nothing
       }
       <div class="strip day-strip" aria-hidden="true">
-        ${this._stripBlocks(blocks, today ? this._now.minute : -1)}
+        ${this._stripBlocks(blocks, today ? this._now.minute : -1, (b) => look(b, day))}
       </div>
       ${
         blocks.length === 0

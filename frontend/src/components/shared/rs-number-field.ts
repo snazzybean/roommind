@@ -23,6 +23,7 @@ export type NumberKind = "number" | "temperature" | "temperature-delta";
  * empty or unreadable entry goes back to the last value. Temperatures are stored in °C and shown
  * in the user's unit (`kind`, needs `hass`): `value`, `min`, `max` stay in °C, `step` defaults to
  * 0.5 °C / 1 °F. Floating label inside the field, `info` icon beside it, `hint` below (rs-field).
+ * Shown and typed in the user's language: German shows "1,5" and accepts "1,5" and "1.5".
  * Fires `value-changed` (not bubbling, listen on the field) with `{ value }` (°C for
  * temperatures) only when the value changed.
  */
@@ -95,10 +96,17 @@ export class RsNumberField extends LitElement {
     return s.includes(".") ? s.split(".")[1].length : 0;
   }
 
+  /** Number in the user's language (decimal comma in German), no grouping. */
+  private _format(shown: number): string {
+    return new Intl.NumberFormat(this.hass?.language, {
+      maximumFractionDigits: this._isTemp ? Math.max(1, this._decimals()) : 6,
+      useGrouping: false,
+    }).format(shown);
+  }
+
   private _shownText(): string {
     if (this.value === null || this.value === undefined || Number.isNaN(this.value)) return "";
-    const shown = this._toShown(this.value);
-    return String(Number(shown.toFixed(this._isTemp ? Math.max(1, this._decimals()) : 6)));
+    return this._format(this._toShown(this.value));
   }
 
   protected updated(changed: PropertyValues<this>): void {
@@ -109,18 +117,15 @@ export class RsNumberField extends LitElement {
   }
 
   render() {
-    const { min, max } = this._bounds;
+    const { min } = this._bounds;
     const suffix = this.suffix || (this._isTemp ? tempUnit(this.hass!) : "");
     return html`<rs-field .info=${this.info} .hint=${this.hint}>
       <ha-textfield
-        type="number"
-        .inputMode=${min >= 0 ? (Number.isInteger(this._step) ? "numeric" : "decimal") : ""}
+        type="text"
+        .inputMode=${min >= 0 ? (Number.isInteger(this._step) ? "numeric" : "decimal") : "text"}
         .label=${this.label}
         .suffix=${suffix}
         .value=${this._shownText()}
-        .min=${Number.isFinite(min) ? String(min) : ""}
-        .max=${Number.isFinite(max) ? String(max) : ""}
-        .step=${String(this._step)}
         .disabled=${this.disabled}
         @change=${this._onChange}
       ></ha-textfield>
@@ -130,7 +135,10 @@ export class RsNumberField extends LitElement {
   private _onChange(e: Event) {
     e.stopPropagation();
     const field = e.target as HTMLElement & { value: string };
-    const raw = parseFloat(String(field.value).replace(",", "."));
+    // type=number would follow the browser's locale, not the panel's; accept comma and dot
+    const raw = parseFloat(
+      String(field.value).replace(/\s/g, "").replace("\u2212", "-").replace(",", "."),
+    );
     if (!Number.isFinite(raw)) {
       field.value = this._shownText();
       return;
@@ -139,7 +147,7 @@ export class RsNumberField extends LitElement {
     const { min, max } = this._bounds;
     const rounded = Number((Math.round(raw / step) * step).toFixed(this._decimals()));
     const shown = Math.min(max, Math.max(min, rounded));
-    field.value = String(shown);
+    field.value = this._format(shown);
     const value = this._fromShown(shown);
     const current = this.value ?? NaN;
     if (Math.abs(value - current) < 1e-6) return;

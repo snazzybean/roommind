@@ -672,11 +672,13 @@ export class RsDeviceSection extends LitElement {
       <h4 class="group-title">
         ${localize("devices.idle_action", l)}
         <rs-info-icon
-          .text=${isTrv
-            ? localize("devices.idle_info_trv", l)
-            : localize("devices.idle_info_ac", l, {
-                delta: `${formatNumber(toDisplayDelta(IDLE_SETBACK_OFFSET_C, this.hass), this.hass)} ${tempUnit(this.hass)}`,
-              })}
+          .text=${
+            isTrv
+              ? localize("devices.idle_info_trv", l)
+              : localize("devices.idle_info_ac", l, {
+                  delta: `${formatNumber(toDisplayDelta(IDLE_SETBACK_OFFSET_C, this.hass), this.hass)} ${tempUnit(this.hass)}`,
+                })
+          }
         ></rs-info-icon>
       </h4>
       ${this._choice(

@@ -41,7 +41,7 @@ import { localize, type TranslationKey } from "../utils/localize";
 import { errorText } from "../utils/errors";
 import { showToast } from "../utils/toast";
 import { fireSaveStatus } from "../utils/events";
-import { resolveHeatingSystemType } from "../utils/device-utils";
+import { deviceAbilities, modeFits, resolveHeatingSystemType } from "../utils/device-utils";
 import { DEFAULT_OCCUPANCY_ECO_DELAY } from "../utils/constants";
 import { NO_OVERRIDE, type EffectiveOverride } from "../utils/override";
 import { tokens } from "../styles/tokens";
@@ -470,28 +470,9 @@ export class RsRoomDetail extends LitElement {
     `;
   }
 
-  /** What the room's devices can do; unknown device states count as able. */
-  private _deviceAbilities(): { heat: boolean; cool: boolean; mixed: boolean } {
-    const modes = (eid: string): string[] | null => {
-      const m = this.hass.states[eid]?.attributes?.hvac_modes;
-      return Array.isArray(m) ? (m as string[]) : null;
-    };
-    const can = (eid: string, wanted: string[]) => {
-      const m = modes(eid);
-      return m === null || m.some((x) => wanted.includes(x));
-    };
-    const trvs = this._devices.filter((d) => d.type === "trv");
-    const acs = this._devices.filter((d) => d.type === "ac");
-    return {
-      heat: trvs.length > 0 || acs.some((d) => can(d.entity_id, ["heat", "heat_cool", "auto"])),
-      cool: acs.some((d) => can(d.entity_id, ["cool", "heat_cool", "auto"])),
-      mixed: trvs.length > 0 && acs.length > 0,
-    };
-  }
-
   private _renderControlCard() {
     const l = this.hass.language;
-    const ability = this._deviceAbilities();
+    const ability = deviceAbilities(this._devices, this.hass);
     const judged = this._devices.length > 0;
     const autoDesc: TranslationKey =
       !judged || (ability.heat && ability.cool)
@@ -512,14 +493,14 @@ export class RsRoomDetail extends LitElement {
         key: "mode.heat_only",
         icon: "mdi:fire",
         desc: ability.mixed ? "mode.heat_only_desc" : "mode.heat_only_desc_plain",
-        fits: !judged || ability.heat,
+        fits: modeFits("heat_only", this._devices, ability),
       },
       {
         value: "cool_only",
         key: "mode.cool_only",
         icon: "mdi:snowflake",
         desc: "mode.cool_only_desc",
-        fits: !judged || ability.cool,
+        fits: modeFits("cool_only", this._devices, ability),
       },
     ];
     const current = modes.find((m) => m.value === this._climateMode) ?? modes[0];

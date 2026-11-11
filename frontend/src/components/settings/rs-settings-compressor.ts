@@ -9,7 +9,7 @@ import { getSelectValue } from "../../utils/events";
 import "../shared/rs-confirm-button";
 import "../shared/rs-icon-button";
 import "../shared/rs-number-field";
-import "../shared/rs-toggle-row";
+import "../shared/rs-list-row";
 import { inputStyles } from "../../styles/input-styles";
 import { alertStyles, tokens } from "../../styles/tokens";
 
@@ -225,14 +225,16 @@ export class RsSettingsCompressor extends LitElement {
         <div class="field-hint">${localize("compressor.master_entity_hint", l)}</div>
 
         <div class="field-row">
-          <rs-toggle-row
-            .label=${localize("compressor.enforce_uniform_mode", l)}
+          <rs-list-row
+            switch
+            wrap
+            .heading=${localize("compressor.enforce_uniform_mode", l)}
+            .secondary=${localize("compressor.enforce_uniform_mode_hint", l)}
             .checked=${group.enforce_uniform_mode || false}
-            @toggle-changed=${(e: CustomEvent) => {
-              this._updateGroup(idx, "enforce_uniform_mode", e.detail as boolean);
+            @toggle-changed=${(e: CustomEvent<boolean>) => {
+              this._updateGroup(idx, "enforce_uniform_mode", e.detail);
             }}
-          ></rs-toggle-row>
-          <div class="field-hint">${localize("compressor.enforce_uniform_mode_hint", l)}</div>
+          ></rs-list-row>
         </div>
 
         ${

@@ -3,6 +3,7 @@ import { property, state } from "lit/decorators.js";
 import type { ClimateMode, HomeAssistant, OverrideType, RoomConfig } from "../types";
 import { localize, uiLanguage, type TranslationKey } from "../utils/localize";
 import { errorText } from "../utils/errors";
+import { deviceAbilities, modeFits } from "../utils/device-utils";
 import { getModeClass, roomKind, roomStateInfo, scheduleNextChange } from "../utils/room-state";
 import { formatHours, formatMinutes, formatPercent, formatRemaining } from "../utils/format";
 import { modeStyles } from "../styles/shared-mode-styles";
@@ -561,9 +562,15 @@ export class RoomMindRoomCard extends LitElement {
           : nothing
       }
     </div>`;
+    // Same rule as the room page: only what the devices can do, a stored mode stays visible
+    const devices = room.devices ?? [];
+    const ability = deviceAbilities(devices, this.hass);
+    const offered = CLIMATE_MODES.filter(
+      (m) => m.value === current || modeFits(m.value, devices, ability),
+    );
     const segments = showModes
       ? html`<div class="segments">
-          ${CLIMATE_MODES.map(
+          ${offered.map(
             (m) => html`
               <button
                 class="segment ${current === m.value ? "active" : ""}"
