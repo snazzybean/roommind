@@ -605,7 +605,7 @@
   "devices.setback_auto_off_info": "Schaltet das Gerät aus, wenn es eine Stunde nichts zu tun hatte und RoomMind es auch in der nächsten Stunde nicht braucht. Wirkt erst, wenn das Raummodell gelernt ist.",
   "devices.group_valve": "Ventil",
   "devices.valve_direct_info": "RoomMind stellt die Ventilöffnung selbst, z. B. auf 30 %, statt das Ventil ganz aufzumachen. Das ist leiser und gleichmäßiger. Aus: Das Thermostat regelt das Ventil wieder selbst.",
-  "devices.valve_opening_info": "Die Zahl-Entität, über die Home Assistant die Ventilöffnung setzt, z. B. valve_opening_degree. Leer lassen gibt das Ventil an das Thermostat zurück.",
+  "devices.valve_opening_info": "Die number-Entität, über die Home Assistant die Ventilöffnung setzt, z. B. valve_opening_degree. Leer lassen gibt das Ventil an das Thermostat zurück.",
   "devices.valve_closing_info": "Hält das Ventil auf der gesetzten Öffnung, egal was das Thermostat selbst will, z. B. valve_closing_degree. Wird automatisch eingetragen, wenn er wie der Öffnungsgrad heißt.",
   "devices.valve_idle_opening_info": "Die Ventilöffnung, solange das Thermostat nicht heizt, z. B. idle_valve_position in Zigbee2MQTT.",
   "devices.valve_closing_mode_info": "Die meisten Thermostate haben einen Schließgrad, z. B. der SONOFF TRVZB. Der SONOFF TRV-ZBT hat stattdessen eine Öffnung im Leerlauf. Falsch gewählt bleibt sein Ventil offen, wenn der Raum keine Wärme braucht.",
