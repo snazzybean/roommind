@@ -3453,3 +3453,27 @@ async def test_override_until_schedule_change_ignores_past_boundary(ws_hass, sto
             },
         )
     assert store.get_room("sched")["override_until"] > time.time() + 3000
+
+
+@pytest.mark.asyncio
+async def test_list_rooms_passes_price_shift_to_the_hero(ws_hass, store, connection):
+    """The hero's price line reads the shift and level from rooms/list."""
+    await store.async_load()
+    await _save_room(
+        ws_hass,
+        connection,
+        {"id": 2, "type": "roommind/rooms/save", "area_id": "kitchen", "thermostats": ["climate.kitchen_trv"]},
+    )
+    connection.send_result.reset_mock()
+    mock_coordinator = MagicMock()
+    mock_coordinator.rooms = {"kitchen": {"price_level": "cheap", "price_shift_heat": 1.0, "price_shift_cool": 0.0}}
+    mock_coordinator.async_request_refresh = AsyncMock()
+    mock_coordinator.recent_temps.get.return_value = []
+    ws_hass.data[DOMAIN]["coordinator"] = mock_coordinator
+
+    await _list_rooms(ws_hass, connection, {"id": 3, "type": "roommind/rooms/list"})
+
+    live = connection.send_result.call_args[0][1]["rooms"]["kitchen"]["live"]
+    assert live["price_level"] == "cheap"
+    assert live["price_shift_heat"] == 1.0
+    assert live["price_shift_cool"] == 0.0

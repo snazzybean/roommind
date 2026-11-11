@@ -338,6 +338,9 @@ async def websocket_list_rooms(
             "coil_dry_until": live.get("coil_dry_until"),
             "coil_dry_entities": live.get("coil_dry_entities", []),
             "schedule_temp_warnings": live.get("schedule_temp_warnings", []),
+            "price_level": live.get("price_level"),
+            "price_shift_heat": live.get("price_shift_heat", 0.0),
+            "price_shift_cool": live.get("price_shift_cool", 0.0),
             "recent_temps": coordinator.recent_temps.get(area_id) if coordinator else [],
         }
         result[area_id] = room_data
