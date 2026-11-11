@@ -135,11 +135,22 @@ export class RsAnalyticsChart extends LitElement {
     chartCtx.panels = panels;
 
     const visibleY: number[] = [];
+    // With every temperature series hidden the axis keeps the range of the room and its targets
+    // (the device setpoint, hidden by default, would stretch it to the boost); else it scales to
+    // the run strips' placeholder value and they fill the whole plot
+    const allY: number[] = [];
     const chartSeries = placeOnPanels(allSeries, panels);
     const displaySeries = chartSeries.map((s) => {
       const id = s.id as string;
       const ls = (s.lineStyle as Record<string, unknown>) || {};
       const isEvent = id.endsWith("_events");
+      const onTempAxis =
+        !isEvent && !id.startsWith("target_band") && id !== "now_marker" && !s.xAxisIndex;
+      if (onTempAxis && id !== "device_target") {
+        for (const point of s.data as Array<[number, number]>) {
+          if (point && point[1] != null) allY.push(point[1]);
+        }
+      }
       if (this._hiddenSeries.has(legendOwner(id))) {
         const hidden: Record<string, unknown> = {
           ...s,
@@ -150,7 +161,7 @@ export class RsAnalyticsChart extends LitElement {
         }
         return hidden;
       }
-      if (!isEvent && !id.startsWith("target_band") && id !== "now_marker" && !s.xAxisIndex) {
+      if (onTempAxis) {
         for (const point of s.data as Array<[number, number]>) {
           if (point && point[1] != null) {
             visibleY.push(point[1]);
@@ -165,7 +176,7 @@ export class RsAnalyticsChart extends LitElement {
       return visible;
     });
 
-    const options = buildChartOptions(visibleY, allPoints, chartCtx);
+    const options = buildChartOptions(visibleY.length > 0 ? visibleY : allY, allPoints, chartCtx);
     const mainAxis = (Array.isArray(options.yAxis) ? options.yAxis[0] : options.yAxis) as {
       min?: number;
       max?: number;
@@ -173,7 +184,7 @@ export class RsAnalyticsChart extends LitElement {
     const plotted =
       mainAxis.min != null && mainAxis.max != null
         ? placeEventStrips(displaySeries, mainAxis.min, mainAxis.max)
-        : displaySeries;
+        : displaySeries.filter((s) => s.id !== "heating_events" && s.id !== "cooling_events");
     const visualMaps: Array<Record<string, unknown>> = [];
     const humidity = displaySeries.find((s) => s.id === "humidity");
     if (humidity) {
