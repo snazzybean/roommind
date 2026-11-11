@@ -1,6 +1,7 @@
 /**
  * rs-confidence-chart – The model's confidence per day (backend `confidence_history`), the
  * days MPC controlled shaded, the data points as bars. Plain SVG drawn at the measured width.
+ * Each day is a button over its point with the shared tooltip; one tab stop, arrow keys move.
  */
 import { LitElement, html, css, nothing, svg } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
@@ -8,6 +9,7 @@ import type { HomeAssistant } from "../../types";
 import { localize } from "../../utils/localize";
 import { formatPercent } from "../../utils/format";
 import { tokens } from "../../styles/tokens";
+import "../shared/rs-tooltip";
 
 export type ConfidenceDay = [string, number, number, boolean];
 
@@ -18,6 +20,7 @@ const TOP = 10;
 const BOTTOM = 22;
 const BAR_MAX = 26;
 const DAY_MS = 86_400_000;
+const HIT = 28;
 
 // Local noon: a bare date would be parsed as UTC midnight and land on the day before
 const dayMs = (date: string) => new Date(`${date}T12:00:00`).getTime();
@@ -29,6 +32,9 @@ export class RsConfidenceChart extends LitElement {
   @property({ type: String }) public language = "en";
 
   @state() private _width = 0;
+  /** Day that has the tab stop (null = the newest) and the one whose tooltip is open. */
+  @state() private _focusIdx: number | null = null;
+  @state() private _activeIdx: number | null = null;
   private _resize?: ResizeObserver;
 
   connectedCallback() {
@@ -62,8 +68,9 @@ export class RsConfidenceChart extends LitElement {
     });
     const hasMpc = days.some((d) => d[3]);
     return html`
-      <div class="plot" role="img" aria-label=${label}>
+      <div class="plot" role="group" aria-label=${label}>
         ${this._width > 0 ? this._svg(days, fmtDay) : nothing}
+        ${this._width > 0 ? this._hits(days, fmtDay) : nothing}
       </div>
       <div class="legend">
         <span><i class="key line"></i>${localize("analytics.confidence", l)}</span>
@@ -88,9 +95,8 @@ export class RsConfidenceChart extends LitElement {
     `;
   }
 
-  private _svg(days: ConfidenceDay[], fmtDay: Intl.DateTimeFormat) {
-    const width = this._width;
-    const right = width - RIGHT;
+  private _geometry(days: ConfidenceDay[]) {
+    const right = this._width - RIGHT;
     const bottom = HEIGHT - BOTTOM;
     const start = dayMs(days[0][0]);
     const span = Math.max(Math.round((dayMs(days[days.length - 1][0]) - start) / DAY_MS), 1);
@@ -103,6 +109,61 @@ export class RsConfidenceChart extends LitElement {
           dayW / 2 +
           (Math.round((dayMs(date) - start) / DAY_MS) / span) * (right - LEFT - dayW);
     const y = (confidence: number) => bottom - confidence * (bottom - TOP);
+    return { right, bottom, dayW, x, y };
+  }
+
+  private _dayText(d: ConfidenceDay, fmtDay: Intl.DateTimeFormat): string {
+    return `${fmtDay.format(dayMs(d[0]))}: ${formatPercent(d[1] * 100, this.hass)}`;
+  }
+
+  private _hits(days: ConfidenceDay[], fmtDay: Intl.DateTimeFormat) {
+    const { dayW, x, y } = this._geometry(days);
+    // Never wider than a day, so neighbouring boxes do not overlap
+    const w = Math.min(HIT, dayW);
+    const focusIdx = this._focusIdx ?? days.length - 1;
+    return html`<div class="hits" @keydown=${this._onKey}>
+      ${days.map((d, i) => {
+        const text = this._dayText(d, fmtDay);
+        return html`<rs-tooltip
+          class="hit"
+          style="left:${x(d[0]) - w / 2}px;top:${y(d[1]) - HIT / 2}px"
+          .text=${text}
+          @tooltip-toggle=${(e: CustomEvent<{ open: boolean }>) => {
+            if (e.detail.open) this._activeIdx = i;
+            else if (this._activeIdx === i) this._activeIdx = null;
+          }}
+        >
+          <button
+            type="button"
+            style="width:${w}px"
+            aria-label=${text}
+            tabindex=${i === focusIdx ? "0" : "-1"}
+            @focus=${() => (this._focusIdx = i)}
+          ></button>
+        </rs-tooltip>`;
+      })}
+    </div>`;
+  }
+
+  private _onKey(e: KeyboardEvent) {
+    const keys = ["ArrowLeft", "ArrowRight", "Home", "End"];
+    if (!keys.includes(e.key)) return;
+    const buttons = [...this.renderRoot.querySelectorAll<HTMLButtonElement>(".hits button")];
+    const idx = buttons.indexOf(e.composedPath()[0] as HTMLButtonElement);
+    if (idx < 0) return;
+    e.preventDefault();
+    const rtl = getComputedStyle(this).direction === "rtl";
+    let next = idx;
+    if (e.key === "Home") next = 0;
+    else if (e.key === "End") next = buttons.length - 1;
+    else next = idx + ((e.key === "ArrowRight") !== rtl ? 1 : -1);
+    next = Math.max(0, Math.min(next, buttons.length - 1));
+    buttons[next].focus();
+  }
+
+  private _svg(days: ConfidenceDay[], fmtDay: Intl.DateTimeFormat) {
+    const width = this._width;
+    const { right, bottom, dayW, x, y } = this._geometry(days);
     const maxN = Math.max(...days.map((d) => d[2]), 1);
     const line = days.map((d, i) => `${i ? "L" : "M"}${x(d[0])},${y(d[1])}`).join("");
     const area = `${line}L${x(days[days.length - 1][0])},${bottom}L${x(days[0][0])},${bottom}Z`;
@@ -132,9 +193,7 @@ export class RsConfidenceChart extends LitElement {
       ${days.length > 1 ? svg`<path class="area" d=${area} /><path class="line" d=${line} />` : nothing}
       ${days.map(
         (d, i) =>
-          svg`<circle class="dot" cx=${x(d[0])} cy=${y(d[1])} r=${i === days.length - 1 ? 4.5 : days.length <= 14 ? 2.5 : 0}>
-            <title>${fmtDay.format(dayMs(d[0]))}: ${formatPercent(d[1] * 100, this.hass)}</title>
-          </circle>`,
+          svg`<circle class="dot" cx=${x(d[0])} cy=${y(d[1])} r=${i === days.length - 1 || i === this._activeIdx ? 4.5 : days.length <= 14 ? 2.5 : 0} />`,
       )}
       ${ticks.map((d, i) => {
         const anchor =
@@ -168,7 +227,26 @@ export class RsConfidenceChart extends LitElement {
       }
 
       .plot {
+        position: relative;
         height: ${HEIGHT}px;
+      }
+
+      rs-tooltip.hit {
+        position: absolute;
+      }
+
+      .hit button {
+        height: ${HIT}px;
+        padding: 0;
+        border: none;
+        border-radius: var(--rs-radius-sm);
+        background: none;
+        cursor: pointer;
+      }
+
+      .hit button:focus-visible {
+        outline: 2px solid var(--primary-color);
+        outline-offset: -2px;
       }
 
       svg {
