@@ -67,11 +67,26 @@ def _comfort_side(deviation: float) -> str:
     return "within"
 
 
+def _run_target(point: dict, target_key: str, sign: int) -> float | None:
+    """The target a run may aim for at ``point``: the stricter of the target in force and the schedule.
+
+    The price shift is taken out like in the comfort figures, so a run held under a target the
+    price lowered (coasting) is judged against the schedule. Charging raises the target in force
+    above the schedule; the stricter of both keeps that intended charge from counting as overshoot.
+    History ``price_shift`` carries the heat-side sign (heat +shift, cool -shift).
+    """
+    target = point.get(target_key)
+    if target is None:
+        return None
+    schedule = target - sign * (point.get("price_shift") or 0.0)
+    return float(max(target, schedule) if sign > 0 else min(target, schedule))
+
+
 def _reference_target(points: list[dict], run_start: int, end: int, target_key: str, sign: int) -> float | None:
     """The target a run of ``points[run_start..end]`` worked towards.
 
-    The strictest target in force from the run's start to OVERSHOOT_WINDOW_S after its end
-    (heating: the highest heat target, cooling: the lowest cool target), so a run ended by a
+    The strictest target (``_run_target``) from the run's start to OVERSHOOT_WINDOW_S after its
+    end (heating: the highest heat target, cooling: the lowest cool target), so a run ended by a
     lower target counts against the one it ran for. A run that started with the room already
     past that target can only be a pre-heat: then the next stricter target within
     PREHEAT_LOOKAHEAD_S is the reference (pre-heat starts up to hours before a block).
@@ -82,7 +97,7 @@ def _reference_target(points: list[dict], run_start: int, end: int, target_key: 
     for p in points[run_start:]:
         if p["ts"] - end_ts > OVERSHOOT_WINDOW_S:
             break
-        if (t := p.get(target_key)) is not None:
+        if (t := _run_target(p, target_key, sign)) is not None:
             targets.append(t)
     if not targets:
         return None
@@ -93,9 +108,9 @@ def _reference_target(points: list[dict], run_start: int, end: int, target_key: 
     for p in points[end:]:
         if p["ts"] - end_ts > PREHEAT_LOOKAHEAD_S:
             break
-        t = p.get(target_key)
+        t = _run_target(p, target_key, sign)
         if t is not None and sign * (t - reference) > 0:
-            return float(t)
+            return t
     return reference
 
 
@@ -105,7 +120,7 @@ def _run_overshoot(points: list[dict], mode: str, target_key: str, sign: int) ->
     The peak is taken from the run's end up to OVERSHOOT_WINDOW_S later or until the next run
     of the same mode; samples with an open window are left out. It is measured against the
     target the run worked towards (``_reference_target``), not the one in force at its end:
-    pre-heat runs end under eco and runs end because the target dropped.
+    pre-heat runs end under eco, runs end because the target dropped and the price lowers it.
     ``sign`` is +1 for heating (above the heat target), -1 for cooling (below the cool target).
     """
     strictest = max if sign > 0 else min

@@ -332,6 +332,27 @@ def test_overshoot_at_a_constant_target_still_counts():
     )
 
 
+def test_a_run_coasting_under_a_price_lowered_target_counts_against_the_schedule():
+    """Expensive hours: schedule 19, target 18; the room is heated to 19.4, that is 0.4 past the schedule."""
+    rows = [(18.6, "heating", 18.0), (19.0, "heating", 18.0)] + [(19.4, "idle", 18.0)] * 4
+    points = [{**p, "price_shift": -1.0} for p in _targeted(rows)]
+    assert compute_period_stats(points, "auto")["heat_overshoot"]["max"] == pytest.approx(0.4)
+
+
+def test_a_run_charging_under_a_price_raised_target_counts_against_that_target():
+    """Cheap hours: schedule 19, target 20; heating to 20.2 is the intended charge plus 0.2."""
+    rows = [(19.5, "heating", 20.0), (19.9, "heating", 20.0)] + [(20.2, "idle", 20.0)] * 4
+    points = [{**p, "price_shift": 1.0} for p in _targeted(rows)]
+    assert compute_period_stats(points, "auto")["heat_overshoot"]["max"] == pytest.approx(0.2)
+
+
+def test_cooling_overshoot_takes_the_price_shift_out_on_the_cool_side():
+    """Expensive: cool schedule 24 raised to 25 (shift -1 on the heat-side sign); 23.7 is 0.3 past 24."""
+    rows = [(25.2, "cooling", 25.0), (24.6, "cooling", 25.0)] + [(23.7, "idle", 25.0)] * 3
+    points = [{**p, "price_shift": -1.0} for p in _targeted(rows, "cool_target")]
+    assert compute_period_stats(points, "auto")["cool_overshoot"]["max"] == pytest.approx(0.3)
+
+
 def test_preheat_pulses_count_against_the_target_after_the_next_pulse():
     """Short pre-heat pulses under eco: each window ends at the next pulse, the target rises later."""
     rows = [(20.0, "heating", 18.0), (21.9, "idle", 18.0), (21.0, "heating", 18.0), (21.6, "idle", 18.0)]
