@@ -23,6 +23,7 @@ import "./rs-presence-section";
 import "./rs-covers-section";
 import "./rs-heat-source-section";
 import "./shared/rs-edit-dialog";
+import "./shared/rs-confirm-dialog";
 import "./shared/rs-list-card";
 import "./shared/rs-list-row";
 import "./shared/rs-segmented";
@@ -36,6 +37,7 @@ import {
   temperaturesHelp,
 } from "./room-detail/edit-dialog-help";
 import { localize, type TranslationKey } from "../utils/localize";
+import { errorText } from "../utils/errors";
 import { fireSaveStatus } from "../utils/events";
 import { resolveHeatingSystemType } from "../utils/device-utils";
 import { DEFAULT_OCCUPANCY_ECO_DELAY } from "../utils/constants";
@@ -187,18 +189,6 @@ export class RsRoomDetail extends LitElement {
       .error {
         color: var(--rs-err);
         font-size: 13px;
-      }
-
-      .confirm p {
-        margin: 0 0 var(--rs-space-4);
-        line-height: 1.5;
-      }
-
-      .confirm .actions {
-        display: flex;
-        justify-content: flex-end;
-        flex-wrap: wrap;
-        gap: var(--rs-space-2);
       }
     `,
   ];
@@ -413,8 +403,8 @@ export class RsRoomDetail extends LitElement {
       this._confirmDelete = false;
       this.dispatchEvent(new CustomEvent("room-deleted", { bubbles: true, composed: true }));
     } catch (err) {
-      this._deleteError =
-        err instanceof Error ? err.message : localize("detail.delete_error", this.hass.language);
+      const l = this.hass.language;
+      this._deleteError = errorText(err, localize("detail.delete_error", l), l);
     } finally {
       this._deleting = false;
     }
@@ -462,7 +452,11 @@ export class RsRoomDetail extends LitElement {
         </div>
         <div class="col right">
           ${outdoor ? nothing : this._renderSectionCards()} ${this._renderRoomCard()}
-          ${this._error ? html`<div class="error" role="alert">${this._error}</div>` : nothing}
+          ${
+            this._error && this._editing === null
+              ? html`<div class="error" role="alert">${this._error}</div>`
+              : nothing
+          }
         </div>
       </div>
       ${this._renderEditDialog()} ${this._renderDeleteDialog()}
@@ -689,25 +683,17 @@ export class RsRoomDetail extends LitElement {
     if (!this._confirmDelete) return nothing;
     const l = this.hass.language;
     const name = this.config?.display_name || this.area.name;
-    return html`<rs-edit-dialog
+    return html`<rs-confirm-dialog
       open
       icon="mdi:delete-outline"
       .heading=${localize("detail.delete_title", l)}
-      @rs-dialog-closed=${this._onDeleteCancel}
-    >
-      <div class="confirm">
-        <p>${localize("detail.delete_body", l, { name })}</p>
-        ${this._deleteError ? html`<p class="error" role="alert">${this._deleteError}</p>` : nothing}
-        <div class="actions">
-          <ha-button appearance="plain" @click=${this._onDeleteCancel}
-            >${localize("detail.cancel", l)}</ha-button
-          >
-          <ha-button variant="danger" .loading=${this._deleting} @click=${this._onDeleteConfirm}
-            >${localize("detail.delete_confirm", l)}</ha-button
-          >
-        </div>
-      </div>
-    </rs-edit-dialog>`;
+      .message=${localize("detail.delete_body", l, { name })}
+      .confirmLabel=${localize("detail.delete_confirm", l)}
+      .busy=${this._deleting}
+      .error=${this._deleteError}
+      @cancel=${this._onDeleteCancel}
+      @confirm=${this._onDeleteConfirm}
+    ></rs-confirm-dialog>`;
   }
 
   private _renderEditDialog() {
@@ -721,6 +707,7 @@ export class RsRoomDetail extends LitElement {
           icon="mdi:calendar-clock"
           .heading=${localize("detail.schedule.dialog_schedule", lang)}
           hasInfo
+          .error=${this._error}
           @rs-dialog-closed=${this._closeEdit}
         >
           ${scheduleHelp(lang)}
@@ -748,6 +735,7 @@ export class RsRoomDetail extends LitElement {
           icon="mdi:thermometer"
           .heading=${localize("detail.schedule.dialog_temps", lang)}
           hasInfo
+          .error=${this._error}
           @rs-dialog-closed=${this._closeEdit}
         >
           ${temperaturesHelp(lang)}
@@ -770,6 +758,7 @@ export class RsRoomDetail extends LitElement {
           icon="mdi:cash-clock"
           .heading=${localize("schedule.price_shift_label", lang)}
           hasInfo
+          .error=${this._error}
           @rs-dialog-closed=${this._closeEdit}
         >
           ${priceHelp(lang)}
@@ -789,6 +778,7 @@ export class RsRoomDetail extends LitElement {
           icon="mdi:power-plug"
           .heading=${localize("room.section.devices", lang)}
           hasInfo
+          .error=${this._error}
           @rs-dialog-closed=${this._closeEdit}
         >
           ${devicesHelp(lang)}
@@ -814,6 +804,7 @@ export class RsRoomDetail extends LitElement {
           open
           icon="mdi:thermometer"
           .heading=${localize("room.section.sensors", lang)}
+          .error=${this._error}
           @rs-dialog-closed=${this._closeEdit}
         >
           <rs-sensor-section
@@ -839,6 +830,7 @@ export class RsRoomDetail extends LitElement {
           icon="mdi:home-account"
           .heading=${localize("room.section.presence", lang)}
           hasInfo
+          .error=${this._error}
           @rs-dialog-closed=${this._closeEdit}
         >
           ${presenceHelp(lang)}
@@ -860,6 +852,7 @@ export class RsRoomDetail extends LitElement {
           icon="mdi:blinds-horizontal"
           .heading=${localize("room.section.covers", lang)}
           hasInfo
+          .error=${this._error}
           @rs-dialog-closed=${this._closeEdit}
         >
           ${coversHelp(lang)}
@@ -901,6 +894,7 @@ export class RsRoomDetail extends LitElement {
           open
           icon="mdi:swap-horizontal"
           .heading=${localize("room.section.heat_source", lang)}
+          .error=${this._error}
           @rs-dialog-closed=${this._closeEdit}
         >
           <rs-heat-source-section
@@ -1141,8 +1135,10 @@ export class RsRoomDetail extends LitElement {
         type: "roommind/covers/clear_override",
         area_id: this.area.area_id,
       });
-    } catch {
+    } catch (err) {
       this._optimisticCoverResume = false;
+      const l = this.hass.language;
+      this._error = errorText(err, localize("room.error_save_fallback", l), l);
     }
   }
 
@@ -1261,11 +1257,8 @@ export class RsRoomDetail extends LitElement {
         }),
       );
     } catch (err: unknown) {
-      const message =
-        err instanceof Error
-          ? err.message
-          : localize("room.error_save_fallback", this.hass.language);
-      this._error = message;
+      const l = this.hass.language;
+      this._error = errorText(err, localize("room.error_save_fallback", l), l);
       fireSaveStatus(this, "error");
     }
   }

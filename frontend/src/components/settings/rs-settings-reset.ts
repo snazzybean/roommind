@@ -6,7 +6,10 @@ import { RsSettingsBase } from "./rs-settings-base";
 import { customElement, property, state } from "lit/decorators.js";
 import type { HomeAssistant, RoomConfig } from "../../types";
 import { localize } from "../../utils/localize";
+import { errorText } from "../../utils/errors";
+import { alertStyles } from "../../styles/tokens";
 import "../shared/rs-icon-button";
+import "../shared/rs-confirm-button";
 import { fireSaveStatus, getSelectValue } from "../../utils/events";
 
 @customElement("rs-settings-reset")
@@ -15,6 +18,7 @@ export class RsSettingsReset extends RsSettingsBase {
   @property({ attribute: false }) public rooms: Record<string, RoomConfig> = {};
 
   @state() private _resetSelectedRoom = "";
+  @state() private _error = "";
 
   render() {
     const l = this.hass.language;
@@ -26,16 +30,20 @@ export class RsSettingsReset extends RsSettingsBase {
       .sort((a, b) => a.name.localeCompare(b.name));
 
     return html`
+      ${this._error ? html`<p class="rs-alert" role="alert">${this._error}</p>` : nothing}
       <div class="settings-section first">
         <div class="reset-row">
           <div class="reset-text">
             <span class="label">${localize("settings.reset_all_label", l)}</span>
             <span class="note">${localize("settings.reset_all_hint", l)}</span>
           </div>
-          <button class="reset-btn" @click=${this._resetAllModels}>
-            <ha-icon icon="mdi:restart-alert"></ha-icon>
-            ${localize("settings.reset_all_btn", l)}
-          </button>
+          <rs-confirm-button
+            destructive
+            icon="mdi:restart-alert"
+            .label=${localize("settings.reset_all_btn", l)}
+            .confirmMessage=${localize("settings.reset_all_confirm", l)}
+            @confirmed=${this._resetAllModels}
+          ></rs-confirm-button>
         </div>
       </div>
 
@@ -78,15 +86,15 @@ export class RsSettingsReset extends RsSettingsBase {
                         ></rs-icon-button>`
                       : nothing
                   }
-                  <button
-                    class="reset-btn"
-                    ?disabled=${!this._resetSelectedRoom}
-                    @click=${() =>
+                  <rs-confirm-button
+                    destructive
+                    icon="mdi:restart"
+                    .label=${localize("settings.reset_btn", l)}
+                    .confirmMessage=${localize("settings.reset_room_confirm", l)}
+                    .disabled=${!this._resetSelectedRoom}
+                    @confirmed=${() =>
                       this._resetSelectedRoom && this._resetRoomModel(this._resetSelectedRoom)}
-                  >
-                    <ha-icon icon="mdi:restart"></ha-icon>
-                    ${localize("settings.reset_btn", l)}
-                  </button>
+                  ></rs-confirm-button>
                 </div>
               `
             : html`<p class="hint">${localize("settings.reset_no_rooms", l)}</p>`
@@ -96,31 +104,34 @@ export class RsSettingsReset extends RsSettingsBase {
   }
 
   private async _resetRoomModel(areaId: string) {
-    const l = this.hass.language;
-    if (!confirm(localize("settings.reset_room_confirm", l))) return;
+    this._error = "";
     try {
       fireSaveStatus(this, "saving");
       await this.hass.callWS({ type: "roommind/thermal/reset", area_id: areaId });
       fireSaveStatus(this, "saved");
-    } catch {
+    } catch (err) {
+      const l = this.hass.language;
+      this._error = errorText(err, localize("error.unknown", l), l);
       fireSaveStatus(this, "error");
     }
   }
 
-  private async _resetAllModels() {
-    const l = this.hass.language;
-    if (!confirm(localize("settings.reset_all_confirm", l))) return;
+  private _resetAllModels = async () => {
+    this._error = "";
     try {
       fireSaveStatus(this, "saving");
       await this.hass.callWS({ type: "roommind/thermal/reset_all" });
       fireSaveStatus(this, "saved");
-    } catch {
+    } catch (err) {
+      const l = this.hass.language;
+      this._error = errorText(err, localize("error.unknown", l), l);
       fireSaveStatus(this, "error");
     }
-  }
+  };
 
   static styles = [
     RsSettingsBase.settingsBaseStyles,
+    alertStyles,
     css`
       .hint {
         color: var(--secondary-text-color);
@@ -144,38 +155,6 @@ export class RsSettingsReset extends RsSettingsBase {
       .label {
         font-size: var(--rs-font-md);
         font-weight: 500;
-      }
-
-      .reset-btn {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        padding: 8px 14px;
-        border: 1px solid var(--rs-err);
-        border-radius: var(--rs-radius-sm);
-        min-height: 40px;
-        background: transparent;
-        color: var(--rs-err);
-        font-size: 13px;
-        font-family: inherit;
-        cursor: pointer;
-        transition: background 0.15s;
-        --mdc-icon-size: 16px;
-        white-space: nowrap;
-      }
-      .reset-btn:hover {
-        background: color-mix(in srgb, var(--rs-err) 8%, transparent);
-      }
-      .reset-btn:focus-visible {
-        outline: 2px solid var(--rs-err);
-        outline-offset: 2px;
-      }
-      .reset-btn:disabled {
-        opacity: 0.4;
-        cursor: not-allowed;
-      }
-      .reset-btn:disabled:hover {
-        background: transparent;
       }
 
       .reset-room-row {

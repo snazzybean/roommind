@@ -11,6 +11,7 @@ import { tokens } from "../styles/tokens";
 import { inputStyles } from "../styles/input-styles";
 import { formStyles } from "../styles/form-styles";
 import type { RsSegmentOption } from "./shared/rs-segmented";
+import "./shared/rs-confirm-dialog";
 import "./shared/rs-field";
 import "./shared/rs-info-icon";
 import "./shared/rs-list-row";
@@ -128,11 +129,6 @@ export class RsDeviceSection extends LitElement {
       );
       return;
     }
-    if (changed.has("_confirmRemove") && changed.get("_confirmRemove") !== undefined) {
-      // The pressed control is gone either way: focus the safe answer, or the row again
-      if (this._confirmRemove) void this._focusWhenReady(".confirm ha-button");
-      else void this._focusWhenReady("rs-list-row.remove");
-    }
     // Only a switch the user made moves the focus; opening the dialog leaves it to the dialog
     if (!this._narrow || changed.get("_detailOpen") === undefined) return;
     if (this._detailOpen) {
@@ -249,28 +245,6 @@ export class RsDeviceSection extends LitElement {
         margin-top: var(--rs-space-6);
         padding-top: var(--rs-space-5);
         border-top: 1px solid var(--rs-border);
-      }
-
-      .confirm {
-        display: flex;
-        flex-direction: column;
-        gap: var(--rs-space-3);
-        padding: var(--rs-space-3);
-        border-radius: var(--rs-radius-sm);
-        background: color-mix(in srgb, var(--rs-err) 8%, transparent);
-      }
-
-      .confirm p {
-        margin: 0;
-        font-size: var(--rs-font-md);
-        line-height: 1.5;
-      }
-
-      .confirm .actions {
-        display: flex;
-        justify-content: flex-end;
-        flex-wrap: wrap;
-        gap: var(--rs-space-2);
       }
     `,
   ];
@@ -986,8 +960,7 @@ export class RsDeviceSection extends LitElement {
   private _renderRemove(device: DeviceConfig) {
     const l = this.hass.language;
     const id = device.entity_id;
-    if (this._confirmRemove !== id) {
-      return html`<rs-list-row
+    return html`<rs-list-row
         class="remove"
         clickable
         variant="danger"
@@ -996,27 +969,18 @@ export class RsDeviceSection extends LitElement {
         @row-click=${() => {
           this._confirmRemove = id;
         }}
-      ></rs-list-row>`;
-    }
-    return html`<div
-      class="confirm"
-      role="group"
-      aria-label=${localize("detail.devices.remove", l)}
-    >
-      <p>${localize("detail.devices.remove_confirm", l, { name: this._name(id) })}</p>
-      <div class="actions">
-        <ha-button
-          appearance="plain"
-          @click=${() => {
-            this._confirmRemove = "";
-          }}
-          >${localize("detail.cancel", l)}</ha-button
-        >
-        <ha-button variant="danger" @click=${() => this._removeDevice(id)}
-          >${localize("detail.devices.remove_action", l)}</ha-button
-        >
-      </div>
-    </div>`;
+      ></rs-list-row>
+      <rs-confirm-dialog
+        .open=${this._confirmRemove === id}
+        icon="mdi:minus-circle-outline"
+        .heading=${localize("detail.devices.remove", l)}
+        .message=${localize("detail.devices.remove_confirm", l, { name: this._name(id) })}
+        .confirmLabel=${localize("detail.devices.remove_action", l)}
+        @cancel=${() => {
+          this._confirmRemove = "";
+        }}
+        @confirm=${() => this._removeDevice(id)}
+      ></rs-confirm-dialog>`;
   }
 
   private _openDetail(entityId: string) {

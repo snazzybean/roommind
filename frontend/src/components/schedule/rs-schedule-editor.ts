@@ -2,6 +2,7 @@ import { LitElement, html, css, nothing, type PropertyValues } from "lit";
 import { customElement, property, query, state } from "lit/decorators.js";
 import type { ClimateMode, HomeAssistant, RoomConfig } from "../../types";
 import { localize } from "../../utils/localize";
+import { errorText } from "../../utils/errors";
 import { tokens } from "../../styles/tokens";
 import { floatingStyles } from "../../styles/floating-styles";
 import { inputStyles } from "../../styles/input-styles";
@@ -43,6 +44,7 @@ import type { BlockTempChange } from "./rs-block-form";
 import type { RsMenuItem } from "../shared/rs-menu";
 import "./rs-week-grid";
 import "./rs-block-form";
+import "../shared/rs-confirm-dialog";
 import "../shared/rs-list-card";
 import "../shared/rs-list-row";
 import "../shared/rs-menu";
@@ -530,7 +532,11 @@ export class RsScheduleEditor extends LitElement {
       this._savedJson = this._payloadJson();
     } catch (err) {
       if (token !== this._loadToken) return;
-      this._loadError = err instanceof Error ? err.message : String(err);
+      this._loadError = errorText(
+        err,
+        localize("error.unknown", this.hass.language),
+        this.hass.language,
+      );
     }
   }
 
@@ -572,7 +578,11 @@ export class RsScheduleEditor extends LitElement {
       this._saveError = "";
       fireSaveStatus(this, "saved");
     } catch (err) {
-      this._saveError = err instanceof Error ? err.message : String(err);
+      this._saveError = errorText(
+        err,
+        localize("error.unknown", this.hass.language),
+        this.hass.language,
+      );
       fireSaveStatus(this, "error");
     } finally {
       this._inFlight = false;
@@ -1426,63 +1436,51 @@ export class RsScheduleEditor extends LitElement {
       const idx = list.findIndex((s) => s.entity_id === this.entityId);
       return !!u.config.schedule_selector_entity && idx >= 0 && idx < list.length - 1;
     });
-    return html`<rs-edit-dialog
+    return html`<rs-confirm-dialog
       open
       icon="mdi:delete-outline"
       .heading=${localize("schedule_editor.delete_title", l)}
-      @rs-dialog-closed=${() => !this._busy && (this._dialog = null)}
+      .message=${`${localize("schedule_editor.delete_body", l, { name: this._name })}${
+        users.length
+          ? ` ${localize("schedule_editor.delete_body_rooms", l, {
+              rooms: users.map((u) => u.name).join(", "),
+            })}`
+          : ""
+      }`}
+      .confirmLabel=${localize("schedule_editor.delete_confirm", l)}
+      .busy=${this._busy}
+      .error=${this._dialogError}
+      @cancel=${() => (this._dialog = null)}
+      @confirm=${() => this._delete(users)}
     >
-      <div class="confirm">
-        <p>
-          ${localize("schedule_editor.delete_body", l, { name: this._name })}
-          ${
-            users.length
-              ? localize("schedule_editor.delete_body_rooms", l, {
-                  rooms: users.map((u) => u.name).join(", "),
-                })
-              : nothing
-          }
-        </p>
-        ${
-          shifted.length
-            ? html`<p class="muted">
-                ${localize("schedule_editor.delete_selector_note", l, {
-                  rooms: shifted.map((u) => u.name).join(", "),
-                })}
-              </p>`
-            : nothing
-        }
-        ${
-          here && users.length > 1
-            ? html`<p class="muted">
-                ${localize("schedule_editor.delete_only_here_hint", l, { room: here.name })}
-              </p>`
-            : nothing
-        }
-        ${this._dialogError ? html`<p class="error" role="alert">${this._dialogError}</p>` : nothing}
-        <div class="actions">
-          ${
-            here
-              ? html`<ha-button
-                    appearance="plain"
-                    ?disabled=${this._busy}
-                    @click=${this._removeFromRoom}
-                    >${localize("schedule_editor.remove_here", l, { room: here.name })}</ha-button
-                  ><span class="grow"></span>`
-              : nothing
-          }
-          <ha-button
-            appearance="plain"
-            ?disabled=${this._busy}
-            @click=${() => (this._dialog = null)}
-            >${localize("detail.cancel", l)}</ha-button
-          >
-          <ha-button variant="danger" .loading=${this._busy} @click=${() => this._delete(users)}
-            >${localize("schedule_editor.delete_confirm", l)}</ha-button
-          >
-        </div>
-      </div>
-    </rs-edit-dialog>`;
+      ${
+        shifted.length
+          ? html`<p>
+              ${localize("schedule_editor.delete_selector_note", l, {
+                rooms: shifted.map((u) => u.name).join(", "),
+              })}
+            </p>`
+          : nothing
+      }
+      ${
+        here && users.length > 1
+          ? html`<p>
+              ${localize("schedule_editor.delete_only_here_hint", l, { room: here.name })}
+            </p>`
+          : nothing
+      }
+      ${
+        here
+          ? html`<ha-button
+              slot="extra"
+              appearance="plain"
+              ?disabled=${this._busy}
+              @click=${this._removeFromRoom}
+              >${localize("schedule_editor.remove_here", l, { room: here.name })}</ha-button
+            >`
+          : nothing
+      }
+    </rs-confirm-dialog>`;
   }
 
   /** Partial room save: only `schedules` changes, every other field stays as stored. */
@@ -1505,7 +1503,11 @@ export class RsScheduleEditor extends LitElement {
       this._dialog = null;
       this._closed();
     } catch (err) {
-      this._dialogError = err instanceof Error ? err.message : String(err);
+      this._dialogError = errorText(
+        err,
+        localize("error.unknown", this.hass.language),
+        this.hass.language,
+      );
     } finally {
       this._busy = false;
     }
@@ -1525,7 +1527,11 @@ export class RsScheduleEditor extends LitElement {
       this._dialog = null;
       this._closed();
     } catch (err) {
-      this._dialogError = err instanceof Error ? err.message : String(err);
+      this._dialogError = errorText(
+        err,
+        localize("error.unknown", this.hass.language),
+        this.hass.language,
+      );
     } finally {
       this._busy = false;
     }
