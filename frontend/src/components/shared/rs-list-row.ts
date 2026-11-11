@@ -12,6 +12,9 @@ import "./rs-tooltip";
  *   with the new state).
  * - `icon-label`: the icon becomes its own button (`icon-click`), e.g. Home Assistant's
  *   more-info for the entity, named by the shared tooltip.
+ * - `selected`: the current entry of a navigation list (`aria-current="page"`, highlighted).
+ * - `status`: a small on/off dot before the chevron; decorative, the text must say it too.
+ * - `wrap`: the heading may wrap instead of being cut off; `single-line` cuts the secondary.
  * - Slots: `secondary` (rich second line), `end` (extra controls after the value, outside the
  *   row button).
  */
@@ -35,6 +38,10 @@ export class RsListRow extends LitElement {
   @property({ type: String, attribute: "icon-color" }) public iconColor = "";
   /** Small icon without circle, e.g. for an "add" row. */
   @property({ type: Boolean, attribute: "plain-icon" }) public plainIcon = false;
+  @property({ type: Boolean, reflect: true }) public selected = false;
+  @property({ type: String }) public status: "" | "on" | "off" = "";
+  @property({ type: Boolean, reflect: true }) public wrap = false;
+  @property({ type: Boolean, reflect: true, attribute: "single-line" }) public singleLine = false;
 
   static styles = [
     tokens,
@@ -219,6 +226,46 @@ export class RsListRow extends LitElement {
       ha-switch {
         flex: none;
       }
+
+      :host([wrap]) .heading {
+        white-space: normal;
+        overflow-wrap: anywhere;
+      }
+
+      :host([single-line]) .secondary {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      :host([selected]) .row {
+        background: var(--rs-fill-primary);
+        border-radius: var(--rs-radius-sm);
+      }
+
+      :host([selected]) .heading {
+        color: var(--primary-color);
+        font-weight: 500;
+      }
+
+      :host([selected]) .ic {
+        background: color-mix(in srgb, var(--primary-color) 16%, transparent);
+        color: var(--primary-color);
+      }
+
+      .dot {
+        flex: none;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        box-sizing: border-box;
+        background: var(--rs-ok);
+      }
+
+      .dot.off {
+        background: transparent;
+        border: 1.5px solid var(--disabled-text-color, var(--secondary-text-color));
+      }
     `,
   ];
 
@@ -230,6 +277,7 @@ export class RsListRow extends LitElement {
         <div class="secondary">${this.secondary}<slot name="secondary"></slot></div>
       </span>
       ${this.value ? html`<span class="value">${this.value}</span>` : nothing}
+      ${this.status ? html`<span class="dot ${this.status}" aria-hidden="true"></span>` : nothing}
       ${
         this.chevron
           ? html`<ha-icon class="chev" icon="mdi:chevron-right" aria-hidden="true"></ha-icon>`
@@ -253,12 +301,15 @@ export class RsListRow extends LitElement {
 
     let main;
     if (this.href && !this.disabled) {
-      main = html`<a class="main" href=${this.href}>${body}</a>`;
+      main = html`<a class="main" href=${this.href} aria-current=${this.selected ? "page" : nothing}
+        >${body}</a
+      >`;
     } else if (this.clickable) {
       main = html`<button
         type="button"
         class="main"
         ?disabled=${this.disabled}
+        aria-current=${this.selected ? "page" : nothing}
         @click=${this._onRowClick}
       >
         ${body}
@@ -289,6 +340,13 @@ export class RsListRow extends LitElement {
     return html`<span class=${cls} style=${style} aria-hidden="true"
       ><ha-icon .icon=${this.icon}></ha-icon
     ></span>`;
+  }
+
+  /** Focuses the row's link or button (keyboard return to a list entry). */
+  override focus(options?: FocusOptions) {
+    const target = this.renderRoot?.querySelector<HTMLElement>("a.main, button.main");
+    if (target) target.focus(options);
+    else super.focus(options);
   }
 
   /** Not composed: the component that renders the row listens on it directly. */
