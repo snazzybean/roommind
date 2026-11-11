@@ -137,7 +137,9 @@ export class RsAnalyticsModel extends LitElement {
 
   /**
    * Stages from the real state: MPC running means all of them are reached (its gate also knows
-   * the outdoor limits, the sample counts here do not); else the mirrored data gate.
+   * the outdoor limits, the sample counts here do not); else the mirrored data gate. A room
+   * with one side needs runs of that side; a room with both needs either, since the outdoor
+   * limits usually close one of them.
    */
   private _stages(): Stage[] {
     const m = this.data?.model;
@@ -145,11 +147,15 @@ export class RsAnalyticsModel extends LitElement {
     const heating = m?.n_heating ?? 0;
     const cooling = m?.n_cooling ?? 0;
     const idle = (m?.n_samples ?? 0) - heating - cooling;
-    const dataDone =
-      mpcActive ||
-      (!!m?.model &&
-        idle >= MPC_MIN_IDLE_SAMPLES &&
-        Math.max(heating, cooling) >= MPC_MIN_ACTIVE_SAMPLES);
+    const both = this.canHeat && this.canCool;
+    const coolOnly = this.canCool && !this.canHeat;
+    const runs = both ? Math.max(heating, cooling) : coolOnly ? cooling : heating;
+    const idleDone = !!m?.model && idle >= MPC_MIN_IDLE_SAMPLES;
+    const dataDone = mpcActive || (idleDone && runs >= MPC_MIN_ACTIVE_SAMPLES);
+    const side = both ? "" : coolOnly ? "_cool" : "_heat";
+    const dataSub = (
+      !dataDone && idleDone ? `analytics.stage_data_wait${side}` : `analytics.stage_data_sub${side}`
+    ) as TranslationKey;
     const accurate =
       m?.prediction_std_idle != null &&
       m.prediction_std_idle < MPC_MAX_PREDICTION_STD &&
@@ -184,7 +190,7 @@ export class RsAnalyticsModel extends LitElement {
     const stages: Stage[] = [
       {
         title: "analytics.stage_data",
-        sub: "analytics.stage_data_sub",
+        sub: dataSub,
         icon: "mdi:database-outline",
         state: dataDone ? "done" : "current",
       },

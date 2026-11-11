@@ -17,8 +17,11 @@ from ..const import (
     DEFAULT_COMFORT_HEAT,
     DEFAULT_ECO_COOL,
     DEFAULT_ECO_HEAT,
+    DEFAULT_OUTDOOR_COOLING_MIN,
+    DEFAULT_OUTDOOR_HEATING_MAX,
     HEATING_SYSTEM_RADIATOR,
     MODE_IDLE,
+    is_override_active,
 )
 from ..control.mpc_controller import (
     DEFAULT_OUTDOOR_TEMP_FALLBACK,
@@ -309,6 +312,9 @@ async def build_analytics_data(
     # Model info (only if estimator exists -- avoid auto-creating for unknown rooms)
     model_info: dict = {}
     mpc_active = False
+    # The controller's path, which the prediction follows; differs from mpc_active only when
+    # the outdoor limits close both sides (see is_mpc_active)
+    mpc_runs = False
     if coordinator:
         mgr = coordinator._model_manager
         if area_id in mgr._estimators:
@@ -318,19 +324,35 @@ async def build_analytics_data(
             pred_std_heat = est.prediction_std(rc.Q_heat, 20.0, 10.0, 5.0)
             has_ext_sensor = bool(room_config.get("temperature_sensor"))
             if has_ext_sensor:
+                acs_heat = check_acs_can_heat(hass, room_config)
                 can_heat, can_cool = get_can_heat_cool(
                     room_config,
                     coordinator.outdoor_temp_effective,
-                    acs_can_heat=check_acs_can_heat(hass, room_config),
+                    settings.get("outdoor_cooling_min", DEFAULT_OUTDOOR_COOLING_MIN),
+                    settings.get("outdoor_heating_max", DEFAULT_OUTDOOR_HEATING_MAX),
+                    acs_can_heat=acs_heat,
+                    override_active=is_override_active(room_config),
                 )
                 T_out = (
                     coordinator.outdoor_temp_effective
                     if coordinator.outdoor_temp_effective is not None
                     else DEFAULT_OUTDOOR_TEMP_FALLBACK
                 )
-                mpc_active = is_mpc_active(mgr, area_id, can_heat, can_cool, 20.0, T_out, settings=settings)
-            else:
-                mpc_active = False
+                mpc_runs = is_mpc_active(mgr, area_id, can_heat, can_cool, 20.0, T_out, settings=settings)
+                mpc_active = mpc_runs and (
+                    can_heat
+                    or can_cool
+                    or is_mpc_active(
+                        mgr,
+                        area_id,
+                        can_heat,
+                        can_cool,
+                        20.0,
+                        T_out,
+                        settings=settings,
+                        room_sides=get_can_heat_cool(room_config, acs_can_heat=acs_heat),
+                    )
+                )
             # EKF uncertainty: sqrt(P[0][0]) as proxy for sigma_e
             sigma_proxy = math.sqrt(max(est._P[0][0], 0.0))
             has_occupancy_sensors = len(room_config.get("occupancy_sensors", [])) > 0
@@ -478,7 +500,7 @@ async def build_analytics_data(
                         outdoor_series=outdoor_series,
                         current_temp=current_t,
                         window_open=coordinator._window_manager._paused.get(area_id, False),
-                        mpc_active=mpc_active,
+                        mpc_active=mpc_runs,
                         room_config=room_config,
                         settings=settings,
                         all_points=all_points,

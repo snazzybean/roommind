@@ -440,6 +440,64 @@ class TestBuildAnalyticsData:
         assert mock_sim.call_args.kwargs["outdoor_known"] is known
 
     @pytest.mark.asyncio
+    async def test_cool_only_room_in_winter_is_not_shown_as_mpc_but_predicted_like_the_controller(self):
+        """Outdoor limit closes both sides of a room that never cooled: the model card says
+        "learning", the prediction keeps the controller's path (MPC, which idles)."""
+        hass = MagicMock()
+        hass.config.latitude = 48.0
+        hass.config.longitude = 11.0
+        hass.states.get.return_value = None
+        store = MagicMock()
+        store.get_settings.return_value = {"prediction_enabled": True}
+        store.get_room.return_value = {
+            "temperature_sensor": "sensor.temp",
+            "climate_mode": "cool_only",
+            "devices": [{"entity_id": "climate.office_ac", "type": "ac"}],
+        }
+
+        from custom_components.roommind.control.thermal_model import ThermalEKF
+
+        est = ThermalEKF()
+        mgr = MagicMock()
+        mgr._estimators = {"office": est}
+        mgr.get_model.return_value = est.get_model()
+        mgr.get_prediction_std.return_value = 0.1
+        mgr.get_mode_counts.return_value = (900, 0, 0)
+        coordinator = MagicMock()
+        coordinator._model_manager = mgr
+        coordinator.outdoor_temp_effective = 5.0
+        coordinator.rooms = {"office": {}}
+        coordinator._weather_manager._outdoor_forecast = []
+        coordinator._residual_tracker._off_since = {}
+        coordinator._window_manager._paused = {}
+
+        async def mock_executor(fn, *args, **kwargs):
+            return fn(*args, **kwargs)
+
+        hass.async_add_executor_job = mock_executor
+        history_store = MagicMock()
+        history_store.read_detail.return_value = [
+            {"timestamp": "2000", "room_temp": "14.0", "outdoor_temp": "5", "target_temp": "24", "mode": "idle"}
+        ]
+        history_store.read_history.return_value = []
+        coordinator._history_store = history_store
+
+        with (
+            patch(
+                "custom_components.roommind.services.analytics_service._compute_target_forecast",
+                new_callable=AsyncMock,
+                return_value=[{"ts": time.time(), "target_temp": 24.0, "heat_target": None, "cool_target": 24.0}],
+            ),
+            patch(
+                "custom_components.roommind.control.analytics_simulator.simulate_prediction",
+                return_value=[14.0],
+            ) as mock_sim,
+        ):
+            data = await build_analytics_data(hass, "office", "12h", store, coordinator)
+        assert data["model"]["mpc_active"] is False
+        assert mock_sim.call_args.kwargs["mpc_active"] is True
+
+    @pytest.mark.asyncio
     async def test_no_room_temp_skips_prediction(self):
         """If no room_temp in any point, prediction is skipped (current_t stays None)."""
         hass = MagicMock()

@@ -27,6 +27,7 @@ from .const import (
     DEFAULT_COMFORT_HEAT,
     DEFAULT_ECO_COOL,
     DEFAULT_ECO_HEAT,
+    DEFAULT_OUTDOOR_COOLING_MIN,
     DEFAULT_OUTDOOR_HEATING_MAX,
     DOMAIN,
     HEATING_BOOST_TARGET,
@@ -1430,10 +1431,13 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         mpc_active = False
         if has_external_sensor:
             try:
+                _acs_heat = check_acs_can_heat(self.hass, room)
                 _ch, _cc = get_can_heat_cool(
                     room,
                     self.outdoor_temp_effective,
-                    acs_can_heat=check_acs_can_heat(self.hass, room),
+                    settings.get("outdoor_cooling_min", DEFAULT_OUTDOOR_COOLING_MIN),
+                    settings.get("outdoor_heating_max", DEFAULT_OUTDOOR_HEATING_MAX),
+                    acs_can_heat=_acs_heat,
                     override_active=is_override_active(room),
                 )
                 _T_out = (
@@ -1449,6 +1453,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                     current_temp or 20.0,
                     _T_out,
                     settings=settings,
+                    room_sides=get_can_heat_cool(room, acs_can_heat=_acs_heat),
                 )
             except Exception:  # noqa: BLE001
                 mpc_active = False

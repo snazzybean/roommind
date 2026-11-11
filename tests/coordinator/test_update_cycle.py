@@ -689,6 +689,46 @@ class TestCoverageGaps:
         assert data["rooms"]["mpc_room"]["mpc_active"] is expected
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("climate_mode", "counts", "outdoor", "settings", "expected"),
+        [
+            # Cool-only room in winter that never cooled: the outdoor limit closes both sides
+            ("cool_only", (900, 0, 0), "5.0", {}, False),
+            ("cool_only", (900, 0, 30), "5.0", {}, True),
+            # Hybrid room between the default limits needs cooling data too ...
+            ("auto", (100, 30, 0), "18.0", {}, False),
+            # ... unless the user's cooling limit closes cooling, like in the controller
+            ("auto", (100, 30, 0), "18.0", {"outdoor_cooling_min": 20}, True),
+        ],
+    )
+    async def test_mpc_active_needs_samples_of_the_rooms_own_sides(
+        self, hass, mock_config_entry, climate_mode, counts, outdoor, settings, expected
+    ):
+        room = {
+            **SAMPLE_ROOM,
+            "area_id": "office",
+            "climate_mode": climate_mode,
+            "thermostats": [] if climate_mode == "cool_only" else ["climate.living_room"],
+            "acs": ["climate.office_ac"],
+            "devices": ([] if climate_mode == "cool_only" else SAMPLE_ROOM["devices"])
+            + [{"entity_id": "climate.office_ac", "type": "ac", "role": "auto", "heating_system_type": ""}],
+        }
+        store = _make_store_mock({"office": room})
+        store.get_settings.return_value = {"outdoor_temp_sensor": "sensor.outdoor_temp", **settings}
+        hass.data = {"roommind": {"store": store}}
+        hass.states.get = MagicMock(side_effect=make_mock_states_get(temp="18.0", outdoor_temp=outdoor))
+        hass.services.async_call = AsyncMock()
+
+        coordinator = _create_coordinator(hass, mock_config_entry)
+        mgr = coordinator._model_manager
+        mgr.get_prediction_std = MagicMock(return_value=0.1)
+        mgr.get_mode_counts = MagicMock(return_value=counts)
+
+        data = await coordinator._async_update_data()
+
+        assert data["rooms"]["office"]["mpc_active"] is expected
+
+    @pytest.mark.asyncio
     async def test_history_write_computes_prediction(self, hass, mock_config_entry):
         """History write cycle computes predictions for next cycle."""
         from custom_components.roommind.const import HISTORY_WRITE_CYCLES
