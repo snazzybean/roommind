@@ -557,7 +557,6 @@
   "heat_source.help_body": "Only in rooms with a room sensor, a thermostat and an AC, and only while heating. With an outdoor temperature it alone decides: above the switch point the AC heats, below it the radiators. Without one, the radiators heat from the set gap to the target, the AC below it. From twice the gap plus 0.3 K both heat until the gap drops below the set value. Below the minimum outdoor temperature the AC never heats. With the price option, expensive power means radiators and cheap power the AC.",
   "devices.type_info": "Thermostat for radiator valves and underfloor heating, AC for anything that cools or heats with air. This decides how RoomMind drives the device.",
   "devices.managed_note": "Without a room sensor every device regulates with its own sensor. Setpoint mode and valve control need a temperature sensor in the room.",
-  "devices.group_control": "Control",
   "devices.setpoint_mode_info": "Proportional: RoomMind moves the device's setpoint and so controls how hard it heats or cools. Direct: the device gets the room's target temperature and regulates on its own.",
   "devices.setpoint_offset_info": "Added to the room target before it goes to the device. If the device reads 2 degrees colder than your room sensor, enter -2.",
   "devices.idle_info_trv": "What the thermostat gets when the room needs no heat. \"Low setpoint\" keeps it at its minimum instead of off, for wireless thermostats that fall asleep when off and then miss commands.",

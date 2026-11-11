@@ -583,24 +583,23 @@ export class RsDeviceSection extends LitElement {
       ></rs-list-row>
 
       <div class="group">
-        <rs-field
-          .label=${localize("devices.type_label", l)}
-          .info=${localize("devices.type_info", l)}
-        >
-          ${this._choice(
-            localize("devices.type_label", l),
-            [
-              {
-                value: "trv",
-                label: localize("devices.type_thermostat", l),
-                icon: "mdi:thermostat",
-              },
-              { value: "ac", label: localize("devices.type_ac", l), icon: "mdi:air-conditioner" },
-            ],
-            device.type,
-            (v) => this._onDeviceTypeChange(id, v as DeviceType),
-          )}
-        </rs-field>
+        <h4 class="group-title">
+          ${localize("devices.type_label", l)}
+          <rs-info-icon .text=${localize("devices.type_info", l)}></rs-info-icon>
+        </h4>
+        ${this._choice(
+          localize("devices.type_label", l),
+          [
+            {
+              value: "trv",
+              label: localize("devices.type_thermostat", l),
+              icon: "mdi:thermostat",
+            },
+            { value: "ac", label: localize("devices.type_ac", l), icon: "mdi:air-conditioner" },
+          ],
+          device.type,
+          (v) => this._onDeviceTypeChange(id, v as DeviceType),
+        )}
         ${hasSensor ? nothing : html`<p class="note">${localize("devices.managed_note", l)}</p>`}
       </div>
 
@@ -616,21 +615,19 @@ export class RsDeviceSection extends LitElement {
     const l = this.hass.language;
     const id = device.entity_id;
     return html`<div class="group">
-      <h4 class="group-title">${localize("devices.group_control", l)}</h4>
-      <rs-field
-        .label=${localize("devices.setpoint_mode", l)}
-        .info=${localize("devices.setpoint_mode_info", l)}
-      >
-        ${this._choice(
-          localize("devices.setpoint_mode", l),
-          [
-            { value: "proportional", label: localize("devices.setpoint_mode_proportional", l) },
-            { value: "direct", label: localize("devices.setpoint_mode_direct", l) },
-          ],
-          device.setpoint_mode ?? "proportional",
-          (v) => this._onSetpointModeChange(id, v),
-        )}
-      </rs-field>
+      <h4 class="group-title">
+        ${localize("devices.setpoint_mode", l)}
+        <rs-info-icon .text=${localize("devices.setpoint_mode_info", l)}></rs-info-icon>
+      </h4>
+      ${this._choice(
+        localize("devices.setpoint_mode", l),
+        [
+          { value: "proportional", label: localize("devices.setpoint_mode_proportional", l) },
+          { value: "direct", label: localize("devices.setpoint_mode_direct", l) },
+        ],
+        device.setpoint_mode ?? "proportional",
+        (v) => this._onSetpointModeChange(id, v),
+      )}
       ${
         device.setpoint_mode === "direct"
           ? html`<rs-number-field
