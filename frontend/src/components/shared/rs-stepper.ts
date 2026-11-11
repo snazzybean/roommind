@@ -50,7 +50,7 @@ export class RsStepper extends LitElement {
         --mdc-icon-size: 20px;
       }
 
-      button:hover:not(:disabled) {
+      button:hover:not(:disabled):not([aria-disabled="true"]) {
         background: var(--rs-fill);
       }
 
@@ -59,7 +59,8 @@ export class RsStepper extends LitElement {
         outline-offset: -2px;
       }
 
-      button:disabled {
+      button:disabled,
+      button[aria-disabled="true"] {
         opacity: 0.35;
         cursor: default;
       }
@@ -74,13 +75,26 @@ export class RsStepper extends LitElement {
     `,
   ];
 
+  private get _atMin(): boolean {
+    return this.value - this.step < this.min - 1e-9;
+  }
+
+  private get _atMax(): boolean {
+    return this.value + this.step > this.max + 1e-9;
+  }
+
+  /**
+   * At a limit the button is only aria-disabled: a really disabled button would drop the
+   * focus of a keyboard user who just pressed it.
+   */
   render() {
     const l = this.language || uiLanguage();
     return html`<div class="stepper" role="group" aria-label=${this.label}>
       <button
         type="button"
         aria-label=${localize("common.decrease", l)}
-        ?disabled=${this.disabled || this.value - this.step < this.min - 1e-9}
+        aria-disabled=${this._atMin ? "true" : "false"}
+        ?disabled=${this.disabled}
         @click=${() => this._step(-1)}
       >
         <ha-icon icon="mdi:minus" aria-hidden="true"></ha-icon>
@@ -89,7 +103,8 @@ export class RsStepper extends LitElement {
       <button
         type="button"
         aria-label=${localize("common.increase", l)}
-        ?disabled=${this.disabled || this.value + this.step > this.max + 1e-9}
+        aria-disabled=${this._atMax ? "true" : "false"}
+        ?disabled=${this.disabled}
         @click=${() => this._step(1)}
       >
         <ha-icon icon="mdi:plus" aria-hidden="true"></ha-icon>
@@ -98,6 +113,7 @@ export class RsStepper extends LitElement {
   }
 
   private _step(direction: 1 | -1) {
+    if (this.disabled || (direction < 0 ? this._atMin : this._atMax)) return;
     const raw = this.value + direction * this.step;
     const rounded = Number((Math.round(raw / this.step) * this.step).toFixed(2));
     const value = Math.min(this.max, Math.max(this.min, rounded));

@@ -165,6 +165,11 @@ export class RoomMindRoomCard extends LitElement {
     if (changed.has("hass") && this.hass) setFeedHass(this.hass);
   }
 
+  /** Compact hides the labels of its icon buttons; the card has no rs-tooltip, so `title`. */
+  private _compactTitle(label: string): string | typeof nothing {
+    return this._config?.compact ? label : nothing;
+  }
+
   private _shown(hidden: boolean | undefined): boolean {
     return hidden !== true;
   }
@@ -482,6 +487,7 @@ export class RoomMindRoomCard extends LitElement {
               <button
                 class="segment ${o.value} ${selected === o.value ? "active" : ""}"
                 aria-pressed=${selected === o.value}
+                title=${this._compactTitle(o.label)}
                 @click=${() => this._onQuickChoice(room, o.value)}
               >
                 <ha-icon icon=${o.icon} aria-hidden="true"></ha-icon>
@@ -553,6 +559,7 @@ export class RoomMindRoomCard extends LitElement {
               role="switch"
               aria-checked=${enabled ? "true" : "false"}
               aria-label=${localize("room.climate_control_toggle", l)}
+              title=${this._compactTitle(localize("room.climate_control_toggle", l))}
               @click=${() => this._saveRoom({ climate_control_enabled: !enabled }, "control")}
             >
               <ha-icon class="switch-icon" icon="mdi:power" aria-hidden="true"></ha-icon>
@@ -576,6 +583,7 @@ export class RoomMindRoomCard extends LitElement {
                 class="segment ${current === m.value ? "active" : ""}"
                 aria-pressed=${current === m.value}
                 aria-label=${localize(m.key, l)}
+                title=${this._compactTitle(localize(m.key, l))}
                 @click=${() =>
                   current !== m.value && this._saveRoom({ climate_mode: m.value }, "mode")}
               >
@@ -669,8 +677,8 @@ export class RoomMindRoomCard extends LitElement {
         <button
           class="step"
           aria-label=${localize("roomcard.lower", l, { name: label })}
-          ?disabled=${valueC <= MIN_TARGET_TEMP_C}
-          @click=${() => onChange(this._step(valueC, -1))}
+          aria-disabled=${valueC <= MIN_TARGET_TEMP_C ? "true" : "false"}
+          @click=${() => valueC > MIN_TARGET_TEMP_C && onChange(this._step(valueC, -1))}
         >
           <ha-icon icon="mdi:minus"></ha-icon>
         </button>
@@ -685,8 +693,8 @@ export class RoomMindRoomCard extends LitElement {
         <button
           class="step"
           aria-label=${localize("roomcard.raise", l, { name: label })}
-          ?disabled=${valueC >= MAX_TARGET_TEMP_C}
-          @click=${() => onChange(this._step(valueC, 1))}
+          aria-disabled=${valueC >= MAX_TARGET_TEMP_C ? "true" : "false"}
+          @click=${() => valueC < MAX_TARGET_TEMP_C && onChange(this._step(valueC, 1))}
         >
           <ha-icon icon="mdi:plus"></ha-icon>
         </button>
@@ -1334,11 +1342,11 @@ export class RoomMindRoomCard extends LitElement {
         --mdc-icon-size: 18px;
       }
 
-      .step:hover:not(:disabled) {
+      .step:hover:not([aria-disabled="true"]) {
         background: rgba(var(--rgb-primary-text-color, 0, 0, 0), 0.06);
       }
 
-      .step:disabled {
+      .step[aria-disabled="true"] {
         opacity: 0.35;
         cursor: default;
       }
