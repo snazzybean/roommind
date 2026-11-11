@@ -4,6 +4,7 @@ import type { HomeAssistant } from "../types";
 import { localize } from "../utils/localize";
 import "./shared/rs-toggle-row";
 import "./shared/rs-list-row";
+import "./shared/rs-tooltip";
 
 @customElement("rs-presence-section")
 export class RsPresenceSection extends LitElement {
@@ -185,11 +186,15 @@ export class RsPresenceSection extends LitElement {
   }
 
   private _renderMissingIcon() {
-    return html`<ha-icon
-      class="missing-icon"
-      icon="mdi:alert-circle-outline"
-      title=${localize("presence.missing_entity_hint", this.language)}
-    ></ha-icon>`;
+    const hint = localize("presence.missing_entity_hint", this.language);
+    return html`<rs-tooltip mode="label" .text=${hint}>
+      <ha-icon
+        class="missing-icon"
+        icon="mdi:alert-circle-outline"
+        role="img"
+        aria-label=${hint}
+      ></ha-icon>
+    </rs-tooltip>`;
   }
 
   private _renderViewMode() {
