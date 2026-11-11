@@ -242,6 +242,9 @@ class RCModel:
 # ---------------------------------------------------------------------------
 
 
+CONFIDENCE_HISTORY_DAYS = 60  # daily confidence snapshots kept per room
+
+
 class ThermalEKF:
     """Extended Kalman Filter for 1R1C thermal model.
 
@@ -362,6 +365,8 @@ class ThermalEKF:
         # Learned afterglow decay time in minutes, None until the first sample (profile's)
         self._residual_tau: float | None = None
         self._residual_tau_n: int = 0
+        # One entry per local day: [iso_date, confidence, n_updates, mpc_active], for the analytics chart
+        self._confidence_history: list[list] = []
         # Which states the last predict step could observe (F[0][i] != 0).
         self._excited: list[bool] = [True] * self._N
 
@@ -975,6 +980,21 @@ class ThermalEKF:
             if P[i][i] < 1e-10:
                 P[i][i] = 1e-10
 
+    @property
+    def confidence_history(self) -> list[list]:
+        """Daily confidence snapshots, oldest first."""
+        return [list(entry) for entry in self._confidence_history]
+
+    def note_confidence_day(self, day: str, mpc_active: bool) -> None:
+        """Record today's confidence; a later call on the same day replaces the entry."""
+        entry = [day, round(self.confidence, 3), self._n_updates, bool(mpc_active)]
+        history = self._confidence_history
+        if history and history[-1][0] == day:
+            history[-1] = entry
+        elif not history or history[-1][0] < day:
+            history.append(entry)
+            del history[: max(0, len(history) - CONFIDENCE_HISTORY_DAYS)]
+
     # -- serialization -------------------------------------------------------
 
     def to_dict(self) -> dict:
@@ -999,6 +1019,7 @@ class ThermalEKF:
             "residual_scale_n": self._residual_scale_n,
             "residual_tau": self._residual_tau,
             "residual_tau_n": self._residual_tau_n,
+            "confidence_history": self.confidence_history,
         }
 
     def boost_covariance(self, factor: float = 2.5, floor_frac: float = 0.3) -> None:
@@ -1062,6 +1083,13 @@ class ThermalEKF:
         ekf._residual_scale_n = data.get("residual_scale_n", 0)
         ekf._residual_tau = data.get("residual_tau")
         ekf._residual_tau_n = data.get("residual_tau_n", 0)
+        history = data.get("confidence_history")
+        if isinstance(history, list):
+            ekf._confidence_history = [
+                [e[0], float(e[1]), int(e[2]), bool(e[3])]
+                for e in history
+                if isinstance(e, list) and len(e) == 4 and isinstance(e[0], str) and isinstance(e[1], (int, float))
+            ][-CONFIDENCE_HISTORY_DAYS:]
         # Recovery migrations for models with alpha pegged at the upper bound.
         # Such models cannot escape on their own: 4-sigma anomaly detection
         # soft-rejects the large innovations and cross-covariance pulls alpha

@@ -1575,6 +1575,7 @@ def _make_mock_estimator(**overrides):
     est._applicable_modes = overrides.get("applicable_modes", {"idle", "heating"})
     est._P = overrides.get("P", [[0.01 * (i == j) for j in range(6)] for i in range(6)])
     est.confidence = overrides.get("confidence", 0.85)
+    est.confidence_history = overrides.get("confidence_history", [["2026-11-11", 0.85, 200, True]])
     est.prediction_std.return_value = overrides.get("prediction_std", 0.3)
     rc = MagicMock()
     rc.Q_heat = overrides.get("Q_heat", 100.0)
@@ -1740,6 +1741,7 @@ async def test_analytics_with_estimator(ws_hass, store, connection):
     result = connection.send_result.call_args[0][1]
     model = result["model"]
     assert model["confidence"] == 0.85
+    assert model["confidence_history"] == [["2026-11-11", 0.85, 200, True]]
     assert model["n_samples"] == 200
     assert model["n_heating"] == 60
     assert model["n_cooling"] == 20

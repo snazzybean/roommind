@@ -316,6 +316,7 @@ async def build_analytics_data(
             has_occupancy_sensors = len(room_config.get("occupancy_sensors", [])) > 0
             model_info = {
                 "confidence": est.confidence,
+                "confidence_history": est.confidence_history,
                 "model": rc.to_dict(),
                 "n_samples": est._n_updates,
                 "n_observations": est._n_updates,

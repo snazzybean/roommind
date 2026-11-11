@@ -15,6 +15,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import CoreState, HomeAssistant
 from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+from homeassistant.util import dt as dt_util
 
 from .const import (
     AC_COOLING_BOOST_TARGET,
@@ -496,6 +497,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         self._thermal_save_count += 1
         if self._thermal_save_count >= THERMAL_SAVE_CYCLES:
             self._thermal_save_count = 0
+            self._note_confidence_days(room_states)
             await store.async_save_thermal_data(self._model_manager.to_dict())
 
         # Rotate history periodically
@@ -2569,6 +2571,14 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 )
             except Exception:  # noqa: BLE001
                 _LOGGER.warning("Room '%s': releasing the valve of '%s' failed", area_id, entity_id, exc_info=True)
+
+    def _note_confidence_days(self, room_states: dict[str, dict]) -> None:
+        """Daily confidence snapshot per learned room for the analytics model chart."""
+        day = dt_util.now().date().isoformat()
+        known = set(self._model_manager.get_room_ids())
+        for area_id, rs in room_states.items():
+            if area_id in known:
+                self._model_manager.get_estimator(area_id).note_confidence_day(day, bool(rs.get("mpc_active")))
 
     async def _async_record_recent_temps(self, room_states: dict[str, dict]) -> None:
         """Feed the short series the dashboard cards draw; seeded from the history once per room."""
