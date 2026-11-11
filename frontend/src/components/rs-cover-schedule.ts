@@ -3,7 +3,6 @@ import { customElement, property } from "lit/decorators.js";
 import type { CoverScheduleEntry } from "../types";
 import { localize } from "../utils/localize";
 import { formatPercent } from "../utils/format";
-import { showToast } from "../utils/toast";
 import { RsScheduleBase } from "./shared/rs-schedule-base";
 import { inputStyles } from "../styles/input-styles";
 import { tokens } from "../styles/tokens";
@@ -145,15 +144,9 @@ export class RsCoverSchedule extends RsScheduleBase {
     this._emitSchedules([...this.schedules, { entity_id: entityId, mode: "force" }]);
   }
 
-  /** Removing asks nothing and offers Undo instead, like the room's schedules. */
+  /** Removing asks nothing; the room page offers Undo, like for the room's schedules. */
   private _removeSchedule(index: number) {
-    const before = this.schedules;
-    const name = this._getFriendlyName(before[index].entity_id);
-    this._emitSchedules(before.filter((_, i) => i !== index));
-    const l = this.hass.language;
-    showToast(this, localize("covers.schedule_removed", l, { name }), l, () =>
-      this._emitSchedules(before),
-    );
+    this._emitSchedules(this.schedules.filter((_, i) => i !== index));
   }
 
   private _moveSchedule(index: number, direction: -1 | 1) {

@@ -32,6 +32,7 @@ import {
   devicesHelp,
   editDialogHelpStyles,
   presenceHelp,
+  heatSourceHelp,
   priceHelp,
   scheduleHelp,
   temperaturesHelp,
@@ -667,6 +668,8 @@ export class RsRoomDetail extends LitElement {
                 .acMinOutdoor=${this._heatSourceAcMinOutdoor}
                 .priceAware=${this._heatSourcePriceAware}
                 .priceConfigured=${this.priceConfigured}
+                .outdoorTemp=${this.outdoorTemp}
+                .climateMode=${this._climateMode}
               ></rs-heat-source-section>
             </rs-list-card>`
           : nothing
@@ -954,9 +957,11 @@ export class RsRoomDetail extends LitElement {
           open
           icon="mdi:swap-horizontal"
           .heading=${localize("room.section.heat_source", lang)}
+          hasInfo
           .error=${this._error}
           @rs-dialog-closed=${this._closeEdit}
         >
+          ${heatSourceHelp(lang)}
           <rs-heat-source-section
             .hass=${this.hass}
             .editing=${true}
@@ -966,6 +971,8 @@ export class RsRoomDetail extends LitElement {
             .acMinOutdoor=${this._heatSourceAcMinOutdoor}
             .priceAware=${this._heatSourcePriceAware}
             .priceConfigured=${this.priceConfigured}
+            .outdoorTemp=${this.outdoorTemp}
+            .climateMode=${this._climateMode}
             @setting-changed=${this._onHeatSourceSettingChanged}
           ></rs-heat-source-section>
         </rs-edit-dialog>`;
@@ -1184,6 +1191,22 @@ export class RsRoomDetail extends LitElement {
     this._autoSave();
   }
 
+  /** Lives here, not in the dialog: Undo still works after the dialog was closed. */
+  private _onCoverSchedules(next: CoverScheduleEntry[]) {
+    const before = this._coverSchedules;
+    this._coverSchedules = next;
+    const removed = before.find((s) => !next.some((n) => n.entity_id === s.entity_id));
+    if (!removed || next.length >= before.length) return;
+    const l = this.hass.language;
+    const name =
+      (this.hass.states[removed.entity_id]?.attributes?.friendly_name as string) ||
+      removed.entity_id;
+    showToast(this, localize("covers.schedule_removed", l, { name }), l, () => {
+      this._coverSchedules = before;
+      this._autoSave();
+    });
+  }
+
   private _onCoverSettingChanged(e: CustomEvent<{ key: string; value: unknown }>) {
     const { key, value } = e.detail;
     e.stopPropagation();
@@ -1191,7 +1214,7 @@ export class RsRoomDetail extends LitElement {
     else if (key === "covers_deploy_threshold") this._coversDeployThreshold = value as number;
     else if (key === "covers_min_position") this._coversMinPosition = value as number;
     else if (key === "covers_override_minutes") this._coversOverrideMinutes = value as number;
-    else if (key === "cover_schedules") this._coverSchedules = value as CoverScheduleEntry[];
+    else if (key === "cover_schedules") this._onCoverSchedules(value as CoverScheduleEntry[]);
     else if (key === "cover_schedule_selector_entity")
       this._coverScheduleSelectorEntity = value as string;
     else if (key === "covers_night_close") this._coversNightClose = value as boolean;
