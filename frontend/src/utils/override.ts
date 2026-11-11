@@ -3,7 +3,8 @@
  * Kept free of custom elements: the card is a separate bundle and must not define
  * the panel's tags a second time.
  */
-import type { ClimateMode, OverrideType, RoomLiveData } from "../types";
+import type { ClimateMode, OverrideType, RoomConfig, RoomLiveData } from "../types";
+import { localize } from "./localize";
 
 export const OVERRIDE_DURATIONS_H = [1, 2, 4];
 
@@ -101,4 +102,58 @@ export function overrideSetMessage(
     if (climateMode !== "heat_only") msg.cool = custom.cool;
   }
   return msg;
+}
+
+/* ---------- Quick choice (panel room card and dashboard card) ---------- */
+
+export type QuickValue = "schedule" | "comfort" | "eco";
+
+/** The quick choice a room's live state matches; null under a custom override. */
+export function quickValueOf(live: RoomLiveData | undefined): QuickValue | null {
+  if (!live?.override_active) return "schedule";
+  if (live.override_type === "boost") return "comfort";
+  if (live.override_type === "eco") return "eco";
+  return null;
+}
+
+/**
+ * Options of the quick choice. Without a schedule "Normal" already is comfort, so comfort is
+ * left out there (a running comfort override keeps its option until it ends).
+ */
+export function quickOptions(
+  config: RoomConfig | null | undefined,
+  language: string,
+): { value: QuickValue; label: string; icon: string }[] {
+  const hasSchedule = (config?.schedules ?? []).some((s) => !!s.entity_id);
+  const showComfort = hasSchedule || quickValueOf(config?.live) === "comfort";
+  return [
+    {
+      value: "schedule",
+      label: localize(hasSchedule ? "card.quick.schedule" : "card.quick.normal", language),
+      icon: hasSchedule ? "mdi:calendar-clock" : "mdi:home-thermometer-outline",
+    },
+    ...(showComfort
+      ? [
+          {
+            value: "comfort" as const,
+            label: localize("override.comfort", language),
+            icon: "mdi:sofa",
+          },
+        ]
+      : []),
+    { value: "eco", label: localize("override.eco", language), icon: "mdi:leaf" },
+  ];
+}
+
+/** WS message for a quick choice: clear, or comfort/eco until the next schedule change. */
+export function quickMessage(config: RoomConfig, value: QuickValue): Record<string, unknown> {
+  if (value === "schedule") return { type: "roommind/override/clear", area_id: config.area_id };
+  return overrideSetMessage(
+    config.area_id,
+    value === "comfort" ? "boost" : "eco",
+    QUICK_OVERRIDE_FALLBACK_H,
+    config.climate_mode ?? "auto",
+    { heat: 0, cool: 0 },
+    true,
+  );
 }

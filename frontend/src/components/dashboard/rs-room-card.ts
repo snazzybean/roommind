@@ -11,14 +11,13 @@ import {
   type RoomHint,
   type RoomKind,
 } from "../../utils/room-state";
-import { localize, type TranslationKey } from "../../utils/localize";
+import { localize } from "../../utils/localize";
 import { errorText } from "../../utils/errors";
 import { formatTempLocale, tempUnit, toDisplayDelta } from "../../utils/temperature";
 import { formatPercent } from "../../utils/format";
 import { buildSparkline, type SparklinePaths, type RecentTemp } from "../../utils/sparkline";
-import { overrideSetMessage, QUICK_OVERRIDE_FALLBACK_H } from "../../utils/override";
+import { quickMessage, quickOptions, quickValueOf, type QuickValue } from "../../utils/override";
 import { tokens, srOnly } from "../../styles/tokens";
-import type { RsSegmentOption } from "../shared/rs-segmented";
 import "../shared/rs-segmented";
 import "../shared/rs-hint-chip";
 
@@ -31,16 +30,6 @@ const MAX_ICON_HINTS = 4;
 /** How long an optimistic quick choice waits for the poll to confirm it. */
 const PENDING_TIMEOUT_MS = 15000;
 const ERROR_VISIBLE_MS = 6000;
-
-export type QuickValue = "schedule" | "comfort" | "eco";
-
-/** Quick choice the room's live state stands for; null for a custom override. */
-export function quickValueOf(live: RoomLiveData | undefined): QuickValue | null {
-  if (!live?.override_active) return "schedule";
-  if (live.override_type === "boost") return "comfort";
-  if (live.override_type === "eco") return "eco";
-  return null;
-}
 
 /**
  * Dashboard room card: fixed height, temperature curve of the last hours in the background,
@@ -304,9 +293,8 @@ export class RsRoomCard extends LitElement {
         display: flex;
         align-items: center;
         gap: 8px;
-        padding: 0 12px;
-        border-radius: 10px;
-        background: var(--rs-fill);
+        /* plain text, not a filled bar: it must not look like the quick choice it replaces */
+        padding: 0 4px;
         font-size: 13px;
         color: var(--secondary-text-color);
         --mdc-icon-size: 18px;
@@ -674,7 +662,7 @@ export class RsRoomCard extends LitElement {
     }
     return html`<rs-segmented
       .label=${localize("card.quick_label", l, { name: this.config?.display_name || this.area.name })}
-      .options=${this._quickOptions()}
+      .options=${quickOptions(this.config, l)}
       .value=${this._pending ? this._pending.value : quickValueOf(this.config?.live)}
       @value-changed=${this._onQuick}
     ></rs-segmented>`;
@@ -690,21 +678,6 @@ export class RsRoomCard extends LitElement {
     return html`<button type="button" class="setup" @click=${this._onOpen}>
       ${localize("card.set_up", this._lang)}
     </button>`;
-  }
-
-  private _quickOptions(): RsSegmentOption[] {
-    const l = this._lang;
-    const hasSchedule = (this.config?.schedules ?? []).some((s) => !!s.entity_id);
-    const first: TranslationKey = hasSchedule ? "card.quick.schedule" : "card.quick.normal";
-    return [
-      {
-        value: "schedule",
-        label: localize(first, l),
-        icon: hasSchedule ? "mdi:calendar-clock" : "mdi:home-thermometer-outline",
-      },
-      { value: "comfort", label: localize("override.comfort", l), icon: "mdi:sofa" },
-      { value: "eco", label: localize("override.eco", l), icon: "mdi:leaf" },
-    ];
   }
 
   private _renderEmpty(kind: "unconfigured" | "empty") {
@@ -757,20 +730,7 @@ export class RsRoomCard extends LitElement {
     this._pending = { value, since: Date.now() };
     this._setError("");
     try {
-      if (value === "schedule") {
-        await this.hass.callWS({ type: "roommind/override/clear", area_id: config.area_id });
-      } else {
-        await this.hass.callWS(
-          overrideSetMessage(
-            config.area_id,
-            value === "comfort" ? "boost" : "eco",
-            QUICK_OVERRIDE_FALLBACK_H,
-            config.climate_mode ?? "auto",
-            { heat: 0, cool: 0 },
-            true,
-          ),
-        );
-      }
+      await this.hass.callWS(quickMessage(config, value));
       this.dispatchEvent(new CustomEvent("room-updated", { bubbles: true, composed: true }));
     } catch (err) {
       this._pending = null;

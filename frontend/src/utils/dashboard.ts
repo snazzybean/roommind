@@ -53,7 +53,9 @@ export function computeAreaInfos(
     const aScore = a.config ? 2 : a.climateEntityCount > 0 ? 1 : 0;
     const bScore = b.config ? 2 : b.climateEntityCount > 0 ? 1 : 0;
     if (aScore !== bScore) return bScore - aScore;
-    return a.area.name.localeCompare(b.area.name);
+    // Sorted by the name the card shows
+    const shown = (i: AreaInfo) => i.config?.display_name || i.area.name;
+    return shown(a).localeCompare(shown(b));
   });
   return infos;
 }

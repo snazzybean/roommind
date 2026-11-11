@@ -19,7 +19,7 @@ import type { RsMenuItem } from "../shared/rs-menu";
 import "./rs-room-card";
 import "../shared/rs-icon-button";
 import "../shared/rs-menu";
-import "../shared/rs-toggle-row";
+import "../shared/rs-list-row";
 
 const NARROW_QUERY = "(max-width: 599px)";
 /** Group key for areas without a floor (FloorGroup.key null) in data attributes. */
@@ -90,17 +90,10 @@ export class RsDashboardEdit extends LitElement {
         line-height: 1.45;
       }
 
-      .intro .txt b {
-        display: block;
-        margin-bottom: 2px;
-        font-size: 14px;
-        font-weight: 500;
-        color: var(--primary-text-color);
-      }
-
-      .intro rs-toggle-row {
+      .intro rs-list-row {
         flex: 0 1 auto;
-        min-width: min(240px, 100%);
+        min-width: min(260px, 100%);
+        --rs-list-row-padding: 0;
       }
 
       /* ----- WYSIWYG (>= 600 px) ----- */
@@ -379,18 +372,19 @@ export class RsDashboardEdit extends LitElement {
       <ha-card class="intro">
         <ha-icon icon="mdi:gesture-tap-hold" aria-hidden="true"></ha-icon>
         <div class="txt">
-          <b>${localize("panel.edit_rooms", l)}</b>
           ${localize(this._narrow ? "panel.edit.intro_narrow" : "panel.edit.intro_wide", l)}
           ${hiddenCount ? localize("panel.edit.hidden_count", l, { count: hiddenCount }) : nothing}
         </div>
         ${
           hasFloors(this.hass)
-            ? html`<rs-toggle-row
-                .label=${localize("settings.group_by_floor", l)}
+            ? html`<rs-list-row
+                switch
+                wrap
+                .heading=${localize("settings.group_by_floor", l)}
                 .checked=${this.groupByFloor}
                 @toggle-changed=${(e: CustomEvent<boolean>) =>
                   this._fire("group-by-floor-changed", { value: e.detail })}
-              ></rs-toggle-row>`
+              ></rs-list-row>`
             : nothing
         }
       </ha-card>

@@ -3,6 +3,7 @@ import { customElement, property } from "lit/decorators.js";
 import { repeat } from "lit/directives/repeat.js";
 import type { HomeAssistant, PriceStatus } from "../../types";
 import { floorGroups, type AreaInfo } from "../../utils/dashboard";
+import { hasDevices } from "../../utils/room-state";
 import { localize, type TranslationKey } from "../../utils/localize";
 import { formatTempLocale, tempUnit } from "../../utils/temperature";
 import { VACATION_SENTINEL } from "../../utils/constants";
@@ -93,7 +94,8 @@ export class RsDashboard extends LitElement {
   private _renderPills(visible: AreaInfo[]) {
     const l = this.hass.language;
     const s = this.summary;
-    const configured = visible.filter((i) => i.config);
+    // Rooms RoomMind controls: outdoor areas and rooms without devices only measure
+    const configured = visible.filter((i) => hasDevices(i.config) && !i.config?.is_outdoor);
     const heating = visible.filter((i) => i.config?.live?.mode === "heating").length;
     const cooling = visible.filter((i) => i.config?.live?.mode === "cooling").length;
     const mold = visible.filter(
@@ -112,17 +114,17 @@ export class RsDashboard extends LitElement {
     const pills = [
       configured.length
         ? html`<rs-pill icon="mdi:home-thermometer-outline"
-            ><b>${configured.length}</b> ${localize("panel.pill.rooms", l)}</rs-pill
+            >${localize("panel.pill.rooms", l)} <b>${configured.length}</b></rs-pill
           >`
         : nothing,
       configured.length
         ? html`<rs-pill icon="mdi:fire" .tone=${heating ? "heat" : "default"}
-            ><b>${heating}</b> ${localize("panel.pill.heating", l)}</rs-pill
+            >${localize("panel.pill.heating", l)} <b>${heating}</b></rs-pill
           >`
         : nothing,
       cooling
         ? html`<rs-pill icon="mdi:snowflake" tone="cool"
-            ><b>${cooling}</b> ${localize("panel.pill.cooling", l)}</rs-pill
+            >${localize("panel.pill.cooling", l)} <b>${cooling}</b></rs-pill
           >`
         : nothing,
       s.outdoorTemp != null

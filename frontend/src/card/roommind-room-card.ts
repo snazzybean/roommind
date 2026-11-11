@@ -3,7 +3,7 @@ import { property, state } from "lit/decorators.js";
 import type { ClimateMode, HomeAssistant, OverrideType, RoomConfig } from "../types";
 import { localize, uiLanguage, type TranslationKey } from "../utils/localize";
 import { errorText } from "../utils/errors";
-import { getModeClass, formatMode } from "../utils/room-state";
+import { getModeClass, roomKind, roomStateInfo, scheduleNextChange } from "../utils/room-state";
 import { formatHours, formatMinutes, formatPercent, formatRemaining } from "../utils/format";
 import { modeStyles } from "../styles/shared-mode-styles";
 import { tokens } from "../styles/tokens";
@@ -17,9 +17,13 @@ import {
 import { MAX_TARGET_TEMP_C, MIN_TARGET_TEMP_C } from "../utils/temperature";
 import {
   OVERRIDE_DURATIONS_H,
+  QUICK_OVERRIDE_FALLBACK_H,
   isInvalidBand,
   overrideBand,
   overrideSetMessage,
+  quickMessage,
+  quickOptions,
+  type QuickValue,
   type RoomTemps,
 } from "../utils/override";
 import { refreshRooms, setFeedHass, subscribeRooms, type RoomsFeed } from "./rooms-feed";
@@ -41,11 +45,18 @@ interface OverrideView {
 
 const TEMPS_SAVE_DELAY_MS = 800;
 
-const OVERRIDE_PRESETS: { type: OverrideType; icon: string; key: TranslationKey }[] = [
-  { type: "boost", icon: "mdi:sofa", key: "override.comfort" },
-  { type: "eco", icon: "mdi:leaf", key: "override.eco" },
-  { type: "custom", icon: "mdi:thermometer", key: "override.custom" },
-];
+const OVERRIDE_KEYS: Record<OverrideType, TranslationKey> = {
+  boost: "override.comfort",
+  eco: "override.eco",
+  custom: "override.custom",
+};
+
+/** Quick choice value of an override type; custom is the card's extra option. */
+const QUICK_OF: Record<OverrideType, QuickValue | "custom"> = {
+  boost: "comfort",
+  eco: "eco",
+  custom: "custom",
+};
 
 const CLIMATE_MODES: { value: ClimateMode; icon: string; key: TranslationKey }[] = [
   { value: "auto", icon: "mdi:autorenew", key: "mode.auto" },
@@ -151,8 +162,6 @@ export class RoomMindRoomCard extends LitElement {
 
   protected willUpdate(changed: PropertyValues<this>): void {
     if (changed.has("hass") && this.hass) setFeedHass(this.hass);
-    // An override started elsewhere makes a preset picked here earlier obsolete.
-    if (this._pending && this._room && this._override(this._room).type) this._pending = null;
   }
 
   private _shown(hidden: boolean | undefined): boolean {
@@ -214,7 +223,8 @@ export class RoomMindRoomCard extends LitElement {
       );
     }
     const room = this._room;
-    if (room?.is_outdoor) return this._renderMonitorOnly(room);
+    const kind = room ? roomKind(room, 0) : "empty";
+    if (room && (kind === "outdoor" || kind === "sensor")) return this._renderMonitorOnly(room);
     if (!room || (room.devices?.length ?? 0) === 0) {
       return this._renderMessage(localize("roomcard.unknown_room", this._lang), "", true);
     }
@@ -254,7 +264,9 @@ export class RoomMindRoomCard extends LitElement {
         <div class="content">
           <div class="header">
             ${this._renderName(room.area_id, room)}
-            <span class="mode-pill mode-other">${localize("card.outdoor", l)}</span>
+            <span class="mode-pill mode-other"
+              >${localize(room.is_outdoor ? "card.outdoor" : "card.measure_only", l)}</span
+            >
           </div>
           <div class="temps">
             <span class="current">
@@ -311,17 +323,24 @@ export class RoomMindRoomCard extends LitElement {
 
   private _renderHeader(room: RoomConfig) {
     const live = room.live;
+    // Same state words as the panel's room card; a pending switch shows at once
+    const st = live
+      ? roomStateInfo(
+          { ...room, climate_control_enabled: this._controlDraft ?? room.climate_control_enabled },
+          this._feed?.climate_control_active ?? true,
+        )
+      : null;
+    const cls =
+      st?.tone === "heat" ? "mode-heating" : st?.tone === "cool" ? "mode-cooling" : "mode-idle";
     return html`
       <div class="header">
         ${this._renderName(room.area_id, room)}
         ${
-          live
-            ? html`<span class="mode-pill ${getModeClass(live.mode)}">
+          st
+            ? html`<span class="mode-pill ${cls}">
                 <span class="mode-dot"></span>
-                ${formatMode(live.mode, this._lang)}${
-                  live.heating_power > 0 && live.heating_power < 100
-                    ? html` ${live.heating_power}%`
-                    : nothing
+                ${localize(st.key, this._lang)}${
+                  st.power != null ? ` · ${formatPercent(st.power, { language: this._lang })}` : ""
                 }
               </span>`
             : nothing
@@ -341,6 +360,7 @@ export class RoomMindRoomCard extends LitElement {
       live.heat_target !== live.cool_target;
     const single = live.target_temp ?? live.heat_target ?? live.cool_target;
     const unit = tempUnit(this.hass);
+    const fmt = (c: number) => formatTempLocale(c, this.hass, 0, 1);
     const paused = !this._optimisticOverride && !!live.override_suppressed;
     let remaining = "";
     if (paused) {
@@ -368,9 +388,10 @@ export class RoomMindRoomCard extends LitElement {
                   <strong
                     >${
                       showRange
-                        ? `${formatTempLocale(live.heat_target!, this.hass)} – ${formatTempLocale(live.cool_target!, this.hass)}`
-                        : formatTempLocale(single!, this.hass)
-                    }${unit}</strong
+                        ? `${fmt(live.heat_target!)}–${fmt(live.cool_target!)}`
+                        : fmt(single!)
+                    }
+                    ${unit}</strong
                   >
                 </span>`
               : nothing
@@ -415,79 +436,92 @@ export class RoomMindRoomCard extends LitElement {
                 icon=${paused ? "mdi:pause-circle-outline" : "mdi:timer-outline"}
                 aria-hidden="true"
               ></ha-icon>
-              <span
-                >${localize(OVERRIDE_PRESETS.find((p) => p.type === ov.type)!.key, l)} ·
-                ${remaining}</span
-              >
+              <span>${localize(OVERRIDE_KEYS[ov.type], l)} · ${remaining}</span>
             </div>`
           : nothing
       }
-      ${controlled ? nothing : html`<div class="hint">${localize("card.not_controlled", l)}</div>`}
+      ${
+        controlled
+          ? nothing
+          : html`<div class="hint">
+              ${localize(
+                this._feed?.climate_control_active === false
+                  ? "card.control_off_global"
+                  : "card.control_off_room",
+                l,
+              )}
+            </div>`
+      }
     `;
   }
 
+  /**
+   * The panel card's quick choice (schedule/normal, comfort, eco until the next schedule
+   * change) plus custom with a duration. A running override never locks the other options.
+   */
   private _renderOverride(room: RoomConfig) {
     const l = this._lang;
     const active = this._override(room).type;
     const climateMode = this._climateMode(room);
+    const selected: QuickValue | "custom" | null = this._pending
+      ? "custom"
+      : active
+        ? QUICK_OF[active]
+        : "schedule";
+    const options = [
+      ...quickOptions(room, l),
+      { value: "custom" as const, label: localize("override.custom", l), icon: "mdi:thermometer" },
+    ];
     return html`
-      <section class="override-section ${!active && this._pending ? "expanded" : ""}">
-        <h4>${localize("override.label", l)}</h4>
-        <div class="segments">
-          ${OVERRIDE_PRESETS.map(
-            (p) => html`
+      <section class="override-section ${this._pending ? "expanded" : ""}">
+        <h4 id="ov-label">${localize("detail.override.label", l)}</h4>
+        <div class="segments" role="group" aria-labelledby="ov-label">
+          ${options.map(
+            (o) => html`
               <button
-                class="segment ${p.type} ${active === p.type ? "active" : ""} ${
-                  !active && this._pending === p.type ? "pending" : ""
-                }"
-                aria-pressed=${active === p.type || (!active && this._pending === p.type)}
-                aria-label=${localize(p.key, l)}
-                ?disabled=${active !== null && active !== p.type}
-                @click=${() => this._onPreset(room, p.type, active)}
+                class="segment ${o.value} ${selected === o.value ? "active" : ""}"
+                aria-pressed=${selected === o.value}
+                @click=${() => this._onQuickChoice(room, o.value)}
               >
-                <ha-icon icon=${p.icon}></ha-icon>
-                <span>${localize(p.key, l)}</span>
+                <ha-icon icon=${o.icon} aria-hidden="true"></ha-icon>
+                <span>${o.label}</span>
               </button>
             `,
           )}
         </div>
         ${
-          !active && this._pending
+          this._pending
             ? html`
-                ${
-                  this._pending === "custom"
-                    ? html`<div class="custom-row">
-                        ${
-                          climateMode !== "cool_only"
-                            ? this._customField(
-                                climateMode === "auto" ? "override.heat_to" : "override.target",
-                                this._customHeat,
-                                (v) => {
-                                  this._customHeat = v;
-                                  if (climateMode === "auto" && this._customCool < v)
-                                    this._customCool = v;
-                                },
-                              )
-                            : nothing
-                        }
-                        ${
-                          climateMode !== "heat_only"
-                            ? this._customField(
-                                climateMode === "auto" ? "override.cool_above" : "override.target",
-                                this._customCool,
-                                (v) => {
-                                  this._customCool = v;
-                                  if (climateMode === "auto" && this._customHeat > v)
-                                    this._customHeat = v;
-                                },
-                              )
-                            : nothing
-                        }
-                      </div>`
-                    : nothing
-                }
+                <div class="custom-row">
+                  ${
+                    climateMode !== "cool_only"
+                      ? this._customField(
+                          climateMode === "auto" ? "override.heat_to" : "override.target",
+                          this._customHeat,
+                          (v) => {
+                            this._customHeat = v;
+                            if (climateMode === "auto" && this._customCool < v)
+                              this._customCool = v;
+                          },
+                        )
+                      : nothing
+                  }
+                  ${
+                    climateMode !== "heat_only"
+                      ? this._customField(
+                          climateMode === "auto" ? "override.cool_above" : "override.target",
+                          this._customCool,
+                          (v) => {
+                            this._customCool = v;
+                            if (climateMode === "auto" && this._customHeat > v)
+                              this._customHeat = v;
+                          },
+                        )
+                      : nothing
+                  }
+                </div>
                 <div class="duration">
-                  <span>${localize("override.activate_for", l)}</span>
+                  <span>${localize("detail.override.duration", l)}</span>
                   ${OVERRIDE_DURATIONS_H.map(
                     (hours) =>
                       html`<button class="chip" @click=${() => this._activate(room, hours)}>
@@ -638,7 +672,8 @@ export class RoomMindRoomCard extends LitElement {
             sideIcon
               ? html`<ha-icon class="side-icon" icon=${sideIcon} aria-hidden="true"></ha-icon>`
               : nothing
-          }${formatTempLocale(valueC, this.hass)}${tempUnit(this.hass)}</span
+          }${formatTempLocale(valueC, this.hass, 0, 1)}
+          ${tempUnit(this.hass)}</span
         >
         <button
           class="step"
@@ -671,22 +706,56 @@ export class RoomMindRoomCard extends LitElement {
     window.dispatchEvent(new CustomEvent("location-changed", { detail: { replace: false } }));
   }
 
-  private _onPreset(room: RoomConfig, type: OverrideType, active: OverrideType | null): void {
+  private _onQuickChoice(room: RoomConfig, value: QuickValue | "custom"): void {
     this._error = "";
-    if (active === type) {
-      void this._clearOverride(room);
-      return;
-    }
-    if (this._pending === type) {
-      this._pending = null;
-      return;
-    }
-    this._pending = type;
-    if (type === "custom") {
+    if (value === "custom") {
+      // A second tap puts the custom form away again
+      if (this._pending) {
+        this._pending = null;
+        return;
+      }
+      this._pending = "custom";
+      const ov = room.live;
       const t = this._temps(room);
-      this._customHeat = t.comfortHeat;
-      this._customCool = t.comfortCool;
+      this._customHeat =
+        ov?.override_type === "custom" && ov.override_heat != null
+          ? ov.override_heat
+          : t.comfortHeat;
+      this._customCool =
+        ov?.override_type === "custom" && ov.override_cool != null
+          ? ov.override_cool
+          : t.comfortCool;
+      return;
     }
+    this._pending = null;
+    void this._quick(room, value);
+  }
+
+  private async _quick(room: RoomConfig, value: QuickValue): Promise<void> {
+    const now = Date.now() / 1000;
+    const next = scheduleNextChange(room, this.hass.states);
+    this._optimisticOverride =
+      value === "schedule"
+        ? { type: null, until: null }
+        : {
+            type: value === "comfort" ? "boost" : "eco",
+            until: next != null && next > now ? next : now + QUICK_OVERRIDE_FALLBACK_H * 3600,
+          };
+    try {
+      // Comfort/eco take the stored targets on the server: flush a pending stepper edit first
+      if (this._tempsTimer) {
+        clearTimeout(this._tempsTimer);
+        await this._saveTemps();
+      }
+      await this.hass.callWS(quickMessage(room, value));
+      await refreshRooms(true);
+    } catch (err) {
+      this._error = this._message(
+        err,
+        value === "schedule" ? "override.error_clear" : "override.error_set",
+      );
+    }
+    this._optimisticOverride = null;
   }
 
   private async _activate(room: RoomConfig, hours: number): Promise<void> {
@@ -724,19 +793,10 @@ export class RoomMindRoomCard extends LitElement {
     const hadFocus = !!root?.activeElement;
     await this.updateComplete;
     if (hadFocus && !root?.activeElement) {
-      root?.querySelector<HTMLButtonElement>(`.override-section .segment.${type}`)?.focus();
+      root
+        ?.querySelector<HTMLButtonElement>(`.override-section .segment.${QUICK_OF[type]}`)
+        ?.focus();
     }
-  }
-
-  private async _clearOverride(room: RoomConfig): Promise<void> {
-    this._optimisticOverride = { type: null, until: null };
-    try {
-      await this.hass.callWS({ type: "roommind/override/clear", area_id: room.area_id });
-      await refreshRooms(true);
-    } catch (err) {
-      this._error = this._message(err, "override.error_clear");
-    }
-    this._optimisticOverride = null;
   }
 
   private async _saveRoom(
@@ -1026,9 +1086,11 @@ export class RoomMindRoomCard extends LitElement {
         outline-offset: 2px;
       }
 
+      /* one row, as many equal columns as options (quick choice has 3 or 4) */
       .segments {
         display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
+        grid-auto-flow: column;
+        grid-auto-columns: minmax(0, 1fr);
         gap: 8px;
       }
 
@@ -1404,7 +1466,8 @@ export class RoomMindRoomCard extends LitElement {
       }
 
       .compact .segments {
-        grid-template-columns: repeat(3, 44px);
+        grid-auto-columns: 44px;
+        justify-content: start;
         gap: 6px;
       }
 
