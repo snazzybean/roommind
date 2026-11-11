@@ -265,6 +265,8 @@ export interface HomeAssistant {
   language: string;
   config: { unit_system: { temperature: string } };
   connection?: HassConnection;
+  /** Translated state as Home Assistant shows it (e.g. "Heizen"); missing in old releases. */
+  formatEntityState?: (stateObj: HassEntity) => string;
 }
 
 export interface HassArea {
