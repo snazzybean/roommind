@@ -911,10 +911,6 @@ export class RsSettings extends LitElement {
         white-space: nowrap;
       }
 
-      .subpage .page-text p {
-        margin-top: 0;
-      }
-
       .page-text p {
         margin: var(--rs-space-1) 0 0;
         color: var(--secondary-text-color);
