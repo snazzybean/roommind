@@ -40,6 +40,10 @@ const COMFORT_TOLERANCE_K = 0.5;
 const BAND_OPEN_K = 100;
 // The panels share an x axis, so both plots start at a fixed left edge instead of containLabel
 const PANEL_LEFT = 56;
+// Room for half a date label ("11. Nov.") at the right end. ECharts 6 shrinks a grid whose
+// labels leave the canvas (outerBounds); only the bottom panel shows labels, so its time
+// axis moved against the others. Panel grids switch that off and keep this margin instead.
+const PANEL_RIGHT = 28;
 // Visible on light and dark cards alike
 const NOW_MARKER_COLOR = "rgba(128, 128, 128, 0.6)";
 // Heating and cooling runs as a strip along the bottom of the temperature plot: a full-height
@@ -710,14 +714,16 @@ export function buildChartOptions(
             {
               top: MAIN_TOP,
               left: PANEL_LEFT,
-              right: 10,
+              right: PANEL_RIGHT,
               bottom: PANEL_BOTTOM + panelsHeight(panels),
+              outerBoundsMode: "none",
             },
             ...panels.map((p, i) => ({
               left: PANEL_LEFT,
-              right: 10,
+              right: PANEL_RIGHT,
               bottom: PANEL_BOTTOM + panelsHeight(panels.slice(i + 1)),
               height: SUB_PANELS[p].height,
+              outerBoundsMode: "none",
             })),
           ],
         }
