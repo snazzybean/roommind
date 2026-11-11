@@ -53,6 +53,13 @@ const STAGE_STATE_KEY: Record<StageState, TranslationKey> = {
   off: "analytics.stage_state_off",
 };
 
+/** Data stage text per side the room has: [still collecting, idle done but runs missing]. */
+const DATA_SUB: Record<"both" | "heat" | "cool", [TranslationKey, TranslationKey]> = {
+  both: ["analytics.stage_data_sub", "analytics.stage_data_wait"],
+  heat: ["analytics.stage_data_sub_heat", "analytics.stage_data_wait_heat"],
+  cool: ["analytics.stage_data_sub_cool", "analytics.stage_data_wait_cool"],
+};
+
 @customElement("rs-analytics-model")
 export class RsAnalyticsModel extends LitElement {
   @property({ attribute: false }) public hass!: HomeAssistant;
@@ -152,10 +159,8 @@ export class RsAnalyticsModel extends LitElement {
     const runs = both ? Math.max(heating, cooling) : coolOnly ? cooling : heating;
     const idleDone = !!m?.model && idle >= MPC_MIN_IDLE_SAMPLES;
     const dataDone = mpcActive || (idleDone && runs >= MPC_MIN_ACTIVE_SAMPLES);
-    const side = both ? "" : coolOnly ? "_cool" : "_heat";
-    const dataSub = (
-      !dataDone && idleDone ? `analytics.stage_data_wait${side}` : `analytics.stage_data_sub${side}`
-    ) as TranslationKey;
+    const dataSub =
+      DATA_SUB[both ? "both" : coolOnly ? "cool" : "heat"][!dataDone && idleDone ? 1 : 0];
     const accurate =
       m?.prediction_std_idle != null &&
       m.prediction_std_idle < MPC_MAX_PREDICTION_STD &&
