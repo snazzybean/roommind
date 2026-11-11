@@ -4,11 +4,36 @@
 import { LitElement, html, css, nothing } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import type { HomeAssistant, CompressorGroup, ConflictResolution } from "../../types";
-import { localize } from "../../utils/localize";
+import { localize, type TranslationKey } from "../../utils/localize";
 import { getSelectValue } from "../../utils/events";
 import "../shared/rs-confirm-button";
+import "../shared/rs-icon-button";
+import "../shared/rs-number-field";
 import "../shared/rs-toggle-row";
 import { inputStyles } from "../../styles/input-styles";
+import { alertStyles, tokens } from "../../styles/tokens";
+
+/**
+ * Why a group cannot be saved yet, mirroring the backend checks of settings/save: a group needs a
+ * member, a device belongs to one group, a main device is no member and drives one group.
+ * Groups with a problem stay in the page as drafts and are left out of the save.
+ */
+export function compressorGroupProblem(
+  group: CompressorGroup,
+  groups: readonly CompressorGroup[],
+): TranslationKey | null {
+  if (group.members.length === 0) return "compressor.draft_no_members";
+  const others = groups.filter((g) => g !== group);
+  if (group.members.some((m) => others.some((g) => g.members.includes(m))))
+    return "error.duplicate_member";
+  const master = group.master_entity;
+  if (master) {
+    if (group.members.includes(master)) return "error.master_in_members";
+    if (others.some((g) => g.members.includes(master))) return "error.master_is_other_member";
+    if (others.some((g) => g.master_entity === master)) return "error.duplicate_master";
+  }
+  return null;
+}
 
 @customElement("rs-settings-compressor")
 export class RsSettingsCompressor extends LitElement {
@@ -16,6 +41,8 @@ export class RsSettingsCompressor extends LitElement {
   @property({ type: Array }) public compressorGroups: CompressorGroup[] = [];
 
   static styles = [
+    tokens,
+    alertStyles,
     inputStyles,
     css`
       :host {
@@ -75,6 +102,12 @@ export class RsSettingsCompressor extends LitElement {
         display: flex;
         justify-content: flex-end;
       }
+      .draft-note {
+        margin: 0 0 var(--rs-space-3);
+        font-size: var(--rs-font-sm);
+        line-height: 1.4;
+        color: var(--secondary-text-color);
+      }
       .no-groups {
         color: var(--secondary-text-color);
         font-size: 14px;
@@ -119,6 +152,7 @@ export class RsSettingsCompressor extends LitElement {
     const l = this.hass.language;
     return html`
       <div class="group-card">
+        ${this._renderProblem(group)}
         <ha-textfield
           .value=${group.name}
           .label=${localize("compressor.group_name", l)}
@@ -156,38 +190,26 @@ export class RsSettingsCompressor extends LitElement {
         <div class="field-hint">${localize("compressor.members_hint", l)}</div>
 
         <div class="number-fields">
-          <div>
-            <ha-textfield
-              type="number"
-              .value=${String(group.min_run_minutes)}
-              .label=${localize("compressor.min_run", l)}
-              .suffix=${localize("compressor.min_run_suffix", l)}
-              min="1"
-              max="60"
-              step="1"
-              @change=${(e: Event) => {
-                const v = parseInt((e.target as HTMLInputElement).value, 10);
-                if (!isNaN(v) && v >= 1 && v <= 60) this._updateGroup(idx, "min_run_minutes", v);
-              }}
-            ></ha-textfield>
-            <div class="field-hint">${localize("compressor.min_run_hint", l)}</div>
-          </div>
-          <div>
-            <ha-textfield
-              type="number"
-              .value=${String(group.min_off_minutes)}
-              .label=${localize("compressor.min_off", l)}
-              .suffix=${localize("compressor.min_off_suffix", l)}
-              min="1"
-              max="30"
-              step="1"
-              @change=${(e: Event) => {
-                const v = parseInt((e.target as HTMLInputElement).value, 10);
-                if (!isNaN(v) && v >= 1 && v <= 30) this._updateGroup(idx, "min_off_minutes", v);
-              }}
-            ></ha-textfield>
-            <div class="field-hint">${localize("compressor.min_off_hint", l)}</div>
-          </div>
+          <rs-number-field
+            .label=${localize("compressor.min_run", l)}
+            .suffix=${localize("compressor.min_run_suffix", l)}
+            .hint=${localize("compressor.min_run_hint", l)}
+            .min=${1}
+            .max=${60}
+            .value=${group.min_run_minutes}
+            @value-changed=${(e: CustomEvent<{ value: number }>) =>
+              this._updateGroup(idx, "min_run_minutes", e.detail.value)}
+          ></rs-number-field>
+          <rs-number-field
+            .label=${localize("compressor.min_off", l)}
+            .suffix=${localize("compressor.min_off_suffix", l)}
+            .hint=${localize("compressor.min_off_hint", l)}
+            .min=${1}
+            .max=${30}
+            .value=${group.min_off_minutes}
+            @value-changed=${(e: CustomEvent<{ value: number }>) =>
+              this._updateGroup(idx, "min_off_minutes", e.detail.value)}
+          ></rs-number-field>
         </div>
 
         <div class="section-label">${localize("compressor.master_entity", l)}</div>
@@ -296,8 +318,9 @@ export class RsSettingsCompressor extends LitElement {
         <span class="member-name ${missing ? "member-missing" : ""}"
           >${name}${areaName ? html`<span class="member-area">(${areaName})</span>` : nothing}</span
         >
-        <ha-icon-button
-          .path=${"M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z"}
+        <rs-icon-button
+          icon="mdi:close"
+          .label=${localize("common.remove_named", this.hass.language, { name })}
           @click=${() => {
             const updated = [...this.compressorGroups];
             updated[groupIdx] = {
@@ -306,9 +329,21 @@ export class RsSettingsCompressor extends LitElement {
             };
             this._fire(updated);
           }}
-        ></ha-icon-button>
+        ></rs-icon-button>
       </div>
     `;
+  }
+
+  /** Draft note or validation error at the group, so it is seen where it is fixed. */
+  private _renderProblem(group: CompressorGroup) {
+    const problem = compressorGroupProblem(group, this.compressorGroups);
+    if (!problem) return nothing;
+    const l = this.hass.language;
+    if (problem === "compressor.draft_no_members")
+      return html`<p class="draft-note">${localize(problem, l)}</p>`;
+    return html`<p class="rs-alert" role="alert">
+      ${localize("settings.save_error", l, { error: localize(problem, l) })}
+    </p>`;
   }
 
   private _memberFilter = (entity: { entity_id: string }): boolean => {

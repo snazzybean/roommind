@@ -5,6 +5,8 @@ import { localize } from "../utils/localize";
 import { inputStyles } from "../styles/input-styles";
 import { formatNumber } from "../utils/format";
 import { formatTempLocale, tempUnit, toDisplayDelta } from "../utils/temperature";
+import type { NumberKind } from "./shared/rs-number-field";
+import "./shared/rs-number-field";
 
 import "./shared/rs-info-icon";
 import "./shared/rs-toggle-row";
@@ -86,32 +88,7 @@ export class RsHeatSourceSection extends LitElement {
       }
 
       .threshold-cell {
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-        padding: 12px 14px;
-        border: 1px solid var(--divider-color);
-        border-radius: 10px;
-        background: var(--card-background-color);
-      }
-
-      .threshold-label {
-        font-size: 12px;
-        font-weight: 500;
-        color: var(--secondary-text-color);
-        display: flex;
-        align-items: center;
-        gap: 4px;
-        line-height: 1.3;
-      }
-
-      .threshold-label > span {
-        flex: 1;
         min-width: 0;
-      }
-
-      .threshold-cell ha-textfield {
-        width: 100%;
       }
 
       .price-aware {
@@ -166,7 +143,7 @@ export class RsHeatSourceSection extends LitElement {
                 ${this._renderThresholdCell({
                   label: localize("heat_source.primary_delta", lang),
                   hint: localize("heat_source.primary_delta_hint", lang),
-                  suffix: localize("heat_source.primary_delta_suffix", lang),
+                  kind: "temperature-delta",
                   value: this.primaryDelta,
                   min: 0.5,
                   max: 5.0,
@@ -176,7 +153,7 @@ export class RsHeatSourceSection extends LitElement {
                 ${this._renderThresholdCell({
                   label: localize("heat_source.outdoor_threshold", lang),
                   hint: localize("heat_source.outdoor_threshold_hint", lang),
-                  suffix: localize("heat_source.outdoor_threshold_suffix", lang),
+                  kind: "temperature",
                   value: this.outdoorThreshold,
                   min: -20,
                   max: 25,
@@ -186,7 +163,7 @@ export class RsHeatSourceSection extends LitElement {
                 ${this._renderThresholdCell({
                   label: localize("heat_source.ac_min_outdoor", lang),
                   hint: localize("heat_source.ac_min_outdoor_hint", lang),
-                  suffix: localize("heat_source.ac_min_outdoor_suffix", lang),
+                  kind: "temperature",
                   value: this.acMinOutdoor,
                   min: -30,
                   max: 5,
@@ -217,7 +194,7 @@ export class RsHeatSourceSection extends LitElement {
   private _renderThresholdCell(opts: {
     label: string;
     hint: string;
-    suffix: string;
+    kind: NumberKind;
     value: number;
     min: number;
     max: number;
@@ -226,32 +203,24 @@ export class RsHeatSourceSection extends LitElement {
   }) {
     return html`
       <div class="threshold-cell">
-        <div class="threshold-label">
-          <span>${opts.label}</span>
-          <rs-info-icon .text=${opts.hint}></rs-info-icon>
-        </div>
-        <ha-textfield
-          .value=${String(opts.value)}
-          .min=${String(opts.min)}
-          .max=${String(opts.max)}
-          .step=${String(opts.step)}
-          .suffix=${opts.suffix}
-          type="number"
-          @input=${(e: Event) => this._onNumberInput(opts.key, e)}
-        ></ha-textfield>
+        <rs-number-field
+          .hass=${this.hass}
+          .kind=${opts.kind}
+          .value=${opts.value}
+          .min=${opts.min}
+          .max=${opts.max}
+          .step=${opts.step}
+          .label=${opts.label}
+          .info=${opts.hint}
+          @value-changed=${(e: CustomEvent<{ value: number }>) =>
+            this._emit(opts.key, e.detail.value)}
+        ></rs-number-field>
       </div>
     `;
   }
 
   private _onSwitchChange(e: Event) {
     this._emit("heat_source_orchestration", (e.target as HTMLInputElement).checked);
-  }
-
-  private _onNumberInput(key: string, e: Event) {
-    const val = parseFloat((e.target as HTMLInputElement).value);
-    if (!isNaN(val)) {
-      this._emit(key, val);
-    }
   }
 
   private _emit(key: string, value: unknown) {

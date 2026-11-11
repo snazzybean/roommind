@@ -3,9 +3,9 @@ import { customElement, property, state } from "lit/decorators.js";
 import type { HomeAssistant, RoomConfig, ClimateMode, OverrideType } from "../types";
 import { localize } from "../utils/localize";
 import { errorText } from "../utils/errors";
-import { inputStyles } from "../styles/input-styles";
 import { tokens } from "../styles/tokens";
-import { tempUnit, toDisplay, toCelsius, tempStep, tempRange } from "../utils/temperature";
+import { tempRowStyles } from "../styles/temp-row-styles";
+import { tempRow } from "./shared/temp-row";
 import {
   NO_OVERRIDE,
   OVERRIDE_DURATIONS_H,
@@ -56,7 +56,7 @@ export class RsOverrideSection extends LitElement {
 
   static styles = [
     tokens,
-    inputStyles,
+    tempRowStyles,
     css`
       :host {
         display: block;
@@ -73,16 +73,7 @@ export class RsOverrideSection extends LitElement {
       }
 
       .custom {
-        display: flex;
-        flex-wrap: wrap;
-        gap: var(--rs-space-2);
-        margin-top: var(--rs-space-3);
-      }
-
-      .custom ha-textfield {
-        flex: 1 1 140px;
-        min-width: 0;
-        max-width: 200px;
+        margin-top: var(--rs-space-1);
       }
 
       .error {
@@ -187,28 +178,26 @@ export class RsOverrideSection extends LitElement {
   }
 
   private _renderCustomInputs() {
-    const range = tempRange(5, 35, this.hass);
-    const field = (
+    const row = (
       labelKey: "override.heat_to" | "override.cool_above" | "override.target",
       heat: boolean,
-    ) => html`
-      <ha-textfield
-        type="number"
-        .label=${localize(labelKey, this.language)}
-        .suffix=${tempUnit(this.hass)}
-        min=${range.min}
-        max=${range.max}
-        step=${tempStep(this.hass)}
-        .value=${String(toDisplay(heat ? this._overrideCustomHeat : this._overrideCustomCool, this.hass))}
-        @input=${heat ? this._onCustomHeatInput : this._onCustomCoolInput}
-      ></ha-textfield>
-    `;
+    ) =>
+      tempRow({
+        hass: this.hass,
+        side: heat ? "heat" : "cool",
+        label: localize(labelKey, this.language),
+        celsius: heat ? this._overrideCustomHeat : this._overrideCustomCool,
+        onChange: (c) => {
+          if (heat) this._overrideCustomHeat = c;
+          else this._overrideCustomCool = c;
+        },
+      });
     if (this.climateMode === "heat_only")
-      return html`<div class="custom">${field("override.target", true)}</div>`;
+      return html`<div class="custom">${row("override.target", true)}</div>`;
     if (this.climateMode === "cool_only")
-      return html`<div class="custom">${field("override.target", false)}</div>`;
+      return html`<div class="custom">${row("override.target", false)}</div>`;
     return html`<div class="custom">
-      ${field("override.heat_to", true)} ${field("override.cool_above", false)}
+      ${row("override.heat_to", true)} ${row("override.cool_above", false)}
     </div>`;
   }
 
@@ -243,20 +232,6 @@ export class RsOverrideSection extends LitElement {
     if (v === UNTIL_CHANGE) this._onOverrideActivate(QUICK_OVERRIDE_FALLBACK_H, true);
     else if (v === PERMANENT) this._onOverrideActivate(OVERRIDE_PERMANENT_H);
     else this._onOverrideActivate(Number(v));
-  }
-
-  private _onCustomHeatInput(e: Event): void {
-    this._overrideCustomHeat = toCelsius(
-      Number((e.target as HTMLInputElement).value) || toDisplay(21, this.hass),
-      this.hass,
-    );
-  }
-
-  private _onCustomCoolInput(e: Event): void {
-    this._overrideCustomCool = toCelsius(
-      Number((e.target as HTMLInputElement).value) || toDisplay(24, this.hass),
-      this.hass,
-    );
   }
 
   private async _onOverrideActivate(hours: number, untilScheduleChange = false): Promise<void> {

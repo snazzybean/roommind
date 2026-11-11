@@ -495,6 +495,7 @@
   "compressor.group_name": "Nom du groupe",
   "compressor.members": "Unités intérieures",
   "compressor.members_hint": "Sélectionnez tous les appareils climatiques alimentés par ce compresseur (unités intérieures, TRV sur radiateurs, ventilo-convecteurs).",
+  "compressor.draft_no_members": "Enregistré dès qu'il contient une unité intérieure.",
   "compressor.min_run": "Durée minimale de fonctionnement",
   "compressor.min_run_hint": "Le compresseur doit fonctionner au moins aussi longtemps une fois démarré.",
   "compressor.min_run_suffix": "min",

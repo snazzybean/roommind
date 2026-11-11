@@ -8,7 +8,7 @@ import { formatPercent } from "../utils/format";
 import { masterDetailStyles } from "../styles/master-detail-styles";
 import { inputStyles } from "../styles/input-styles";
 import "./shared/rs-toggle-row";
-import "./shared/rs-threshold-field";
+import "./shared/rs-number-field";
 import "./shared/rs-master-detail";
 import "./shared/rs-info-icon";
 import "./rs-cover-schedule";
@@ -472,15 +472,15 @@ export class RsCoverSection extends LitElement {
         </ha-select>
       </div>
       <div class="detail-field">
-        <rs-threshold-field
+        <rs-number-field
           .label=${localize("covers.per_cover_min_position", l)}
           .value=${currentMin ?? 0}
           .min=${0}
           .max=${99}
           .step=${1}
           suffix="%"
-          @value-changed=${(e: CustomEvent) => this._setMinPosition(entityId, e.detail as number)}
-        ></rs-threshold-field>
+          @value-changed=${(e: CustomEvent<{ value: number }>) => this._setMinPosition(entityId, e.detail.value)}
+        ></rs-number-field>
       </div>
     `;
   }
@@ -618,50 +618,54 @@ export class RsCoverSection extends LitElement {
                                 ${
                                   this.nightClose
                                     ? html`
-                                        <rs-threshold-field
+                                        <rs-number-field
                                           .label=${localize("covers.night_position", l)}
-                                          .hint=${localize("covers.night_position_hint", l)}
+                                          .info=${localize("covers.night_position_hint", l)}
                                           .value=${this.nightPosition}
                                           .min=${0}
                                           .max=${100}
                                           .step=${5}
                                           suffix="%"
-                                          @value-changed=${(e: CustomEvent) =>
-                                            this._emit("covers_night_position", e.detail)}
-                                        ></rs-threshold-field>
+                                          @value-changed=${(e: CustomEvent<{ value: number }>) =>
+                                            this._emit("covers_night_position", e.detail.value)}
+                                        ></rs-number-field>
                                         <ha-expansion-panel
                                           .header=${localize("covers.night_close_advanced", l)}
                                           outlined
                                         >
                                           <div class="field-row" style="padding:8px 0;">
-                                            <rs-threshold-field
+                                            <rs-number-field
                                               .label=${localize("covers.night_close_elevation", l)}
-                                              .hint=${localize("covers.night_close_elevation_hint", l)}
+                                              .info=${localize("covers.night_close_elevation_hint", l)}
                                               .value=${this.nightCloseElevation}
                                               .min=${-18}
                                               .max=${10}
                                               .step=${1}
                                               suffix="°"
-                                              @value-changed=${(e: CustomEvent) =>
+                                              @value-changed=${(
+                                                e: CustomEvent<{ value: number }>,
+                                              ) =>
                                                 this._emit(
                                                   "covers_night_close_elevation",
-                                                  e.detail,
+                                                  e.detail.value,
                                                 )}
-                                            ></rs-threshold-field>
-                                            <rs-threshold-field
+                                            ></rs-number-field>
+                                            <rs-number-field
                                               .label=${localize("covers.night_close_offset", l)}
-                                              .hint=${localize("covers.night_close_offset_hint", l)}
+                                              .info=${localize("covers.night_close_offset_hint", l)}
                                               .value=${this.nightCloseOffsetMinutes}
                                               .min=${-120}
                                               .max=${120}
                                               .step=${5}
                                               suffix="min"
-                                              @value-changed=${(e: CustomEvent) =>
+                                              @value-changed=${(
+                                                e: CustomEvent<{ value: number }>,
+                                              ) =>
                                                 this._emit(
                                                   "covers_night_close_offset_minutes",
-                                                  e.detail,
+                                                  e.detail.value,
                                                 )}
-                                            ></rs-threshold-field>
+                                            ></rs-number-field>
                                           </div>
                                         </ha-expansion-panel>
                                       `
@@ -686,52 +690,54 @@ export class RsCoverSection extends LitElement {
                           this._solarCollapsed
                             ? nothing
                             : html`<div class="field-row">
-                                  <rs-threshold-field
+                                  <rs-number-field
                                     .label=${localize("covers.deploy_threshold", l)}
-                                    .hint=${localize("covers.deploy_threshold_hint", l)}
+                                    .info=${localize("covers.deploy_threshold_hint", l)}
                                     .value=${this.deployThreshold}
                                     .min=${0.5}
                                     .max=${5.0}
                                     .step=${0.5}
-                                    suffix="°C"
-                                    @value-changed=${(e: CustomEvent) =>
-                                      this._emit("covers_deploy_threshold", e.detail)}
-                                  ></rs-threshold-field>
-                                  <rs-threshold-field
+                                    .hass=${this.hass}
+                                    kind="temperature-delta"
+                                    @value-changed=${(e: CustomEvent<{ value: number }>) =>
+                                      this._emit("covers_deploy_threshold", e.detail.value)}
+                                  ></rs-number-field>
+                                  <rs-number-field
                                     .label=${localize("covers.min_position", l)}
-                                    .hint=${localize("covers.min_position_hint", l)}
+                                    .info=${localize("covers.min_position_hint", l)}
                                     .value=${this.minPosition}
                                     .min=${0}
                                     .max=${80}
                                     .step=${5}
                                     suffix="%"
-                                    @value-changed=${(e: CustomEvent) =>
-                                      this._emit("covers_min_position", e.detail)}
-                                  ></rs-threshold-field>
+                                    @value-changed=${(e: CustomEvent<{ value: number }>) =>
+                                      this._emit("covers_min_position", e.detail.value)}
+                                  ></rs-number-field>
                                 </div>
                                 <div class="field-row">
-                                  <rs-threshold-field
+                                  <rs-number-field
                                     .label=${localize("covers.override_minutes", l)}
-                                    .hint=${localize("covers.override_minutes_hint", l)}
+                                    .info=${localize("covers.override_minutes_hint", l)}
                                     .value=${this.overrideMinutes}
                                     .min=${0}
                                     .max=${480}
                                     .step=${15}
                                     suffix="min"
-                                    @value-changed=${(e: CustomEvent) =>
-                                      this._emit("covers_override_minutes", e.detail)}
-                                  ></rs-threshold-field>
-                                  <rs-threshold-field
+                                    @value-changed=${(e: CustomEvent<{ value: number }>) =>
+                                      this._emit("covers_override_minutes", e.detail.value)}
+                                  ></rs-number-field>
+                                  <rs-number-field
                                     .label=${localize("covers.outdoor_min_temp", l)}
-                                    .hint=${localize("covers.outdoor_min_temp_hint", l)}
+                                    .info=${localize("covers.outdoor_min_temp_hint", l)}
                                     .value=${this.outdoorMinTemp ?? 10}
                                     .min=${0}
                                     .max=${35}
                                     .step=${1}
-                                    suffix="°C"
-                                    @value-changed=${(e: CustomEvent) =>
-                                      this._emit("covers_outdoor_min_temp", e.detail)}
-                                  ></rs-threshold-field>
+                                    .hass=${this.hass}
+                                    kind="temperature"
+                                    @value-changed=${(e: CustomEvent<{ value: number }>) =>
+                                      this._emit("covers_outdoor_min_temp", e.detail.value)}
+                                  ></rs-number-field>
                                 </div>
                                 <div class="group-divider"></div>
                                 <rs-toggle-row

@@ -3,10 +3,10 @@
  */
 import { css, html, nothing } from "lit";
 import { RsSettingsBase } from "./rs-settings-base";
+import "../shared/rs-number-field";
 import { customElement, property } from "lit/decorators.js";
 import type { HomeAssistant } from "../../types";
 import { localize } from "../../utils/localize";
-import { toDisplay, toCelsius, tempUnit, tempStep, tempRange } from "../../utils/temperature";
 
 @customElement("rs-settings-vacation")
 export class RsSettingsVacation extends RsSettingsBase {
@@ -40,33 +40,24 @@ export class RsSettingsVacation extends RsSettingsBase {
               <div class="settings-section">
                 <div class="threshold-grid" style="align-items: end">
                   <div class="threshold-field">
-                    <label class="field-label" for="vacation-until"
-                      >${localize("vacation.end_date", l)}</label
-                    >
                     <ha-textfield
-                      id="vacation-until"
                       .value=${this.vacationUntil}
-                      aria-label=${localize("vacation.end_date", l)}
+                      .label=${localize("vacation.end_date", l)}
                       type="datetime-local"
                       @change=${(e: Event) =>
                         this._fire("vacationUntil", (e.target as HTMLInputElement).value)}
                     ></ha-textfield>
                   </div>
-                  <div class="threshold-field">
-                    <ha-textfield
-                      .value=${String(toDisplay(this.vacationTemp, this.hass))}
-                      .label=${localize("vacation.setback_temp", l)}
-                      .suffix=${tempUnit(this.hass)}
-                      type="number"
-                      step=${tempStep(this.hass)}
-                      min=${tempRange(5, 25, this.hass).min}
-                      max=${tempRange(5, 25, this.hass).max}
-                      @change=${(e: Event) => {
-                        const v = parseFloat((e.target as HTMLInputElement).value);
-                        if (!isNaN(v)) this._fire("vacationTemp", toCelsius(v, this.hass));
-                      }}
-                    ></ha-textfield>
-                  </div>
+                  <rs-number-field
+                    .hass=${this.hass}
+                    kind="temperature"
+                    .label=${localize("vacation.setback_temp", l)}
+                    .min=${5}
+                    .max=${25}
+                    .value=${this.vacationTemp}
+                    @value-changed=${(e: CustomEvent<{ value: number }>) =>
+                      this._fire("vacationTemp", e.detail.value)}
+                  ></rs-number-field>
                 </div>
               </div>
             `

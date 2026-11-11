@@ -3,6 +3,7 @@ import { customElement, property, state } from "lit/decorators.js";
 import type { HomeAssistant } from "../../types";
 import { localize } from "../../utils/localize";
 import { tokens } from "../../styles/tokens";
+import { tempRowStyles } from "../../styles/temp-row-styles";
 import { formatNumber } from "../../utils/format";
 import {
   MAX_TARGET_TEMP_C,
@@ -59,6 +60,7 @@ export class RsBlockForm extends LitElement {
 
   static styles = [
     tokens,
+    tempRowStyles,
     css`
       :host {
         display: block;
@@ -125,33 +127,6 @@ export class RsBlockForm extends LitElement {
         font-size: var(--rs-font-sm);
         line-height: 1.4;
         color: var(--secondary-text-color);
-      }
-
-      .temp-row {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: var(--rs-space-3);
-        margin-top: var(--rs-space-3);
-        font-size: var(--rs-font-md);
-      }
-
-      .temp-row span {
-        display: inline-flex;
-        align-items: center;
-        gap: var(--rs-space-2);
-      }
-
-      .temp-row ha-icon {
-        --mdc-icon-size: 18px;
-      }
-
-      .heat ha-icon {
-        color: var(--rs-heat);
-      }
-
-      .cool ha-icon {
-        color: var(--rs-cool);
       }
 
       .footer {
@@ -267,6 +242,7 @@ export class RsBlockForm extends LitElement {
                 )}</span
               >
               <rs-stepper
+                .language=${l}
                 .label=${localize(both ? "schedule_editor.heat_below" : "schedule_editor.target", l)}
                 .value=${this._heat}
                 .min=${min}
@@ -289,6 +265,7 @@ export class RsBlockForm extends LitElement {
                 )}</span
               >
               <rs-stepper
+                .language=${l}
                 .label=${localize(both ? "schedule_editor.cool_above" : "schedule_editor.target", l)}
                 .value=${this._cool}
                 .min=${min}

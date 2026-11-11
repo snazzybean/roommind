@@ -495,6 +495,7 @@
   "compressor.group_name": "Nome del gruppo",
   "compressor.members": "Unità interne",
   "compressor.members_hint": "Seleziona tutti i dispositivi di climatizzazione alimentati da questo compressore (split interni, TRV sui radiatori, ventilconvettori).",
+  "compressor.draft_no_members": "Viene salvato non appena contiene un'unità interna.",
   "compressor.min_run": "Tempo minimo di funzionamento",
   "compressor.min_run_hint": "Una volta avviato, il compressore deve funzionare almeno per questo tempo.",
   "compressor.min_run_suffix": "min",

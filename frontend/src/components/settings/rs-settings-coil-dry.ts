@@ -3,6 +3,7 @@
  */
 import { html, css, nothing } from "lit";
 import { RsSettingsBase } from "./rs-settings-base";
+import "../shared/rs-number-field";
 import { customElement, property } from "lit/decorators.js";
 import type { HomeAssistant } from "../../types";
 import { localize, type TranslationKey } from "../../utils/localize";
@@ -34,22 +35,15 @@ export class RsSettingsCoilDry extends RsSettingsBase {
   ) {
     const l = this.hass.language;
     return html`
-      <div class="threshold-field">
-        <ha-textfield
-          .value=${String(value)}
-          .label=${localize(labelKey, l)}
-          .suffix=${localize(suffixKey, l)}
-          type="number"
-          step="1"
-          min="${min}"
-          max="${max}"
-          @change=${(e: Event) => {
-            const v = parseInt((e.target as HTMLInputElement).value, 10);
-            if (!isNaN(v) && v >= min && v <= max) this._fire(key, v);
-          }}
-        ></ha-textfield>
-        <span class="field-hint">${localize(hintKey, l)}</span>
-      </div>
+      <rs-number-field
+        .label=${localize(labelKey, l)}
+        .suffix=${localize(suffixKey, l)}
+        .hint=${localize(hintKey, l)}
+        .min=${min}
+        .max=${max}
+        .value=${value}
+        @value-changed=${(e: CustomEvent<{ value: number }>) => this._fire(key, e.detail.value)}
+      ></rs-number-field>
     `;
   }
 

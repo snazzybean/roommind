@@ -39,13 +39,16 @@ import "./settings/rs-settings-control";
 import "./settings/rs-settings-presence";
 import "./settings/rs-settings-vacation";
 import "./settings/rs-settings-valve";
-import "./settings/rs-settings-compressor";
+import { compressorGroupProblem } from "./settings/rs-settings-compressor";
 import "./settings/rs-settings-coil-dry";
 import "./settings/rs-settings-mold";
 import "./settings/rs-settings-notifications";
 import "./settings/rs-settings-learning";
 import "./settings/rs-settings-reset";
 import "./settings/rs-settings-orphans";
+
+/** Compressor groups the backend would reject (no member yet, conflicts), kept for the session. */
+let compressorDrafts: CompressorGroup[] = [];
 
 @customElement("rs-settings")
 export class RsSettings extends LitElement {
@@ -170,7 +173,12 @@ export class RsSettings extends LitElement {
       this._moldPreventionEnabled = s.mold_prevention_enabled ?? false;
       this._moldPreventionIntensity = s.mold_prevention_intensity ?? "medium";
       this._moldPreventionNotify = s.mold_prevention_notify_enabled ?? false;
-      this._compressorGroups = s.compressor_groups ?? [];
+      // Drafts that could not be saved yet survive a reload of the page
+      const stored = s.compressor_groups ?? [];
+      this._compressorGroups = [
+        ...stored,
+        ...compressorDrafts.filter((d) => !stored.some((g) => g.id === d.id)),
+      ];
       this._coilDryEnabled = s.coil_dry_enabled ?? false;
       this._coilDryMinutes = s.coil_dry_minutes ?? 20;
       this._coilDryMode = s.coil_dry_mode ?? "fan_only";
@@ -716,7 +724,12 @@ export class RsSettings extends LitElement {
     this._saveDebounce = setTimeout(() => this._doSave(), 500);
   }
 
+  private _isDraft(group: CompressorGroup): boolean {
+    return compressorGroupProblem(group, this._compressorGroups) !== null;
+  }
+
   private async _doSave() {
+    compressorDrafts = this._compressorGroups.filter((g) => this._isDraft(g));
     fireSaveStatus(this, "saving");
     const sentClimateControl = this._climateControlDirty ? this._climateControlActive : undefined;
 
@@ -749,7 +762,7 @@ export class RsSettings extends LitElement {
         schedule_off_action: this._scheduleOffAction,
         valve_protection_enabled: this._valveProtectionEnabled,
         valve_protection_interval_days: this._valveProtectionInterval,
-        compressor_groups: this._compressorGroups.filter((g) => g.members.length > 0),
+        compressor_groups: this._compressorGroups.filter((g) => !this._isDraft(g)),
         coil_dry_enabled: this._coilDryEnabled,
         coil_dry_minutes: this._coilDryMinutes,
         coil_dry_mode: this._coilDryMode,

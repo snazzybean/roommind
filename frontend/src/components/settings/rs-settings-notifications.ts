@@ -4,6 +4,7 @@
  */
 import { html, css, nothing } from "lit";
 import { RsSettingsBase } from "./rs-settings-base";
+import "../shared/rs-number-field";
 import { customElement, property } from "lit/decorators.js";
 import type { HomeAssistant, NotificationTarget } from "../../types";
 import { localize } from "../../utils/localize";
@@ -139,23 +140,16 @@ export class RsSettingsNotifications extends RsSettingsBase {
 
               <div class="settings-section">
                 <div class="threshold-grid">
-                  <div class="threshold-field">
-                    <ha-textfield
-                      .value=${String(this.notificationCooldown)}
-                      .label=${localize("notifications.cooldown", l)}
-                      .suffix=${"min"}
-                      type="number"
-                      step="5"
-                      min="10"
-                      max="1440"
-                      @change=${(e: Event) => {
-                        const v = parseInt((e.target as HTMLInputElement).value, 10);
-                        if (!isNaN(v) && v >= 10 && v <= 1440)
-                          this._fire("moldNotificationCooldown", v);
-                      }}
-                    ></ha-textfield>
-                    <span class="field-hint">${localize("notifications.cooldown_hint", l)}</span>
-                  </div>
+                  <rs-number-field
+                    .label=${localize("notifications.cooldown", l)}
+                    suffix="min"
+                    .hint=${localize("notifications.cooldown_hint", l)}
+                    .min=${10}
+                    .max=${1440}
+                    .value=${this.notificationCooldown}
+                    @value-changed=${(e: CustomEvent<{ value: number }>) =>
+                      this._fire("moldNotificationCooldown", e.detail.value)}
+                  ></rs-number-field>
                 </div>
 
                 ${

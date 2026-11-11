@@ -4,7 +4,7 @@ import type { HomeAssistant, HassArea, DeviceConfig, DeviceType } from "../types
 import { getEntitiesForArea } from "../utils/room-state";
 import { localize } from "../utils/localize";
 import { getSelectValue, openEntityInfo } from "../utils/events";
-import { tempUnit, toDisplayDelta, toCelsiusDelta, usesFahrenheit } from "../utils/temperature";
+import { tempUnit } from "../utils/temperature";
 import { resolveHeatingSystemType } from "../utils/device-utils";
 import { formatNumber } from "../utils/format";
 import { tokens } from "../styles/tokens";
@@ -13,6 +13,7 @@ import { formStyles } from "../styles/form-styles";
 import type { RsSegmentOption } from "./shared/rs-segmented";
 import "./shared/rs-confirm-dialog";
 import "./shared/rs-field";
+import "./shared/rs-number-field";
 import "./shared/rs-info-icon";
 import "./shared/rs-list-row";
 import "./shared/rs-segmented";
@@ -629,23 +630,17 @@ export class RsDeviceSection extends LitElement {
       </rs-field>
       ${
         device.setpoint_mode === "direct"
-          ? html`<rs-field .info=${localize("devices.setpoint_offset_info", l)}>
-              <ha-textfield
-                .label=${localize("devices.setpoint_offset", l)}
-                .suffix=${tempUnit(this.hass)}
-                .value=${String(
-                  Math.round(toDisplayDelta(device.setpoint_offset ?? 0, this.hass) * 10) / 10,
-                )}
-                type="number"
-                .step=${usesFahrenheit(this.hass) ? "1" : "0.5"}
-                .min=${String(Math.round(toDisplayDelta(-5, this.hass)))}
-                .max=${String(Math.round(toDisplayDelta(5, this.hass)))}
-                @change=${(e: Event) => {
-                  const v = parseFloat((e.target as HTMLInputElement).value);
-                  if (!isNaN(v)) this._onSetpointOffsetChange(id, v);
-                }}
-              ></ha-textfield>
-            </rs-field>`
+          ? html`<rs-number-field
+              .hass=${this.hass}
+              kind="temperature-delta"
+              .label=${localize("devices.setpoint_offset", l)}
+              .info=${localize("devices.setpoint_offset_info", l)}
+              .value=${device.setpoint_offset ?? 0}
+              .min=${-5}
+              .max=${5}
+              @value-changed=${(e: CustomEvent<{ value: number }>) =>
+                this._onSetpointOffsetChange(id, e.detail.value)}
+            ></rs-number-field>`
           : nothing
       }
     </div>`;
@@ -888,25 +883,18 @@ export class RsDeviceSection extends LitElement {
       }
       ${
         coilDry !== "off"
-          ? html`<rs-field
+          ? html`<rs-number-field
+                .label=${localize("devices.coil_dry_minutes", l)}
                 .info=${localize("devices.coil_dry_minutes_info", l, {
                   minutes: this.coilDryMinutesGlobal,
                 })}
-              >
-                <ha-textfield
-                  .value=${String(device.coil_dry_minutes ?? 0)}
-                  .label=${localize("devices.coil_dry_minutes", l)}
-                  suffix="min"
-                  type="number"
-                  step="1"
-                  min="0"
-                  max="60"
-                  @change=${(e: Event) => {
-                    const v = parseInt((e.target as HTMLInputElement).value, 10);
-                    if (!isNaN(v) && v >= 0 && v <= 60) this._onCoilDryMinutesChange(id, v);
-                  }}
-                ></ha-textfield>
-              </rs-field>
+                suffix="min"
+                .min=${0}
+                .max=${60}
+                .value=${device.coil_dry_minutes ?? 0}
+                @value-changed=${(e: CustomEvent<{ value: number }>) =>
+                  this._onCoilDryMinutesChange(id, e.detail.value)}
+              ></rs-number-field>
               <rs-field
                 .label=${localize("devices.coil_dry_mode", l)}
                 .info=${localize("devices.coil_dry_mode_info", l)}
@@ -1096,11 +1084,8 @@ export class RsDeviceSection extends LitElement {
     this._fireDeviceChanged(newDevices);
   }
 
-  private _onSetpointOffsetChange(entityId: string, displayValue: number): void {
-    const celsius = Math.max(
-      -5,
-      Math.min(5, Math.round(toCelsiusDelta(displayValue, this.hass) * 100) / 100),
-    );
+  private _onSetpointOffsetChange(entityId: string, value: number): void {
+    const celsius = Math.max(-5, Math.min(5, Math.round(value * 100) / 100));
     this._fireDeviceChanged(
       this.devices.map((d) => (d.entity_id === entityId ? { ...d, setpoint_offset: celsius } : d)),
     );

@@ -3,6 +3,7 @@
  */
 import { html, nothing } from "lit";
 import { RsSettingsBase } from "./rs-settings-base";
+import "../shared/rs-number-field";
 import { customElement, property } from "lit/decorators.js";
 import type { HomeAssistant } from "../../types";
 import { localize } from "../../utils/localize";
@@ -34,23 +35,16 @@ export class RsSettingsValve extends RsSettingsBase {
           ? html`
               <div class="settings-section">
                 <div class="threshold-grid">
-                  <div class="threshold-field">
-                    <ha-textfield
-                      .value=${String(this.valveProtectionInterval)}
-                      .label=${localize("valve_protection.interval_label", l)}
-                      .suffix=${localize("valve_protection.interval_suffix", l)}
-                      type="number"
-                      step="1"
-                      min="1"
-                      max="90"
-                      @change=${(e: Event) => {
-                        const v = parseInt((e.target as HTMLInputElement).value, 10);
-                        if (!isNaN(v) && v >= 1 && v <= 90)
-                          this._fire("valveProtectionInterval", v);
-                      }}
-                    ></ha-textfield>
-                    <span class="field-hint">${localize("valve_protection.interval_hint", l)}</span>
-                  </div>
+                  <rs-number-field
+                    .label=${localize("valve_protection.interval_label", l)}
+                    .suffix=${localize("valve_protection.interval_suffix", l)}
+                    .hint=${localize("valve_protection.interval_hint", l)}
+                    .min=${1}
+                    .max=${90}
+                    .value=${this.valveProtectionInterval}
+                    @value-changed=${(e: CustomEvent<{ value: number }>) =>
+                      this._fire("valveProtectionInterval", e.detail.value)}
+                  ></rs-number-field>
                 </div>
               </div>
             `

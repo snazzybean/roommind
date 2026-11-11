@@ -4,6 +4,7 @@
 import { html, css, nothing } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import { RsSettingsBase } from "./rs-settings-base";
+import "../shared/rs-number-field";
 import type { HomeAssistant } from "../../types";
 import { localize } from "../../utils/localize";
 import { getSelectValue } from "../../utils/events";
@@ -46,38 +47,26 @@ export class RsSettingsMold extends RsSettingsBase {
           this.moldDetectionEnabled
             ? html`
                 <div class="threshold-grid indented">
-                  <div class="threshold-field">
-                    <ha-textfield
-                      .value=${String(this.moldHumidityThreshold)}
-                      .label=${localize("mold.threshold", l)}
-                      .suffix=${"%"}
-                      type="number"
-                      step="1"
-                      min="50"
-                      max="90"
-                      @change=${(e: Event) => {
-                        const v = parseFloat((e.target as HTMLInputElement).value);
-                        if (!isNaN(v) && v >= 50 && v <= 90) this._fire("moldHumidityThreshold", v);
-                      }}
-                    ></ha-textfield>
-                    <span class="field-hint">${localize("mold.threshold_hint", l)}</span>
-                  </div>
-                  <div class="threshold-field">
-                    <ha-textfield
-                      .value=${String(this.moldSustainedMinutes)}
-                      .label=${localize("mold.sustained", l)}
-                      .suffix=${"min"}
-                      type="number"
-                      step="5"
-                      min="5"
-                      max="120"
-                      @change=${(e: Event) => {
-                        const v = parseInt((e.target as HTMLInputElement).value, 10);
-                        if (!isNaN(v) && v >= 5 && v <= 120) this._fire("moldSustainedMinutes", v);
-                      }}
-                    ></ha-textfield>
-                    <span class="field-hint">${localize("mold.sustained_hint", l)}</span>
-                  </div>
+                  <rs-number-field
+                    .label=${localize("mold.threshold", l)}
+                    suffix="%"
+                    .hint=${localize("mold.threshold_hint", l)}
+                    .min=${50}
+                    .max=${90}
+                    .value=${this.moldHumidityThreshold}
+                    @value-changed=${(e: CustomEvent<{ value: number }>) =>
+                      this._fire("moldHumidityThreshold", e.detail.value)}
+                  ></rs-number-field>
+                  <rs-number-field
+                    .label=${localize("mold.sustained", l)}
+                    suffix="min"
+                    .hint=${localize("mold.sustained_hint", l)}
+                    .min=${5}
+                    .max=${120}
+                    .value=${this.moldSustainedMinutes}
+                    @value-changed=${(e: CustomEvent<{ value: number }>) =>
+                      this._fire("moldSustainedMinutes", e.detail.value)}
+                  ></rs-number-field>
                 </div>
               `
             : nothing

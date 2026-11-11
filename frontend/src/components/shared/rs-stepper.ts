@@ -18,6 +18,8 @@ export class RsStepper extends LitElement {
   @property({ type: String }) public label = "";
   @property({ type: String }) public display = "";
   @property({ type: Boolean, reflect: true }) public disabled = false;
+  /** HA profile language for the button names (components without `hass` pass it down). */
+  @property({ type: String }) public language = "";
 
   static styles = [
     tokens,
@@ -73,7 +75,7 @@ export class RsStepper extends LitElement {
   ];
 
   render() {
-    const l = uiLanguage();
+    const l = this.language || uiLanguage();
     return html`<div class="stepper" role="group" aria-label=${this.label}>
       <button
         type="button"

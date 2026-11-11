@@ -11,6 +11,7 @@ import { inputStyles } from "../styles/input-styles";
 import { formStyles } from "../styles/form-styles";
 import { DEFAULT_OCCUPANCY_ECO_DELAY, MIN_OCCUPANCY_ECO_DELAY } from "../utils/constants";
 import "./shared/rs-field";
+import "./shared/rs-number-field";
 import "./shared/rs-icon-button";
 import "./shared/rs-info-icon";
 import "./shared/rs-list-row";
@@ -489,26 +490,24 @@ export class RsSensorSection extends LitElement {
     if (this.windowSensors.size === 0) return nothing;
     return html`
       <div class="pair">
-        <rs-field .info=${localize("sensors.window_open_delay_info", l)}>
-          <ha-textfield
-            type="number"
-            min="0"
-            suffix="s"
-            .label=${localize("devices.window_open_delay", l)}
-            .value=${String(this.windowOpenDelay)}
-            @change=${this._onWindowOpenDelayChange}
-          ></ha-textfield>
-        </rs-field>
-        <rs-field .info=${localize("sensors.window_close_delay_info", l)}>
-          <ha-textfield
-            type="number"
-            min="0"
-            suffix="s"
-            .label=${localize("devices.window_close_delay", l)}
-            .value=${String(this.windowCloseDelay)}
-            @change=${this._onWindowCloseDelayChange}
-          ></ha-textfield>
-        </rs-field>
+        <rs-number-field
+          .label=${localize("devices.window_open_delay", l)}
+          .info=${localize("sensors.window_open_delay_info", l)}
+          suffix="s"
+          .min=${0}
+          .value=${this.windowOpenDelay}
+          @value-changed=${(e: CustomEvent<{ value: number }>) =>
+            this._fireSensorChanged("window_open_delay", e.detail.value)}
+        ></rs-number-field>
+        <rs-number-field
+          .label=${localize("devices.window_close_delay", l)}
+          .info=${localize("sensors.window_close_delay_info", l)}
+          suffix="s"
+          .min=${0}
+          .value=${this.windowCloseDelay}
+          @value-changed=${(e: CustomEvent<{ value: number }>) =>
+            this._fireSensorChanged("window_close_delay", e.detail.value)}
+        ></rs-number-field>
       </div>
       ${
         this.heatingSystemType === "underfloor" && this.windowOpenDelay < 300
@@ -536,17 +535,16 @@ export class RsSensorSection extends LitElement {
       </rs-list-row>
       ${
         this.occupancyEcoEnabled
-          ? html`<rs-field .info=${localize("sensors.occupancy_eco_delay_info", l)}>
-              <ha-textfield
-                type="number"
-                min=${MIN_OCCUPANCY_ECO_DELAY}
-                max="240"
-                suffix="min"
-                .label=${localize("devices.occupancy_eco_delay", l)}
-                .value=${String(this.occupancyEcoDelay)}
-                @change=${this._onOccupancyEcoDelayChange}
-              ></ha-textfield>
-            </rs-field>`
+          ? html`<rs-number-field
+              .label=${localize("devices.occupancy_eco_delay", l)}
+              .info=${localize("sensors.occupancy_eco_delay_info", l)}
+              suffix="min"
+              .min=${MIN_OCCUPANCY_ECO_DELAY}
+              .max=${240}
+              .value=${this.occupancyEcoDelay}
+              @value-changed=${(e: CustomEvent<{ value: number }>) =>
+                this._fireSensorChanged("occupancy_eco_delay", e.detail.value)}
+            ></rs-number-field>`
           : nothing
       }
     `;
@@ -614,39 +612,6 @@ export class RsSensorSection extends LitElement {
       }),
     );
   }
-
-  private _onOccupancyEcoDelayChange = (e: Event) => {
-    const field = e.target as HTMLInputElement;
-    const parsed = parseInt(field.value);
-    const value = Number.isNaN(parsed)
-      ? DEFAULT_OCCUPANCY_ECO_DELAY
-      : Math.min(240, Math.max(MIN_OCCUPANCY_ECO_DELAY, parsed));
-    // A clamped value equal to the stored one does not re-render, the field would keep the raw input.
-    field.value = String(value);
-    this._fireSensorChanged("occupancy_eco_delay", value);
-  };
-
-  private _onWindowOpenDelayChange = (e: Event) => {
-    const value = Math.max(0, parseInt((e.target as HTMLInputElement).value) || 0);
-    this.dispatchEvent(
-      new CustomEvent("sensor-changed", {
-        detail: { key: "window_open_delay", value },
-        bubbles: true,
-        composed: true,
-      }),
-    );
-  };
-
-  private _onWindowCloseDelayChange = (e: Event) => {
-    const value = Math.max(0, parseInt((e.target as HTMLInputElement).value) || 0);
-    this.dispatchEvent(
-      new CustomEvent("sensor-changed", {
-        detail: { key: "window_close_delay", value },
-        bubbles: true,
-        composed: true,
-      }),
-    );
-  };
 }
 
 declare global {
