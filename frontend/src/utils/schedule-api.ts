@@ -5,6 +5,7 @@
  */
 import type { HomeAssistant } from "../types";
 import { parseWeek, serializeWeek, type HaWeek, type Week } from "./schedule-week";
+import { CodedError } from "./errors";
 
 export interface StorageScheduleItem extends Partial<HaWeek> {
   id: string;
@@ -113,7 +114,7 @@ export async function createSchedule(
     if (entityId) return entityId;
     await new Promise((resolve) => setTimeout(resolve, 300));
   }
-  throw new Error(`schedule ${item.id} has no entity`);
+  throw new CodedError("schedule_no_entity");
 }
 
 export async function deleteSchedule(hass: HomeAssistant, itemId: string): Promise<void> {

@@ -12,6 +12,7 @@ import {
   type RoomKind,
 } from "../../utils/room-state";
 import { localize, type TranslationKey } from "../../utils/localize";
+import { errorText } from "../../utils/errors";
 import { formatTempLocale, tempUnit, toDisplayDelta } from "../../utils/temperature";
 import { formatPercent } from "../../utils/format";
 import { buildSparkline, type SparklinePaths, type RecentTemp } from "../../utils/sparkline";
@@ -769,11 +770,10 @@ export class RsRoomCard extends LitElement {
         );
       }
       this.dispatchEvent(new CustomEvent("room-updated", { bubbles: true, composed: true }));
-    } catch {
+    } catch (err) {
       this._pending = null;
-      this._setError(
-        localize(value === "schedule" ? "override.error_clear" : "override.error_set", this._lang),
-      );
+      const key = value === "schedule" ? "override.error_clear" : "override.error_set";
+      this._setError(errorText(err, localize(key, this._lang), this._lang));
     }
   }
 

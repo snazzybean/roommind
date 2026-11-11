@@ -2,6 +2,7 @@ import { LitElement, html, css, nothing, type PropertyValues } from "lit";
 import { property, state } from "lit/decorators.js";
 import type { ClimateMode, HomeAssistant, OverrideType, RoomConfig } from "../types";
 import { localize, uiLanguage, type TranslationKey } from "../utils/localize";
+import { errorText } from "../utils/errors";
 import { getModeClass, formatMode } from "../utils/room-state";
 import { formatHours, formatMinutes, formatRemaining } from "../utils/format";
 import { modeStyles } from "../styles/shared-mode-styles";
@@ -801,8 +802,7 @@ export class RoomMindRoomCard extends LitElement {
   }
 
   private _message(err: unknown, fallback: TranslationKey): string {
-    const msg = (err as { message?: string })?.message;
-    return msg || localize(fallback, this._lang);
+    return errorText(err, localize(fallback, this._lang), this._lang);
   }
 
   static styles = [

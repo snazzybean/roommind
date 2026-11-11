@@ -2,6 +2,7 @@ import { html, css, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import type { ScheduleEntry, ClimateMode, ScheduleTempWarning } from "../types";
 import { localize } from "../utils/localize";
+import { errorText } from "../utils/errors";
 import {
   formatTempLocale,
   tempUnit,
@@ -390,7 +391,8 @@ export class RsScheduleSettings extends RsScheduleBase {
       this._emitSchedules([...this.schedules, { entity_id: entityId }]);
       this._openEditor(entityId);
     } catch (err) {
-      this._createError = err instanceof Error ? err.message : String(err);
+      const l = this.hass.language;
+      this._createError = errorText(err, localize("schedule_editor.create_error", l), l);
     } finally {
       this._createBusy = false;
     }

@@ -2,6 +2,7 @@ import { LitElement, html, css, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import type { HomeAssistant, RoomConfig, ClimateMode, OverrideType } from "../types";
 import { localize } from "../utils/localize";
+import { errorText } from "../utils/errors";
 import { inputStyles } from "../styles/input-styles";
 import { tokens } from "../styles/tokens";
 import { tempUnit, toDisplay, toCelsius, tempStep, tempRange } from "../utils/temperature";
@@ -300,8 +301,11 @@ export class RsOverrideSection extends LitElement {
       this._fireRoomUpdated();
     } catch (err) {
       this._optimisticOverride = previous;
-      this._overrideError =
-        err instanceof Error ? err.message : localize("override.error_set", this.language);
+      this._overrideError = errorText(
+        err,
+        localize("override.error_set", this.language),
+        this.language,
+      );
       // eslint-disable-next-line no-console
       console.error("Override set failed:", err);
     }
@@ -323,8 +327,11 @@ export class RsOverrideSection extends LitElement {
       this._fireRoomUpdated();
     } catch (err) {
       this._optimisticClear = false;
-      this._overrideError =
-        err instanceof Error ? err.message : localize("override.error_clear", this.language);
+      this._overrideError = errorText(
+        err,
+        localize("override.error_clear", this.language),
+        this.language,
+      );
       // eslint-disable-next-line no-console
       console.error("Override clear failed:", err);
     }

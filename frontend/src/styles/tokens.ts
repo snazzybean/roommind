@@ -51,3 +51,16 @@ export const srOnly = css`
     border: 0;
   }
 `;
+
+/** Error line where the user acts (inside the dialog or settings page), with role="alert". */
+export const alertStyles = css`
+  .rs-alert {
+    margin: 0 0 var(--rs-space-4);
+    padding: var(--rs-space-2) var(--rs-space-3);
+    border-radius: var(--rs-radius-sm);
+    background: color-mix(in srgb, var(--rs-err) 12%, transparent);
+    color: var(--rs-err);
+    font-size: var(--rs-font-md);
+    line-height: 1.4;
+  }
+`;

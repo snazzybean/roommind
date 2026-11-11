@@ -9,6 +9,7 @@ const CARD_KEY_PREFIXES = [
   "card.",
   "duration.",
   "hero.",
+  "error.",
   "room.climate_control_toggle",
 ];
 

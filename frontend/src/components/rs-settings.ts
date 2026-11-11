@@ -17,12 +17,13 @@ import type {
   PriceStatus,
 } from "../types";
 import { localize } from "../utils/localize";
+import { errorText } from "../utils/errors";
 import { fireSaveStatus } from "../utils/events";
 import { VACATION_SENTINEL } from "../utils/constants";
 import { formatMinutes, formatNumber, formatPercent } from "../utils/format";
 import { formatTempLocale, tempUnit, toDisplayDelta } from "../utils/temperature";
 import { describePriceStatus } from "../utils/price-status";
-import { tokens } from "../styles/tokens";
+import { tokens, alertStyles } from "../styles/tokens";
 import {
   SETTINGS_GROUPS,
   getSettingsCategory,
@@ -102,6 +103,7 @@ export class RsSettings extends LitElement {
   @state() private _loaded = false;
   // A failed load must not render the forms: the next full-payload save would write defaults.
   @state() private _loadFailed = false;
+  @state() private _saveError = "";
 
   private _saveDebounce?: ReturnType<typeof setTimeout>;
   // switch.roommind_climate_control can change it while this page is open (#291), so it
@@ -303,7 +305,16 @@ export class RsSettings extends LitElement {
             <p>${localize(category.intro, l)}</p>
           </div>
         </header>
-        <div class="page-body">${this._renderPanel(id)}</div>
+        <div class="page-body">
+          ${
+            this._saveError
+              ? html`<p class="rs-alert" role="alert">
+                  ${localize("settings.save_error", l, { error: this._saveError })}
+                </p>`
+              : nothing
+          }
+          ${this._renderPanel(id)}
+        </div>
       </section>
     </ha-card>`;
   }
@@ -761,8 +772,11 @@ export class RsSettings extends LitElement {
       });
       // Toggled again while the request was out: stays dirty, the queued save sends it.
       if (this._climateControlActive === sentClimateControl) this._climateControlDirty = false;
+      this._saveError = "";
       fireSaveStatus(this, "saved");
-    } catch {
+    } catch (err) {
+      const l = this.hass.language;
+      this._saveError = errorText(err, localize("error.unknown", l), l);
       if (this._climateControlActive === sentClimateControl) {
         this._climateControlDirty = false;
         this._climateControlActive = this.climateControlActive;
@@ -773,6 +787,7 @@ export class RsSettings extends LitElement {
 
   static styles = [
     tokens,
+    alertStyles,
     css`
       :host {
         display: block;
