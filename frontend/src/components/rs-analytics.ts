@@ -7,11 +7,31 @@ import { customElement, property, state } from "lit/decorators.js";
 import type { HomeAssistant, RoomConfig, AnalyticsData, AnalyticsDataPoint } from "../types";
 import { localize } from "../utils/localize";
 import { boostHoursLeft } from "../utils/learning";
+import {
+  QUICK_RANGE_DAYS,
+  haTimeZone,
+  isoDateInZone,
+  quickRange,
+  startOfDayInZone,
+} from "../utils/analytics-time";
 import "./analytics/rs-analytics-toolbar";
 import "./analytics/rs-analytics-summary";
 import "./analytics/rs-analytics-chart";
 import "./analytics/rs-analytics-rhythm";
 import "./analytics/rs-analytics-model";
+
+/** What a room can show: the summary, rhythm, chart and model card use the same flags. */
+function roomFlags(room: RoomConfig | undefined) {
+  return {
+    canHeat: room?.climate_mode !== "cool_only",
+    canCool:
+      room?.climate_mode !== "heat_only" && (room?.devices ?? []).some((d) => d.type === "ac"),
+    hasWindowSensor: (room?.window_sensors?.length ?? 0) > 0,
+    // The price only matters where it moves something
+    followsPrice:
+      !room?.is_outdoor && ((room?.price_shift ?? 0) > 0 || !!room?.heat_source_price_aware),
+  };
+}
 
 /** Sides a room is judged on, same rule as the summary (one-sided rooms on their own side only). */
 function bandSides(mode: string | undefined): "both" | "heat" | "cool" {
@@ -28,6 +48,7 @@ export class RsAnalytics extends LitElement {
   @property() public controlMode: "mpc" | "bangbang" = "mpc";
 
   @state() private _selectedRoom = "";
+  // Browser midnight until hass is known, then today in HA's zone (willUpdate)
   @state() private _rangeStart: number = new Date(new Date().setHours(0, 0, 0, 0)).getTime();
   @state() private _rangeEnd: number = Date.now();
   @state() private _data: AnalyticsData | null = null;
@@ -40,6 +61,7 @@ export class RsAnalytics extends LitElement {
   private _pointsOf: AnalyticsData | null = null;
   private _pointsCache: AnalyticsDataPoint[] = [];
   private _fetchId = 0;
+  private _zoneApplied = false;
 
   connectedCallback() {
     super.connectedCallback();
@@ -55,6 +77,10 @@ export class RsAnalytics extends LitElement {
   }
 
   protected willUpdate(changedProps: Map<string, unknown>) {
+    if (!this._zoneApplied && this.hass && this._activeQuick) {
+      this._zoneApplied = true;
+      this._applyQuickRange();
+    }
     if (changedProps.has("initialRoom") && this.initialRoom) {
       this._selectedRoom = this.initialRoom;
     }
@@ -87,6 +113,7 @@ export class RsAnalytics extends LitElement {
 
   protected render() {
     const l = this.hass.language;
+    const flags = roomFlags(this.rooms[this._selectedRoom]);
 
     return html`
       <rs-analytics-toolbar
@@ -116,6 +143,7 @@ export class RsAnalytics extends LitElement {
                   .language=${l}
                   .isOutdoor=${this.rooms[this._selectedRoom]?.is_outdoor ?? false}
                   .targetBand=${bandSides(this.rooms[this._selectedRoom]?.climate_mode)}
+                  .showPrice=${flags.followsPrice}
                 ></rs-analytics-chart>
                 ${
                   !this.rooms[this._selectedRoom]?.is_outdoor
@@ -125,6 +153,9 @@ export class RsAnalytics extends LitElement {
                         .rangeStart=${this._rangeStart}
                         .rangeEnd=${this._rangeEnd}
                         .language=${l}
+                        .canHeat=${flags.canHeat}
+                        .canCool=${flags.canCool}
+                        .hasWindowSensor=${flags.hasWindowSensor}
                         @day-selected=${this._onDaySelected}
                       ></rs-analytics-rhythm>`
                     : nothing
@@ -137,6 +168,8 @@ export class RsAnalytics extends LitElement {
                         .language=${l}
                         .controlMode=${this.controlMode}
                         .managed=${!this.rooms[this._selectedRoom]?.temperature_sensor}
+                        .canHeat=${flags.canHeat}
+                        .canCool=${flags.canCool}
                         .boostHours=${boostHoursLeft(
                           this.rooms[this._selectedRoom]?.live?.boost_applied_at,
                           this.rooms[this._selectedRoom]?.live?.n_observations,
@@ -161,6 +194,7 @@ export class RsAnalytics extends LitElement {
   private _renderSummary() {
     const room = this.rooms[this._selectedRoom];
     if (!room || room.is_outdoor) return nothing;
+    const flags = roomFlags(room);
     return html`<rs-analytics-summary
       .hass=${this.hass}
       .stats=${this._data?.stats ?? null}
@@ -168,9 +202,10 @@ export class RsAnalytics extends LitElement {
       .rangeStart=${this._rangeStart}
       .rangeEnd=${this._rangeEnd}
       .bandSides=${bandSides(room.climate_mode)}
-      .canHeat=${room.climate_mode !== "cool_only"}
-      .canCool=${room.climate_mode !== "heat_only" && (room.devices ?? []).some((d) => d.type === "ac")}
-      .hasWindowSensor=${(room.window_sensors?.length ?? 0) > 0}
+      .canHeat=${flags.canHeat}
+      .canCool=${flags.canCool}
+      .hasWindowSensor=${flags.hasWindowSensor}
+      .showPrice=${flags.followsPrice}
       .language=${this.hass.language}
     ></rs-analytics-summary>`;
   }
@@ -208,12 +243,25 @@ export class RsAnalytics extends LitElement {
     this._chartAnchor = chartAnchor;
   }
 
+  /** Recompute the active quick range up to now (today moves on, a new day starts at midnight). */
+  private _applyQuickRange() {
+    const days = this._activeQuick ? QUICK_RANGE_DAYS[this._activeQuick] : undefined;
+    if (!days) return;
+    const { start, end } = quickRange(days, haTimeZone(this.hass));
+    this._rangeStart = start;
+    this._rangeEnd = end;
+  }
+
   private async _onDaySelected(e: CustomEvent<string>) {
     const now = Date.now();
-    const end = new Date(`${e.detail}T23:59:59`).getTime();
-    this._activeQuick = end >= now ? "24h" : null;
-    this._rangeStart = new Date(`${e.detail}T00:00:00`).getTime();
-    this._rangeEnd = Math.min(end, now);
+    const zone = haTimeZone(this.hass);
+    const start = startOfDayInZone(e.detail, zone);
+    const today = e.detail === isoDateInZone(now, zone);
+    this._activeQuick = today ? "24h" : null;
+    this._rangeStart = start;
+    // The day's last second: midnight of the next day minus one, found via noon (DST)
+    const end = startOfDayInZone(isoDateInZone(start + 36 * 3600_000, zone), zone) - 1000;
+    this._rangeEnd = today ? now : end;
     this._chartAnchor = this._rangeEnd;
     await this.updateComplete;
     const smooth = !matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -254,8 +302,17 @@ export class RsAnalytics extends LitElement {
 
   private async _silentRefresh() {
     if (!this._selectedRoom || this._loading) return;
+    if (this._activeQuick) {
+      // A new end (and after midnight a new start) refetches through willUpdate; same room,
+      // so the data stays up meanwhile and _fetchId drops answers that come too late
+      this._applyQuickRange();
+      return;
+    }
+    const fetchId = this._fetchId;
+    const room = this._selectedRoom;
     try {
       const result = await this.hass.callWS<AnalyticsData>(this._buildWsParams());
+      if (fetchId !== this._fetchId || room !== this._selectedRoom) return;
       this._data = result;
       this._chartAnchor = Date.now();
     } catch (err) {

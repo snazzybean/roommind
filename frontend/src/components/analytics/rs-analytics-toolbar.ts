@@ -7,6 +7,17 @@ import { customElement, property, state } from "lit/decorators.js";
 import type { HomeAssistant, RoomConfig, AnalyticsData } from "../../types";
 import { localize } from "../../utils/localize";
 import { formatTempLocale } from "../../utils/temperature";
+import {
+  QUICK_RANGE_DAYS,
+  formatClock,
+  formatDay,
+  formatDayTime,
+  haTimeZone,
+  isoDateInZone,
+  quickRange,
+  sameDayInZone,
+  startOfDayInZone,
+} from "../../utils/analytics-time";
 import { buildCsvString, downloadString, buildExportFilename } from "../../utils/analytics-export";
 import { copyToClipboard } from "../../utils/clipboard";
 import { tokens } from "../../styles/tokens";
@@ -18,10 +29,10 @@ import "../shared/rs-segmented";
 import "../shared/rs-menu";
 
 const QUICK_RANGES = [
-  { key: "24h", labelKey: "analytics.range_1d", days: 1 },
-  { key: "2d", labelKey: "analytics.range_2d", days: 2 },
-  { key: "7d", labelKey: "analytics.range_7d", days: 7 },
-  { key: "30d", labelKey: "analytics.range_30d", days: 30 },
+  { key: "24h", labelKey: "analytics.range_1d" },
+  { key: "2d", labelKey: "analytics.range_2d" },
+  { key: "7d", labelKey: "analytics.range_7d" },
+  { key: "30d", labelKey: "analytics.range_30d" },
 ] as const;
 
 @customElement("rs-analytics-toolbar")
@@ -67,24 +78,19 @@ export class RsAnalyticsToolbar extends LitElement {
   private _renderControls(l: string) {
     const hasData = !!this.data && (this.data.history.length > 0 || this.data.detail.length > 0);
     const custom = this.activeQuick === null;
-    const fmt = new Intl.DateTimeFormat(l, {
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-    // Within one day the end needs its time only ("11.11., 00:00 – 14:20")
-    const sameDay =
-      new Date(this.rangeStart).toDateString() === new Date(this.rangeEnd).toDateString();
-    const fmtEnd = sameDay
-      ? new Intl.DateTimeFormat(l, { hour: "2-digit", minute: "2-digit" })
-      : fmt;
+    const zone = haTimeZone(this.hass);
+    // Within one day the end needs its time only ("11. Nov., 00:00 – 14:20")
+    const sameDay = sameDayInZone(this.rangeStart, this.rangeEnd, zone);
+    const end = sameDay
+      ? formatClock(this.rangeEnd, l, zone)
+      : formatDayTime(this.rangeEnd, l, zone);
     // A start at midnight (every quick range) reads as the date alone, keeps the line short
-    const startDate = new Date(this.rangeStart);
-    const fmtStart =
-      !sameDay && startDate.getHours() === 0 && startDate.getMinutes() === 0
-        ? new Intl.DateTimeFormat(l, { month: "2-digit", day: "2-digit" })
-        : fmt;
+    const midnight =
+      startOfDayInZone(isoDateInZone(this.rangeStart, zone), zone) === this.rangeStart;
+    const start =
+      !sameDay && midnight
+        ? formatDay(this.rangeStart, l, zone)
+        : formatDayTime(this.rangeStart, l, zone);
     const quick: RsSegmentOption[] = QUICK_RANGES.map((r) => ({
       value: r.key,
       label: localize(r.labelKey, l),
@@ -124,9 +130,7 @@ export class RsAnalyticsToolbar extends LitElement {
               @value-changed=${this._onDateRangeChanged}
             ></ha-date-range-picker>
           </div>
-          <span class="range-text ${custom ? "custom" : ""}"
-            >${fmtStart.format(this.rangeStart)} – ${fmtEnd.format(this.rangeEnd)}</span
-          >
+          <span class="range-text ${custom ? "custom" : ""}">${start} – ${end}</span>
           <span class="grow"></span>
           <rs-menu
             icon="mdi:download"
@@ -165,13 +169,10 @@ export class RsAnalyticsToolbar extends LitElement {
 
   private _onQuick(e: CustomEvent<{ value: string }>) {
     e.stopPropagation();
-    const range = QUICK_RANGES.find((r) => r.key === e.detail.value);
-    if (!range) return;
-    const now = new Date();
-    const start = new Date(now);
-    start.setDate(start.getDate() - (range.days - 1));
-    start.setHours(0, 0, 0, 0);
-    this._fireRange(range.key, start.getTime(), now.getTime());
+    const days = QUICK_RANGE_DAYS[e.detail.value];
+    if (!days) return;
+    const { start, end } = quickRange(days, haTimeZone(this.hass));
+    this._fireRange(e.detail.value, start, end);
   }
 
   private _onDateRangeChanged(e: CustomEvent) {
