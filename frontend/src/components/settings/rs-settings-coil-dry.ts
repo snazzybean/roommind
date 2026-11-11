@@ -8,6 +8,7 @@ import { customElement, property } from "lit/decorators.js";
 import type { HomeAssistant } from "../../types";
 import { localize, type TranslationKey } from "../../utils/localize";
 import { getSelectValue } from "../../utils/events";
+import { fanModeLabel, type FanModeOption } from "../../utils/device-utils";
 import "../shared/rs-segmented";
 
 const KEEP = "__keep__";
@@ -21,8 +22,8 @@ export class RsSettingsCoilDry extends RsSettingsBase {
   @property({ type: String }) public coilDryFanMode = "low";
   @property({ type: Number }) public coilDryMinCoolingMinutes = 10;
   @property({ type: Number }) public coilDryDrainMinutes = 0;
-  /** Union of fan_modes across all configured AC entities. */
-  @property({ attribute: false }) public availableFanModes: string[] = [];
+  /** Union of fan_modes across all configured AC entities, named as Home Assistant names them. */
+  @property({ attribute: false }) public availableFanModes: FanModeOption[] = [];
 
   private _numberField(
     key: string,
@@ -52,7 +53,10 @@ export class RsSettingsCoilDry extends RsSettingsBase {
     // Fall back to HA's documented fan mode constants when no AC reports any.
     const fanModes = this.availableFanModes.length
       ? this.availableFanModes
-      : ["low", "medium", "high"];
+      : ["low", "medium", "high"].map((value) => ({
+          value,
+          label: fanModeLabel(this.hass, value),
+        }));
 
     return html`
       <div class="settings-section first">
@@ -108,7 +112,7 @@ export class RsSettingsCoilDry extends RsSettingsBase {
                     .value=${this.coilDryFanMode === "" ? KEEP : this.coilDryFanMode}
                     .options=${[
                       { value: KEEP, label: localize("coil_dry.fan_mode_keep", l) },
-                      ...fanModes.map((fm) => ({ value: fm, label: fm })),
+                      ...fanModes,
                     ]}
                     @selected=${(e: Event) => {
                       const v = getSelectValue(e);
@@ -121,7 +125,9 @@ export class RsSettingsCoilDry extends RsSettingsBase {
                     <ha-list-item value="${KEEP}"
                       >${localize("coil_dry.fan_mode_keep", l)}</ha-list-item
                     >
-                    ${fanModes.map((fm) => html`<ha-list-item value="${fm}">${fm}</ha-list-item>`)}
+                    ${fanModes.map(
+                      (fm) => html`<ha-list-item value=${fm.value}>${fm.label}</ha-list-item>`,
+                    )}
                   </ha-select>
                   <span class="field-hint">${localize("coil_dry.fan_mode_hint", l)}</span>
                 </div>

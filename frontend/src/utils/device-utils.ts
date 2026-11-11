@@ -3,7 +3,7 @@
  * Mirrors backend logic from custom_components/roommind/utils/device_utils.py.
  */
 
-import type { ClimateMode, DeviceConfig, HomeAssistant } from "../types";
+import type { ClimateMode, DeviceConfig, HassEntity, HomeAssistant } from "../types";
 
 const HST_PRIORITY: Record<string, number> = { underfloor: 2, radiator: 1, "": 0 };
 
@@ -55,4 +55,18 @@ export function modeFits(
 ): boolean {
   if (devices.length === 0 || mode === "auto") return true;
   return mode === "heat_only" ? ability.heat : ability.cool;
+}
+
+export interface FanModeOption {
+  value: string;
+  label: string;
+}
+
+/**
+ * A fan speed as Home Assistant names it ("low" → "Niedrig"). Without a device the climate
+ * domain's names apply; speeds Home Assistant does not know stay as the device reports them.
+ */
+export function fanModeLabel(hass: HomeAssistant, mode: string, stateObj?: HassEntity): string {
+  const st = stateObj ?? { entity_id: "climate.roommind_fan_mode", state: "", attributes: {} };
+  return hass.formatEntityAttributeValue?.(st, "fan_mode", mode) || mode;
 }

@@ -24,6 +24,7 @@ import { formatMinutes, formatNumber, formatPercent } from "../utils/format";
 import { learningRoomIds } from "../utils/learning";
 import { formatTempLocale, tempUnit, toDisplayDelta } from "../utils/temperature";
 import { describePriceStatus } from "../utils/price-status";
+import { fanModeLabel, type FanModeOption } from "../utils/device-utils";
 import { tokens, alertStyles } from "../styles/tokens";
 import {
   SETTINGS_GROUPS,
@@ -705,21 +706,23 @@ export class RsSettings extends LitElement {
   }
 
   /**
-   * Union of fan_modes across every configured AC entity.
+   * Union of fan_modes across every configured AC entity, in the order the devices list them.
    *
    * The global setting has no single device to read fan_modes from, so show
    * the speeds the user's actual hardware reports instead of a guessed list.
    */
-  private _availableAcFanModes(): string[] {
-    const modes = new Set<string>();
+  private _availableAcFanModes(): FanModeOption[] {
+    const modes = new Map<string, string>();
     for (const room of Object.values(this.rooms ?? {})) {
       for (const dev of room.devices ?? []) {
         if (dev.type !== "ac") continue;
         const st = this.hass?.states?.[dev.entity_id];
-        for (const fm of (st?.attributes?.fan_modes ?? []) as string[]) modes.add(fm);
+        for (const fm of (st?.attributes?.fan_modes ?? []) as string[]) {
+          if (!modes.has(fm)) modes.set(fm, fanModeLabel(this.hass, fm, st));
+        }
       }
     }
-    return [...modes].sort();
+    return [...modes].map(([value, label]) => ({ value, label }));
   }
 
   private _tsToDatetimeLocal(ts: number): string {

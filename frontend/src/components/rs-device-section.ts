@@ -5,7 +5,7 @@ import { getEntitiesForArea } from "../utils/room-state";
 import { localize } from "../utils/localize";
 import { getSelectValue, openEntityInfo } from "../utils/events";
 import { tempUnit, toDisplayDelta } from "../utils/temperature";
-import { resolveHeatingSystemType } from "../utils/device-utils";
+import { fanModeLabel, resolveHeatingSystemType } from "../utils/device-utils";
 import { formatMinutes, formatNumber } from "../utils/format";
 import { tokens } from "../styles/tokens";
 import { inputStyles } from "../styles/input-styles";
@@ -984,8 +984,7 @@ export class RsDeviceSection extends LitElement {
 
   /** A fan speed as Home Assistant names it for this device ("low" → "Niedrig"). */
   private _fanModeLabel(entityId: string, mode: string): string {
-    const st = this.hass.states[entityId];
-    return (st && this.hass.formatEntityAttributeValue?.(st, "fan_mode", mode)) || mode;
+    return fanModeLabel(this.hass, mode, this.hass.states[entityId]);
   }
 
   /** Removing drops the device's own settings, so it asks once. */
