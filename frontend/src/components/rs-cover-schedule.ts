@@ -57,8 +57,8 @@ export class RsCoverSchedule extends RsScheduleBase {
           background 0.15s ease;
       }
       .mode-option.active {
-        border-color: rgba(3, 169, 244, 0.4);
-        background: rgba(3, 169, 244, 0.08);
+        border-color: color-mix(in srgb, var(--primary-color) 40%, transparent);
+        background: color-mix(in srgb, var(--primary-color) 8%, transparent);
       }
     `,
   ];

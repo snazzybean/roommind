@@ -2,7 +2,7 @@ import { css } from "lit";
 
 /**
  * Shared CSS for mode-pill and mode-dot styles used by
- * rs-area-card and rs-room-detail (hero section).
+ * the dashboard card. Needs `tokens` in the host's styles (--rs-heat/--rs-cool).
  */
 export const modeStyles = css`
   .mode-pill {
@@ -22,24 +22,24 @@ export const modeStyles = css`
   }
 
   .mode-heating {
-    color: var(--warning-color, #ff9800);
-    background: rgba(255, 152, 0, 0.12);
+    color: var(--rs-heat);
+    background: color-mix(in srgb, var(--rs-heat) 12%, transparent);
   }
   .mode-heating .mode-dot {
-    background: var(--warning-color, #ff9800);
+    background: var(--rs-heat);
   }
 
   .mode-cooling {
-    color: #2196f3;
-    background: rgba(33, 150, 243, 0.12);
+    color: var(--rs-cool);
+    background: color-mix(in srgb, var(--rs-cool) 12%, transparent);
   }
   .mode-cooling .mode-dot {
-    background: #2196f3;
+    background: var(--rs-cool);
   }
 
   .mode-idle {
     color: var(--secondary-text-color, #757575);
-    background: rgba(0, 0, 0, 0.05);
+    background: color-mix(in srgb, var(--secondary-text-color) 5%, transparent);
   }
   .mode-idle .mode-dot {
     background: var(--disabled-text-color, #bdbdbd);
@@ -47,7 +47,7 @@ export const modeStyles = css`
 
   .mode-other {
     color: var(--secondary-text-color);
-    background: rgba(0, 0, 0, 0.05);
+    background: color-mix(in srgb, var(--secondary-text-color) 5%, transparent);
   }
   .mode-other .mode-dot {
     background: var(--secondary-text-color);

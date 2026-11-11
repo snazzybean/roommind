@@ -42,12 +42,12 @@ export const masterDetailStyles = css`
   }
 
   .master-row:hover {
-    background: rgba(255, 255, 255, 0.03);
+    background: color-mix(in srgb, var(--secondary-text-color) 5%, transparent);
   }
 
   .master-row.focused {
-    background: rgba(3, 169, 244, 0.08);
-    border-color: rgba(3, 169, 244, 0.5);
+    background: color-mix(in srgb, var(--primary-color) 8%, transparent);
+    border-color: color-mix(in srgb, var(--primary-color) 50%, transparent);
   }
 
   .master-row ha-checkbox {
@@ -96,12 +96,12 @@ export const masterDetailStyles = css`
     letter-spacing: 0.3px;
     text-transform: uppercase;
     color: var(--secondary-text-color);
-    background: rgba(255, 255, 255, 0.05);
+    background: color-mix(in srgb, var(--secondary-text-color) 5%, transparent);
   }
 
   .type-pill {
     color: var(--primary-color);
-    background: rgba(3, 169, 244, 0.12);
+    background: color-mix(in srgb, var(--primary-color) 12%, transparent);
   }
 
   .external-badge {
@@ -110,8 +110,8 @@ export const masterDetailStyles = css`
     gap: 4px;
     font-size: 10px;
     font-weight: 500;
-    color: var(--warning-color, #ff9800);
-    background: rgba(255, 152, 0, 0.1);
+    color: var(--warning-color);
+    background: color-mix(in srgb, var(--warning-color) 10%, transparent);
     padding: 2px 8px;
     border-radius: 10px;
     letter-spacing: 0.3px;
@@ -124,7 +124,7 @@ export const masterDetailStyles = css`
     flex-direction: column;
     gap: 12px;
     padding: 12px 16px;
-    background: rgba(255, 255, 255, 0.02);
+    background: color-mix(in srgb, var(--secondary-text-color) 5%, transparent);
     border: 1px solid var(--divider-color, rgba(255, 255, 255, 0.08));
     border-radius: 12px;
     min-width: 0;

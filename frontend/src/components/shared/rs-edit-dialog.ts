@@ -23,6 +23,8 @@ export class RsEditDialog extends LitElement {
   @property({ type: Boolean }) public hasInfo = false;
   /** Below 600 px a bottom sheet with its content height instead of a full-screen page. */
   @property({ type: Boolean, reflect: true }) public sheet = false;
+  /** Narrow box for short content such as a confirmation. */
+  @property({ type: Boolean, reflect: true }) public compact = false;
   /** Shown at the top of the body (role alert), so a failed save is seen inside the dialog. */
   @property({ type: String }) public error = "";
 

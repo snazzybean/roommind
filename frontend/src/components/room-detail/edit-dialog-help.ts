@@ -24,10 +24,10 @@ export const editDialogHelpStyles = css`
     color: var(--primary-text-color);
   }
   .yaml-key {
-    color: #82aaff;
+    color: var(--primary-color);
   }
   .yaml-value {
-    color: #e2a76a;
+    color: var(--accent-color);
   }
 
   .helper-link {

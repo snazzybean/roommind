@@ -62,6 +62,8 @@ export class RsConfirmDialog extends LitElement {
     const l = uiLanguage();
     return html`<rs-edit-dialog
       open
+      compact
+      sheet
       .icon=${this.icon}
       .heading=${this.heading}
       .error=${this.error}

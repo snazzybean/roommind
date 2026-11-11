@@ -6,6 +6,7 @@ import { errorText } from "../utils/errors";
 import { getModeClass, formatMode } from "../utils/room-state";
 import { formatHours, formatMinutes, formatRemaining } from "../utils/format";
 import { modeStyles } from "../styles/shared-mode-styles";
+import { tokens } from "../styles/tokens";
 import {
   formatTempLocale,
   tempUnit,
@@ -806,6 +807,7 @@ export class RoomMindRoomCard extends LitElement {
   }
 
   static styles = [
+    tokens,
     modeStyles,
     css`
       :host {
@@ -827,11 +829,11 @@ export class RoomMindRoomCard extends LitElement {
       }
 
       .accent.mode-heating {
-        background: var(--warning-color, #ff9800);
+        background: var(--rs-heat);
       }
 
       .accent.mode-cooling {
-        background: #2196f3;
+        background: var(--rs-cool);
       }
 
       .accent.mode-idle,
@@ -948,18 +950,18 @@ export class RoomMindRoomCard extends LitElement {
       }
 
       .override-status.boost {
-        color: var(--warning-color, #ff9800);
-        background: rgba(255, 152, 0, 0.12);
+        color: var(--warning-color);
+        background: color-mix(in srgb, var(--warning-color) 12%, transparent);
       }
 
       .override-status.eco {
-        color: var(--success-color, #4caf50);
-        background: rgba(76, 175, 80, 0.12);
+        color: var(--success-color);
+        background: color-mix(in srgb, var(--success-color) 12%, transparent);
       }
 
       .override-status.custom {
-        color: var(--info-color, #2196f3);
-        background: rgba(33, 150, 243, 0.12);
+        color: var(--rs-cool);
+        background: color-mix(in srgb, var(--rs-cool) 12%, transparent);
       }
 
       .hint {
@@ -970,7 +972,7 @@ export class RoomMindRoomCard extends LitElement {
 
       .hint.error,
       .error {
-        color: var(--error-color, #db4437);
+        color: var(--error-color);
         font-size: 13px;
       }
 
@@ -1081,21 +1083,21 @@ export class RoomMindRoomCard extends LitElement {
       }
 
       .segment.active.boost {
-        border-color: var(--warning-color, #ff9800);
-        background: rgba(255, 152, 0, 0.15);
-        color: var(--warning-color, #ff9800);
+        border-color: var(--warning-color);
+        background: color-mix(in srgb, var(--warning-color) 15%, transparent);
+        color: var(--warning-color);
       }
 
       .segment.active.eco {
-        border-color: var(--success-color, #4caf50);
-        background: rgba(76, 175, 80, 0.15);
-        color: var(--success-color, #4caf50);
+        border-color: var(--success-color);
+        background: color-mix(in srgb, var(--success-color) 15%, transparent);
+        color: var(--success-color);
       }
 
       .segment.active.custom {
-        border-color: var(--info-color, #2196f3);
-        background: rgba(33, 150, 243, 0.15);
-        color: var(--info-color, #2196f3);
+        border-color: var(--rs-cool);
+        background: color-mix(in srgb, var(--rs-cool) 15%, transparent);
+        color: var(--rs-cool);
       }
 
       .custom-row {

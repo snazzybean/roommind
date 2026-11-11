@@ -39,13 +39,13 @@ export abstract class RsScheduleBase extends LitElement {
     }
 
     .schedule-row.active {
-      background: rgba(76, 175, 80, 0.1);
+      background: color-mix(in srgb, var(--success-color) 10%, transparent);
     }
     .schedule-row.inactive {
-      background: rgba(0, 0, 0, 0.04);
+      background: color-mix(in srgb, var(--secondary-text-color) 5%, transparent);
     }
     .schedule-row.unreachable {
-      background: rgba(0, 0, 0, 0.02);
+      background: color-mix(in srgb, var(--secondary-text-color) 5%, transparent);
       opacity: 0.4;
     }
 
@@ -63,8 +63,8 @@ export abstract class RsScheduleBase extends LitElement {
       flex-shrink: 0;
     }
     .schedule-row.active .schedule-number {
-      background: #4caf50;
-      color: #fff;
+      background: var(--success-color);
+      color: var(--text-primary-color, #fff);
     }
 
     .schedule-status-dot {
@@ -74,8 +74,8 @@ export abstract class RsScheduleBase extends LitElement {
       flex-shrink: 0;
     }
     .schedule-row.active .schedule-status-dot {
-      background: #4caf50;
-      box-shadow: 0 0 6px rgba(76, 175, 80, 0.5);
+      background: var(--success-color);
+      box-shadow: 0 0 6px color-mix(in srgb, var(--success-color) 50%, transparent);
     }
     .schedule-row.inactive .schedule-status-dot {
       background: var(--disabled-text-color, #bdbdbd);
@@ -114,7 +114,7 @@ export abstract class RsScheduleBase extends LitElement {
       white-space: nowrap;
     }
     .schedule-row.active .schedule-status {
-      color: #2e7d32;
+      color: var(--success-color);
     }
     .schedule-row.inactive .schedule-status {
       color: var(--secondary-text-color);
@@ -189,8 +189,8 @@ export abstract class RsScheduleBase extends LitElement {
       margin-top: 8px;
       padding: 10px 14px;
       border-radius: 8px;
-      background: rgba(255, 152, 0, 0.08);
-      color: var(--warning-color, #ff9800);
+      background: color-mix(in srgb, var(--warning-color) 8%, transparent);
+      color: var(--warning-color);
       font-size: 13px;
     }
     .selector-warning ha-icon,

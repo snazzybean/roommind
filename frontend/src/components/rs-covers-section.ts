@@ -80,10 +80,10 @@ export class RsCoverSection extends LitElement {
         transition: background 0.15s;
       }
       .device-row:hover {
-        background: rgba(0, 0, 0, 0.02);
+        background: color-mix(in srgb, var(--secondary-text-color) 5%, transparent);
       }
       .device-row.selected {
-        background: rgba(3, 169, 244, 0.035);
+        background: color-mix(in srgb, var(--primary-color) 6%, transparent);
       }
       .device-row ha-checkbox {
         flex-shrink: 0;
@@ -202,8 +202,8 @@ export class RsCoverSection extends LitElement {
       }
 
       .feature-card.enabled {
-        border-color: rgba(3, 169, 244, 0.4);
-        background: rgba(3, 169, 244, 0.06);
+        border-color: color-mix(in srgb, var(--primary-color) 40%, transparent);
+        background: color-mix(in srgb, var(--primary-color) 6%, transparent);
       }
 
       .feature-text {

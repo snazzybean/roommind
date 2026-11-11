@@ -48,8 +48,8 @@ export class RsHeatSourceSection extends LitElement {
       }
 
       .feature-card.enabled {
-        border-color: rgba(3, 169, 244, 0.4);
-        background: rgba(3, 169, 244, 0.06);
+        border-color: color-mix(in srgb, var(--primary-color) 40%, transparent);
+        background: color-mix(in srgb, var(--primary-color) 6%, transparent);
       }
 
       .feature-text {
