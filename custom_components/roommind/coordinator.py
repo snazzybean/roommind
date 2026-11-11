@@ -671,6 +671,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
     async def _evaluate_mold_risk(
         self,
         area_id: str,
+        room: dict,
         current_temp: float | None,
         current_humidity: float | None,
         settings: dict,
@@ -689,6 +690,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             settings,
             celsius_delta_to_ha_fn=lambda d: celsius_delta_to_ha(self.hass, d),  # type: ignore[misc]
             ha_temp_unit_str_fn=lambda: ha_temp_unit_str(self.hass),  # type: ignore[misc]
+            can_heat=get_can_heat_cool(room, acs_can_heat=check_acs_can_heat(self.hass, room))[0],
         )
         return (
             mold.risk_level,
@@ -872,7 +874,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             mold_surface_temp,
             mold_prevention_active_room,
             mold_prevention_temp_delta,
-        ) = await self._evaluate_mold_risk(area_id, current_temp, current_humidity, settings)
+        ) = await self._evaluate_mold_risk(area_id, room, current_temp, current_humidity, settings)
 
         # Load schedule blocks once — used for both target temp resolution and MPC lookahead.
         from .utils.schedule_utils import (

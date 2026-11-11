@@ -634,3 +634,68 @@ async def test_prevention_switched_off_in_settings_releases_at_once(mm):
     result = await _evaluate(mm, "ok", 67.0, 60.0, {**settings, "mold_prevention_enabled": False})
     assert result.prevention_active is False
     assert result.prevention_delta == 0.0
+
+
+@pytest.mark.asyncio
+async def test_no_prevention_in_a_room_that_cannot_heat(mm):
+    """A hallway with sensors only: the risk still counts and warns, the target is never raised."""
+    settings = _settings_prevention_notify()
+    with (
+        patch(
+            "custom_components.roommind.managers.mold_manager.calculate_mold_risk",
+            return_value=("critical", 85.0, 12.0),
+        ),
+        patch(
+            "custom_components.roommind.managers.mold_manager.async_send_mold_notification",
+            new_callable=AsyncMock,
+        ) as mock_notify,
+    ):
+        result = await mm.evaluate(
+            area_id="hallway",
+            area_name="Hallway",
+            current_temp=17.0,
+            current_humidity=78.0,
+            outdoor_temp=0.0,
+            settings=settings,
+            celsius_delta_to_ha_fn=lambda x: x,
+            ha_temp_unit_str_fn=lambda: "°C",
+            can_heat=False,
+        )
+
+    assert result.risk_level == "critical"
+    assert result.prevention_active is False
+    assert result.prevention_delta == 0.0
+    suffixes = [c.kwargs["tag_suffix"] for c in mock_notify.call_args_list]
+    assert suffixes == ["risk"]
+
+
+@pytest.mark.asyncio
+async def test_running_prevention_ends_at_once_when_the_room_can_no_longer_heat(mm, clock):
+    settings = _settings_prevention_notify(mold_prevention_notify_enabled=False)
+    assert (await _evaluate(mm, "warning", 71.0, 60.0, settings)).prevention_active is True
+    with (
+        patch(
+            "custom_components.roommind.managers.mold_manager.calculate_mold_risk",
+            return_value=("warning", 71.0, 15.0),
+        ),
+        patch(
+            "custom_components.roommind.managers.mold_manager.async_send_mold_notification",
+            new_callable=AsyncMock,
+        ),
+        patch("custom_components.roommind.managers.mold_manager.dismiss_mold_notification") as mock_dismiss,
+    ):
+        result = await mm.evaluate(
+            area_id="living",
+            area_name="Living Room",
+            current_temp=20.0,
+            current_humidity=60.0,
+            outdoor_temp=5.0,
+            settings=settings,
+            can_heat=False,
+        )
+
+    assert result.prevention_active is False
+    assert result.prevention_delta == 0.0
+    assert {c.args[2] for c in mock_dismiss.call_args_list} == {"risk", "prevention"}
+    assert not mm._prevention_active["living"]
+    assert not mm._clear_since

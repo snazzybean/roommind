@@ -1,0 +1,80 @@
+name: mold-prevention-unheated-room
+description: >
+  Damp hallway (about 16 °C) with temperature and humidity sensors but no heating device,
+  between a bathroom and a living room with radiators. Mold prevention and its notifications
+  are on. The hallway must still report the risk, but prevention (raised target, "prevention
+  active" notification) only runs where something can heat: before, the hallway got prevention
+  notifications although nothing could act on the raised target.
+tags: [mold, humidity]
+start: 2026-01-12T00:00
+duration: 2d
+location: {latitude: 52.5, longitude: 13.4, time_zone: Europe/Berlin}
+weather: {profile: winter-cold}
+house:
+  building: altbau_unsaniert
+  outdoor:
+    sensors: {temperature: sensor.aussen_temp, humidity: sensor.aussen_feuchte}
+  rooms:
+    bad:
+      name: Bad
+      floor_area_m2: 6
+      exterior_wall_m2: 7
+      initial: {temperature: 20.0, humidity: 60}
+      devices: [{entity_id: climate.bad_trv, profile: generic_trv}]
+      sensors:
+        temperature: {entity_id: sensor.bad_temp}
+        humidity: {entity_id: sensor.bad_feuchte}
+    wohnzimmer:
+      name: Wohnzimmer
+      floor_area_m2: 22
+      exterior_wall_m2: 14
+      initial: {temperature: 20.0}
+      devices: [{entity_id: climate.wohnzimmer_trv, profile: generic_trv}]
+      sensors: {temperature: {entity_id: sensor.wohnzimmer_temp}}
+    flur:
+      name: Flur
+      floor_area_m2: 8
+      exterior_wall_m2: 4
+      initial: {temperature: 16.0, humidity: 70}
+      neighbors: {bad: open_door, wohnzimmer: closed_door}
+      sensors:
+        temperature: {entity_id: sensor.flur_temp}
+        humidity: {entity_id: sensor.flur_feuchte}
+roommind:
+  settings:
+    outdoor_temp_sensor: sensor.aussen_temp
+    outdoor_humidity_sensor: sensor.aussen_feuchte
+    mold_detection_enabled: true
+    mold_prevention_enabled: true
+    mold_prevention_intensity: medium
+    mold_prevention_notify_enabled: true
+    mold_sustained_minutes: 5
+  rooms:
+    bad:
+      devices: [{entity_id: climate.bad_trv, type: trv, heating_system_type: radiator}]
+      temperature_sensor: sensor.bad_temp
+      humidity_sensor: sensor.bad_feuchte
+      climate_mode: heat_only
+      comfort_temp: 21.0
+      eco_temp: 19.0
+    wohnzimmer:
+      devices: [{entity_id: climate.wohnzimmer_trv, type: trv, heating_system_type: radiator}]
+      temperature_sensor: sensor.wohnzimmer_temp
+      climate_mode: heat_only
+      comfort_temp: 21.0
+      eco_temp: 20.0
+    flur:
+      temperature_sensor: sensor.flur_temp
+      humidity_sensor: sensor.flur_feuchte
+timeline:
+  - {at: "+0d07h", do: humidity.event, room: bad, grams: 450, for: 15m}
+  - {at: "+0d07h", do: humidity.event, room: flur, grams: 400, for: 2h}
+  - {at: "+1d07h", do: humidity.event, room: bad, grams: 450, for: 15m}
+  - {at: "+1d07h", do: humidity.event, room: flur, grams: 400, for: 2h}
+expect:
+  - {check: "room.flur.mold_risk_level != 'ok'", at: "+0d08h30m", label: the unheated hallway still reports the risk}
+  # before the fix: 10.6 h prevention and 6 switches (3 "prevention active" notifications) in 2 days
+  - {metric: room.mold_prevention_h, room: flur, max: 0, label: no prevention without a heating device}
+  - {metric: room.mold_prevention_switches, room: flur, max: 0, label: prevention never switches on in the hallway}
+  - {metric: room.mold_prevention_h, room: bad, min: 0.5, label: the heated bathroom still gets prevention}
+  - {invariant: target_never_empty}

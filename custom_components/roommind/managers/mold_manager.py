@@ -62,10 +62,13 @@ class MoldManager:
         settings: dict,
         celsius_delta_to_ha_fn: Callable[[float], float] | None = None,
         ha_temp_unit_str_fn: Callable[[], str] | None = None,
+        *,
+        can_heat: bool = True,
     ) -> MoldResult:
         """Evaluate mold risk and prevention for a room.
 
         Returns a MoldResult with risk level, surface RH, and prevention state.
+        Prevention needs a room that can heat; the risk is reported either way.
         """
         result = MoldResult()
 
@@ -144,7 +147,15 @@ class MoldManager:
                 self._throttler.clear(f"prevent_{area_id}")
 
         await self._apply_prevention(
-            result, area_id, area_name, risk_level, surface_rh, settings, celsius_delta_to_ha_fn, ha_temp_unit_str_fn
+            result,
+            area_id,
+            area_name,
+            risk_level,
+            surface_rh,
+            settings,
+            celsius_delta_to_ha_fn,
+            ha_temp_unit_str_fn,
+            can_heat,
         )
         return result
 
@@ -158,6 +169,7 @@ class MoldManager:
         settings: dict,
         celsius_delta_to_ha_fn: Callable[[float], float] | None,
         ha_temp_unit_str_fn: Callable[[], str] | None,
+        can_heat: bool,
     ) -> None:
         """Raise the target while the wall is at risk, with hysteresis on the way out.
 
@@ -166,7 +178,7 @@ class MoldManager:
         MOLD_HYSTERESIS below the warning for MOLD_PREVENTION_RELEASE_MINUTES: the estimate follows
         the room air, which a heater warms in minutes while the wall lags behind.
         """
-        enabled = bool(settings.get("mold_prevention_enabled"))
+        enabled = bool(settings.get("mold_prevention_enabled")) and can_heat
         was_active = self._prevention_active.get(area_id, False)
         at_risk = risk_level in (MOLD_RISK_WARNING, MOLD_RISK_CRITICAL)
         in_band = surface_rh is not None and surface_rh >= MOLD_SURFACE_RH_WARNING - MOLD_HYSTERESIS
