@@ -156,6 +156,7 @@ export class RsAnalytics extends LitElement {
                         .canHeat=${flags.canHeat}
                         .canCool=${flags.canCool}
                         .hasWindowSensor=${flags.hasWindowSensor}
+                        .bandSides=${bandSides(this.rooms[this._selectedRoom]?.climate_mode)}
                         @day-selected=${this._onDaySelected}
                       ></rs-analytics-rhythm>`
                     : nothing

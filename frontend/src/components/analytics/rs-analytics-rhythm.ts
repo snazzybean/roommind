@@ -36,6 +36,8 @@ export class RsAnalyticsRhythm extends LitElement {
   @property({ type: Boolean }) public canHeat = true;
   @property({ type: Boolean }) public canCool = false;
   @property({ type: Boolean }) public hasWindowSensor = false;
+  /** Sides the room is judged on: one-sided rooms can only miss on their own side. */
+  @property({ type: String }) public bandSides: "both" | "heat" | "cool" = "both";
 
   private readonly _touch = matchMedia("(pointer: coarse)").matches;
 
@@ -217,9 +219,17 @@ export class RsAnalyticsRhythm extends LitElement {
       </div>`;
     }
     return html`<div class="legend">
-      <span><i class="key cold"></i>${localize("analytics.comfort_below", l)}</span>
+      ${
+        this.bandSides !== "cool"
+          ? html`<span><i class="key cold"></i>${localize("analytics.comfort_below", l)}</span>`
+          : nothing
+      }
       <span><i class="key ok"></i>${localize("analytics.comfort_on_target", l)}</span>
-      <span><i class="key warm"></i>${localize("analytics.comfort_above", l)}</span>
+      ${
+        this.bandSides !== "heat"
+          ? html`<span><i class="key warm"></i>${localize("analytics.comfort_above", l)}</span>`
+          : nothing
+      }
     </div>`;
   }
 

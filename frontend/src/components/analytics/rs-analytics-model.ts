@@ -24,6 +24,8 @@ const HEAT_LOSS_REFERENCE_K = 10;
 // Samples a figure needs before the tile shows it
 const MIN_TILE_SAMPLES = 10;
 const PENDING = "—";
+// Where the 5-min prediction spread settles once a model has learned (info text example)
+const TYPICAL_PREDICTION_STD_K = 0.2;
 
 type StageState = "done" | "current" | "todo" | "off";
 
@@ -82,7 +84,11 @@ export class RsAnalyticsModel extends LitElement {
                 >
                 <span class="confidence-label"
                   >${localize("analytics.confidence", l)}
-                  <rs-info-icon .text=${localize("analytics.info.confidence", l)}></rs-info-icon
+                  <rs-info-icon
+                    .text=${localize("analytics.info.confidence", l, {
+                      threshold: this._delta(MPC_MAX_PREDICTION_STD),
+                    })}
+                  ></rs-info-icon
                 ></span>
               </div>
               <div class="points">
@@ -341,10 +347,18 @@ export class RsAnalyticsModel extends LitElement {
       .label=${localize(`analytics.${t.id}` as TranslationKey, l)}
       .value=${t.value ?? PENDING}
       ?pending=${t.value == null}
-      .info=${localize(`analytics.info.${t.id}` as TranslationKey, l)}
+      .info=${localize(`analytics.info.${t.id}` as TranslationKey, l, {
+        threshold: this._delta(MPC_MAX_PREDICTION_STD),
+        typical: this._delta(TYPICAL_PREDICTION_STD_K),
+      })}
     >
       ${t.detail ? html`<span slot="info">${t.detail}</span>` : nothing}
     </rs-stat-tile>`;
+  }
+
+  /** A temperature difference in the user's unit ("0,5 °C", "0.9 °F"). */
+  private _delta(kelvin: number): string {
+    return `${formatNumber(toDisplayDelta(kelvin, this.hass), this.hass, 1)} ${tempUnit(this.hass)}`;
   }
 
   private _afterglowValue(kelvin: number): string {
