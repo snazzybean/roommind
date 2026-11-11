@@ -61,6 +61,10 @@ export interface RoomLiveData {
   active_cover_schedule_index: number;
   active_heat_sources: string | null;
   learning_paused_reason: "outdoor_unavailable" | null;
+  /** Model updates so far (one per ~3 min of learning). */
+  n_observations?: number;
+  /** `n_observations` when "learn faster" was last used, null if never (counts the fade). */
+  boost_applied_at?: number | null;
   compressor_protection_active: boolean;
   compressor_protection_reason: "min_off" | "min_run" | null;
   compressor_protection_until: number | null;
@@ -372,6 +376,16 @@ export interface AnalyticsRhythm {
   days: RhythmDay[];
 }
 
+export interface ModelDay {
+  /** Local date, YYYY-MM-DD. */
+  date: string;
+  confidence: number;
+  mpc_active: boolean;
+  /** Mean absolute error of the ~3-min forecast that day (K), null without measurements. */
+  error: number | null;
+  error_steps: number;
+}
+
 export interface AnalyticsData {
   detail: AnalyticsDataPoint[];
   history: AnalyticsDataPoint[];
@@ -382,8 +396,8 @@ export interface AnalyticsData {
   price_unit?: string;
   model: {
     confidence: number;
-    /** One entry per local day, oldest first: [YYYY-MM-DD, confidence 0..1, data points, MPC active]. */
-    confidence_history?: Array<[string, number, number, boolean]>;
+    /** One entry per local day, oldest first. */
+    daily_history?: ModelDay[];
     model: {
       C: number;
       U: number;

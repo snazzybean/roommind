@@ -2764,8 +2764,8 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         self._residual_learner.clear_all()
         return room_ids
 
-    def boost_learning(self, area_id: str) -> int:
-        """Boost EKF covariance for a room. Returns n_observations."""
+    def boost_learning(self, area_id: str) -> int | None:
+        """Boost EKF covariance for a room. Returns n_observations, None without a model."""
         return self._model_manager.boost_learning(area_id)
 
     def clear_cover_override(self, area_id: str) -> None:

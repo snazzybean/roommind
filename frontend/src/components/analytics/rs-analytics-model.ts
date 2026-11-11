@@ -1,6 +1,6 @@
 /**
  * rs-analytics-model – Model status: confidence, the stages towards predictive control, the
- * confidence per day and the learned figures as tiles.
+ * measured forecast error per day and the learned figures as tiles.
  */
 import { LitElement, html, css, nothing } from "lit";
 import { customElement, property } from "lit/decorators.js";
@@ -18,7 +18,7 @@ import "../shared/rs-list-card";
 import "../shared/rs-stat-tile";
 import "../shared/rs-hint-chip";
 import "../shared/rs-info-icon";
-import "./rs-confidence-chart";
+import "./rs-forecast-error-chart";
 
 // Fixed reference so rooms and renovations stay comparable; the model knows no watts (C is unknown)
 const HEAT_LOSS_REFERENCE_K = 10;
@@ -59,6 +59,8 @@ export class RsAnalyticsModel extends LitElement {
   @property({ type: String }) public language = "en";
   @property({ type: String }) public controlMode: "mpc" | "bangbang" = "mpc";
   @property({ type: Boolean }) public managed = false;
+  /** Hours until "learn faster" has faded, null when it is not running. */
+  @property({ attribute: false }) public boostHours: number | null = null;
 
   render() {
     const l = this.language;
@@ -85,13 +87,24 @@ export class RsAnalyticsModel extends LitElement {
                 ${formatNumber(observations, this.hass)} ${localize("analytics.data_points", l)}
                 <rs-info-icon .text=${localize("analytics.info.data_points", l)}></rs-info-icon>
               </div>
+              ${
+                this.boostHours != null
+                  ? html`<div class="boost">
+                      <ha-icon icon="mdi:school-outline" aria-hidden="true"></ha-icon>
+                      ${localize("learning.boost_active", l, {
+                        time: formatMinutes(this.boostHours * 60, l),
+                      })}
+                      <rs-info-icon .text=${localize("learning.boost_info", l)}></rs-info-icon>
+                    </div>`
+                  : nothing
+              }
               ${this._renderStages()}
             </div>
-            <rs-confidence-chart
+            <rs-forecast-error-chart
               .hass=${this.hass}
               .language=${l}
-              .history=${hasModel ? (m?.confidence_history ?? []) : []}
-            ></rs-confidence-chart>
+              .days=${hasModel ? (m?.daily_history ?? []) : []}
+            ></rs-forecast-error-chart>
           </div>
           <div class="tiles">${this._tiles().map((t) => this._renderTile(t))}</div>
         </div>
@@ -391,6 +404,20 @@ export class RsAnalyticsModel extends LitElement {
         gap: 2px;
         font-size: var(--rs-font-md);
         color: var(--secondary-text-color);
+      }
+
+      .boost {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-top: 6px;
+        font-size: var(--rs-font-sm);
+        color: var(--primary-text-color);
+        --mdc-icon-size: 16px;
+      }
+
+      .boost ha-icon {
+        color: var(--primary-color);
       }
 
       .points {

@@ -16,6 +16,7 @@ import { formatTempLocale, tempUnit, toDisplayDelta } from "../../utils/temperat
 import { formatMinutes, formatNumber, formatPercent } from "../../utils/format";
 import { buildSparkline, type RecentTemp, type SparklinePaths } from "../../utils/sparkline";
 import { NO_OVERRIDE, type EffectiveOverride } from "../../utils/override";
+import { boostHoursLeft } from "../../utils/learning";
 import { tokens } from "../../styles/tokens";
 import "../shared/rs-hint-chip";
 import "../shared/rs-icon-button";
@@ -604,17 +605,21 @@ export class RsRoomHero extends LitElement {
       displayDelta: (d) => toDisplayDelta(d, this.hass),
       unit: tempUnit(this.hass),
     }).filter((h) => !(withTarget && inReason.has(h.id)));
-    const chips: HeroChip[] = hints.map((h) => ({
-      icon: h.icon,
-      text: hintText(h, l),
-      variant: h.severity === "info" ? "default" : h.severity,
-      info:
-        h.id === "compressor"
-          ? localize("hero.compressor_protection_info", l)
-          : h.id === "learning_paused" && live.learning_paused_reason === "outdoor_unavailable"
-            ? localize("hero.mpc_learning_paused.outdoor_unavailable", l)
-            : undefined,
-    }));
+    const boostHours = boostHoursLeft(live.boost_applied_at, live.n_observations);
+    const chips: HeroChip[] = hints
+      // The boost chip says it more precisely
+      .filter((h) => !(boostHours != null && h.id === "mpc_learning"))
+      .map((h) => ({
+        icon: h.icon,
+        text: hintText(h, l),
+        variant: h.severity === "info" ? "default" : h.severity,
+        info:
+          h.id === "compressor"
+            ? localize("hero.compressor_protection_info", l)
+            : h.id === "learning_paused" && live.learning_paused_reason === "outdoor_unavailable"
+              ? localize("hero.mpc_learning_paused.outdoor_unavailable", l)
+              : undefined,
+      }));
     // Compressor protection without a known end has no card hint; the hero names it anyway.
     if (live.compressor_protection_active && live.compressor_protection_until == null) {
       chips.push({
@@ -627,6 +632,14 @@ export class RsRoomHero extends LitElement {
         ),
         variant: "default",
         info: localize("hero.compressor_protection_info", l),
+      });
+    }
+    if (boostHours != null) {
+      chips.push({
+        icon: "mdi:school-outline",
+        text: localize("learning.boost_active", l, { time: formatMinutes(boostHours * 60, l) }),
+        variant: "default",
+        info: localize("learning.boost_info", l),
       });
     }
     if (live.coil_dry_active) {

@@ -102,6 +102,7 @@ if TYPE_CHECKING:
     from homeassistant.components.websocket_api import ActiveConnection
 
     from .coordinator import RoomMindCoordinator
+    from .store import RoomMindStore
 
 
 def _get_coordinator(hass: HomeAssistant) -> RoomMindCoordinator | None:
@@ -276,6 +277,7 @@ async def websocket_list_rooms(
     outdoor_available = coordinator is not None and coordinator.outdoor_temp_effective is not None
     settings = store.get_settings()
     learning_disabled = set(settings.get("learning_disabled_rooms", []))
+    boost_anchors = settings.get("boost_applied_at", {})
 
     # Build response: config + live state per room
     # Override fields are computed from the store (always up-to-date) rather
@@ -322,6 +324,8 @@ async def websocket_list_rooms(
             "mold_prevention_active": live.get("mold_prevention_active", False),
             "mold_prevention_delta": live.get("mold_prevention_delta", 0),
             "n_observations": live.get("n_observations", 0),
+            # A paused room does not fade the boost, so no countdown for it
+            "boost_applied_at": None if area_id in learning_disabled else boost_anchors.get(area_id),
             "blind_position": live.get("blind_position"),
             "cover_auto_paused": live.get("cover_auto_paused", False),
             "cover_override_until": live.get("cover_override_until"),
@@ -590,6 +594,16 @@ async def websocket_delete_room(
     connection.send_result(msg["id"], {"success": True})
 
 
+async def _async_drop_boost_anchors(store: RoomMindStore, area_ids: list[str] | None = None) -> None:
+    """Forget the boost anchor with the model it counted on (None = every room)."""
+    anchors = store.get_settings().get("boost_applied_at", {})
+    if not anchors:
+        return
+    kept = {} if area_ids is None else {a: n for a, n in anchors.items() if a not in area_ids}
+    if kept != anchors:
+        await store.async_save_settings({"boost_applied_at": kept})
+
+
 async def async_remove_room(hass: HomeAssistant, area_id: str) -> bool:
     """Delete a room with its entities, valves, model and history; False if it is not stored."""
     store = hass.data[DOMAIN]["store"]
@@ -606,6 +620,7 @@ async def async_remove_room(hass: HomeAssistant, area_id: str) -> bool:
         await coordinator.async_room_removed(area_id)
     # Stored right away, after the in-memory model is gone: else it only went with the next thermal save
     await store.async_clear_thermal_data_room(area_id)
+    await _async_drop_boost_anchors(store, [area_id])
     return True
 
 
@@ -1002,6 +1017,7 @@ async def websocket_thermal_reset(
 
     # Clear persisted thermal data
     await store.async_clear_thermal_data_room(area_id)
+    await _async_drop_boost_anchors(store, [area_id])
 
     # Clear history CSV files
     if coordinator and coordinator.history_store:
@@ -1033,6 +1049,7 @@ async def websocket_thermal_reset_all(
 
     # Clear persisted thermal data
     await store.async_clear_all_thermal_data()
+    await _async_drop_boost_anchors(store)
 
     # Clear history CSV files for all rooms
     if coordinator and coordinator.history_store:
@@ -1064,8 +1081,11 @@ async def websocket_boost_learning(
         return
 
     n_obs = coordinator.boost_learning(area_id)
+    if n_obs is None:
+        connection.send_error(msg["id"], "no_model", "Room has no learned model yet")
+        return
 
-    # Persist cooldown anchor in settings
+    # The frontend counts the fade from this anchor
     settings = store.get_settings()
     boost_applied = dict(settings.get("boost_applied_at", {}))
     boost_applied[area_id] = n_obs

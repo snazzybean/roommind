@@ -249,6 +249,7 @@ async def test_list_rooms_learning_paused_none_when_outdoor_available(ws_hass, s
         "temperature_sensor": "sensor.kitchen_temp",
     }
     await _save_room(ws_hass, connection, save_msg)
+    await store.async_save_settings({"boost_applied_at": {"kitchen": 300}})
     connection.send_result.reset_mock()
 
     mock_coordinator = MagicMock()
@@ -263,6 +264,7 @@ async def test_list_rooms_learning_paused_none_when_outdoor_available(ws_hass, s
 
     rooms = connection.send_result.call_args[0][1]["rooms"]
     assert rooms["kitchen"]["live"]["learning_paused_reason"] is None
+    assert rooms["kitchen"]["live"]["boost_applied_at"] == 300
 
 
 @pytest.mark.asyncio
@@ -1575,7 +1577,9 @@ def _make_mock_estimator(**overrides):
     est._applicable_modes = overrides.get("applicable_modes", {"idle", "heating"})
     est._P = overrides.get("P", [[0.01 * (i == j) for j in range(6)] for i in range(6)])
     est.confidence = overrides.get("confidence", 0.85)
-    est.confidence_history = overrides.get("confidence_history", [["2026-11-11", 0.85, 200, True]])
+    est.confidence_history = overrides.get(
+        "confidence_history", [["2026-11-10", 0.8, 150, False, None, 0], ["2026-11-11", 0.85, 200, True, 0.061, 412]]
+    )
     est.prediction_std.return_value = overrides.get("prediction_std", 0.3)
     rc = MagicMock()
     rc.Q_heat = overrides.get("Q_heat", 100.0)
@@ -1741,7 +1745,10 @@ async def test_analytics_with_estimator(ws_hass, store, connection):
     result = connection.send_result.call_args[0][1]
     model = result["model"]
     assert model["confidence"] == 0.85
-    assert model["confidence_history"] == [["2026-11-11", 0.85, 200, True]]
+    assert model["daily_history"] == [
+        {"date": "2026-11-10", "confidence": 0.8, "mpc_active": False, "error": None, "error_steps": 0},
+        {"date": "2026-11-11", "confidence": 0.85, "mpc_active": True, "error": 0.061, "error_steps": 412},
+    ]
     assert model["n_samples"] == 200
     assert model["n_heating"] == 60
     assert model["n_cooling"] == 20
@@ -2151,6 +2158,49 @@ async def test_boost_learning_success(ws_hass, store, connection):
 
     mock_coordinator.boost_learning.assert_called_once_with("living_room")
     connection.send_result.assert_called_once_with(1, {"success": True, "n_observations": 42})
+    assert store.get_settings()["boost_applied_at"] == {"living_room": 42}
+
+
+@pytest.mark.asyncio
+async def test_boost_learning_without_model_errors_and_stores_nothing(ws_hass, store, connection):
+    """A room without a model has nothing to boost: error, no anchor."""
+    from custom_components.roommind.websocket_api import websocket_boost_learning
+
+    await store.async_load()
+    mock_coordinator = MagicMock()
+    mock_coordinator.boost_learning = MagicMock(return_value=None)
+    ws_hass.data[DOMAIN]["coordinator"] = mock_coordinator
+
+    msg = {"id": 1, "type": "roommind/model/boost_learning", "area_id": "living_room"}
+    await websocket_boost_learning.__wrapped__(ws_hass, connection, msg)
+
+    assert connection.send_error.call_args[0][1] == "no_model"
+    assert "boost_applied_at" not in store.get_settings()
+
+
+@pytest.mark.asyncio
+async def test_resets_and_delete_drop_the_boost_anchor(ws_hass, store, connection):
+    """The anchor counts on the model; a reset or delete takes it along."""
+    from custom_components.roommind.websocket_api import (
+        websocket_delete_room,
+        websocket_thermal_reset,
+        websocket_thermal_reset_all,
+    )
+
+    await store.async_load()
+    await store.async_save_room("a", {"thermostats": ["climate.a"]})
+    await store.async_save_settings({"boost_applied_at": {"a": 10, "b": 20, "c": 30}})
+    ws_hass.data[DOMAIN]["coordinator"] = None
+
+    await websocket_thermal_reset.__wrapped__(ws_hass, connection, {"id": 1, "area_id": "b"})
+    assert store.get_settings()["boost_applied_at"] == {"a": 10, "c": 30}
+    await websocket_delete_room.__wrapped__(ws_hass, connection, {"id": 2, "area_id": "a"})
+    assert store.get_settings()["boost_applied_at"] == {"c": 30}
+    await websocket_thermal_reset_all.__wrapped__(ws_hass, connection, {"id": 3})
+    assert store.get_settings()["boost_applied_at"] == {}
+    # Nothing left: no further write
+    await websocket_thermal_reset.__wrapped__(ws_hass, connection, {"id": 4, "area_id": "c"})
+    assert store.get_settings()["boost_applied_at"] == {}
 
 
 # ── Cover schedule WS validation ───────────────────────────────────────

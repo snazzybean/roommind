@@ -1,34 +1,43 @@
 /**
- * rs-settings-learning – Model training + boost learning (combined).
+ * rs-settings-learning – Model training on/off (all rooms and per room), the model state of
+ * every room and "learn faster" per room.
  */
 import { html, css, nothing } from "lit";
 import { RsSettingsBase } from "./rs-settings-base";
 import { customElement, property, state } from "lit/decorators.js";
 import type { HomeAssistant, RoomConfig } from "../../types";
-import { localize } from "../../utils/localize";
-import { fireSaveStatus, getSelectValue } from "../../utils/events";
-import "../shared/rs-icon-button";
+import { localize, type TranslationKey } from "../../utils/localize";
+import { fireSaveStatus } from "../../utils/events";
+import { formatMinutes, formatPercent } from "../../utils/format";
+import { boostHoursLeft, learningState, type LearningState } from "../../utils/learning";
+import "../shared/rs-menu";
 
-const BOOST_COOLDOWN = 250;
+const BOOST_ACTION = "boost";
+
+const STATE_KEYS: Record<LearningState, TranslationKey> = {
+  not_learning: "settings.learning_state.not_learning",
+  paused: "settings.learning_state.paused",
+  waiting: "settings.learning_state.waiting",
+  no_data: "settings.learning_state.no_data",
+  learning: "settings.learning_state.learning",
+  ready: "settings.learning_state.ready",
+};
 
 @customElement("rs-settings-learning")
 export class RsSettingsLearning extends RsSettingsBase {
   @property({ attribute: false }) public hass!: HomeAssistant;
   @property({ attribute: false }) public rooms: Record<string, RoomConfig> = {};
   @property({ type: Array }) public learningDisabledRooms: string[] = [];
-  @property({ attribute: false }) public boostAppliedAt: Record<string, number> = {};
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- HA live state is untyped
-  @property({ attribute: false }) public roomsLive: Record<string, any> = {};
-
-  @state() private _showLearningExceptions = false;
-  @state() private _boostSelectedRoom = "";
+  /** Anchors of boosts started on this page, until the polled room data carries them. */
+  @state() private _boosted: Record<string, number> = {};
 
   render() {
     const l = this.hass.language;
-    const configuredRooms = Object.entries(this.rooms)
-      .map(([areaId]) => ({
+    const rooms = Object.entries(this.rooms)
+      .map(([areaId, config]) => ({
         areaId,
-        name: this.hass.areas?.[areaId]?.name ?? areaId,
+        config,
+        name: config.display_name || this.hass.areas?.[areaId]?.name || areaId,
       }))
       .sort((a, b) => a.name.localeCompare(b.name));
 
@@ -38,7 +47,6 @@ export class RsSettingsLearning extends RsSettingsBase {
     const disabledCount = this.learningDisabledRooms.filter((id) => allRoomIds.includes(id)).length;
 
     return html`
-      <!-- Learning toggle -->
       <div class="settings-section first">
         <rs-list-row
           switch
@@ -46,135 +54,95 @@ export class RsSettingsLearning extends RsSettingsBase {
           .heading=${localize("settings.learning_title", l)}
           .secondary=${localize("settings.learning_hint", l)}
           .checked=${learningActive}
-          @toggle-changed=${(e: CustomEvent<boolean>) => {
-            const active = e.detail;
-            this._fire("learningDisabledRooms", active ? [] : Object.keys(this.rooms));
-            if (!active) this._showLearningExceptions = false;
-          }}
+          @toggle-changed=${(e: CustomEvent<boolean>) =>
+            this._fire("learningDisabledRooms", e.detail ? [] : allRoomIds)}
         ></rs-list-row>
+      </div>
+
+      <div class="settings-section">
+        <h3 class="section-title">
+          ${localize("settings.learning_rooms", l)}${
+            disabledCount > 0
+              ? ` · ${disabledCount} ${localize(disabledCount === 1 ? "settings.learning_room_paused" : "settings.learning_rooms_paused", l)}`
+              : nothing
+          }
+        </h3>
         ${
-          learningActive && configuredRooms.length > 0
-            ? html`
-                <button
-                  class="exceptions-link"
-                  aria-expanded=${this._showLearningExceptions ? "true" : "false"}
-                  @click=${() => {
-                    this._showLearningExceptions = !this._showLearningExceptions;
-                  }}
-                >
-                  <span
-                    >${
-                      disabledCount > 0
-                        ? `${disabledCount} ${localize(disabledCount === 1 ? "settings.learning_room_paused" : "settings.learning_rooms_paused", l)}`
-                        : localize("settings.learning_exceptions", l)
-                    }</span
-                  >
-                  <ha-icon
-                    icon=${this._showLearningExceptions ? "mdi:chevron-up" : "mdi:chevron-down"}
-                    style="--mdc-icon-size: 16px"
-                  ></ha-icon>
-                </button>
-                ${
-                  this._showLearningExceptions
-                    ? html`
-                        <div class="room-toggles">
-                          ${configuredRooms.map(
-                            (room) => html`
-                              <rs-list-row
-                                switch
-                                .heading=${room.name}
-                                .checked=${!this.learningDisabledRooms.includes(room.areaId)}
-                                @toggle-changed=${(e: CustomEvent<boolean>) => {
-                                  const disabled = !e.detail;
-                                  const set = new Set(this.learningDisabledRooms);
-                                  if (disabled) set.add(room.areaId);
-                                  else set.delete(room.areaId);
-                                  this._fire("learningDisabledRooms", [...set]);
-                                }}
-                              ></rs-list-row>
-                            `,
-                          )}
-                        </div>
-                      `
-                    : nothing
-                }
-              `
-            : nothing
+          rooms.length
+            ? rooms.map((room) => this._renderRoom(room.areaId, room.name, room.config))
+            : html`<p class="note">${localize("settings.summary.learning_no_rooms", l)}</p>`
         }
       </div>
 
-      <!-- Boost learning -->
       <div class="settings-section">
         <span class="field-label">${localize("settings.boost_title", l)}</span>
-        <p class="hint">${localize("settings.boost_hint", l)}</p>
-
-        ${
-          configuredRooms.length > 0
-            ? html`
-                <div class="room-select-row">
-                  <ha-select
-                    .value=${this._boostSelectedRoom}
-                    .label=${localize("settings.boost_room_select", l)}
-                    .options=${configuredRooms.map((room) => ({
-                      value: room.areaId,
-                      label: room.name,
-                    }))}
-                    fixedMenuPosition
-                    @selected=${(e: Event) => {
-                      this._boostSelectedRoom = getSelectValue(e);
-                    }}
-                    @closed=${(e: Event) => e.stopPropagation()}
-                  >
-                    ${configuredRooms.map(
-                      (room) =>
-                        html`<ha-list-item value=${room.areaId}>${room.name}</ha-list-item>`,
-                    )}
-                  </ha-select>
-                  ${
-                    this._boostSelectedRoom
-                      ? html`<rs-icon-button
-                          size="sm"
-                          icon="mdi:close"
-                          .label=${localize("common.clear_selection", l)}
-                          @click=${() => {
-                            this._boostSelectedRoom = "";
-                          }}
-                        ></rs-icon-button>`
-                      : nothing
-                  }
-                  ${
-                    this._boostSelectedRoom && this._isCooldown(this._boostSelectedRoom)
-                      ? html`<span class="boost-status">
-                          <ha-icon icon="mdi:check-circle-outline"></ha-icon>
-                          ${localize("settings.boost_cooldown", l)}
-                        </span>`
-                      : html`<button
-                          class="boost-btn"
-                          ?disabled=${
-                            !this._boostSelectedRoom || this._isCooldown(this._boostSelectedRoom)
-                          }
-                          @click=${() =>
-                            this._boostSelectedRoom && this._boostLearning(this._boostSelectedRoom)}
-                        >
-                          <ha-icon icon="mdi:lightning-bolt"></ha-icon>
-                          ${localize("settings.boost_btn", l)}
-                        </button>`
-                  }
-                </div>
-              `
-            : html`<p class="hint">${localize("settings.boost_no_rooms", l)}</p>`
-        }
+        <p class="note">
+          ${localize("settings.boost_hint", l)}
+          <a href="/roommind/settings/reset">${localize("settings.reset_title", l)}</a>
+        </p>
       </div>
     `;
   }
 
-  private _isCooldown(areaId: string): boolean {
-    const nObs = this.roomsLive?.[areaId]?.n_observations ?? 0;
-    const appliedAt = this.boostAppliedAt[areaId];
-    return appliedAt !== undefined && nObs - appliedAt < BOOST_COOLDOWN;
+  private _renderRoom(areaId: string, name: string, config: RoomConfig) {
+    const l = this.hass.language;
+    const paused = this.learningDisabledRooms.includes(areaId);
+    const state = learningState(config, paused);
+    const confidence = formatPercent(Math.round((config.live?.confidence ?? 0) * 100), this.hass);
+    const outdoor = state === "not_learning" && config.is_outdoor;
+    const stateText = localize(outdoor ? "settings.learning_state.outdoor" : STATE_KEYS[state], l, {
+      confidence,
+    });
+    const hours = paused
+      ? null
+      : boostHoursLeft(
+          config.live?.boost_applied_at ?? this._boosted[areaId],
+          config.live?.n_observations,
+        );
+    const boostLine =
+      hours != null
+        ? html`<span slot="secondary" class="boost"
+            >${localize("learning.boost_active", l, { time: formatMinutes(hours * 60, l) })}</span
+          >`
+        : nothing;
+
+    if (state === "not_learning") {
+      return html`<rs-list-row .heading=${name} .secondary=${stateText}></rs-list-row>`;
+    }
+    const canBoost = state === "learning" || state === "ready";
+    return html`<rs-list-row
+      switch
+      .heading=${name}
+      .secondary=${stateText}
+      .checked=${!paused}
+      @toggle-changed=${(e: CustomEvent<boolean>) => {
+        const set = new Set(this.learningDisabledRooms);
+        if (e.detail) set.delete(areaId);
+        else set.add(areaId);
+        this._fire("learningDisabledRooms", [...set]);
+      }}
+    >
+      ${boostLine}
+      <rs-menu
+        slot="end"
+        .label=${localize("settings.learning_room_actions", l, { room: name })}
+        .items=${[
+          {
+            value: BOOST_ACTION,
+            label: localize("settings.boost_btn", l),
+            icon: "mdi:school-outline",
+            disabled: !canBoost || hours != null,
+          },
+        ]}
+        @menu-select=${(e: CustomEvent<{ value: string }>) => {
+          if (e.detail.value === BOOST_ACTION) this._boostLearning(areaId, name);
+        }}
+      ></rs-menu>
+    </rs-list-row>`;
   }
 
-  private async _boostLearning(areaId: string) {
+  private async _boostLearning(areaId: string, name: string) {
+    if (!confirm(localize("settings.boost_confirm", this.hass.language, { room: name }))) return;
     try {
       fireSaveStatus(this, "saving");
       const result = await this.hass.callWS<{ n_observations: number }>({
@@ -182,13 +150,7 @@ export class RsSettingsLearning extends RsSettingsBase {
         area_id: areaId,
       });
       fireSaveStatus(this, "saved");
-      this.dispatchEvent(
-        new CustomEvent("boost-applied", {
-          detail: { area_id: areaId, n_observations: result.n_observations },
-          bubbles: true,
-          composed: true,
-        }),
-      );
+      this._boosted = { ...this._boosted, [areaId]: result.n_observations };
     } catch {
       fireSaveStatus(this, "error");
     }
@@ -197,91 +159,19 @@ export class RsSettingsLearning extends RsSettingsBase {
   static styles = [
     RsSettingsBase.settingsBaseStyles,
     css`
-      .hint {
-        color: var(--secondary-text-color);
-        font-size: 13px;
-        margin: 0 0 var(--rs-space-3);
-        line-height: 1.5;
-      }
-      .field-label {
-        margin-bottom: var(--rs-space-1);
+      .boost {
+        display: block;
+        color: var(--primary-color);
       }
 
-      .exceptions-link {
-        display: inline-flex;
-        align-items: center;
-        gap: 4px;
-        background: none;
-        border: none;
-        padding: 4px 0;
-        margin: 0;
-        min-height: 32px;
-        cursor: pointer;
-        font-size: 13px;
+      .note a {
         color: var(--primary-color);
-        font-family: inherit;
       }
-      .exceptions-link:hover {
-        text-decoration: underline;
-      }
-      .exceptions-link:focus-visible,
-      .boost-btn:focus-visible {
+
+      .note a:focus-visible {
         outline: 2px solid var(--primary-color);
         outline-offset: 2px;
-        border-radius: 4px;
-      }
-
-      .room-toggles {
-        margin-top: var(--rs-space-1);
-      }
-
-      .room-select-row {
-        display: flex;
-        flex-wrap: wrap;
-        align-items: center;
-        gap: var(--rs-space-3);
-      }
-      .room-select-row ha-select {
-        flex: 1 1 200px;
-        min-width: 0;
-      }
-
-      .boost-btn {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        padding: 8px 14px;
-        border: 1px solid var(--primary-color);
-        border-radius: var(--rs-radius-sm);
-        min-height: 40px;
-        background: transparent;
-        color: var(--primary-color);
-        font-size: 13px;
-        font-family: inherit;
-        cursor: pointer;
-        transition: background 0.15s;
-        --mdc-icon-size: 16px;
-        white-space: nowrap;
-      }
-      .boost-btn:hover {
-        background: var(--rs-fill-primary);
-      }
-      .boost-btn:disabled {
-        opacity: 0.4;
-        cursor: not-allowed;
-      }
-      .boost-btn:disabled:hover {
-        background: transparent;
-      }
-
-      .boost-status {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        color: var(--success-color);
-        font-size: 13px;
-        --mdc-icon-size: 16px;
-        white-space: nowrap;
+        border-radius: 2px;
       }
     `,
   ];

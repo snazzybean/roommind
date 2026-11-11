@@ -99,7 +99,6 @@ export class RsSettings extends LitElement {
   @state() private _coilDryFanMode = "low";
   @state() private _coilDryMinCoolingMinutes = 10;
   @state() private _coilDryDrainMinutes = 0;
-  @state() private _boostAppliedAt: Record<string, number> = {};
   @state() private _loaded = false;
   // A failed load must not render the forms: the next full-payload save would write defaults.
   @state() private _loadFailed = false;
@@ -176,7 +175,6 @@ export class RsSettings extends LitElement {
       this._coilDryFanMode = s.coil_dry_fan_mode ?? "low";
       this._coilDryMinCoolingMinutes = s.coil_dry_min_cooling_minutes ?? 10;
       this._coilDryDrainMinutes = s.coil_dry_drain_minutes ?? 0;
-      this._boostAppliedAt = s.boost_applied_at ?? {};
     } catch (err) {
       // eslint-disable-next-line no-console
       console.debug("[RoomMind] loadSettings:", err);
@@ -422,13 +420,7 @@ export class RsSettings extends LitElement {
           .hass=${this.hass}
           .rooms=${this.rooms}
           .learningDisabledRooms=${this._learningDisabledRooms}
-          .boostAppliedAt=${this._boostAppliedAt}
-          .roomsLive=${Object.fromEntries(
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any -- HA room data includes untyped live state
-            Object.entries(this.rooms).map(([id, r]) => [id, (r as any).live ?? {}]),
-          )}
           @setting-changed=${this._onSettingChanged}
-          @boost-applied=${this._onBoostApplied}
         ></rs-settings-learning>`;
       case "reset":
         return html`<rs-settings-reset
@@ -675,11 +667,6 @@ export class RsSettings extends LitElement {
         composed: true,
       }),
     );
-  }
-
-  private _onBoostApplied(e: CustomEvent<{ area_id: string; n_observations: number }>) {
-    const { area_id, n_observations } = e.detail;
-    this._boostAppliedAt = { ...this._boostAppliedAt, [area_id]: n_observations };
   }
 
   private _onSettingChanged(e: CustomEvent<{ key: string; value: unknown }>) {

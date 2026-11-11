@@ -6,6 +6,7 @@ import { LitElement, html, css, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import type { HomeAssistant, RoomConfig, AnalyticsData, AnalyticsDataPoint } from "../types";
 import { localize } from "../utils/localize";
+import { boostHoursLeft } from "../utils/learning";
 import "./analytics/rs-analytics-toolbar";
 import "./analytics/rs-analytics-summary";
 import "./analytics/rs-analytics-chart";
@@ -136,6 +137,10 @@ export class RsAnalytics extends LitElement {
                         .language=${l}
                         .controlMode=${this.controlMode}
                         .managed=${!this.rooms[this._selectedRoom]?.temperature_sensor}
+                        .boostHours=${boostHoursLeft(
+                          this.rooms[this._selectedRoom]?.live?.boost_applied_at,
+                          this.rooms[this._selectedRoom]?.live?.n_observations,
+                        )}
                       ></rs-analytics-model>`
                     : nothing
                 }

@@ -245,6 +245,13 @@ class RCModel:
 CONFIDENCE_HISTORY_DAYS = 60  # daily confidence snapshots kept per room
 
 
+def _load_history_entry(e: list) -> list:
+    """One stored day; entries from before the forecast error carry four fields."""
+    error = e[4] if len(e) >= 6 and isinstance(e[4], (int, float)) else None
+    steps = int(e[5]) if error is not None and isinstance(e[5], (int, float)) else 0
+    return [e[0], float(e[1]), int(e[2]), bool(e[3]), None if error is None else float(error), steps]
+
+
 class ThermalEKF:
     """Extended Kalman Filter for 1R1C thermal model.
 
@@ -365,8 +372,13 @@ class ThermalEKF:
         # Learned afterglow decay time in minutes, None until the first sample (profile's)
         self._residual_tau: float | None = None
         self._residual_tau_n: int = 0
-        # One entry per local day: [iso_date, confidence, n_updates, mpc_active], for the analytics chart
+        # One entry per local day for the analytics chart:
+        # [iso_date, confidence, n_updates, mpc_active, mean_abs_error_k | None, error_steps]
         self._confidence_history: list[list] = []
+        # |innovation| of the day's regular updates (outliers left out), folded into the entry
+        self._err_day: str | None = None
+        self._err_sum: float = 0.0
+        self._err_n: int = 0
         # Which states the last predict step could observe (F[0][i] != 0).
         self._excited: list[bool] = [True] * self._N
 
@@ -922,9 +934,11 @@ class ThermalEKF:
 
         # Outlier detection via normalized innovation
         R_eff = self._R
+        outlier = False
         if S > 0:
             norm_innov = abs(innovation) / math.sqrt(S)
             if norm_innov > self._ANOMALY_SIGMA:
+                outlier = True
                 _LOGGER.debug(
                     "EKF: outlier detected (innovation=%.2f, %.1f sigma), softening update",
                     innovation,
@@ -932,6 +946,9 @@ class ThermalEKF:
                 )
                 R_eff = self._R * self._ANOMALY_R_INFLATE
                 S = P[0][0] + R_eff
+        if not outlier:
+            self._err_sum += abs(innovation)
+            self._err_n += 1
 
         if S < 1e-12:
             return  # Numerical safety
@@ -985,10 +1002,22 @@ class ThermalEKF:
         """Daily confidence snapshots, oldest first."""
         return [list(entry) for entry in self._confidence_history]
 
+    def _day_error(self) -> tuple[float | None, int]:
+        if self._err_n == 0:
+            return None, 0
+        return round(self._err_sum / self._err_n, 4), self._err_n
+
     def note_confidence_day(self, day: str, mpc_active: bool) -> None:
-        """Record today's confidence; a later call on the same day replaces the entry."""
-        entry = [day, round(self.confidence, 3), self._n_updates, bool(mpc_active)]
+        """Record today's confidence and forecast error; a later call on the same day replaces the entry."""
         history = self._confidence_history
+        if self._err_day is not None and self._err_day != day:
+            # Steps since the last note belong to the day that just ended
+            if history and history[-1][0] == self._err_day:
+                history[-1][4:6] = self._day_error()
+            self._err_sum = 0.0
+            self._err_n = 0
+        self._err_day = day
+        entry = [day, round(self.confidence, 3), self._n_updates, bool(mpc_active), *self._day_error()]
         if history and history[-1][0] == day:
             history[-1] = entry
         elif not history or history[-1][0] < day:
@@ -1020,6 +1049,7 @@ class ThermalEKF:
             "residual_tau": self._residual_tau,
             "residual_tau_n": self._residual_tau_n,
             "confidence_history": self.confidence_history,
+            "forecast_error": {"day": self._err_day, "sum": self._err_sum, "n": self._err_n},
         }
 
     def boost_covariance(self, factor: float = 2.5, floor_frac: float = 0.3) -> None:
@@ -1086,10 +1116,20 @@ class ThermalEKF:
         history = data.get("confidence_history")
         if isinstance(history, list):
             ekf._confidence_history = [
-                [e[0], float(e[1]), int(e[2]), bool(e[3])]
+                _load_history_entry(e)
                 for e in history
-                if isinstance(e, list) and len(e) == 4 and isinstance(e[0], str) and isinstance(e[1], (int, float))
+                if isinstance(e, list) and len(e) >= 4 and isinstance(e[0], str) and isinstance(e[1], (int, float))
             ][-CONFIDENCE_HISTORY_DAYS:]
+        err = data.get("forecast_error")
+        if (
+            isinstance(err, dict)
+            and isinstance(err.get("day"), str)
+            and isinstance(err.get("sum"), (int, float))
+            and isinstance(err.get("n"), int)
+        ):
+            ekf._err_day = err["day"]
+            ekf._err_sum = float(err["sum"])
+            ekf._err_n = err["n"]
         # Recovery migrations for models with alpha pegged at the upper bound.
         # Such models cannot escape on their own: 4-sigma anomaly detection
         # soft-rejects the large innovations and cross-covariance pulls alpha
@@ -1316,14 +1356,15 @@ class RoomModelManager:
         """Fold one fitted afterglow decay time into *area_id*'s learned one."""
         self.get_estimator(area_id).update_residual_tau(sample, profile_tau)
 
-    def boost_learning(self, area_id: str) -> int:
+    def boost_learning(self, area_id: str) -> int | None:
         """Boost covariance for *area_id* to accelerate re-learning.
 
-        Returns the current ``n_updates`` (used as cooldown anchor).
+        Returns the current ``n_updates`` (the anchor the frontend counts the fade from),
+        None when the room has no model yet.
         """
         est = self._estimators.get(area_id)
         if est is None:
-            return 0
+            return None
         est.boost_covariance()
         return est._n_updates
 
