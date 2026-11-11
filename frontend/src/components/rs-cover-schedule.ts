@@ -2,110 +2,54 @@ import { html, css, nothing } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import type { CoverScheduleEntry } from "../types";
 import { localize } from "../utils/localize";
+import { formatPercent } from "../utils/format";
+import { showToast } from "../utils/toast";
 import { RsScheduleBase } from "./shared/rs-schedule-base";
 import { inputStyles } from "../styles/input-styles";
+import { tokens } from "../styles/tokens";
+import "./shared/rs-list-row";
+import "./shared/rs-segmented";
 
+/** Cover schedules of a room (edit mode only): order, mode per schedule, selector. */
 @customElement("rs-cover-schedule")
 export class RsCoverSchedule extends RsScheduleBase {
   @property({ attribute: false }) public schedules: CoverScheduleEntry[] = [];
 
   static styles = [
+    tokens,
     RsScheduleBase.sharedStyles,
     inputStyles,
     css`
-      .pos-badge {
-        font-size: 0.8em;
-        padding: 1px 6px;
-        border-radius: 10px;
-        background: var(--primary-color);
-        color: var(--text-primary-color);
-        flex-shrink: 0;
-      }
-      .gate-badge {
-        font-size: 0.8em;
-        padding: 1px 6px;
-        border-radius: 10px;
-        background: var(--accent-color, var(--primary-color));
-        color: var(--text-primary-color);
-        opacity: 0.8;
-        flex-shrink: 0;
-      }
-      .mode-row {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 8px;
-        padding: 4px 0 0;
-      }
-      @media (max-width: 480px) {
-        .mode-row {
-          grid-template-columns: 1fr;
-        }
-      }
-      .mode-option {
+      .entries {
         display: flex;
-        align-items: center;
-        gap: 8px;
-        padding: 6px 12px;
-        font-size: 13px;
-        cursor: pointer;
-        color: var(--primary-text-color);
-        border: 1px solid var(--divider-color);
-        border-radius: 8px;
-        background: var(--card-background-color);
-        transition:
-          border-color 0.15s ease,
-          background 0.15s ease;
+        flex-direction: column;
+        gap: var(--rs-space-2);
+        margin-bottom: var(--rs-space-3);
       }
-      .mode-option.active {
-        border-color: color-mix(in srgb, var(--primary-color) 40%, transparent);
-        background: color-mix(in srgb, var(--primary-color) 8%, transparent);
+
+      .entries rs-list-row {
+        margin-inline: calc(-1 * var(--rs-form-inline, 16px));
+        --rs-list-row-padding: var(--rs-form-inline, 16px);
+      }
+
+      .entries rs-list-row.unreachable {
+        opacity: 0.6;
+      }
+
+      rs-segmented {
+        display: block;
+        padding-inline-start: calc(40px + var(--rs-space-4));
+      }
+
+      @container (max-width: 520px) {
+        rs-segmented {
+          padding-inline-start: 0;
+        }
       }
     `,
   ];
 
   render() {
-    return this.editing ? this._renderEdit() : this._renderView();
-  }
-
-  private _renderView() {
-    const l = this.hass.language;
-    if (this.schedules.length === 0) return nothing;
-
-    const hasMultiple = this.schedules.length >= 2;
-
-    return html`
-      <div class="schedule-list">
-        ${this.schedules.map((entry, index) => {
-          const state = this._getScheduleState(index, this.schedules.length);
-          const isGate = entry.mode === "gate";
-          const pos = !isGate ? this._getBlockPosition(entry.entity_id) : null;
-          return html`
-            <div class="schedule-row ${state}">
-              ${hasMultiple ? html`<span class="schedule-number">${index + 1}</span>` : nothing}
-              <span class="schedule-status-dot"></span>
-              <span
-                class="schedule-name schedule-link"
-                @click=${() => this._openEntityInfo(entry.entity_id)}
-                >${this._getFriendlyName(entry.entity_id)}</span
-              >
-              ${
-                isGate
-                  ? html`<span class="gate-badge"
-                      >${localize("covers.schedule_mode_gate_short", l)}</span
-                    >`
-                  : pos !== null
-                    ? html`<span class="pos-badge">${pos}%</span>`
-                    : nothing
-              }
-              <span class="schedule-status">${this._statusText(state, l)}</span>
-            </div>
-          `;
-        })}
-      </div>
-    `;
-  }
-
-  private _renderEdit() {
     const l = this.hass.language;
     const count = this.schedules.length;
     const usedIds = new Set(this.schedules.map((s) => s.entity_id));
@@ -113,69 +57,9 @@ export class RsCoverSchedule extends RsScheduleBase {
     return html`
       ${
         count > 0
-          ? html`
-              <div class="schedule-list">
-                ${this.schedules.map((entry, index) => {
-                  const state = this._getScheduleState(index, count);
-                  return html`
-                    <div class="schedule-row ${state}">
-                      ${
-                        count >= 2
-                          ? html`<span class="schedule-number">${index + 1}</span>`
-                          : nothing
-                      }
-                      <span class="schedule-status-dot"></span>
-                      <span class="schedule-name">${this._getFriendlyName(entry.entity_id)}</span>
-                      <span class="schedule-status">${this._statusText(state, l)}</span>
-                      ${this._renderScheduleControls(
-                        index,
-                        count,
-                        (i, dir) => this._moveSchedule(i, dir),
-                        (i) => this._removeSchedule(i),
-                        this._getFriendlyName(entry.entity_id),
-                      )}
-                    </div>
-                    <div class="mode-row">
-                      <div
-                        class="mode-option ${(entry.mode ?? "force") === "force" ? "active" : ""}"
-                        role="radio"
-                        tabindex="0"
-                        aria-checked=${(entry.mode ?? "force") === "force"}
-                        @click=${() => this._updateMode(index, "force")}
-                        @keydown=${(e: KeyboardEvent) => {
-                          if (e.key === "Enter" || e.key === " ") {
-                            e.preventDefault();
-                            this._updateMode(index, "force");
-                          }
-                        }}
-                      >
-                        <ha-radio
-                          .checked=${(entry.mode ?? "force") === "force"}
-                          tabindex="-1"
-                        ></ha-radio>
-                        ${localize("covers.schedule_mode_force", l)}
-                      </div>
-                      <div
-                        class="mode-option ${entry.mode === "gate" ? "active" : ""}"
-                        role="radio"
-                        tabindex="0"
-                        aria-checked=${entry.mode === "gate"}
-                        @click=${() => this._updateMode(index, "gate")}
-                        @keydown=${(e: KeyboardEvent) => {
-                          if (e.key === "Enter" || e.key === " ") {
-                            e.preventDefault();
-                            this._updateMode(index, "gate");
-                          }
-                        }}
-                      >
-                        <ha-radio .checked=${entry.mode === "gate"} tabindex="-1"></ha-radio>
-                        ${localize("covers.schedule_mode_gate", l)}
-                      </div>
-                    </div>
-                  `;
-                })}
-              </div>
-            `
+          ? html`<div class="entries">
+              ${this.schedules.map((entry, index) => this._renderEntry(entry, index, count))}
+            </div>`
           : nothing
       }
       ${this._renderAddRow(
@@ -194,14 +78,61 @@ export class RsCoverSchedule extends RsScheduleBase {
     `;
   }
 
-  // ─── Helpers ────────────────────────────────────────────────────
+  private _renderEntry(entry: CoverScheduleEntry, index: number, count: number) {
+    const l = this.hass.language;
+    const state = this._getScheduleState(index, count);
+    const name = this._getFriendlyName(entry.entity_id);
+    const mode = entry.mode ?? "force";
+    const pos = mode === "force" ? this._getBlockPosition(entry.entity_id) : null;
+    const secondary = [
+      count >= 2 ? `#${index + 1}` : "",
+      this._statusText(state, l),
+      pos !== null ? formatPercent(pos, this.hass) : "",
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    return html`<div>
+      <rs-list-row
+        class=${state}
+        single-line
+        icon="mdi:calendar-clock"
+        icon-label=${localize("detail.more_info", l)}
+        .heading=${name}
+        .secondary=${secondary}
+        .status=${state === "active" ? "on" : "off"}
+        @icon-click=${() => this._openEntityInfo(entry.entity_id)}
+      >
+        <span slot="end"
+          >${this._renderScheduleControls(
+            index,
+            count,
+            (i, dir) => this._moveSchedule(i, dir),
+            (i) => this._removeSchedule(i),
+            name,
+          )}</span
+        >
+      </rs-list-row>
+      <rs-segmented
+        wrap
+        size="sm"
+        .label=${name}
+        .options=${[
+          { value: "force", label: localize("covers.schedule_mode_force", l) },
+          { value: "gate", label: localize("covers.schedule_mode_gate", l) },
+        ]}
+        .value=${mode}
+        @value-changed=${(e: CustomEvent<{ value: string }>) =>
+          this._updateMode(index, e.detail.value as "force" | "gate")}
+      ></rs-segmented>
+    </div>`;
+  }
 
-  /** Read position from schedule entity's active block data attribute. */
+  /** Position from the schedule's running block (`position` in its data). */
   private _getBlockPosition(entityId: string): number | null {
     const st = this.hass?.states?.[entityId];
     if (!st || st.state !== "on") return null;
     const pos = st.attributes?.position;
-    return pos != null ? Number(pos) : null;
+    return pos != null && Number.isFinite(Number(pos)) ? Number(pos) : null;
   }
 
   private _statusText(state: "active" | "inactive" | "unreachable", l: string): string {
@@ -210,14 +141,19 @@ export class RsCoverSchedule extends RsScheduleBase {
     return localize("covers.schedule_state_inactive", l);
   }
 
-  // ─── Schedule management ─────────────────────────────────────────
-
   private _addSchedule(entityId: string) {
     this._emitSchedules([...this.schedules, { entity_id: entityId, mode: "force" }]);
   }
 
+  /** Removing asks nothing and offers Undo instead, like the room's schedules. */
   private _removeSchedule(index: number) {
-    this._emitSchedules(this.schedules.filter((_, i) => i !== index));
+    const before = this.schedules;
+    const name = this._getFriendlyName(before[index].entity_id);
+    this._emitSchedules(before.filter((_, i) => i !== index));
+    const l = this.hass.language;
+    showToast(this, localize("covers.schedule_removed", l, { name }), l, () =>
+      this._emitSchedules(before),
+    );
   }
 
   private _moveSchedule(index: number, direction: -1 | 1) {

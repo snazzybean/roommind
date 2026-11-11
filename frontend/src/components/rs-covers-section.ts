@@ -1,18 +1,22 @@
-import { LitElement, html, css, nothing, type PropertyValues } from "lit";
+import { LitElement, html, css, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import type { HomeAssistant, HassArea, CoverScheduleEntry } from "../types";
 import { localize, type TranslationKey } from "../utils/localize";
 import { formatClock, getEntitiesForArea } from "../utils/room-state";
 import { getSelectValue, openEntityInfo } from "../utils/events";
 import { formatPercent } from "../utils/format";
-import { masterDetailStyles } from "../styles/master-detail-styles";
 import { inputStyles } from "../styles/input-styles";
-import "./shared/rs-toggle-row";
+import { formStyles } from "../styles/form-styles";
+import { tokens } from "../styles/tokens";
 import "./shared/rs-number-field";
-import "./shared/rs-master-detail";
+import "./shared/rs-field";
+import "./shared/rs-icon-button";
 import "./shared/rs-info-icon";
 import "./rs-cover-schedule";
 import "./shared/rs-list-row";
+
+/** ha-select shows an empty value as no choice; "any direction" is a real one. */
+const ANY_DIRECTION = "any";
 
 @customElement("rs-covers-section")
 export class RsCoverSection extends LitElement {
@@ -41,245 +45,65 @@ export class RsCoverSection extends LitElement {
   @property({ type: Number }) public nightCloseOffsetMinutes = 0;
   @property({ type: Number }) public outdoorMinTemp: number | null = 10;
   @property({ attribute: false }) public coverMinPositions: Record<string, number> = {};
-  @state() private _selectedForEdit = "";
-  @state() private _scheduleCollapsed = true;
-  @state() private _solarCollapsed = true;
-
-  protected willUpdate(changed: PropertyValues): void {
-    if (changed.has("selectedCovers")) {
-      if (this._selectedForEdit && !this.selectedCovers.has(this._selectedForEdit)) {
-        this._selectedForEdit = "";
-      }
-      if (!this._selectedForEdit && this.selectedCovers.size > 0) {
-        this._selectedForEdit = [...this.selectedCovers][0];
-      }
-    }
-  }
+  /** The entity picker for covers from other areas is open. */
+  @state() private _pickerOpen = false;
 
   static styles = [
-    masterDetailStyles,
+    tokens,
     inputStyles,
+    formStyles,
     css`
       :host {
         display: block;
+        --rs-form-inline: var(--rs-space-4);
+        container-type: inline-size;
       }
 
-      /* Tile view rows (match rs-sensor-section visual rhythm) */
-
-      /* Device-row style (matches rs-device-section) */
-      .device-list-scroll {
-        max-height: 210px;
-        overflow-y: auto;
-      }
-      .device-row {
-        display: flex;
-        align-items: center;
-        padding: 4px 0;
-        margin-bottom: 2px;
-        border-radius: 8px;
-        transition: background 0.15s;
-      }
-      .device-row:hover {
-        background: color-mix(in srgb, var(--secondary-text-color) 5%, transparent);
-      }
-      .device-row.selected {
-        background: color-mix(in srgb, var(--primary-color) 6%, transparent);
-      }
-      .device-row ha-checkbox {
-        flex-shrink: 0;
-      }
-      .device-info {
-        flex: 1;
-        min-width: 0;
-      }
-      .device-name-row {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-      }
-      .device-name {
-        font-size: 14px;
-        font-weight: 450;
-      }
-      .device-value {
-        margin-left: auto;
-        font-size: 13px;
-        font-weight: 500;
-        padding-right: 4px;
-        white-space: nowrap;
-      }
-      .device-entity {
-        font-family: var(--code-font-family, monospace);
-        font-size: 11px;
-        color: var(--secondary-text-color);
-        opacity: 0.7;
-      }
-      .external-badge {
-        display: inline-flex;
-        align-items: center;
-        font-size: 10px;
-        font-weight: 500;
-        color: var(--secondary-text-color);
-        background: var(--divider-color, rgba(0, 0, 0, 0.06));
-        padding: 1px 6px;
-        border-radius: 4px;
-        white-space: nowrap;
-      }
-      .no-devices {
-        color: var(--secondary-text-color);
-        font-size: 13px;
-        padding: 8px 0;
-      }
-
-      .entity-picker-wrap {
-        margin-top: 8px;
-      }
-      ha-entity-picker {
-        width: 100%;
-      }
-      .settings-group {
-        margin-top: 16px;
+      .rows {
         display: flex;
         flex-direction: column;
-        gap: 12px;
       }
-      .sub-section {
-        margin-top: 20px;
-        display: flex;
-        flex-direction: column;
-        gap: 12px;
+
+      .cover + .cover {
+        margin-top: var(--rs-space-2);
       }
-      .sub-section:first-child {
-        margin-top: 8px;
+
+      /* the cover's own settings line up under its name */
+      .cover .pair {
+        padding-inline-start: calc(40px + var(--rs-space-4));
+        margin-bottom: var(--rs-space-2);
       }
-      .sub-section-header {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        font-size: 13px;
-        font-weight: 500;
-        color: var(--secondary-text-color);
-        text-transform: uppercase;
-        letter-spacing: 0.3px;
-        padding-bottom: 4px;
-        border-bottom: 1px solid var(--divider-color, rgba(0, 0, 0, 0.12));
-      }
-      .sub-section-header ha-icon {
-        --mdc-icon-size: 18px;
-      }
-      .field-row {
+
+      .pair {
         display: grid;
         grid-template-columns: 1fr 1fr;
-        gap: 12px;
+        gap: var(--rs-space-3);
       }
-      @media (max-width: 450px) {
-        .field-row {
+
+      @container (max-width: 520px) {
+        .pair {
           grid-template-columns: 1fr;
         }
-      }
-      .pill {
-        font-size: 10px;
-        font-weight: 500;
-        padding: 1px 6px;
-        border-radius: 10px;
-        background: var(--divider-color, rgba(0, 0, 0, 0.08));
-        color: var(--secondary-text-color);
-        white-space: nowrap;
+
+        .cover .pair {
+          padding-inline-start: 0;
+        }
       }
 
-      /* Editing layout — feature card + grouped sections */
-      .feature-card {
+      .picker {
         display: flex;
         align-items: center;
-        gap: 14px;
-        padding: 14px 16px;
-        border: 1px solid var(--divider-color);
-        border-radius: 12px;
-        background: var(--card-background-color);
-        transition:
-          border-color 0.2s ease,
-          background 0.2s ease;
+        gap: var(--rs-space-2);
       }
 
-      .feature-card.enabled {
-        border-color: color-mix(in srgb, var(--primary-color) 40%, transparent);
-        background: color-mix(in srgb, var(--primary-color) 6%, transparent);
-      }
-
-      .feature-text {
+      .picker ha-entity-picker {
         flex: 1;
         min-width: 0;
       }
 
-      .feature-title {
-        font-size: 14px;
-        font-weight: 500;
-        margin: 0 0 4px;
-      }
-
-      .feature-description {
-        font-size: 12px;
-        color: var(--secondary-text-color);
-        line-height: 1.5;
-        margin: 0;
-      }
-
-      .feature-card ha-switch {
-        flex-shrink: 0;
-      }
-
-      .group-card {
-        margin-top: 16px;
-        border: 1px solid var(--divider-color);
-        border-radius: 12px;
-        background: var(--card-background-color);
-        padding: 14px 16px;
-        display: flex;
-        flex-direction: column;
-        gap: 12px;
-      }
-
-      .group-header {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        font-size: 12px;
-        font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 0.4px;
-        color: var(--secondary-text-color);
-        cursor: pointer;
-        user-select: none;
-      }
-
-      .group-header > span:first-of-type {
-        flex: 1;
-        min-width: 0;
-      }
-
-      .group-header ha-icon {
+      .group-title ha-icon {
         --mdc-icon-size: 18px;
-        color: var(--secondary-text-color);
-      }
-
-      .group-header .chevron {
-        transition: transform 0.2s ease;
-        margin-left: auto;
-      }
-
-      .group-header .chevron.collapsed {
-        transform: rotate(-90deg);
-      }
-
-      .group-card.collapsed {
-        gap: 0;
-        padding-bottom: 14px;
-      }
-
-      .group-divider {
-        height: 1px;
-        background: var(--divider-color);
-        margin: 4px -16px;
+        margin-inline-end: var(--rs-space-1);
       }
     `,
   ];
@@ -307,7 +131,17 @@ export class RsCoverSection extends LitElement {
     else if (this.forcedReason === "schedule_active")
       status = localize("covers.schedule_active", l);
     else if (this.forcedReason === "night_close") status = localize("covers.night_close_active", l);
-    else if (this.autoEnabled) status = localize("covers.shading_active", l);
+    else if (this.autoEnabled && !this.autoPaused) {
+      // Shading is what the covers do, not that the automation is on
+      const positions = covers
+        .map((eid) => this.hass.states[eid]?.attributes?.current_position)
+        .filter((p): p is number => typeof p === "number");
+      if (positions.length)
+        status = localize(
+          positions.some((p) => p < 100) ? "covers.shading_active" : "covers.no_shading",
+          l,
+        );
+    }
     return html`
       ${covers.map((eid) => {
         const st = this.hass.states[eid];
@@ -377,383 +211,321 @@ export class RsCoverSection extends LitElement {
     return id.startsWith("cover.") && !this.selectedCovers.has(id);
   };
 
-  private _renderMasterRow(entityId: string, external: boolean) {
-    const isInRoom = this.selectedCovers.has(entityId);
-    const isFocused = this._selectedForEdit === entityId;
-    const entityState = this.hass.states[entityId];
-    const friendlyName = (entityState?.attributes?.friendly_name as string) || entityId;
-    const pos = entityState?.attributes?.current_position as number | undefined;
-    const l = this.hass.language;
-    const orient = this.coverOrientations[entityId];
-    const orientDir =
-      orient !== undefined ? RsCoverSection._DIRECTIONS.find((d) => d.deg === orient) : undefined;
-    const orientLabel = orientDir ? localize(orientDir.shortLabel, l) : "";
-    const minPos = this.coverMinPositions[entityId];
-
-    return html`
-      <div
-        class="master-row ${isFocused ? "focused" : ""}"
-        @click=${() => (this._selectedForEdit = entityId)}
-      >
-        <ha-checkbox
-          .checked=${isInRoom}
-          @click=${(e: Event) => e.stopPropagation()}
-          @change=${(e: Event) => {
-            const target = e.target as HTMLElement & { checked: boolean };
-            this._onToggle(entityId, target.checked);
-            if (target.checked) this._selectedForEdit = entityId;
-          }}
-        ></ha-checkbox>
-        <div class="master-info">
-          <div class="master-name-row">
-            <span class="master-name">${friendlyName}</span>
-            ${
-              external
-                ? html`<span class="external-badge">${localize("devices.other_area", l)}</span>`
-                : nothing
-            }
-          </div>
-          <div class="master-meta">
-            ${orientLabel ? html`<span class="meta-pill">${orientLabel}</span>` : nothing}
-            ${
-              minPos !== undefined && minPos > 0
-                ? html`<span class="meta-pill">min ${minPos}%</span>`
-                : nothing
-            }
-            ${
-              pos !== undefined
-                ? html`<span class="meta-pill" style="color: var(--primary-color);">${pos}%</span>`
-                : nothing
-            }
-          </div>
-        </div>
-      </div>
-    `;
+  private _name(entityId: string): string {
+    return (this.hass.states[entityId]?.attributes?.friendly_name as string) || entityId;
   }
 
-  private _renderCoverDetail(entityId: string) {
-    const l = this.hass.language;
-    const entityState = this.hass.states[entityId];
-    const friendlyName = (entityState?.attributes?.friendly_name as string) || entityId;
-    const currentOrientation = this.coverOrientations[entityId];
-    const currentMin = this.coverMinPositions[entityId];
+  private _position(entityId: string): string {
+    const pos = this.hass.states[entityId]?.attributes?.current_position as number | undefined;
+    return pos !== undefined ? formatPercent(pos, this.hass) : "";
+  }
 
-    return html`
-      <div class="detail-head">
-        <div class="detail-title">${friendlyName}</div>
-        <div class="detail-entity-id">${entityId}</div>
-      </div>
-      <div class="detail-field">
-        <ha-select
-          .label=${localize("covers.orientation_group_title", l)}
-          .value=${currentOrientation !== undefined ? String(currentOrientation) : ""}
-          .options=${[
-            { value: "", label: localize("covers.orientation_none", l) },
-            ...RsCoverSection._DIRECTIONS.map((d) => ({
-              value: String(d.deg),
-              label: localize(d.longLabel, l),
-            })),
-          ]}
-          fixedMenuPosition
-          @selected=${(e: Event) => {
-            const val = getSelectValue(e);
-            this._setOrientation(entityId, val === "" ? undefined : Number(val));
-          }}
-          @closed=${(e: Event) => e.stopPropagation()}
-        >
-          <ha-list-item value="">${localize("covers.orientation_none", l)}</ha-list-item>
-          ${RsCoverSection._DIRECTIONS.map(
-            (d) => html`
-              <ha-list-item value=${String(d.deg)}>${localize(d.longLabel, l)}</ha-list-item>
-            `,
-          )}
-        </ha-select>
-      </div>
-      <div class="detail-field">
+  /** One cover of the room: the row, then its own direction and lowest position. */
+  private _renderCover(entityId: string, inArea: boolean) {
+    const l = this.hass.language;
+    const name = this._name(entityId);
+    const orientation = this.coverOrientations[entityId];
+    return html`<div class="cover">
+      <rs-list-row
+        single-line
+        icon="mdi:blinds-horizontal"
+        icon-label=${localize("detail.more_info", l)}
+        .heading=${name}
+        .secondary=${[entityId, inArea ? "" : localize("devices.other_area", l)]
+          .filter(Boolean)
+          .join(" · ")}
+        .value=${this._position(entityId)}
+        @icon-click=${() => openEntityInfo(this, entityId)}
+      >
+        <rs-icon-button
+          slot="end"
+          size="sm"
+          icon="mdi:close"
+          .label=${localize("common.remove_named", l, { name })}
+          @click=${() => this._onToggle(entityId, false)}
+        ></rs-icon-button>
+      </rs-list-row>
+      <div class="pair">
+        <rs-field .info=${localize("covers.orientation_hint", l)}>
+          <ha-select
+            .label=${localize("covers.orientation_group_title", l)}
+            .value=${orientation !== undefined ? String(orientation) : ANY_DIRECTION}
+            .options=${[
+              { value: ANY_DIRECTION, label: localize("covers.orientation_none", l) },
+              ...RsCoverSection._DIRECTIONS.map((d) => ({
+                value: String(d.deg),
+                label: localize(d.longLabel, l),
+              })),
+            ]}
+            fixedMenuPosition
+            @selected=${(e: Event) => {
+              const val = getSelectValue(e);
+              const next = val === ANY_DIRECTION || val === "" ? undefined : Number(val);
+              if (next !== orientation) this._setOrientation(entityId, next);
+            }}
+            @closed=${(e: Event) => e.stopPropagation()}
+          >
+            <ha-list-item value=${ANY_DIRECTION}
+              >${localize("covers.orientation_none", l)}</ha-list-item
+            >
+            ${RsCoverSection._DIRECTIONS.map(
+              (d) =>
+                html`<ha-list-item value=${String(d.deg)}
+                  >${localize(d.longLabel, l)}</ha-list-item
+                >`,
+            )}
+          </ha-select>
+        </rs-field>
         <rs-number-field
           .label=${localize("covers.per_cover_min_position", l)}
-          .value=${currentMin ?? 0}
+          .info=${localize("covers.per_cover_min_position_hint", l)}
+          .value=${this.coverMinPositions[entityId] ?? 0}
           .min=${0}
           .max=${99}
-          .step=${1}
           suffix="%"
-          @value-changed=${(e: CustomEvent<{ value: number }>) => this._setMinPosition(entityId, e.detail.value)}
+          @value-changed=${(e: CustomEvent<{ value: number }>) =>
+            this._setMinPosition(entityId, e.detail.value)}
         ></rs-number-field>
       </div>
-    `;
+    </div>`;
+  }
+
+  private _renderPicker() {
+    const l = this.hass.language;
+    if (!this._pickerOpen) {
+      return html`<rs-list-row
+        clickable
+        plain-icon
+        variant="primary"
+        icon="mdi:magnify"
+        .heading=${localize("sensors.choose_other", l)}
+        @row-click=${() => {
+          this._pickerOpen = true;
+          void this.updateComplete.then(() => {
+            const picker = this.renderRoot.querySelector<HTMLElement & { open?: () => void }>(
+              "ha-entity-picker",
+            );
+            if (typeof picker?.open === "function") picker.open();
+            else picker?.focus();
+          });
+        }}
+      ></rs-list-row>`;
+    }
+    return html`<div class="picker">
+      <ha-entity-picker
+        .hass=${this.hass}
+        .includeDomains=${["cover"]}
+        .entityFilter=${this._entityFilter}
+        .value=${""}
+        .label=${localize("sensors.choose_other", l)}
+        @value-changed=${this._onEntityPicked}
+      ></ha-entity-picker>
+      <rs-icon-button
+        size="sm"
+        icon="mdi:close"
+        .label=${localize("common.close", l)}
+        @click=${() => {
+          this._pickerOpen = false;
+        }}
+      ></rs-icon-button>
+    </div>`;
+  }
+
+  private _switchRow(key: string, heading: TranslationKey, info: TranslationKey, checked: boolean) {
+    const l = this.hass.language;
+    return html`<rs-list-row
+      switch
+      wrap
+      .heading=${localize(heading, l)}
+      .checked=${checked}
+      @toggle-changed=${(e: CustomEvent<boolean>) => this._emit(key, e.detail)}
+    >
+      <rs-info-icon slot="end" .text=${localize(info, l)}></rs-info-icon>
+    </rs-list-row>`;
   }
 
   private _renderEdit(l: string) {
-    // Discover cover entities in this area
-    // Exclude RoomMind's own entities to prevent self-assignment (#86)
-    const allAreaEntities = getEntitiesForArea(
+    // RoomMind's own entities never count as covers of the room (#86)
+    const areaCoverIds = getEntitiesForArea(
       this.area.area_id,
       this.hass?.entities,
       this.hass?.devices,
-    ).filter((e) => {
-      const idAfterDot = e.entity_id.substring(e.entity_id.indexOf(".") + 1);
-      return !idAfterDot.startsWith("roommind_");
-    });
-    const areaCoverEntities = allAreaEntities.filter((e) => e.entity_id.startsWith("cover."));
-    const areaCoverIds = new Set(areaCoverEntities.map((e) => e.entity_id));
-
-    // Find selected covers not in this area (externally added)
-    const externalCoverIds = [...this.selectedCovers].filter((id) => !areaCoverIds.has(id));
-
-    const hasAnySelected = this.selectedCovers.size > 0;
-
-    const detailId = this._selectedForEdit;
-    const detailInRoom = detailId && this.selectedCovers.has(detailId);
+    )
+      .map((e) => e.entity_id)
+      .filter((id) => id.startsWith("cover.") && !id.startsWith("cover.roommind_"));
+    const selected = [...this.selectedCovers];
+    const suggestions = areaCoverIds.filter((id) => !this.selectedCovers.has(id));
 
     return html`
-      <rs-master-detail>
-        <div slot="master" class="master">
-          <div class="block-title">${localize("covers.add_cover", l)}</div>
-          <div class="master-list">
-            ${
-              areaCoverEntities.length > 0
-                ? areaCoverEntities.map((e) => this._renderMasterRow(e.entity_id, false))
-                : html`<div class="empty-list">${localize("covers.no_covers_in_area", l)}</div>`
-            }
-            ${externalCoverIds.map((id) => this._renderMasterRow(id, true))}
-          </div>
-          <div class="picker-wrap">
-            <ha-entity-picker
-              .hass=${this.hass}
-              .includeDomains=${["cover"]}
-              .entityFilter=${this._entityFilter}
-              .value=${""}
-              .label=${localize("covers.add_cover", l)}
-              @value-changed=${this._onEntityPicked}
-            ></ha-entity-picker>
-          </div>
+      <section class="group">
+        <div class="rows">
+          ${selected.map((id) => this._renderCover(id, areaCoverIds.includes(id)))}
+          ${selected.length ? nothing : html`<p class="note">${localize("covers.no_covers", l)}</p>`}
+          ${suggestions.map(
+            (id) =>
+              html`<rs-list-row
+                clickable
+                plain-icon
+                icon="mdi:plus"
+                .heading=${this._name(id)}
+                .secondary=${localize("detail.devices.add_suggestion", l)}
+                .value=${this._position(id)}
+                @row-click=${() => this._onToggle(id, true)}
+              ></rs-list-row>`,
+          )}
+          ${this._renderPicker()}
         </div>
-        <div slot="detail">
-          ${
-            detailInRoom
-              ? html`<div class="detail-panel">${this._renderCoverDetail(detailId)}</div>`
-              : html`<div class="detail-panel">
-                  <div class="empty-detail">
-                    <ha-icon icon="mdi:gesture-tap"></ha-icon>
-                    <span>${localize("devices.select_to_configure", l)}</span>
-                  </div>
-                </div>`
-          }
-        </div>
-      </rs-master-detail>
+      </section>
+      ${selected.length ? this._renderAutomation(l) : nothing}
+    `;
+  }
 
+  private _renderAutomation(l: string) {
+    return html`
+      <section class="group">
+        ${this._switchRow(
+          "covers_auto_enabled",
+          "covers.auto_control",
+          "covers.auto_control_hint",
+          this.autoEnabled,
+        )}
+        ${
+          this.autoEnabled && (this.hasWindowSensors || this.windowHold)
+            ? this._switchRow(
+                "covers_window_hold",
+                "covers.window_hold",
+                "covers.window_hold_hint",
+                this.windowHold,
+              )
+            : nothing
+        }
+      </section>
+      ${this.autoEnabled ? html`${this._renderScheduleGroup(l)} ${this._renderSolarGroup(l)}` : nothing}
+    `;
+  }
+
+  private _renderScheduleGroup(l: string) {
+    return html`<section class="group">
+      <h4 class="group-title">
+        <ha-icon icon="mdi:calendar-clock" aria-hidden="true"></ha-icon>
+        ${localize("covers.schedule_group_title", l)}
+        <rs-info-icon .text=${localize("covers.schedule_section_hint", l)}></rs-info-icon>
+      </h4>
+      <rs-cover-schedule
+        .hass=${this.hass}
+        .schedules=${this.coverSchedules}
+        .selectorEntity=${this.coverScheduleSelectorEntity}
+        .activeIndex=${this.activeCoverScheduleIndex}
+        .editing=${true}
+        @cover-schedules-changed=${(e: CustomEvent) => this._emit("cover_schedules", e.detail.value)}
+        @cover-schedule-selector-changed=${(e: CustomEvent) =>
+          this._emit("cover_schedule_selector_entity", e.detail.value)}
+      ></rs-cover-schedule>
+      ${this._switchRow(
+        "covers_night_close",
+        "covers.night_close",
+        "covers.night_close_hint",
+        this.nightClose,
+      )}
       ${
-        hasAnySelected
-          ? html`
-              <div class="block-divider"></div>
-              <div class="feature-card ${this.autoEnabled ? "enabled" : ""}">
-                <div class="feature-text">
-                  <div class="feature-title">${localize("covers.auto_control", l)}</div>
-                  <div class="feature-description">${localize("covers.auto_control_hint", l)}</div>
-                </div>
-                <ha-switch
-                  .checked=${this.autoEnabled}
-                  @change=${(e: Event) =>
-                    this._emit("covers_auto_enabled", (e.target as HTMLInputElement).checked)}
-                ></ha-switch>
-              </div>
-
-              ${
-                this.autoEnabled && (this.hasWindowSensors || this.windowHold)
-                  ? html`
-                      <div class="group-card">
-                        <rs-toggle-row
-                          .label=${localize("covers.window_hold", l)}
-                          .hint=${localize("covers.window_hold_hint", l)}
-                          .checked=${this.windowHold}
-                          @toggle-changed=${(e: CustomEvent) =>
-                            this._emit("covers_window_hold", e.detail)}
-                        ></rs-toggle-row>
-                      </div>
-                    `
-                  : nothing
-              }
-              ${
-                this.autoEnabled
-                  ? html`
-                      <div class="group-card ${this._scheduleCollapsed ? "collapsed" : ""}">
-                        <div
-                          class="group-header"
-                          @click=${() => (this._scheduleCollapsed = !this._scheduleCollapsed)}
-                        >
-                          <ha-icon icon="mdi:calendar-clock"></ha-icon>
-                          <span>${localize("covers.schedule_group_title", l)}</span>
-                          <rs-info-icon
-                            .text=${localize("covers.schedule_section_hint", l)}
-                          ></rs-info-icon>
-                          <ha-icon
-                            class="chevron ${this._scheduleCollapsed ? "collapsed" : ""}"
-                            icon="mdi:chevron-down"
-                          ></ha-icon>
-                        </div>
-                        ${
-                          this._scheduleCollapsed
-                            ? nothing
-                            : html`<rs-cover-schedule
-                                  .hass=${this.hass}
-                                  .schedules=${this.coverSchedules}
-                                  .selectorEntity=${this.coverScheduleSelectorEntity}
-                                  .activeIndex=${this.activeCoverScheduleIndex}
-                                  .editing=${true}
-                                  @cover-schedules-changed=${(e: CustomEvent) =>
-                                    this._emit("cover_schedules", e.detail.value)}
-                                  @cover-schedule-selector-changed=${(e: CustomEvent) =>
-                                    this._emit("cover_schedule_selector_entity", e.detail.value)}
-                                ></rs-cover-schedule>
-                                <div class="group-divider"></div>
-                                <rs-toggle-row
-                                  .label=${localize("covers.night_close", l)}
-                                  .hint=${localize("covers.night_close_hint", l)}
-                                  .checked=${this.nightClose}
-                                  @toggle-changed=${(e: CustomEvent) =>
-                                    this._emit("covers_night_close", e.detail)}
-                                ></rs-toggle-row>
-                                ${
-                                  this.nightClose
-                                    ? html`
-                                        <rs-number-field
-                                          .label=${localize("covers.night_position", l)}
-                                          .info=${localize("covers.night_position_hint", l)}
-                                          .value=${this.nightPosition}
-                                          .min=${0}
-                                          .max=${100}
-                                          .step=${1}
-                                          suffix="%"
-                                          @value-changed=${(e: CustomEvent<{ value: number }>) =>
-                                            this._emit("covers_night_position", e.detail.value)}
-                                        ></rs-number-field>
-                                        <ha-expansion-panel
-                                          .header=${localize("covers.night_close_advanced", l)}
-                                          outlined
-                                        >
-                                          <div class="field-row" style="padding:8px 0;">
-                                            <rs-number-field
-                                              .label=${localize("covers.night_close_elevation", l)}
-                                              .info=${localize("covers.night_close_elevation_hint", l)}
-                                              .value=${this.nightCloseElevation}
-                                              .min=${-18}
-                                              .max=${10}
-                                              .step=${1}
-                                              suffix="°"
-                                              @value-changed=${(
-                                                e: CustomEvent<{ value: number }>,
-                                              ) =>
-                                                this._emit(
-                                                  "covers_night_close_elevation",
-                                                  e.detail.value,
-                                                )}
-                                            ></rs-number-field>
-                                            <rs-number-field
-                                              .label=${localize("covers.night_close_offset", l)}
-                                              .info=${localize("covers.night_close_offset_hint", l)}
-                                              .value=${this.nightCloseOffsetMinutes}
-                                              .min=${-120}
-                                              .max=${120}
-                                              .step=${1}
-                                              suffix="min"
-                                              @value-changed=${(
-                                                e: CustomEvent<{ value: number }>,
-                                              ) =>
-                                                this._emit(
-                                                  "covers_night_close_offset_minutes",
-                                                  e.detail.value,
-                                                )}
-                                            ></rs-number-field>
-                                          </div>
-                                        </ha-expansion-panel>
-                                      `
-                                    : nothing
-                                }`
-                        }
-                      </div>
-
-                      <div class="group-card ${this._solarCollapsed ? "collapsed" : ""}">
-                        <div
-                          class="group-header"
-                          @click=${() => (this._solarCollapsed = !this._solarCollapsed)}
-                        >
-                          <ha-icon icon="mdi:white-balance-sunny"></ha-icon>
-                          <span>${localize("covers.solar_group_title", l)}</span>
-                          <ha-icon
-                            class="chevron ${this._solarCollapsed ? "collapsed" : ""}"
-                            icon="mdi:chevron-down"
-                          ></ha-icon>
-                        </div>
-                        ${
-                          this._solarCollapsed
-                            ? nothing
-                            : html`<div class="field-row">
-                                  <rs-number-field
-                                    .label=${localize("covers.deploy_threshold", l)}
-                                    .info=${localize("covers.deploy_threshold_hint", l)}
-                                    .value=${this.deployThreshold}
-                                    .min=${0.5}
-                                    .max=${5.0}
-                                    .step=${0.1}
-                                    .hass=${this.hass}
-                                    kind="temperature-delta"
-                                    @value-changed=${(e: CustomEvent<{ value: number }>) =>
-                                      this._emit("covers_deploy_threshold", e.detail.value)}
-                                  ></rs-number-field>
-                                  <rs-number-field
-                                    .label=${localize("covers.min_position", l)}
-                                    .info=${localize("covers.min_position_hint", l)}
-                                    .value=${this.minPosition}
-                                    .min=${0}
-                                    .max=${80}
-                                    .step=${1}
-                                    suffix="%"
-                                    @value-changed=${(e: CustomEvent<{ value: number }>) =>
-                                      this._emit("covers_min_position", e.detail.value)}
-                                  ></rs-number-field>
-                                </div>
-                                <div class="field-row">
-                                  <rs-number-field
-                                    .label=${localize("covers.override_minutes", l)}
-                                    .info=${localize("covers.override_minutes_hint", l)}
-                                    .value=${this.overrideMinutes}
-                                    .min=${0}
-                                    .max=${480}
-                                    .step=${1}
-                                    suffix="min"
-                                    @value-changed=${(e: CustomEvent<{ value: number }>) =>
-                                      this._emit("covers_override_minutes", e.detail.value)}
-                                  ></rs-number-field>
-                                  <rs-number-field
-                                    .label=${localize("covers.outdoor_min_temp", l)}
-                                    .info=${localize("covers.outdoor_min_temp_hint", l)}
-                                    .value=${this.outdoorMinTemp ?? 10}
-                                    .min=${0}
-                                    .max=${35}
-                                    .step=${1}
-                                    .hass=${this.hass}
-                                    kind="temperature"
-                                    @value-changed=${(e: CustomEvent<{ value: number }>) =>
-                                      this._emit("covers_outdoor_min_temp", e.detail.value)}
-                                  ></rs-number-field>
-                                </div>
-                                <div class="group-divider"></div>
-                                <rs-toggle-row
-                                  .label=${localize("covers.snap_deploy", l)}
-                                  .hint=${localize("covers.snap_deploy_hint", l)}
-                                  .checked=${this.snapDeploy}
-                                  @toggle-changed=${(e: CustomEvent) =>
-                                    this._emit("covers_snap_deploy", e.detail)}
-                                ></rs-toggle-row>`
-                        }
-                      </div>
-                    `
-                  : nothing
-              }
-            `
+        this.nightClose
+          ? html`<rs-number-field
+                .label=${localize("covers.night_position", l)}
+                .info=${localize("covers.night_position_hint", l)}
+                .value=${this.nightPosition}
+                .min=${0}
+                .max=${100}
+                suffix="%"
+                @value-changed=${(e: CustomEvent<{ value: number }>) =>
+                  this._emit("covers_night_position", e.detail.value)}
+              ></rs-number-field>
+              <div class="pair">
+                <rs-number-field
+                  .label=${localize("covers.night_close_elevation", l)}
+                  .info=${localize("covers.night_close_elevation_hint", l)}
+                  .value=${this.nightCloseElevation}
+                  .min=${-18}
+                  .max=${10}
+                  suffix="°"
+                  @value-changed=${(e: CustomEvent<{ value: number }>) =>
+                    this._emit("covers_night_close_elevation", e.detail.value)}
+                ></rs-number-field>
+                <rs-number-field
+                  .label=${localize("covers.night_close_offset", l)}
+                  .info=${localize("covers.night_close_offset_hint", l)}
+                  .value=${this.nightCloseOffsetMinutes}
+                  .min=${-120}
+                  .max=${120}
+                  suffix="min"
+                  @value-changed=${(e: CustomEvent<{ value: number }>) =>
+                    this._emit("covers_night_close_offset_minutes", e.detail.value)}
+                ></rs-number-field>
+              </div>`
           : nothing
       }
-    `;
+    </section>`;
+  }
+
+  private _renderSolarGroup(l: string) {
+    return html`<section class="group">
+      <h4 class="group-title">
+        <ha-icon icon="mdi:white-balance-sunny" aria-hidden="true"></ha-icon>
+        ${localize("covers.solar_group_title", l)}
+        <rs-info-icon .text=${localize("covers.info.solar_body", l)}></rs-info-icon>
+      </h4>
+      <div class="pair">
+        <rs-number-field
+          .hass=${this.hass}
+          kind="temperature-delta"
+          .label=${localize("covers.deploy_threshold", l)}
+          .info=${localize("covers.deploy_threshold_hint", l)}
+          .value=${this.deployThreshold}
+          .min=${0.5}
+          .max=${5.0}
+          .step=${0.1}
+          @value-changed=${(e: CustomEvent<{ value: number }>) =>
+            this._emit("covers_deploy_threshold", e.detail.value)}
+        ></rs-number-field>
+        <rs-number-field
+          .label=${localize("covers.min_position", l)}
+          .info=${localize("covers.min_position_hint", l)}
+          .value=${this.minPosition}
+          .min=${0}
+          .max=${80}
+          suffix="%"
+          @value-changed=${(e: CustomEvent<{ value: number }>) =>
+            this._emit("covers_min_position", e.detail.value)}
+        ></rs-number-field>
+        <rs-number-field
+          .label=${localize("covers.override_minutes", l)}
+          .info=${localize("covers.override_minutes_hint", l)}
+          .value=${this.overrideMinutes}
+          .min=${0}
+          .max=${480}
+          suffix="min"
+          @value-changed=${(e: CustomEvent<{ value: number }>) =>
+            this._emit("covers_override_minutes", e.detail.value)}
+        ></rs-number-field>
+        <rs-number-field
+          .hass=${this.hass}
+          kind="temperature"
+          .label=${localize("covers.outdoor_min_temp", l)}
+          .info=${localize("covers.outdoor_min_temp_hint", l)}
+          .value=${this.outdoorMinTemp ?? 10}
+          .min=${0}
+          .max=${35}
+          .step=${1}
+          @value-changed=${(e: CustomEvent<{ value: number }>) =>
+            this._emit("covers_outdoor_min_temp", e.detail.value)}
+        ></rs-number-field>
+      </div>
+      ${this._switchRow(
+        "covers_snap_deploy",
+        "covers.snap_deploy",
+        "covers.snap_deploy_hint",
+        this.snapDeploy,
+      )}
+    </section>`;
   }
 
   private static readonly _DIRECTIONS: Array<{
@@ -791,10 +563,9 @@ export class RsCoverSection extends LitElement {
     ev.stopPropagation();
     const eid = ev.detail.value as string;
     if (!eid) return;
+    (ev.target as HTMLElement & { value: string }).value = "";
+    this._pickerOpen = false;
     this._onToggle(eid, true);
-    // Reset picker value
-    const picker = ev.target as HTMLElement & { value: string };
-    picker.value = "";
   }
 
   private _onToggle(eid: string, checked: boolean) {

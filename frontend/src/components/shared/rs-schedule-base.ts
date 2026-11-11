@@ -8,6 +8,7 @@ import type { HomeAssistant } from "../../types";
 import { localize } from "../../utils/localize";
 import { getSelectValue, openEntityInfo } from "../../utils/events";
 import "./rs-icon-button";
+import "./rs-field";
 
 export abstract class RsScheduleBase extends LitElement {
   @property({ attribute: false }) public hass!: HomeAssistant;
@@ -156,16 +157,6 @@ export abstract class RsScheduleBase extends LitElement {
       text-align: center;
     }
 
-    .form-label {
-      display: block;
-      font-size: 13px;
-      font-weight: 500;
-      color: var(--secondary-text-color);
-      margin-bottom: 6px;
-      text-transform: uppercase;
-      letter-spacing: 0.3px;
-    }
-
     .selector-section {
       margin-top: 16px;
     }
@@ -174,7 +165,6 @@ export abstract class RsScheduleBase extends LitElement {
       font-size: 12px;
       color: var(--secondary-text-color);
       margin-top: 4px;
-      padding-left: 4px;
     }
 
     /* .inline-warning is the same pill outside the selector context (#395). */
@@ -186,21 +176,15 @@ export abstract class RsScheduleBase extends LitElement {
       margin-top: 8px;
       padding: 10px 14px;
       border-radius: 8px;
-      background: color-mix(in srgb, var(--warning-color) 8%, transparent);
-      color: var(--warning-color);
+      background: color-mix(in srgb, var(--warning-color) 10%, transparent);
+      color: var(--primary-text-color);
       font-size: 13px;
     }
     .selector-warning ha-icon,
     .inline-warning ha-icon {
       --mdc-icon-size: 18px;
       flex-shrink: 0;
-    }
-
-    .section-hint {
-      font-size: 12px;
-      color: var(--secondary-text-color);
-      line-height: 1.5;
-      margin-bottom: 12px;
+      color: var(--warning-color);
     }
   `;
 
@@ -297,17 +281,19 @@ export abstract class RsScheduleBase extends LitElement {
 
     return html`
       <div class="selector-section">
-        <label class="form-label">${selectorLabel}</label>
-        <ha-entity-picker
-          .hass=${this.hass}
-          .value=${this.selectorEntity}
-          .includeDomains=${["input_boolean", "input_number"]}
-          allow-custom-entity
-          @value-changed=${(e: CustomEvent) => {
-            e.stopPropagation();
-            onSelectorChanged(e.detail?.value ?? "");
-          }}
-        ></ha-entity-picker>
+        <rs-field .info=${selectorHint}>
+          <ha-entity-picker
+            .hass=${this.hass}
+            .label=${selectorLabel}
+            .value=${this.selectorEntity}
+            .includeDomains=${["input_boolean", "input_number"]}
+            allow-custom-entity
+            @value-changed=${(e: CustomEvent) => {
+              e.stopPropagation();
+              onSelectorChanged(e.detail?.value ?? "");
+            }}
+          ></ha-entity-picker>
+        </rs-field>
         ${
           this.selectorEntity && selectorState
             ? html`
@@ -323,7 +309,6 @@ export abstract class RsScheduleBase extends LitElement {
               `
             : nothing
         }
-        ${selectorHint ? html`<div class="section-hint" style="margin-top:4px">${selectorHint}</div>` : nothing}
         ${
           count > 1 && !this.selectorEntity
             ? html`

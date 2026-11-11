@@ -141,7 +141,7 @@ export function coversHelp(lang: string) {
           '    <span class="yaml-key">name</span>: <span class="yaml-value">Cover Evening</span>\n' +
           '    <span class="yaml-key">monday</span>:\n' +
           '      - <span class="yaml-key">from</span>: <span class="yaml-value">"20:00:00"</span>\n' +
-          '        <span class="yaml-key">to</span>: <span class="yaml-value">"06:00:00"</span>\n' +
+          '        <span class="yaml-key">to</span>: <span class="yaml-value">"24:00:00"</span>\n' +
           '        <span class="yaml-key">data</span>:\n' +
           '          <span class="yaml-key">position</span>: <span class="yaml-value">10</span>',
       )}
@@ -160,5 +160,12 @@ export function coversHelp(lang: string) {
     <br /><br />
     <b>${localize("covers.info.entities_title", lang)}</b><br />
     ${localize("covers.info.entities_body", lang)}
+  </div>`;
+}
+
+export function heatSourceHelp(lang: string) {
+  return html`<div slot="info">
+    <b>${localize("heat_source.help_title", lang)}</b><br />
+    ${localize("heat_source.help_body", lang)}
   </div>`;
 }
