@@ -21,6 +21,7 @@ import {
   hm,
   neededSides,
   nowInZone,
+  parseWeek,
   removeBlock,
   roundToStep,
   serializeWeek,
@@ -34,10 +35,13 @@ import {
 } from "../../utils/schedule-week";
 import {
   deleteSchedule,
+  fetchScheduleItem,
   isAdmin,
+  itemSnapshot,
   loadSchedule,
   saveSchedule,
   type LoadedSchedule,
+  type StorageScheduleItem,
 } from "../../utils/schedule-api";
 import type { BlockLook, RsWeekGrid } from "./rs-week-grid";
 import type { BlockTempChange } from "./rs-block-form";
@@ -100,15 +104,25 @@ export class RsScheduleEditor extends LitElement {
   @state() private _dialog: Dialog = null;
   @state() private _now = { day: -1, minute: -1 };
   @state() private _saveError = "";
+  /** The helper changed elsewhere and was loaded again instead of being overwritten. */
+  @state() private _conflict = false;
   @state() private _busy = false;
   @state() private _dialogError = "";
 
   @query("rs-week-grid") private _grid?: RsWeekGrid;
 
+  /** Rooms read by the editor itself; newer than the panel's poll until the next poll. */
+  @state() private _freshRooms: Record<string, RoomConfig> | null = null;
+
   private _savedJson = "";
+  /** The helper as last read from or written to Home Assistant (`itemSnapshot`). */
+  private _remoteSnapshot = "";
   private _timer?: ReturnType<typeof setTimeout>;
-  private _inFlight = false;
-  private _again = false;
+  /** The running save; resolves with the message to show ("" when saved), never rejects. */
+  private _saving: Promise<string> | null = null;
+  private _deleting = false;
+  /** Where save status and toasts go once the panel has unmounted this editor. */
+  private _host: HTMLElement | null = null;
   private _loadToken = 0;
   private _openSeq = 0;
   private _clock?: ReturnType<typeof setInterval>;
@@ -452,6 +466,8 @@ export class RsScheduleEditor extends LitElement {
 
   connectedCallback(): void {
     super.connectedCallback();
+    const root = this.getRootNode();
+    this._host = root instanceof ShadowRoot ? (root.host as HTMLElement) : null;
     this._tick();
     this._clock = setInterval(() => this._tick(), 30_000);
     this._resize ??= new ResizeObserver((entries) => {
@@ -466,16 +482,27 @@ export class RsScheduleEditor extends LitElement {
     if (this._clock) clearInterval(this._clock);
     this._resize?.disconnect();
     this._removePopListeners();
-    // Leaving within the debounce: send the change instead of dropping it.
-    if (this._timer) void this._flush();
+    // Left without flush() (browser back, sidebar): send the change instead of dropping it.
+    if (this._timer || this._saving) {
+      void this._flush().then((message) => {
+        if (message && this._host?.isConnected) {
+          showToast(this._host, message, this.hass.language);
+        }
+      });
+    }
   }
 
-  /** Sends a pending change now (the panel calls it before navigating away). */
-  public flush(): Promise<void> {
+  /**
+   * Sends a pending change and waits for every running save (the panel calls it before it
+   * navigates away). Resolves with the message to show, "" when everything is saved.
+   */
+  public flush(): Promise<string> {
     return this._flush();
   }
 
   protected willUpdate(changed: PropertyValues<this>): void {
+    // The panel's poll is newer than what the editor fetched itself.
+    if (changed.has("rooms")) this._freshRooms = null;
     if (changed.has("entityId") && this.entityId) void this._load();
     // A helper created a moment ago may get its state after the registry entry
     else if (this._missing && changed.has("hass") && this.hass.states[this.entityId])
@@ -500,6 +527,8 @@ export class RsScheduleEditor extends LitElement {
     this._missing = !this.hass.states[this.entityId];
     if (this._missing) return;
     try {
+      // The panel's rooms can miss a helper created a moment ago (poll lag).
+      void this._fetchRooms().catch(() => undefined);
       const data = await loadSchedule(this.hass, this.entityId);
       if (token !== this._loadToken) return;
       this._loaded = data;
@@ -507,6 +536,7 @@ export class RsScheduleEditor extends LitElement {
       this._name = data.name;
       this._savedName = data.name;
       this._savedJson = this._payloadJson();
+      this._remoteSnapshot = data.snapshot;
     } catch (err) {
       if (token !== this._loadToken) return;
       this._loadError = errorText(
@@ -541,50 +571,96 @@ export class RsScheduleEditor extends LitElement {
     this._timer = setTimeout(() => void this._flush(), SAVE_DELAY_MS);
   }
 
-  private async _flush(): Promise<void> {
+  private async _flush(): Promise<string> {
     if (this._timer) clearTimeout(this._timer);
     this._timer = undefined;
-    const loaded = this._loaded;
-    if (!loaded?.itemId || !this._canEdit || !this._effectiveName) return;
-    if (this._inFlight) {
-      this._again = true;
-      return;
+    for (;;) {
+      if (this._saving) {
+        const message = await this._saving;
+        if (message) return message;
+        continue;
+      }
+      const loaded = this._loaded;
+      if (this._deleting || !loaded?.itemId || !this._canEdit || !this._effectiveName) return "";
+      const json = this._payloadJson();
+      if (json === this._savedJson) return "";
+      this._saving = this._save(loaded, json).finally(() => {
+        this._saving = null;
+      });
     }
-    const json = this._payloadJson();
-    if (json === this._savedJson) return;
-    this._inFlight = true;
-    fireSaveStatus(this, "saving");
+  }
+
+  /** One update of the helper; checks first that nobody else changed it since it was read. */
+  private async _save(loaded: LoadedSchedule, json: string): Promise<string> {
+    const l = this.hass.language;
+    const itemId = loaded.itemId as string;
+    const { name, week } = JSON.parse(json) as { name: string; week: Record<string, unknown> };
+    this._status("saving");
     try {
-      const name = this._effectiveName;
-      await saveSchedule(this.hass, loaded.itemId, name, loaded.icon, this._week);
+      const remote = await fetchScheduleItem(this.hass, itemId);
+      if (!remote) {
+        this._missing = true;
+        this._status("error");
+        return localize("schedule_editor.not_found", l, { entity: this.entityId });
+      }
+      if (itemSnapshot(remote) !== this._remoteSnapshot) {
+        this._applyRemote(loaded, remote);
+        this._conflict = true;
+        this._status("error");
+        return localize("schedule_editor.conflict", l);
+      }
+      const saved = await saveSchedule(this.hass, itemId, name, loaded.icon, parseWeek(week));
+      this._remoteSnapshot = itemSnapshot(saved ?? { name, icon: loaded.icon, ...week });
       this._savedJson = json;
       this._savedName = name;
       this._saveError = "";
-      fireSaveStatus(this, "saved");
+      this._conflict = false;
+      this._status("saved");
+      return "";
     } catch (err) {
-      this._saveError = errorText(
-        err,
-        localize("error.unknown", this.hass.language),
-        this.hass.language,
-      );
-      fireSaveStatus(this, "error");
-    } finally {
-      this._inFlight = false;
-      if (this._again) {
-        this._again = false;
-        void this._flush();
-      }
+      this._saveError = errorText(err, localize("error.unknown", l), l);
+      this._status("error");
+      return localize("schedule_editor.save_error", l, { error: this._saveError });
     }
+  }
+
+  /** Shows the helper as Home Assistant has it now; the unsaved change is dropped. */
+  private _applyRemote(loaded: LoadedSchedule, item: StorageScheduleItem) {
+    if (this._open) this._closeBlock(false);
+    this._loaded = { ...loaded, name: item.name, icon: item.icon };
+    this._week = parseWeek(item as unknown as Record<string, unknown>);
+    this._name = item.name;
+    this._savedName = item.name;
+    this._savedJson = this._payloadJson();
+    this._remoteSnapshot = itemSnapshot(item);
+  }
+
+  private _status(status: "saving" | "saved" | "error") {
+    const target = this.isConnected ? this : this._host;
+    if (target) fireSaveStatus(target, status);
   }
 
   // ─── Rooms using the schedule ───────────────────────────────────────
 
-  private _roomName(id: string): string {
-    return this.rooms[id]?.display_name || this.hass.areas?.[id]?.name || id;
+  private get _rooms(): Record<string, RoomConfig> {
+    return this._freshRooms ?? this.rooms;
   }
 
-  private _users(): UsingRoom[] {
-    return Object.values(this.rooms)
+  /** Reads the rooms from the backend: the panel's poll can lag behind a save just made. */
+  private async _fetchRooms(): Promise<Record<string, RoomConfig>> {
+    const result = await this.hass.callWS<{ rooms: Record<string, RoomConfig> }>({
+      type: "roommind/rooms/list",
+    });
+    this._freshRooms = result.rooms;
+    return result.rooms;
+  }
+
+  private _roomName(id: string): string {
+    return this._rooms[id]?.display_name || this.hass.areas?.[id]?.name || id;
+  }
+
+  private _users(rooms: Record<string, RoomConfig> = this._rooms): UsingRoom[] {
+    return Object.values(rooms)
       .filter((r) => (r.schedules ?? []).some((s) => s.entity_id === this.entityId))
       .map((r) => ({
         id: r.area_id,
@@ -598,7 +674,7 @@ export class RsScheduleEditor extends LitElement {
   /** Rooms whose climate mode decides the temperature keys: users, else the room it came from. */
   private _modeRooms(users: UsingRoom[]): RoomConfig[] {
     if (users.length) return users.map((u) => u.config);
-    const own = this.rooms[this.roomId];
+    const own = this._rooms[this.roomId];
     return own ? [own] : [];
   }
 
@@ -610,9 +686,9 @@ export class RsScheduleEditor extends LitElement {
     const cool = level === "comfort" ? (room.comfort_cool ?? 24) : (room.eco_cool ?? 27);
     const fmt = (c: number) => formatTempLocale(c, this.hass, 0, 1);
     const unit = tempUnit(this.hass);
-    if (room.climate_mode === "heat_only") return `${fmt(heat)} ${unit}`;
-    if (room.climate_mode === "cool_only") return `${fmt(cool)} ${unit}`;
-    return `${fmt(heat)}–${fmt(cool)} ${unit}`;
+    if (room.climate_mode === "heat_only") return `${fmt(heat)}\u00a0${unit}`;
+    if (room.climate_mode === "cool_only") return `${fmt(cool)}\u00a0${unit}`;
+    return `${fmt(heat)}–${fmt(cool)}\u00a0${unit}`;
   }
 
   private _bandList(rooms: RoomConfig[], level: "comfort" | "eco"): string {
@@ -637,7 +713,7 @@ export class RsScheduleEditor extends LitElement {
     const l = this.hass.language;
     if (usesComfort(block)) return localize("override.comfort", l);
     const t = blockTemps(block);
-    const unit = long ? ` ${tempUnit(this.hass)}` : "°";
+    const unit = long ? `\u00a0${tempUnit(this.hass)}` : "°";
     if (t.heat !== undefined && t.cool !== undefined) {
       return `${this._temp(t.heat)}–${this._temp(t.cool)}${unit}`;
     }
@@ -741,6 +817,14 @@ export class RsScheduleEditor extends LitElement {
                   rooms: others.map((u) => u.name).join(", "),
                 })}</span
               >
+            </div>`
+          : nothing
+      }
+      ${
+        this._conflict
+          ? html`<div class="notice warn" role="alert">
+              <ha-icon icon="mdi:sync-alert"></ha-icon>
+              <span>${localize("schedule_editor.conflict", l)}</span>
             </div>`
           : nothing
       }
@@ -1023,6 +1107,8 @@ export class RsScheduleEditor extends LitElement {
         @row-click=${() => {
           this._dialogError = "";
           this._dialog = { kind: "delete" };
+          // The text names what happens in each room: read them as stored now.
+          void this._fetchRooms().catch(() => undefined);
         }}
       ></rs-list-row>
     </rs-list-card>`;
@@ -1232,6 +1318,7 @@ export class RsScheduleEditor extends LitElement {
         next: names[(open.day + 1) % 7],
       }),
       next,
+      [open.day, (open.day + 1) % 7],
     );
   }
 
@@ -1240,7 +1327,8 @@ export class RsScheduleEditor extends LitElement {
     if (!open) return;
     const block = this._week[open.day][open.index];
     if (!block) return;
-    const data = withTemps(block.data, e.detail.temps);
+    const sides = neededSides(this._modeRooms(this._users()).map((r) => r.climate_mode ?? "auto"));
+    const data = withTemps(block.data, e.detail.temps, sides);
     const nextBlock: ScheduleBlock = { start: block.start, end: block.end };
     if (data) nextBlock.data = data;
     this._change(
@@ -1264,6 +1352,7 @@ export class RsScheduleEditor extends LitElement {
         range: `${hm(block.start)}–${hm(block.end)}`,
       }),
       removeBlock(this._week, day, index),
+      [day],
     );
     // Keep the keyboard in the grid: the neighbour block, else the day's menu.
     void this.updateComplete.then(() => {
@@ -1299,14 +1388,29 @@ export class RsScheduleEditor extends LitElement {
       this._withUndo(
         localize("schedule_editor.day_cleared", l, { day: names[day] }),
         clearDay(this._week, day),
+        [day],
       );
     }
   }
 
-  private _withUndo(message: string, next: Week) {
+  /**
+   * Applies a change and offers Undo for the days it touched. Undo puts back only those days,
+   * and only while they are as the change left them; later edits elsewhere stay.
+   */
+  private _withUndo(message: string, next: Week, days: number[]) {
     const before = this._week;
     this._change(next);
-    this._toast(message, () => this._change(before));
+    const after = this._week;
+    const same = (a: ScheduleBlock[] | undefined, b: ScheduleBlock[] | undefined) =>
+      JSON.stringify(a ?? []) === JSON.stringify(b ?? []);
+    this._toast(message, () => {
+      if (!this.isConnected) return;
+      if (!days.every((d) => same(this._week[d], after[d]))) {
+        this._toast(localize("schedule_editor.undo_stale", this.hass.language));
+        return;
+      }
+      this._change(this._week.map((day, d) => (days.includes(d) ? before[d] : day)));
+    });
   }
 
   private _toast(message: string, undo?: () => void) {
@@ -1410,17 +1514,40 @@ export class RsScheduleEditor extends LitElement {
         },
       ),
       copyDay(this._week, dialog.day, dialog.targets),
+      dialog.targets,
     );
+  }
+
+  /** What deleting the helper leaves in each room using it (see `resolve_schedule_index`). */
+  private _deleteEffects(users: UsingRoom[]) {
+    const comfort: string[] = [];
+    const next: Array<{ room: string; name: string }> = [];
+    const shifted: string[] = [];
+    const selectorLast: string[] = [];
+    for (const u of users) {
+      const list = u.config.schedules ?? [];
+      const index = list.findIndex((s) => s.entity_id === this.entityId);
+      const rest = list.filter((s) => s.entity_id !== this.entityId);
+      if (rest.length === 0) comfort.push(u.name);
+      else if (u.config.schedule_selector_entity) {
+        if (index < list.length - 1) shifted.push(u.name);
+        else selectorLast.push(u.name);
+      } else if (index === 0) {
+        const id = rest[0].entity_id;
+        next.push({
+          room: u.name,
+          name: (this.hass.states[id]?.attributes?.friendly_name as string) || id,
+        });
+      }
+    }
+    return { comfort, next, shifted, selectorLast };
   }
 
   private _renderDeleteDialog(users: UsingRoom[]) {
     const l = this.hass.language;
     const here = users.find((u) => u.id === this.roomId);
-    const shifted = users.filter((u) => {
-      const list = u.config.schedules ?? [];
-      const idx = list.findIndex((s) => s.entity_id === this.entityId);
-      return !!u.config.schedule_selector_entity && idx >= 0 && idx < list.length - 1;
-    });
+    const effects = this._deleteEffects(users);
+    const join = (names: string[]) => names.join(", ");
     return html`<rs-confirm-dialog
       open
       icon="mdi:delete-outline"
@@ -1428,7 +1555,7 @@ export class RsScheduleEditor extends LitElement {
       .message=${`${localize("schedule_editor.delete_body", l, { name: this._name })}${
         users.length
           ? ` ${localize("schedule_editor.delete_body_rooms", l, {
-              rooms: users.map((u) => u.name).join(", "),
+              rooms: join(users.map((u) => u.name)),
             })}`
           : ""
       }`}
@@ -1436,13 +1563,37 @@ export class RsScheduleEditor extends LitElement {
       .busy=${this._busy}
       .error=${this._dialogError}
       @cancel=${() => (this._dialog = null)}
-      @confirm=${() => this._delete(users)}
+      @confirm=${() => this._delete()}
     >
       ${
-        shifted.length
+        effects.comfort.length
+          ? html`<p>
+              ${localize("schedule_editor.delete_effect_comfort", l, {
+                rooms: join(effects.comfort),
+              })}
+            </p>`
+          : nothing
+      }
+      ${effects.next.map(
+        (n) =>
+          html`<p>
+            ${localize("schedule_editor.delete_effect_next", l, { room: n.room, name: n.name })}
+          </p>`,
+      )}
+      ${
+        effects.shifted.length
           ? html`<p>
               ${localize("schedule_editor.delete_selector_note", l, {
-                rooms: shifted.map((u) => u.name).join(", "),
+                rooms: join(effects.shifted),
+              })}
+            </p>`
+          : nothing
+      }
+      ${
+        effects.selectorLast.length
+          ? html`<p>
+              ${localize("schedule_editor.delete_selector_last", l, {
+                rooms: join(effects.selectorLast),
               })}
             </p>`
           : nothing
@@ -1478,13 +1629,17 @@ export class RsScheduleEditor extends LitElement {
   }
 
   private _removeFromRoom = async () => {
-    const room = this.rooms[this.roomId];
-    if (!room) return;
     this._busy = true;
     this._dialogError = "";
     try {
-      await this._flush();
-      await this._dropFromRoom(room);
+      const message = await this._flush();
+      if (message) {
+        this._dialogError = message;
+        return;
+      }
+      // Built from the stored room, so a schedule added meanwhile is not dropped with it.
+      const room = (await this._fetchRooms())[this.roomId];
+      if (room) await this._dropFromRoom(room);
       this._dialog = null;
       this._closed();
     } catch (err) {
@@ -1498,20 +1653,28 @@ export class RsScheduleEditor extends LitElement {
     }
   };
 
-  private async _delete(users: UsingRoom[]) {
+  private async _delete() {
     const itemId = this._loaded?.itemId;
     if (!itemId) return;
     this._busy = true;
     this._dialogError = "";
+    // No update may follow the delete: drop the pending change, wait for a running save.
+    this._deleting = true;
     if (this._timer) clearTimeout(this._timer);
     this._timer = undefined;
     try {
-      for (const u of users) await this._dropFromRoom(u.config);
+      while (this._saving) await this._saving;
+      // A room saved a moment ago (helper just created) may be missing from the panel's poll;
+      // left out here it would keep a reference to a helper that no longer exists.
+      for (const u of this._users(await this._fetchRooms())) await this._dropFromRoom(u.config);
       await deleteSchedule(this.hass, itemId);
       this._savedJson = this._payloadJson();
       this._dialog = null;
       this._closed();
     } catch (err) {
+      this._deleting = false;
+      // The helper is still there: the change dropped above goes out after all.
+      this._scheduleSave();
       this._dialogError = errorText(
         err,
         localize("error.unknown", this.hass.language),

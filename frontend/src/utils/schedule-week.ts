@@ -356,17 +356,33 @@ export function neededSides(modes: ClimateMode[]): { heat: boolean; cool: boolea
 }
 
 /**
- * Block data with new temperatures: the three temperature keys are dropped, the given sides
- * written, every other key kept. `null` means comfort (no temperature key at all).
+ * Block data with new own temperatures. `null` means comfort: every temperature key goes.
+ * Otherwise only the given sides are written (`heat_temperature`/`cool_temperature`); a side not
+ * given keeps its key. A plain `temperature` is dropped, its value moves to every needed side
+ * that is neither given nor set already, so that side keeps the value it had. Other keys stay.
  */
 export function withTemps(
   data: BlockData | undefined,
   temps: { heat?: number; cool?: number } | null,
+  sides: { heat: boolean; cool: boolean } = { heat: true, cool: true },
 ): BlockData | undefined {
   const next: BlockData = { ...(data ?? {}) };
-  for (const key of TEMP_KEYS) delete next[key];
-  if (temps?.heat !== undefined) next.heat_temperature = temps.heat;
-  if (temps?.cool !== undefined) next.cool_temperature = temps.cool;
+  if (temps === null) {
+    for (const key of TEMP_KEYS) delete next[key];
+  } else {
+    const single = num(next.temperature);
+    delete next.temperature;
+    if (single !== undefined) {
+      if (sides.heat && temps.heat === undefined && num(next.heat_temperature) === undefined) {
+        next.heat_temperature = single;
+      }
+      if (sides.cool && temps.cool === undefined && num(next.cool_temperature) === undefined) {
+        next.cool_temperature = single;
+      }
+    }
+    if (temps.heat !== undefined) next.heat_temperature = temps.heat;
+    if (temps.cool !== undefined) next.cool_temperature = temps.cool;
+  }
   return Object.keys(next).length > 0 ? next : undefined;
 }
 

@@ -115,8 +115,9 @@ export abstract class RsScheduleBase extends LitElement {
       font-size: 12px;
       white-space: nowrap;
     }
+    /* green text on the green tint stays under 4.5:1; dot and number carry the colour */
     .schedule-row.active .schedule-status {
-      color: var(--success-color);
+      color: var(--primary-text-color);
     }
     .schedule-row.inactive .schedule-status {
       color: var(--secondary-text-color);

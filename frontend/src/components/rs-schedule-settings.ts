@@ -150,8 +150,8 @@ export class RsScheduleSettings extends RsScheduleBase {
     const fmt = (c: number) => formatTempLocale(c, this.hass, 0, 1);
     const band = (heat: number, cool: number) =>
       this.climateMode === "auto"
-        ? `${fmt(heat)}–${fmt(cool)} ${unit}`
-        : `${fmt(this.climateMode === "cool_only" ? cool : heat)} ${unit}`;
+        ? `${fmt(heat)}–${fmt(cool)}\u00a0${unit}`
+        : `${fmt(this.climateMode === "cool_only" ? cool : heat)}\u00a0${unit}`;
     const open = (part: ScheduleCardPart) => (e: Event) => this._onEditClick(e, part);
 
     return html`
@@ -580,13 +580,13 @@ export class RsScheduleSettings extends RsScheduleBase {
     const fmt = (c: number) => formatTempLocale(c, this.hass, 0, 1);
     const band = (heat: string, cool: string) =>
       this.climateMode === "auto"
-        ? `${heat}–${cool} ${unit}`
-        : `${this.climateMode === "cool_only" ? cool : heat} ${unit}`;
+        ? `${heat}–${cool}\u00a0${unit}`
+        : `${this.climateMode === "cool_only" ? cool : heat}\u00a0${unit}`;
 
     if (entityState.state === "on") {
       const { blockTemp, heatTemp, coolTemp } = this._readBlockTemps(index);
       if (blockTemp != null) {
-        return localize("schedule.from_schedule", l, { temp: `${shown(blockTemp)} ${unit}` });
+        return localize("schedule.from_schedule", l, { temp: `${shown(blockTemp)}\u00a0${unit}` });
       }
       if (heatTemp != null || coolTemp != null) {
         return localize("schedule.from_schedule", l, {

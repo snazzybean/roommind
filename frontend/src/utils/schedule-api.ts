@@ -20,6 +20,8 @@ export interface LoadedSchedule {
   name: string;
   icon?: string;
   week: Week;
+  /** `itemSnapshot` of the storage item as read; "" for YAML helpers. */
+  snapshot: string;
 }
 
 interface RegistryEntry {
@@ -73,22 +75,57 @@ export async function loadSchedule(hass: HomeAssistant, entityId: string): Promi
           name: item.name,
           icon: item.icon,
           week: parseWeek(item as unknown as Record<string, unknown>),
+          snapshot: itemSnapshot(item),
         };
       }
     }
   }
-  return { entityId, itemId: null, name, week: await readThroughService(hass, entityId) };
+  return {
+    entityId,
+    itemId: null,
+    name,
+    week: await readThroughService(hass, entityId),
+    snapshot: "",
+  };
 }
 
-/** `update` replaces the whole item: name, icon (dropped if not sent) and all seven days. */
+/**
+ * What a storage item holds, in one comparable string: name, icon and the week normalized
+ * through the week model (time format, data key order), so an item read back from Home
+ * Assistant equals what the editor sent.
+ */
+export function itemSnapshot(item: { name: string; icon?: string } & Partial<HaWeek>): string {
+  const week = serializeWeek(parseWeek(item as unknown as Record<string, unknown>));
+  for (const ranges of Object.values(week)) {
+    for (const r of ranges) {
+      if (r.data)
+        r.data = Object.fromEntries(Object.entries(r.data).sort(([a], [b]) => (a < b ? -1 : 1)));
+    }
+  }
+  return JSON.stringify({ name: item.name, icon: item.icon ?? "", week });
+}
+
+/** The storage item as Home Assistant has it now, or null when it is gone. */
+export async function fetchScheduleItem(
+  hass: HomeAssistant,
+  itemId: string,
+): Promise<StorageScheduleItem | null> {
+  const items = await hass.callWS<StorageScheduleItem[]>({ type: "schedule/list" });
+  return items.find((item) => item.id === itemId) ?? null;
+}
+
+/**
+ * `update` replaces the whole item: name, icon (dropped if not sent) and all seven days.
+ * Returns the item as Home Assistant stored it.
+ */
 export async function saveSchedule(
   hass: HomeAssistant,
   itemId: string,
   name: string,
   icon: string | undefined,
   week: Week,
-): Promise<void> {
-  await hass.callWS({
+): Promise<StorageScheduleItem> {
+  return hass.callWS<StorageScheduleItem>({
     type: "schedule/update",
     schedule_id: itemId,
     name,

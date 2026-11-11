@@ -3,6 +3,7 @@ import { customElement, property, state } from "lit/decorators.js";
 import type { HomeAssistant, PriceStatus, RoomConfig, RoomWithoutArea } from "./types";
 import { loadHaElements } from "./load-ha-elements";
 import { localize } from "./utils/localize";
+import { showToast } from "./utils/toast";
 import { errorText } from "./utils/errors";
 import { tokens } from "./styles/tokens";
 import { fireSaveStatus } from "./utils/events";
@@ -713,7 +714,9 @@ export class RoomMindPanel extends LitElement {
   /** Back from the schedule editor: to the room it came from, else the dashboard. */
   private _onBackFromSchedule = async () => {
     const editor = this.renderRoot.querySelector<RsScheduleEditor>("rs-schedule-editor");
-    await editor?.flush();
+    // The editor unmounts next: a failed or refused save is reported here.
+    const message = await editor?.flush();
+    if (message) showToast(this, message, this.hass.language);
     await this._onScheduleClosed();
   };
 

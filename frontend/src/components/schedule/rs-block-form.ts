@@ -33,7 +33,8 @@ export interface BlockTempChange {
  * Form for one schedule block (desktop popover, phone sheet): from/to, comfort or own
  * temperature, delete. Applies every valid change at once (no save button):
  * `block-times` `{ start, end }`, `block-split` `{ start, endNextDay }` for a range past
- * midnight, `block-temps` `{ temps }` (null = comfort), `block-delete`, `block-done`.
+ * midnight, `block-temps` `{ temps }` (null = comfort, else only the sides that changed),
+ * `block-delete`, `block-done`.
  * Events bubble but are not composed: the editor listens on the form itself.
  */
 @customElement("rs-block-form")
@@ -237,7 +238,7 @@ export class RsBlockForm extends LitElement {
     const step = usesFahrenheit(this.hass) ? 1 : 0.5;
     const min = Math.ceil(toDisplay(MIN_TARGET_TEMP_C, this.hass));
     const max = Math.floor(toDisplay(MAX_TARGET_TEMP_C, this.hass));
-    const fmt = (v: number) => `${formatNumber(v, this.hass, 0, 1)} ${tempUnit(this.hass)}`;
+    const fmt = (v: number) => `${formatNumber(v, this.hass, 0, 1)}\u00a0${tempUnit(this.hass)}`;
     const both = this.sides.heat && this.sides.cool;
     return html`
       ${
@@ -337,30 +338,30 @@ export class RsBlockForm extends LitElement {
 
   private _onKind(e: CustomEvent<{ value: string }>) {
     this._own = e.detail.value === "own";
-    this._emitTemps();
+    // Switching to own writes every side the rooms need, with the values the steppers show.
+    this._fire("block-temps", {
+      temps: this._own
+        ? {
+            ...(this.sides.heat ? { heat: this._heat } : {}),
+            ...(this.sides.cool ? { cool: this._cool } : {}),
+          }
+        : null,
+    });
   }
 
   private _onTemp(side: "heat" | "cool", value: number) {
     const step = usesFahrenheit(this.hass) ? 1 : 0.5;
     const v = roundToStep(value, step);
+    const temps: BlockTempChange = {};
     if (side === "heat") {
-      this._heat = v;
+      this._heat = temps.heat = v;
       // A band never inverts: cooling above stays at or over heating below.
-      if (this.sides.cool && this._cool < v) this._cool = v;
+      if (this.sides.cool && this._cool < v) this._cool = temps.cool = v;
     } else {
-      this._cool = v;
-      if (this.sides.heat && this._heat > v) this._heat = v;
+      this._cool = temps.cool = v;
+      if (this.sides.heat && this._heat > v) this._heat = temps.heat = v;
     }
-    this._emitTemps();
-  }
-
-  private _emitTemps() {
-    const temps: BlockTempChange | null = this._own
-      ? {
-          ...(this.sides.heat ? { heat: this._heat } : {}),
-          ...(this.sides.cool ? { cool: this._cool } : {}),
-        }
-      : null;
+    // Only the sides that moved: the other keeps its stored value or keeps following comfort.
     this._fire("block-temps", { temps });
   }
 
