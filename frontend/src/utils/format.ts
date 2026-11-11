@@ -21,8 +21,15 @@ export function formatPercent(value: number, hass: Pick<HomeAssistant, "language
   }).format(value / 100);
 }
 
-/** Duration of hours: "20 min" below an hour, else "1,5 h" (at most one decimal, 0 → "0 h"). */
+/** Duration in the user's language: minutes below an hour, else hours with at most one decimal. */
 export function formatHours(hours: number, hass: Pick<HomeAssistant, "language">): string {
-  if (hours > 0 && hours < 1) return `${formatNumber(Math.round(hours * 60), hass)} min`;
-  return `${formatNumber(hours, hass, 0, 1)} h`;
+  const minutes = hours > 0 && hours < 1;
+  const text = new Intl.NumberFormat(hass.language, {
+    style: "unit",
+    unit: minutes ? "minute" : "hour",
+    unitDisplay: "short",
+    maximumFractionDigits: minutes ? 0 : 1,
+  }).format(minutes ? Math.round(hours * 60) : hours);
+  // Some locales put a plain space between number and unit ("1,4 Std."); keep them on one line
+  return text.replace(/ /g, "\u00a0");
 }
