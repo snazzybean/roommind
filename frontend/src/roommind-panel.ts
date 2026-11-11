@@ -235,6 +235,7 @@ export class RoomMindPanel extends LitElement {
     this._refreshInterval = setInterval(() => this._loadRooms(), 5000);
     this.addEventListener("save-status", this._onSaveStatus as EventListener);
     window.addEventListener("keydown", this._onSettingsKey);
+    if (this._editing) window.addEventListener("keydown", this._onEditKey);
     this._resizeObserver ??= new ResizeObserver((entries) => {
       const width = entries[0]?.contentRect.width ?? 0;
       if (width > 0) this._wide = width >= SETTINGS_WIDE_MIN;
