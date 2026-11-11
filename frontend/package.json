@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build && vite build -c vite.card.config.ts",
+    "build": "tsc && vite build && vite build -c vite.card.config.ts && node scripts/check-bundles.mjs",
     "preview": "vite preview",
     "lint": "eslint src/",
     "format": "prettier --write src/",
