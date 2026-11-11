@@ -147,3 +147,27 @@ async def test_a_flapping_switch_does_not_move_the_level(clock):
     assert (await manager.async_update(settings)).current_level == "normal"
     clock["t"] += price_manager.LEVEL_HOLD_S
     assert (await manager.async_update(settings)).current_level == "cheap"
+
+
+@pytest.mark.asyncio
+async def test_octopus_event_entity_is_a_forecast_source(clock):
+    day = datetime(2026, 11, 9, tzinfo=UTC)
+    rates = [
+        {
+            "start": (day + timedelta(minutes=30 * i)).isoformat(),
+            "end": (day + timedelta(minutes=30 * (i + 1))).isoformat(),
+            "value_inc_vat": PATTERN[i // 2] / 100,
+        }
+        for i in range(48)
+    ]
+    entity = "event.octopus_energy_electricity_current_day_rates"
+    manager = _manager({entity: _state("2026-11-09T00:00:12+00:00", {"rates": rates})})
+    signal = await manager.async_update({"price_entity": entity})
+    assert signal.current_level == LEVEL_CHEAP
+    status = manager.status()
+    assert status["readable"] is True
+    assert status["kind"] == "forecast"
+    assert status["price"] == pytest.approx(0.20)
+    assert status["forecast_hours"] == 21
+    # The state is a timestamp, not a price: nothing to rank against later
+    assert manager._observed == []

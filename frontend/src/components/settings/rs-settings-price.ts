@@ -8,8 +8,16 @@ import type { HomeAssistant, PriceStatus } from "../../types";
 import { localize } from "../../utils/localize";
 import { describePriceStatus } from "../../utils/price-status";
 
-// A price sensor (with or without a forecast attribute) or something that is on while cheap
-const PRICE_DOMAINS = ["sensor", "input_number", "binary_sensor", "input_boolean", "switch"];
+// A price sensor (with or without a forecast attribute), an event with rates (Octopus Energy)
+// or something that is on while cheap
+const PRICE_DOMAINS = [
+  "sensor",
+  "input_number",
+  "event",
+  "binary_sensor",
+  "input_boolean",
+  "switch",
+];
 
 @customElement("rs-settings-price")
 export class RsSettingsPrice extends RsSettingsBase {

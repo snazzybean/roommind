@@ -128,7 +128,7 @@ class PriceManager:
             "entity_id": self._entity,
             "readable": self._readable,
             "kind": kind,
-            "price": signal.current_price if signal else None,
+            "price": signal.price_at(signal.now) if signal else None,
             "level": signal.current_level if signal else None,
             "forecast_hours": round(signal.forecast_hours(), 1) if signal and signal.has_forecast else 0,
             "history_hours": hours,

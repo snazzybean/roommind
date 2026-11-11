@@ -139,3 +139,42 @@ def test_apply_price_shift(targets, direction, expected):
 
 def test_no_shift_without_amount():
     assert apply_price_shift(TargetTemps(21.0, 24.0), 1, 0.0) == TargetTemps(21.0, 24.0)
+
+
+def _octopus_rates():
+    """Octopus Energy event entity: half-hourly rates in GBP/kWh under ``rates``."""
+    return {
+        "event_type": "octopus_energy_electricity_current_day_rates",
+        "rates": [
+            {
+                "start": (DAY + timedelta(minutes=30 * i)).isoformat(),
+                "end": (DAY + timedelta(minutes=30 * (i + 1))).isoformat(),
+                "value_inc_vat": PATTERN[i // 2] / 100,
+                "is_capped": False,
+            }
+            for i in range(48)
+        ],
+    }
+
+
+def test_event_entity_reads_its_rates_not_its_state():
+    """An event's state is the time it last fired; the prices sit in the attributes."""
+    now = T0 + 7.5 * 3600
+    signal = signal_from_state("event", "2026-11-09T00:00:12.345+00:00", _octopus_rates(), now)
+    assert signal is not None
+    assert signal.has_forecast
+    assert len(signal.slots) == 24
+    assert signal.current_price is None
+    assert signal.price_at(now) == pytest.approx(0.34)
+    assert signal.current_level == LEVEL_EXPENSIVE
+
+
+def test_event_entity_before_its_first_event_still_reads_restored_rates():
+    signal = signal_from_state("event", "unknown", _octopus_rates(), T0 + 3600)
+    assert signal is not None
+    assert signal.current_level == LEVEL_CHEAP
+
+
+def test_event_entity_without_rates_says_nothing():
+    assert signal_from_state("event", "2026-11-09T00:00:12+00:00", {"event_type": "x"}, T0) is None
+    assert signal_from_state("event", "unknown", {}, T0) is None

@@ -41,6 +41,8 @@ START_KEYS = ("start", "start_time", "startsAt", "from", "time", "hour", "valid_
 END_KEYS = ("end", "end_time", "till", "to", "valid_to")
 PRICE_KEYS = ("value", "price", "price_per_kwh", "value_inc_vat", "total", "marketprice")
 SWITCH_DOMAINS = ("binary_sensor", "input_boolean", "switch")
+# Octopus Energy publishes its rates on event entities
+EVENT_DOMAIN = "event"
 
 SLOT_S = 3600
 # Bottom / top third of the known prices are cheap / expensive
@@ -247,11 +249,15 @@ def signal_from_state(
     history: list[tuple[float, float]] | None = None,
 ) -> PriceSignal | None:
     """Build the signal from the price entity's state; None when the entity says nothing usable."""
-    if state is None or state in ("unknown", "unavailable", ""):
+    if domain == EVENT_DOMAIN:
+        # An event's state is when it last fired (unknown until then); its prices sit in the attributes
+        current = None
+    elif state is None or state in ("unknown", "unavailable", ""):
         return None
-    if domain in SWITCH_DOMAINS:
+    elif domain in SWITCH_DOMAINS:
         return PriceSignal(current_level=LEVEL_CHEAP if state == "on" else LEVEL_NORMAL, now=now)
-    current = _number(state)
+    else:
+        current = _number(state)
     slots = hourly(parse_price_forecast(attributes))
     if slots:
         thresholds = price_thresholds([s.price for s in slots])
