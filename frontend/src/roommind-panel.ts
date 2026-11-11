@@ -14,6 +14,8 @@ import "./components/rs-settings";
 import "./components/rs-analytics";
 import "./components/dashboard/rs-dashboard";
 import "./components/dashboard/rs-dashboard-edit";
+import "./components/schedule/rs-schedule-editor";
+import type { RsScheduleEditor } from "./components/schedule/rs-schedule-editor";
 import "./components/shared/rs-icon-button";
 
 type TabId = "areas" | "analytics" | "settings";
@@ -48,6 +50,10 @@ export class RoomMindPanel extends LitElement {
   @state() private _roomsWithoutArea: RoomWithoutArea[] = [];
   @state() private _roomsLoaded = false;
   @state() private _selectedAreaId: string | null = null;
+  /** Schedule helper open in the editor page, and the room it was opened from. */
+  @state() private _scheduleEntity: string | null = null;
+  @state() private _scheduleRoom = "";
+  @state() private _scheduleOffAction: "eco" | "off" = "eco";
   @state() private _analyticsRoom = "";
   @state() private _vacationActive = false;
   @state() private _vacationTemp: number | null = null;
@@ -287,7 +293,8 @@ export class RoomMindPanel extends LitElement {
     if (!this._elementsLoaded || !this.hass) return html``;
 
     const l = this.hass.language;
-    const inDetail = !!this._selectedAreaId;
+    const inSchedule = !!this._scheduleEntity;
+    const inDetail = !!this._selectedAreaId || inSchedule;
     const detailArea = inDetail ? this.hass?.areas?.[this._selectedAreaId!] : null;
 
     const tabLabels: Record<TabId, string> = {
@@ -316,7 +323,11 @@ export class RoomMindPanel extends LitElement {
 
     const settingsPage = this._settingsSubpage();
     let title = localize("panel.title", l);
-    if (inDetail) {
+    if (inSchedule) {
+      title =
+        (this.hass.states[this._scheduleEntity!]?.attributes?.friendly_name as string) ||
+        this._scheduleEntity!;
+    } else if (inDetail) {
       title = this._rooms[this._selectedAreaId!]?.display_name || detailArea?.name || "";
     } else if (settingsPage) {
       title = localize(getSettingsCategory(settingsPage)!.title, l);
@@ -329,7 +340,7 @@ export class RoomMindPanel extends LitElement {
             ? html`<rs-icon-button
                 icon="mdi:arrow-left"
                 .label=${localize("room.back", l)}
-                @click=${this._onBackFromDetail}
+                @click=${inSchedule ? this._onBackFromSchedule : this._onBackFromDetail}
               ></rs-icon-button>`
             : settingsPage
               ? html`<rs-icon-button
@@ -351,7 +362,7 @@ export class RoomMindPanel extends LitElement {
             : nothing
         }
         ${
-          inDetail && this._rooms[this._selectedAreaId!]
+          inDetail && !inSchedule && this._rooms[this._selectedAreaId!]
             ? html`<rs-icon-button
                 icon="mdi:chart-line"
                 .label=${localize("detail.analytics", l)}
@@ -418,6 +429,17 @@ export class RoomMindPanel extends LitElement {
       return html`<div class="loading">${localize("panel.loading", this.hass.language)}</div>`;
     }
 
+    if (this._scheduleEntity) {
+      return html`<rs-schedule-editor
+        .hass=${this.hass}
+        .entityId=${this._scheduleEntity}
+        .roomId=${this._scheduleRoom}
+        .rooms=${this._rooms}
+        .scheduleOffAction=${this._scheduleOffAction}
+        @schedule-closed=${this._onScheduleClosed}
+      ></rs-schedule-editor>`;
+    }
+
     if (this._selectedAreaId) {
       const area = this.hass?.areas?.[this._selectedAreaId];
       if (area) {
@@ -444,6 +466,7 @@ export class RoomMindPanel extends LitElement {
             @room-deleted=${this._onRoomDeleted}
             @open-analytics=${this._onGoToAnalytics}
             @open-settings=${this._onOpenSettings}
+            @open-schedule-editor=${this._onOpenScheduleEditor}
           ></rs-room-detail>
         `;
       }
@@ -606,6 +629,7 @@ export class RoomMindPanel extends LitElement {
       this._anyoneHome = result.anyone_home ?? true;
       this._presencePersons = result.presence_persons ?? [];
       this._presenceAwayAction = result.presence_away_action ?? "eco";
+      this._scheduleOffAction = result.schedule_off_action ?? "eco";
     } catch (err) {
       // eslint-disable-next-line no-console
       console.debug("[RoomMind] loadRooms:", err);
@@ -613,6 +637,39 @@ export class RoomMindPanel extends LitElement {
       this._roomsLoaded = true;
     }
   }
+
+  private _onOpenScheduleEditor(e: CustomEvent<{ entityId: string; areaId: string }>) {
+    this._scheduleEntity = e.detail.entityId;
+    this._scheduleRoom = e.detail.areaId;
+    this._selectedAreaId = null;
+    this._navigate(
+      `/schedule/${encodeURIComponent(e.detail.entityId)}?room=${encodeURIComponent(e.detail.areaId)}`,
+    );
+  }
+
+  /** Back from the schedule editor: to the room it came from, else the dashboard. */
+  private _onBackFromSchedule = async () => {
+    const editor = this.renderRoot.querySelector<RsScheduleEditor>("rs-schedule-editor");
+    await editor?.flush();
+    await this._onScheduleClosed();
+  };
+
+  /**
+   * The room page reads its config once when it mounts: load the rooms first, else it starts
+   * from a poll that still lists a schedule just deleted and its next save writes it back.
+   */
+  private _onScheduleClosed = async () => {
+    const room = this._scheduleRoom;
+    await this._loadRooms();
+    this._scheduleEntity = null;
+    this._scheduleRoom = "";
+    if (room && this.hass?.areas?.[room]) {
+      this._selectedAreaId = room;
+      this._navigate(`/room/${room}`);
+    } else {
+      this._navigate("");
+    }
+  };
 
   private _onBackFromDetail() {
     this._selectedAreaId = null;
@@ -630,6 +687,7 @@ export class RoomMindPanel extends LitElement {
     this._stopEditing();
     this._activeTab = tab;
     this._selectedAreaId = null;
+    this._scheduleEntity = null;
     this._settingsCategory = "";
     if (tab === "areas") {
       this._navigate("");
@@ -803,7 +861,14 @@ export class RoomMindPanel extends LitElement {
   private _applyRoute() {
     this._stopEditing();
     const path = this.route?.path ?? "";
-    if (path.startsWith("/room/")) {
+    this._scheduleEntity = null;
+    if (path.startsWith("/schedule/")) {
+      this._activeTab = "areas";
+      this._selectedAreaId = null;
+      this._scheduleEntity = decodeURIComponent(path.slice(10));
+      // The route carries only the path; the room comes from the query string.
+      this._scheduleRoom = new URLSearchParams(window.location.search).get("room") ?? "";
+    } else if (path.startsWith("/room/")) {
       this._activeTab = "areas";
       this._selectedAreaId = decodeURIComponent(path.slice(6));
     } else if (path.startsWith("/analytics/")) {

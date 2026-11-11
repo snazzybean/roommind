@@ -7,7 +7,8 @@ import "./rs-icon-button";
 
 /**
  * The panel's modal dialog. Takes the focus on open (close button), keeps Tab inside and gives
- * the focus back to the opener when it closes or is removed. Not a native `<dialog>`: a modal one
+ * the focus back to the opener when it closes or is removed. `sheet` turns it into a bottom
+ * sheet on phones (short forms such as one schedule block). Not a native `<dialog>`: a modal one
  * makes everything outside inert, and HA picker overlays can render outside the dialog.
  */
 @customElement("rs-edit-dialog")
@@ -16,6 +17,8 @@ export class RsEditDialog extends LitElement {
   @property({ type: String }) public heading = "";
   @property({ type: String }) public icon = "";
   @property({ type: Boolean }) public hasInfo = false;
+  /** Below 600 px a bottom sheet with its content height instead of a full-screen page. */
+  @property({ type: Boolean, reflect: true }) public sheet = false;
 
   @state() private _infoExpanded = false;
 
@@ -124,6 +127,37 @@ export class RsEditDialog extends LitElement {
         max-width: 100%;
         max-height: 100vh;
         border-radius: 0;
+      }
+    }
+
+    @media (max-width: 600px) {
+      :host([sheet]) .backdrop {
+        align-items: flex-end;
+      }
+      :host([sheet]) .dialog {
+        max-height: 88vh;
+        border-radius: 14px 14px 0 0;
+        padding-bottom: env(safe-area-inset-bottom);
+        animation: sheet-in 0.2s ease-out;
+      }
+    }
+
+    @keyframes sheet-in {
+      from {
+        transform: translateY(24px);
+        opacity: 0;
+      }
+      to {
+        transform: translateY(0);
+        opacity: 1;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .backdrop,
+      .dialog,
+      :host([sheet]) .dialog {
+        animation: none;
       }
     }
 

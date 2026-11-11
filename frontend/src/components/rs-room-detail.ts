@@ -736,8 +736,10 @@ export class RsRoomDetail extends LitElement {
             .climateMode=${this._climateMode}
             .scheduleTempWarnings=${this.config?.live?.schedule_temp_warnings ?? []}
             .editing=${true}
+            .roomName=${this._displayName || this.area.name}
             @schedules-changed=${this._onSchedulesChanged}
             @schedule-selector-changed=${this._onScheduleSelectorChanged}
+            @open-schedule-editor=${this._onOpenScheduleEditor}
           ></rs-schedule-settings>
         </rs-edit-dialog>`;
       case "temperatures":
@@ -922,6 +924,27 @@ export class RsRoomDetail extends LitElement {
     e.stopPropagation();
     this._climateMode = e.detail.value;
     this._autoSave();
+  }
+
+  /**
+   * The schedule dialog opens the editor page: a pending room save (e.g. the just created
+   * helper's assignment) goes out first, the page switch unmounts this element.
+   */
+  private async _onOpenScheduleEditor(e: CustomEvent<{ entityId: string }>) {
+    e.stopPropagation();
+    if (this._saveDebounce) {
+      clearTimeout(this._saveDebounce);
+      this._saveDebounce = undefined;
+      await this._doSave();
+    }
+    this._editing = null;
+    this.dispatchEvent(
+      new CustomEvent("open-schedule-editor", {
+        detail: { entityId: e.detail.entityId, areaId: this.area.area_id },
+        bubbles: true,
+        composed: true,
+      }),
+    );
   }
 
   private _onSchedulesChanged(e: CustomEvent<{ value: ScheduleEntry[] }>) {

@@ -263,7 +263,8 @@ export interface HomeAssistant {
   entities: Record<string, HassEntityRegistryEntry>;
   devices: Record<string, HassDeviceRegistryEntry>;
   language: string;
-  config: { unit_system: { temperature: string } };
+  config: { unit_system: { temperature: string }; time_zone?: string };
+  user?: { is_admin: boolean; name?: string };
   connection?: HassConnection;
   /** Translated state as Home Assistant shows it (e.g. "Heizen"); missing in old releases. */
   formatEntityState?: (stateObj: HassEntity) => string;

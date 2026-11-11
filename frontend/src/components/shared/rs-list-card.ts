@@ -5,7 +5,8 @@ import "./rs-info-icon";
 
 /**
  * Card holding `rs-list-row`s: optional header with heading, info icon (`info` text or the
- * `info` slot), an aside text on the right and the `header-extras` slot (badges, buttons).
+ * `info` slot), an aside text on the right, the `header-extras` slot (badges, buttons after the
+ * heading) and the `header-end` slot (e.g. an overflow menu at the right edge).
  * Rows go into the default slot. `unclipped`: content may reach past the card (popups and
  * chart tooltips positioned inside it); the card then does not clip row hovers at its corners.
  */
@@ -80,6 +81,7 @@ export class RsListCard extends LitElement {
         <slot name="header-extras"></slot>
         <span class="grow"></span>
         ${this.aside ? html`<span class="aside">${this.aside}</span>` : nothing}
+        <slot name="header-end"></slot>
       </div>
       <slot></slot>
     </ha-card>`;

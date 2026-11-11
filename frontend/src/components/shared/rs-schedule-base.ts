@@ -284,7 +284,11 @@ export abstract class RsScheduleBase extends LitElement {
             `,
           )}
         </ha-select>
-        <a href="/config/helpers" target="_top" class="helper-link"> ${createLabel} </a>
+        ${
+          createLabel
+            ? html`<a href="/config/helpers" target="_top" class="helper-link"> ${createLabel} </a>`
+            : nothing
+        }
       </div>
     `;
   }
