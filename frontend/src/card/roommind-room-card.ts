@@ -3,6 +3,7 @@ import { property, state } from "lit/decorators.js";
 import type { ClimateMode, HomeAssistant, OverrideType, RoomConfig } from "../types";
 import { localize, uiLanguage, type TranslationKey } from "../utils/localize";
 import { getModeClass, formatMode } from "../utils/room-state";
+import { formatHours, formatMinutes, formatRemaining } from "../utils/format";
 import { modeStyles } from "../styles/shared-mode-styles";
 import {
   formatTempLocale,
@@ -14,7 +15,6 @@ import {
 import { MAX_TARGET_TEMP_C, MIN_TARGET_TEMP_C } from "../utils/temperature";
 import {
   OVERRIDE_DURATIONS_H,
-  formatRemaining,
   isInvalidBand,
   overrideBand,
   overrideSetMessage,
@@ -343,7 +343,9 @@ export class RoomMindRoomCard extends LitElement {
       remaining = localize("roomcard.paused", l);
     } else if (ov.type) {
       remaining = ov.until
-        ? localize("hero.remaining", l, { time: formatRemaining(ov.until, this._now) || "0m" })
+        ? localize("hero.remaining", l, {
+            time: formatRemaining(ov.until, l, this._now) || formatMinutes(0, l),
+          })
         : localize("hero.permanent", l);
     }
     return html`
@@ -484,7 +486,7 @@ export class RoomMindRoomCard extends LitElement {
                   ${OVERRIDE_DURATIONS_H.map(
                     (hours) =>
                       html`<button class="chip" @click=${() => this._activate(room, hours)}>
-                        ${hours}h
+                        ${formatHours(hours, l)}
                       </button>`,
                   )}
                 </div>

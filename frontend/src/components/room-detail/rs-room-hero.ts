@@ -13,7 +13,7 @@ import {
 } from "../../utils/room-state";
 import { localize } from "../../utils/localize";
 import { formatTempLocale, tempUnit, toDisplayDelta } from "../../utils/temperature";
-import { formatNumber, formatPercent } from "../../utils/format";
+import { formatMinutes, formatNumber, formatPercent } from "../../utils/format";
 import { buildSparkline, type RecentTemp, type SparklinePaths } from "../../utils/sparkline";
 import { NO_OVERRIDE, type EffectiveOverride } from "../../utils/override";
 import { tokens } from "../../styles/tokens";
@@ -636,7 +636,7 @@ export class RsRoomHero extends LitElement {
           live.coil_dry_phase === "drain" ? "hero.coil_dry_drain" : "hero.coil_dry",
           l,
           {
-            minutes: minutesLeft(live.coil_dry_until),
+            time: formatMinutes(minutesLeft(live.coil_dry_until), l),
           },
         ),
         variant: "default",

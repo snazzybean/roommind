@@ -10,7 +10,8 @@ import type {
   RoomMode,
 } from "../types";
 import { localize, type TranslationKey } from "./localize";
-import { formatRemaining, type EffectiveOverride } from "./override";
+import type { EffectiveOverride } from "./override";
+import { formatMinutes, formatRemaining } from "./format";
 import { VACATION_SENTINEL } from "./constants";
 
 /**
@@ -286,7 +287,7 @@ export function roomHints(
         live.compressor_protection_reason === "min_run"
           ? "card.compressor_min_run"
           : "card.compressor_min_off",
-      params: { minutes: minutesLeft(live.compressor_protection_until) },
+      params: { time: formatMinutes(minutesLeft(live.compressor_protection_until), ctx.language) },
     });
   }
   if (live.presence_away) {
@@ -392,7 +393,7 @@ export function targetReason(
     let detail: string;
     if (until == null) detail = localize("detail.reason.permanent", l);
     else {
-      const left = formatRemaining(until, nowMs / 1000);
+      const left = formatRemaining(until, l, nowMs / 1000);
       detail = left
         ? localize("detail.reason.until_left", l, {
             time: formatClock(until, l, nowMs),

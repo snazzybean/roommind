@@ -5,7 +5,7 @@ import { getEntitiesForArea } from "../utils/room-state";
 import { localize } from "../utils/localize";
 import { openEntityInfo } from "../utils/events";
 import { tempUnit } from "../utils/temperature";
-import { formatNumber, formatPercent } from "../utils/format";
+import { formatMinutes, formatNumber, formatPercent } from "../utils/format";
 import { inputStyles } from "../styles/input-styles";
 import { DEFAULT_OCCUPANCY_ECO_DELAY, MIN_OCCUPANCY_ECO_DELAY } from "../utils/constants";
 import "./shared/rs-toggle-row";
@@ -355,7 +355,9 @@ export class RsSensorSection extends LitElement {
     ].filter(Boolean);
     const occupancyNote =
       this.occupancyEcoEnabled && this.occupancySensors.size > 0
-        ? localize("devices.occupancy_eco_view", l, { minutes: String(this.occupancyEcoDelay) })
+        ? localize("devices.occupancy_eco_view", l, {
+            time: formatMinutes(this.occupancyEcoDelay, l),
+          })
         : "";
 
     return html`

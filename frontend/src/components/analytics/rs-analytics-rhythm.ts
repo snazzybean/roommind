@@ -7,7 +7,7 @@ import { customElement, property, state } from "lit/decorators.js";
 import type { AnalyticsRhythm, HomeAssistant, RhythmDay } from "../../types";
 import { localize } from "../../utils/localize";
 import { formatTempLocale, tempUnit } from "../../utils/temperature";
-import { formatNumber, formatPercent } from "../../utils/format";
+import { formatHours, formatPercent } from "../../utils/format";
 import { tokens, srOnly } from "../../styles/tokens";
 import "../shared/rs-list-card";
 import "../shared/rs-segmented";
@@ -178,7 +178,7 @@ export class RsAnalyticsRhythm extends LitElement {
       const sum = (values: Array<number | null>) =>
         values.reduce<number>((a, v) => a + (v ?? 0), 0);
       const hours = sum(day.heat) + sum(day.cool);
-      return hours > 0 ? `${formatNumber(hours, this.hass, 0, 1)}\u00A0h` : "";
+      return hours > 0 ? formatHours(hours, this.language) : "";
     }
     if (day.within == null) return "";
     // Floor: 99.6 % on target must not read as 100 %

@@ -7,6 +7,7 @@ const CARD_KEY_PREFIXES = [
   "override.",
   "mode.",
   "card.",
+  "duration.",
   "hero.",
   "room.climate_control_toggle",
 ];

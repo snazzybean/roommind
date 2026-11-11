@@ -102,12 +102,3 @@ export function overrideSetMessage(
   }
   return msg;
 }
-
-/** Remaining time as "1h 20m" / "20m", empty once the time has passed. */
-export function formatRemaining(until: number, now = Date.now() / 1000): string {
-  const remaining = until - now;
-  if (remaining <= 0) return "";
-  const h = Math.floor(remaining / 3600);
-  const m = Math.floor((remaining % 3600) / 60);
-  return h > 0 ? `${h}h ${m}m` : `${m}m`;
-}

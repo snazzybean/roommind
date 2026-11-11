@@ -6,7 +6,7 @@ import { LitElement, html, css, nothing } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import type { HomeAssistant, AnalyticsData } from "../../types";
 import { localize, type TranslationKey } from "../../utils/localize";
-import { formatNumber, formatPercent } from "../../utils/format";
+import { formatHours, formatMinutes, formatNumber, formatPercent } from "../../utils/format";
 import { tempUnit, toDisplayDelta } from "../../utils/temperature";
 import {
   MPC_MAX_PREDICTION_STD,
@@ -234,8 +234,7 @@ export class RsAnalyticsModel extends LitElement {
       {
         id: "time_constant",
         icon: "mdi:timer-sand",
-        value:
-          hasIdle && model && model.U > 0 ? `${formatNumber(1 / model.U, this.hass, 1)} h` : null,
+        value: hasIdle && model && model.U > 0 ? formatHours(1 / model.U, l) : null,
       },
       {
         id: "heat_loss",
@@ -264,7 +263,7 @@ export class RsAnalyticsModel extends LitElement {
         value: m.afterglow_learned ? this._afterglowValue(m.afterglow_k) : null,
         detail: m.afterglow_learned
           ? localize("analytics.afterglow_sub", l, {
-              min: formatNumber(m.afterglow_minutes ?? 0, this.hass),
+              time: formatMinutes(m.afterglow_minutes ?? 0, l),
             })
           : localize("analytics.afterglow_unmeasured", l),
       });

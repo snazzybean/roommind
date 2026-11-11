@@ -17,6 +17,7 @@ import {
   type EffectiveOverride,
 } from "../utils/override";
 import { formatClock, scheduleNextChange } from "../utils/room-state";
+import { formatHours } from "../utils/format";
 import type { RsSegmentOption } from "./shared/rs-segmented";
 import "./shared/rs-segmented";
 
@@ -158,14 +159,9 @@ export class RsOverrideSection extends LitElement {
 
   private _renderPending(type: OverrideType) {
     const l = this.language;
-    const hourFmt = new Intl.NumberFormat(l, {
-      style: "unit",
-      unit: "hour",
-      unitDisplay: "narrow",
-    });
     const options: RsSegmentOption[] = OVERRIDE_DURATIONS_H.map((h) => ({
       value: String(h),
-      label: hourFmt.format(h),
+      label: formatHours(h, l),
     }));
     const next = this._nextChange();
     if (next != null) {

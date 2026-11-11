@@ -8,6 +8,7 @@ import type { HomeAssistant } from "../../types";
 import { localize } from "../../utils/localize";
 import { toDisplay, toCelsius, tempUnit, tempStep, tempRange } from "../../utils/temperature";
 import { preheatLeadHours } from "../../utils/constants";
+import { formatHours } from "../../utils/format";
 import "../shared/rs-segmented";
 
 const CONTROL_DOCS_URL =
@@ -154,7 +155,7 @@ export class RsSettingsControl extends RsSettingsBase {
     const hours = preheatLeadHours(this._dragWeight ?? this.comfortWeight);
     if (hours <= 0) return localize("settings.preheat_lead_none", l);
     return localize("settings.preheat_lead", l, {
-      hours: hours.toLocaleString(l, { maximumFractionDigits: 1 }),
+      time: formatHours(hours, l),
     });
   }
 

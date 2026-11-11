@@ -182,7 +182,7 @@ export class RsAnalyticsSummary extends LitElement {
       .icon=${kind === "heat" ? "mdi:fire" : "mdi:snowflake"}
       tone=${kind}
       .label=${localize(kind === "heat" ? "analytics.heating_period" : "analytics.cooling_period", l)}
-      .value=${formatHours(hours, this.hass)}
+      .value=${formatHours(hours, this.language)}
       .sub=${parts.join(" · ")}
     >
       ${this._strip(
@@ -196,7 +196,7 @@ export class RsAnalyticsSummary extends LitElement {
     return html`<rs-stat-tile
       icon="mdi:window-open-variant"
       .label=${localize("analytics.window_open_period", this.language)}
-      .value=${formatHours(s.window_hours, this.hass)}
+      .value=${formatHours(s.window_hours, this.language)}
     >
       ${this._strip(
         timeSpans(this.points, (p) => p.window_open),
@@ -211,7 +211,7 @@ export class RsAnalyticsSummary extends LitElement {
     const shifted =
       price.shifted_hours > 0
         ? localize("analytics.price_shifted", l, {
-            value: formatHours(price.shifted_hours, this.hass),
+            value: formatHours(price.shifted_hours, this.language),
           })
         : "";
     const modes = (
@@ -225,14 +225,14 @@ export class RsAnalyticsSummary extends LitElement {
         ? html`<rs-stat-tile
             icon="mdi:cash-clock"
             .label=${localize("analytics.price", l)}
-            .value=${formatHours(price.shifted_hours, this.hass)}
+            .value=${formatHours(price.shifted_hours, this.language)}
             .sub=${localize("analytics.price_shifted_short", l)}
           ></rs-stat-tile>`
         : nothing;
     }
     return modes.map(([mode, hours], i) => {
       const level = (lv: PriceLevel) =>
-        `${formatHours(hours[lv] ?? 0, this.hass)} ${localize(`settings.price_level_${lv}`, l)}`;
+        `${formatHours(hours[lv] ?? 0, this.language)} ${localize(`settings.price_level_${lv}`, l)}`;
       const others = PRICE_LEVELS.filter((lv) => lv !== "cheap" && (hours[lv] ?? 0) > 0).map(level);
       if (i === 0 && shifted) others.push(shifted);
       const present = PRICE_LEVELS.filter((lv) => (hours[lv] ?? 0) > 0);

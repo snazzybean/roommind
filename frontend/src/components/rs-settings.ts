@@ -19,7 +19,7 @@ import type {
 import { localize } from "../utils/localize";
 import { fireSaveStatus } from "../utils/events";
 import { VACATION_SENTINEL } from "../utils/constants";
-import { formatNumber, formatPercent } from "../utils/format";
+import { formatMinutes, formatNumber, formatPercent } from "../utils/format";
 import { formatTempLocale, tempUnit, toDisplayDelta } from "../utils/temperature";
 import { describePriceStatus } from "../utils/price-status";
 import { tokens } from "../styles/tokens";
@@ -624,7 +624,7 @@ export class RsSettings extends LitElement {
         return this._coilDryEnabled
           ? {
               text: localize("settings.summary.coil_dry_on", l, {
-                minutes: count(this._coilDryMinutes),
+                time: formatMinutes(this._coilDryMinutes, l),
               }),
               on: true,
             }

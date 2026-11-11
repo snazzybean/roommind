@@ -1,4 +1,5 @@
 import type { HomeAssistant } from "../types";
+import { localize } from "./localize";
 
 /** Number in the user's language (decimal comma in German). */
 export function formatNumber(
@@ -21,15 +22,41 @@ export function formatPercent(value: number, hass: Pick<HomeAssistant, "language
   }).format(value / 100);
 }
 
-/** Duration in the user's language: minutes below an hour, else hours with at most one decimal. */
-export function formatHours(hours: number, hass: Pick<HomeAssistant, "language">): string {
-  const minutes = hours > 0 && hours < 1;
-  const text = new Intl.NumberFormat(hass.language, {
-    style: "unit",
-    unit: minutes ? "minute" : "hour",
-    unitDisplay: "short",
-    maximumFractionDigits: minutes ? 0 : 1,
-  }).format(minutes ? Math.round(hours * 60) : hours);
-  // Some locales put a plain space between number and unit ("1,4 Std."); keep them on one line
-  return text.replace(/ /g, "\u00a0");
+const NBSP = "\u00a0";
+
+function count(value: number, language: string, maxDecimals = 0): string {
+  return new Intl.NumberFormat(language, { maximumFractionDigits: maxDecimals }).format(value);
+}
+
+// Intl's unit names differ per locale ("Std.", "hr", "m") and Intl.DurationFormat is too
+// new, so the number comes from Intl and the unit from the locale keys.
+function joined(text: string): string {
+  return text.replace(/ /g, NBSP);
+}
+
+/** Whole minutes as "45 min", "2 h" or "1 h 59 min" in the user's language. */
+export function formatMinutes(minutes: number, language: string): string {
+  const total = Math.max(0, Math.round(minutes));
+  const h = Math.floor(total / 60);
+  const m = total % 60;
+  if (h === 0) return joined(localize("duration.minutes", language, { n: count(m, language) }));
+  if (m === 0) return joined(localize("duration.hours", language, { n: count(h, language) }));
+  return joined(
+    localize("duration.hours_minutes", language, {
+      h: count(h, language),
+      m: count(m, language),
+    }),
+  );
+}
+
+/** Hours with at most one decimal ("1,9 h"), below an hour in minutes ("45 min"). */
+export function formatHours(hours: number, language: string): string {
+  if (hours > 0 && hours < 1) return formatMinutes(hours * 60, language);
+  return joined(localize("duration.hours", language, { n: count(hours, language, 1) }));
+}
+
+/** Time left until `until` (Unix seconds), rounded up to whole minutes; "" once it passed. */
+export function formatRemaining(until: number, language: string, now = Date.now() / 1000): string {
+  const left = until - now;
+  return left > 0 ? formatMinutes(Math.ceil(left / 60), language) : "";
 }
