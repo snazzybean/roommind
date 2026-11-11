@@ -3,6 +3,8 @@ import { customElement, property, state } from "lit/decorators.js";
 import type { HomeAssistant, PriceStatus, RoomConfig, RoomWithoutArea } from "./types";
 import { loadHaElements } from "./load-ha-elements";
 import { localize } from "./utils/localize";
+import { errorText } from "./utils/errors";
+import { tokens } from "./styles/tokens";
 import { fireSaveStatus } from "./utils/events";
 import { computeAreaInfos, type AreaInfo } from "./utils/dashboard";
 import type { HouseSummary } from "./components/dashboard/rs-dashboard";
@@ -49,6 +51,8 @@ export class RoomMindPanel extends LitElement {
   @state() private _rooms: Record<string, RoomConfig> = {};
   @state() private _roomsWithoutArea: RoomWithoutArea[] = [];
   @state() private _roomsLoaded = false;
+  /** First rooms/list failed: shown instead of the dashboard until a load succeeds. */
+  @state() private _roomsError = "";
   @state() private _selectedAreaId: string | null = null;
   /** Schedule helper open in the editor page, and the room it was opened from. */
   @state() private _scheduleEntity: string | null = null;
@@ -92,145 +96,175 @@ export class RoomMindPanel extends LitElement {
   private _layoutSaves = 0;
   private _resizeObserver?: ResizeObserver;
 
-  static styles = css`
-    :host {
-      display: block;
-      font-family: var(--primary-font-family, Roboto, sans-serif);
-      color: var(--primary-text-color);
-      background: var(--primary-background-color);
-      min-height: 100vh;
+  static styles = [
+    tokens,
+    css`
+      :host {
+        display: block;
+        font-family: var(--primary-font-family, Roboto, sans-serif);
+        color: var(--primary-text-color);
+        background: var(--primary-background-color);
+        min-height: 100vh;
 
-      /* Round the corners of all MDC-based inputs (ha-textfield, ha-select,
+        /* Round the corners of all MDC-based inputs (ha-textfield, ha-select,
          ha-entity-picker, ha-combo-box) to match the rest of the design.
          The bottom corners are rounded via inputStyles in each component. */
-      --mdc-shape-small: 8px;
-      --mdc-shape-medium: 8px;
-      --md-filled-text-field-container-shape: 8px;
-      --md-outlined-text-field-container-shape: 8px;
-    }
-
-    .toolbar {
-      display: flex;
-      align-items: center;
-      height: 56px;
-      padding: 0 12px;
-      font-size: 20px;
-      background-color: var(--app-header-background-color, var(--primary-background-color));
-      color: var(--app-header-text-color, var(--primary-text-color));
-      border-bottom: 1px solid var(--divider-color);
-      box-sizing: border-box;
-      position: sticky;
-      top: 0;
-      z-index: 4;
-    }
-
-    .toolbar .title {
-      margin-left: 4px;
-      font-weight: 400;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      flex: 1;
-    }
-
-    .save-indicator {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      font-size: 13px;
-      font-weight: 400;
-      margin-right: 8px;
-      opacity: 1;
-      transition: opacity 0.3s ease;
-    }
-
-    .save-indicator.fade-out {
-      opacity: 0;
-    }
-
-    .save-indicator ha-icon {
-      --mdc-icon-size: 18px;
-    }
-
-    .save-indicator.saving {
-      color: var(--primary-color, #03a9f4);
-    }
-
-    .save-indicator.saved {
-      color: var(--success-color, #4caf50);
-    }
-
-    .save-indicator.error {
-      color: var(--error-color, #d32f2f);
-    }
-
-    .tabs {
-      display: flex;
-      gap: 0;
-      border-bottom: 1px solid var(--divider-color);
-      padding: 0 16px;
-      background: var(--primary-background-color);
-      position: sticky;
-      top: 56px;
-      z-index: 3;
-    }
-
-    .tab {
-      padding: 12px 24px;
-      cursor: pointer;
-      border: none;
-      background: none;
-      color: var(--secondary-text-color);
-      font-size: 14px;
-      font-weight: 500;
-      border-bottom: 2px solid transparent;
-      transition: all 0.2s ease;
-      font-family: inherit;
-    }
-
-    .tab:hover {
-      color: var(--primary-text-color);
-    }
-
-    .tab[active] {
-      color: var(--primary-color);
-      border-bottom-color: var(--primary-color);
-    }
-
-    .content {
-      padding: 24px;
-      max-width: 1200px;
-      margin: 0 auto;
-      box-sizing: border-box;
-    }
-
-    @media (max-width: 600px) {
-      .content {
-        padding: 16px;
+        --mdc-shape-small: 8px;
+        --mdc-shape-medium: 8px;
+        --md-filled-text-field-container-shape: 8px;
+        --md-outlined-text-field-container-shape: 8px;
       }
-    }
 
-    .loading {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 80px 16px;
-      color: var(--secondary-text-color);
-      font-size: 14px;
-    }
+      .toolbar {
+        display: flex;
+        align-items: center;
+        height: 56px;
+        padding: 0 12px;
+        font-size: 20px;
+        background-color: var(--app-header-background-color, var(--primary-background-color));
+        color: var(--app-header-text-color, var(--primary-text-color));
+        border-bottom: 1px solid var(--divider-color);
+        box-sizing: border-box;
+        position: sticky;
+        top: 0;
+        z-index: 4;
+      }
 
-    .toolbar.editing {
-      background-color: var(--secondary-background-color, var(--app-header-background-color));
-    }
+      .toolbar .title {
+        margin-left: 4px;
+        font-weight: 400;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        flex: 1;
+      }
 
-    .toolbar rs-icon-button {
-      color: var(--app-header-text-color, var(--primary-text-color));
-    }
+      .save-indicator {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 13px;
+        font-weight: 400;
+        margin-right: 8px;
+        opacity: 1;
+        transition: opacity 0.3s ease;
+      }
 
-    .toolbar .done {
-      margin-right: 4px;
-    }
-  `;
+      .save-indicator.fade-out {
+        opacity: 0;
+      }
+
+      .save-indicator ha-icon {
+        --mdc-icon-size: 18px;
+      }
+
+      .save-indicator.saving {
+        color: var(--primary-color);
+      }
+
+      .save-indicator.saved {
+        color: var(--rs-ok);
+      }
+
+      .save-indicator.error {
+        color: var(--rs-err);
+      }
+
+      .tabs {
+        display: flex;
+        gap: 0;
+        border-bottom: 1px solid var(--divider-color);
+        padding: 0 16px;
+        background: var(--primary-background-color);
+        position: sticky;
+        top: 56px;
+        z-index: 3;
+      }
+
+      .tab {
+        padding: 12px 24px;
+        cursor: pointer;
+        border: none;
+        background: none;
+        color: var(--secondary-text-color);
+        font-size: 14px;
+        font-weight: 500;
+        border-bottom: 2px solid transparent;
+        transition:
+          color 0.2s ease,
+          border-color 0.2s ease;
+        font-family: inherit;
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+        min-height: var(--rs-touch);
+        box-sizing: border-box;
+      }
+
+      .tab:hover {
+        color: var(--primary-text-color);
+      }
+
+      .tab:focus-visible {
+        outline: 2px solid var(--primary-color);
+        outline-offset: -2px;
+      }
+
+      .tab[aria-current="page"] {
+        color: var(--primary-color);
+        border-bottom-color: var(--primary-color);
+      }
+
+      .content {
+        padding: 24px;
+        max-width: 1200px;
+        margin: 0 auto;
+        box-sizing: border-box;
+      }
+
+      @media (max-width: 600px) {
+        .content {
+          padding: 16px;
+        }
+      }
+
+      .loading {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 80px 16px;
+        color: var(--secondary-text-color);
+        font-size: 14px;
+      }
+
+      .toolbar.editing {
+        background-color: var(--secondary-background-color, var(--app-header-background-color));
+      }
+
+      .toolbar rs-icon-button {
+        color: var(--app-header-text-color, var(--primary-text-color));
+      }
+
+      .toolbar .done {
+        margin-right: 4px;
+      }
+
+      .load-error {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: var(--rs-space-3);
+        padding: 80px 16px;
+        text-align: center;
+        color: var(--secondary-text-color);
+        font-size: var(--rs-font-md);
+      }
+
+      .load-error p {
+        margin: 0;
+      }
+    `,
+  ];
 
   connectedCallback() {
     super.connectedCallback();
@@ -384,19 +418,25 @@ export class RoomMindPanel extends LitElement {
       ${
         !inDetail && !settingsPage
           ? html`
-              <div class="tabs">
+              <nav class="tabs" aria-label=${localize("panel.title", l)}>
                 ${(Object.keys(tabLabels) as TabId[]).map(
                   (tab) => html`
-                    <button
+                    <a
                       class="tab"
-                      ?active=${this._activeTab === tab}
-                      @click=${() => this._onTabClicked(tab)}
+                      href=${tab === "areas" ? "/roommind" : `/roommind/${tab}`}
+                      aria-current=${this._activeTab === tab ? "page" : nothing}
+                      @click=${(e: MouseEvent) => {
+                        if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey)
+                          return;
+                        e.preventDefault();
+                        this._onTabClicked(tab);
+                      }}
                     >
                       ${tabLabels[tab]}
-                    </button>
+                    </a>
                   `,
                 )}
-              </div>
+              </nav>
             `
           : nothing
       }
@@ -425,6 +465,13 @@ export class RoomMindPanel extends LitElement {
   }
 
   private _renderAreas() {
+    if (!this._roomsLoaded && this._roomsError) {
+      const l = this.hass.language;
+      return html`<div class="load-error" role="alert">
+        <p>${localize("panel.load_error", l, { error: this._roomsError })}</p>
+        <ha-button @click=${() => this._loadRooms()}>${localize("common.retry", l)}</ha-button>
+      </div>`;
+    }
     if (!this._roomsLoaded) {
       return html`<div class="loading">${localize("panel.loading", this.hass.language)}</div>`;
     }
@@ -630,11 +677,16 @@ export class RoomMindPanel extends LitElement {
       this._presencePersons = result.presence_persons ?? [];
       this._presenceAwayAction = result.presence_away_action ?? "eco";
       this._scheduleOffAction = result.schedule_off_action ?? "eco";
+      this._roomsLoaded = true;
+      this._roomsError = "";
     } catch (err) {
       // eslint-disable-next-line no-console
       console.debug("[RoomMind] loadRooms:", err);
-    } finally {
-      this._roomsLoaded = true;
+      // Poll failures keep the rooms already shown; only a first load without data says so
+      if (!this._roomsLoaded) {
+        const l = this.hass.language;
+        this._roomsError = errorText(err, localize("error.unknown", l), l);
+      }
     }
   }
 
@@ -808,27 +860,29 @@ export class RoomMindPanel extends LitElement {
     }
   };
 
+  /** One live region that stays in the DOM, so status changes are announced. */
   private _renderSaveIndicator() {
-    if (this._saveStatus === "idle") return nothing;
     const l = this.hass.language;
+    const status = this._saveStatus;
     const icon =
-      this._saveStatus === "saving"
+      status === "saving"
         ? "mdi:content-save-outline"
-        : this._saveStatus === "saved"
+        : status === "saved"
           ? "mdi:check"
           : "mdi:alert-circle-outline";
     const label =
-      this._saveStatus === "saving"
+      status === "saving"
         ? localize("settings.saving", l)
-        : this._saveStatus === "saved"
+        : status === "saved"
           ? localize("settings.saved", l)
           : localize("settings.error", l);
-    return html`
-      <span class="save-indicator ${this._saveStatus}">
-        <ha-icon .icon=${icon}></ha-icon>
-        ${label}
-      </span>
-    `;
+    return html`<span class="save-indicator ${status}" role="status" aria-live="polite">
+      ${
+        status === "idle"
+          ? nothing
+          : html`<ha-icon .icon=${icon} aria-hidden="true"></ha-icon>${label}`
+      }
+    </span>`;
   }
 
   protected willUpdate(changedProps: Map<string, unknown>) {
@@ -841,7 +895,7 @@ export class RoomMindPanel extends LitElement {
   }
 
   updated(changedProps: Map<string, unknown>) {
-    if (changedProps.has("hass") && this.hass && !this._roomsLoaded) {
+    if (changedProps.has("hass") && this.hass && !this._roomsLoaded && !this._roomsError) {
       this._loadRooms();
     }
     if (changedProps.has("hass") && this.hass?.connection && !this._boundConnectionReady) {

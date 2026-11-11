@@ -5,6 +5,7 @@
   "panel.tab.settings": "Einstellungen",
   "panel.edit": "Raum bearbeiten",
   "panel.loading": "Laden...",
+  "panel.load_error": "Räume konnten nicht geladen werden: {error}",
   "panel.no_areas": "Keine Bereiche in Home Assistant konfiguriert.",
   "panel.no_areas_hint": "Bereiche in den HA-Einstellungen anlegen.",
   "badge.beta": "Beta",

@@ -5,6 +5,7 @@
   "panel.edit": "Edit room",
   "panel.tab.settings": "Settings",
   "panel.loading": "Loading...",
+  "panel.load_error": "Rooms could not be loaded: {error}",
   "panel.no_areas": "No areas configured in Home Assistant.",
   "panel.no_areas_hint": "Add areas in HA settings to get started.",
   "badge.beta": "Beta",

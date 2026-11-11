@@ -115,10 +115,13 @@ export class RsSegmented extends LitElement {
         background: var(--rs-fill);
       }
 
+      /* primary tint plus edge: a plain card-coloured chip vanished on the dark track */
       button[aria-checked="true"] {
-        background: var(--card-background-color, var(--primary-background-color));
+        background: color-mix(in srgb, var(--primary-color) 16%, var(--rs-surface));
         color: var(--primary-text-color);
-        box-shadow: 0 1px 2px rgb(0 0 0 / 18%);
+        box-shadow:
+          inset 0 0 0 1px color-mix(in srgb, var(--primary-color) 55%, transparent),
+          0 1px 2px rgb(0 0 0 / 18%);
       }
 
       button:focus-visible {

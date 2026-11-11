@@ -5,6 +5,7 @@
   "panel.edit": "Éditer la pièce",
   "panel.tab.settings": "Réglages",
   "panel.loading": "Chargement...",
+  "panel.load_error": "Impossible de charger les pièces : {error}",
   "panel.no_areas": "Aucune pièce configurée dans Home Assistant.",
   "panel.no_areas_hint": "Ajoutez des pièces dans les réglages HA pour commencer.",
   "badge.beta": "Bêta",

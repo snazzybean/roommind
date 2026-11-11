@@ -5,6 +5,7 @@
   "panel.edit": "Modifica stanza",
   "panel.tab.settings": "Impostazioni",
   "panel.loading": "Caricamento...",
+  "panel.load_error": "Impossibile caricare le stanze: {error}",
   "panel.no_areas": "Nessuna area configurata in Home Assistant.",
   "panel.no_areas_hint": "Aggiungi delle aree nelle impostazioni di HA per iniziare.",
   "badge.beta": "Beta",
