@@ -16,7 +16,7 @@
 | custom\_components/roommind/control/mpc\_optimizer.py              |      388 |        0 |    100% |           |
 | custom\_components/roommind/control/residual\_heat.py              |       48 |        0 |    100% |           |
 | custom\_components/roommind/control/solar.py                       |       81 |        1 |     99% |        72 |
-| custom\_components/roommind/control/thermal\_model.py              |      543 |       17 |     97% |454, 517, 1032-1040, 1298, 1324-1328 |
+| custom\_components/roommind/control/thermal\_model.py              |      570 |       16 |     97% |529, 1062-1070, 1338, 1365-1369 |
 | custom\_components/roommind/coordinator.py                         |     1350 |       42 |     97% |510-511, 1367-1368, 1378, 1380, 1944, 1995, 2023-2024, 2075, 2284, 2490-2493, 2769, 2778, 2800, 2805, 2807, 2810, 2813, 2857, 2862-2867, 2871, 2911, 2913, 2916, 2919, 2945-2946, 3062, 3082-3090, 3108-3109, 3124-3129, 3146-3147 |
 | custom\_components/roommind/deprecation.py                         |       56 |        0 |    100% |           |
 | custom\_components/roommind/diagnostics.py                         |      238 |        0 |    100% |           |
@@ -54,8 +54,8 @@
 | custom\_components/roommind/utils/schedule\_utils.py               |      263 |        0 |    100% |           |
 | custom\_components/roommind/utils/sensor\_utils.py                 |       29 |        1 |     97% |        25 |
 | custom\_components/roommind/utils/temp\_utils.py                   |       26 |        0 |    100% |           |
-| custom\_components/roommind/websocket\_api.py                      |      346 |        3 |     99% |623, 862-867 |
-| **TOTAL**                                                          | **9272** |  **220** | **98%** |           |
+| custom\_components/roommind/websocket\_api.py                      |      360 |        3 |     99% |638, 877-882 |
+| **TOTAL**                                                          | **9313** |  **219** | **98%** |           |
 
 
 ## Setup coverage badge
