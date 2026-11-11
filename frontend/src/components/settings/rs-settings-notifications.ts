@@ -242,7 +242,11 @@ export class RsSettingsNotifications extends RsSettingsBase {
       @container (max-width: 520px) {
         .target-detail {
           flex-direction: column;
+          align-items: stretch;
           padding-left: 0;
+        }
+        .target-detail ha-entity-picker {
+          flex: none;
         }
       }
     `,
