@@ -95,7 +95,6 @@ export class RsSettingsControl extends RsSettingsBase {
       }
 
       <div class="settings-section">
-        <p class="hint">${localize("settings.smart_control_hint", l)}</p>
         <div class="threshold-grid">
           <rs-number-field
             .hass=${this.hass}
