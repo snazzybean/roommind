@@ -651,7 +651,7 @@
   "settings.price_kind_history": "sans prévision, comparé aux {hours} dernières h",
   "settings.price_kind_history_learning": "sans prévision, collecte des prix ({hours} sur {needed} h)",
   "schedule.price_shift_label": "Suivre le prix de l'électricité",
-  "schedule.price_shift_hint": "Quand l'électricité est bon marché, la consigne peut monter un peu, quand elle est chère, baisser un peu (l'inverse pour le refroidissement). Cela n'aide que si la pièce chauffe ou refroidit à l'électricité (pompe à chaleur, climatiseur, radiateur électrique). Avec une chaudière gaz ou fioul, cela ne change rien.",
+  "schedule.price_shift_hint": "Quand l'électricité est bon marché, la consigne peut monter un peu, quand elle est chère, baisser un peu (l'inverse pour le refroidissement). Cela n'aide que si la pièce chauffe ou refroidit à l'électricité (pompe à chaleur, climatiseur, radiateur électrique) ; avec une chaudière gaz ou fioul, cela ne change rien.",
   "schedule.price_shift_off": "Désactivé",
   "heat_source.price_aware": "Choisir la source selon le prix",
   "heat_source.price_aware_hint": "Uniquement pour des radiateurs au gaz, au fioul ou sur réseau de chaleur à côté d'une clim ou PAC électrique : quand l'électricité est chère, les radiateurs chauffent, quand elle est bon marché, la clim, au lieu de la règle de température extérieure. Un grand écart utilise toujours les deux.",

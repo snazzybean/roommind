@@ -651,7 +651,7 @@
   "settings.price_kind_history": "no forecast, ranked against the last {hours} h",
   "settings.price_kind_history_learning": "no forecast, collecting prices ({hours} of {needed} h)",
   "schedule.price_shift_label": "Follow the electricity price",
-  "schedule.price_shift_hint": "When electricity is cheap the target may rise a little, when it is expensive it may drop a little (cooling the other way round). This only helps if the room heats or cools with electricity (heat pump, air conditioner, electric heater). With a gas or oil boiler it does nothing.",
+  "schedule.price_shift_hint": "When electricity is cheap the target may rise a little, when it is expensive it may drop a little (cooling the other way round). This only helps if the room heats or cools with electricity (heat pump, air conditioner, electric heater); with a gas or oil boiler it does nothing.",
   "schedule.price_shift_off": "Off",
   "heat_source.price_aware": "Choose the source by electricity price",
   "heat_source.price_aware_hint": "Only for radiators on gas, oil or district heating next to an electric AC or heat pump: while electricity is expensive the radiators heat, while it is cheap the AC, instead of the outdoor temperature rule. A large gap still uses both.",

@@ -651,7 +651,7 @@
   "settings.price_kind_history": "ohne Prognose, verglichen mit den letzten {hours} h",
   "settings.price_kind_history_learning": "ohne Prognose, sammelt Preise ({hours} von {needed} h)",
   "schedule.price_shift_label": "Strompreis beachten",
-  "schedule.price_shift_hint": "Ist Strom günstig, darf das Ziel etwas steigen, ist er teuer, etwas sinken (beim Kühlen umgekehrt). Das hilft nur, wenn der Raum mit Strom heizt oder kühlt (Wärmepumpe, Klimaanlage, Elektroheizung). Mit Gas- oder Ölkessel bewirkt es nichts.",
+  "schedule.price_shift_hint": "Ist Strom günstig, darf das Ziel etwas steigen, ist er teuer, etwas sinken (beim Kühlen umgekehrt). Das hilft nur, wenn der Raum mit Strom heizt oder kühlt (Wärmepumpe, Klimaanlage, Elektroheizung), mit Gas- oder Ölkessel bewirkt es nichts.",
   "schedule.price_shift_off": "Aus",
   "heat_source.price_aware": "Quelle nach Strompreis wählen",
   "heat_source.price_aware_hint": "Nur für Heizkörper mit Gas, Öl oder Fernwärme neben einer elektrischen AC oder Wärmepumpe: Ist Strom teuer, heizen die Heizkörper, ist er günstig, die AC, statt nach der Außentemperatur. Bei großem Abstand laufen weiter beide.",
