@@ -487,7 +487,7 @@ export class RsSettings extends LitElement {
       }
       case "vacation": {
         if (!this._vacationActive) return { text: off, on: false };
-        const temp = `${formatTempLocale(this._vacationTemp, this.hass, 0, 1)} ${tempUnit(this.hass)}`;
+        const temp = `${formatTempLocale(this._vacationTemp, this.hass, 0, 1)}\u00a0${tempUnit(this.hass)}`;
         const until = this._vacationUntil ? new Date(this._vacationUntil) : null;
         return {
           text:
@@ -540,7 +540,7 @@ export class RsSettings extends LitElement {
             v === null
               ? localize("settings.summary.outdoor_waiting", l)
               : localize("settings.summary.outdoor", l, {
-                  value: `${formatNumber(v, this.hass, 1)} ${tempUnit(this.hass)}`,
+                  value: `${formatNumber(v, this.hass, 1)}\u00a0${tempUnit(this.hass)}`,
                 }),
           );
         }
@@ -602,7 +602,7 @@ export class RsSettings extends LitElement {
           const k = { light: 1, medium: 2, strong: 3 }[this._moldPreventionIntensity] ?? 2;
           parts.push(
             localize("settings.summary.mold_prevent", l, {
-              delta: `${formatNumber(toDisplayDelta(k, this.hass), this.hass, 0, 1)} ${tempUnit(this.hass)}`,
+              delta: `${formatNumber(toDisplayDelta(k, this.hass), this.hass, 0, 1)}\u00a0${tempUnit(this.hass)}`,
             }),
           );
         }

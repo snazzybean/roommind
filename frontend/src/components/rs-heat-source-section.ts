@@ -44,11 +44,11 @@ export class RsHeatSourceSection extends LitElement {
   ];
 
   private _abs(c: number): string {
-    return `${formatTempLocale(c, this.hass, 0, 1)} ${tempUnit(this.hass)}`;
+    return `${formatTempLocale(c, this.hass, 0, 1)}\u00a0${tempUnit(this.hass)}`;
   }
 
   private _delta(k: number): string {
-    return `${formatNumber(toDisplayDelta(k, this.hass), this.hass, 0, 1)} ${tempUnit(this.hass)}`;
+    return `${formatNumber(toDisplayDelta(k, this.hass), this.hass, 0, 1)}\u00a0${tempUnit(this.hass)}`;
   }
 
   /** What decides the source now, in one line. */

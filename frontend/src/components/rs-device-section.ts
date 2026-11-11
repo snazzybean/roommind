@@ -336,7 +336,7 @@ export class RsDeviceSection extends LitElement {
     const ct = attrs.current_temperature;
     // Device readings are already in Home Assistant's unit.
     const temp =
-      typeof ct === "number" ? `${formatNumber(ct, this.hass, 1)} ${tempUnit(this.hass)}` : "";
+      typeof ct === "number" ? `${formatNumber(ct, this.hass, 1)}\u00a0${tempUnit(this.hass)}` : "";
     const value = [status, temp].filter(Boolean).join(" · ");
 
     return html`<rs-list-row
@@ -401,7 +401,7 @@ export class RsDeviceSection extends LitElement {
     const ct = st.attributes?.current_temperature;
     // Device readings are already in Home Assistant's unit.
     const temp =
-      typeof ct === "number" ? `${formatNumber(ct, this.hass, 1)} ${tempUnit(this.hass)}` : "";
+      typeof ct === "number" ? `${formatNumber(ct, this.hass, 1)}\u00a0${tempUnit(this.hass)}` : "";
     return { text, color, temp };
   }
 
@@ -673,7 +673,7 @@ export class RsDeviceSection extends LitElement {
             isTrv
               ? localize("devices.idle_info_trv", l)
               : localize("devices.idle_info_ac", l, {
-                  delta: `${formatNumber(toDisplayDelta(IDLE_SETBACK_OFFSET_C, this.hass), this.hass)} ${tempUnit(this.hass)}`,
+                  delta: `${formatNumber(toDisplayDelta(IDLE_SETBACK_OFFSET_C, this.hass), this.hass)}\u00a0${tempUnit(this.hass)}`,
                 })
           }
         ></rs-info-icon>

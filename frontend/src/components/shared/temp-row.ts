@@ -39,7 +39,7 @@ export function tempRow(opts: {
       .min=${Math.ceil(toDisplay(MIN_TARGET_TEMP_C, hass))}
       .max=${Math.floor(toDisplay(MAX_TARGET_TEMP_C, hass))}
       .step=${step}
-      .display=${`${formatNumber(shown, hass, 0, 1)} ${tempUnit(hass)}`}
+      .display=${`${formatNumber(shown, hass, 0, 1)}\u00a0${tempUnit(hass)}`}
       @value-changed=${(e: CustomEvent<{ value: number }>) =>
         opts.onChange(toCelsius(e.detail.value, hass))}
     ></rs-stepper>

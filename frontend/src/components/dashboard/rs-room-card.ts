@@ -544,8 +544,8 @@ export class RsRoomCard extends LitElement {
       live.cool_target != null &&
       live.heat_target !== live.cool_target;
     const value = band
-      ? `${fmt(live.heat_target!)}–${fmt(live.cool_target!)} ${unit}`
-      : `${fmt((live.target_temp ?? live.heat_target)!)} ${unit}`;
+      ? `${fmt(live.heat_target!)}–${fmt(live.cool_target!)}\u00a0${unit}`
+      : `${fmt((live.target_temp ?? live.heat_target)!)}\u00a0${unit}`;
     return html`<span class="target">
       <span>${localize("card.target", this._lang)}</span><b>${value}</b>
     </span>`;
@@ -633,7 +633,7 @@ export class RsRoomCard extends LitElement {
     const unit = tempUnit(this.hass);
     return {
       min: formatTempLocale(Math.min(...temps), this.hass),
-      max: `${formatTempLocale(Math.max(...temps), this.hass)} ${unit}`,
+      max: `${formatTempLocale(Math.max(...temps), this.hass)}\u00a0${unit}`,
     };
   }
 

@@ -213,7 +213,7 @@ export class RsSensorSection extends LitElement {
     if (raw == null || raw === "" || !Number.isFinite(num)) {
       return st ? localize("detail.devices.unavailable", this.hass.language) : "";
     }
-    return `${formatNumber(num, this.hass, 1)} ${tempUnit(this.hass)}`;
+    return `${formatNumber(num, this.hass, 1)}\u00a0${tempUnit(this.hass)}`;
   }
 
   private _humidityValue(entityId: string): string {

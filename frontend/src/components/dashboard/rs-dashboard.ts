@@ -130,7 +130,9 @@ export class RsDashboard extends LitElement {
       s.outdoorTemp != null
         ? html`<rs-pill icon="mdi:thermometer"
             >${localize("panel.pill.outdoor", l)}
-            <b>${formatTempLocale(s.outdoorTemp, this.hass)} ${tempUnit(this.hass)}</b></rs-pill
+            <b
+              >${formatTempLocale(s.outdoorTemp, this.hass)}&nbsp;${tempUnit(this.hass)}</b
+            ></rs-pill
           >`
         : nothing,
       level

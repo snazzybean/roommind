@@ -539,7 +539,8 @@ export class RsDashboardEdit extends LitElement {
     const parts: string[] = [];
     if (hidden) parts.push(localize("panel.edit.hidden", l));
     else {
-      if (temp != null) parts.push(`${formatTempLocale(temp, this.hass)} ${tempUnit(this.hass)}`);
+      if (temp != null)
+        parts.push(`${formatTempLocale(temp, this.hass)}\u00a0${tempUnit(this.hass)}`);
       if (st) parts.push(localize(st.key, l));
       else if (kind === "outdoor") parts.push(localize("card.outdoor", l));
       else if (kind === "unconfigured") parts.push(localize("card.not_set_up", l));

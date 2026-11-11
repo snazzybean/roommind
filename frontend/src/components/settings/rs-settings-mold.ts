@@ -7,8 +7,8 @@ import { RsSettingsBase } from "./rs-settings-base";
 import "../shared/rs-number-field";
 import type { HomeAssistant } from "../../types";
 import { localize } from "../../utils/localize";
-import { getSelectValue } from "../../utils/events";
 import { tempUnit, toDisplayDelta } from "../../utils/temperature";
+import { formatNumber } from "../../utils/format";
 import "../shared/rs-segmented";
 
 // DIN 4108-2 temperature factor f_Rsi of the coldest spot (corner, window reveal) per insulation level.
@@ -93,7 +93,7 @@ export class RsSettingsMold extends RsSettingsBase {
                     .options=${(["light", "medium", "strong"] as const).map((v, i) => ({
                       value: v,
                       label: localize(`mold.intensity_${v}`, l, {
-                        delta: String(toDisplayDelta(i + 1, this.hass)),
+                        delta: formatNumber(toDisplayDelta(i + 1, this.hass), this.hass, 0, 1),
                         unit: tempUnit(this.hass),
                       }),
                     }))}
@@ -116,27 +116,20 @@ export class RsSettingsMold extends RsSettingsBase {
           ? html`
               <div class="settings-section">
                 <div>
-                  <ha-select
-                    .value=${this._insulationValue()}
+                  <span class="field-label">${localize("mold.insulation", l)}</span>
+                  <rs-segmented
+                    wrap
                     .label=${localize("mold.insulation", l)}
                     .options=${INSULATION_LEVELS.map((lvl) => ({
                       value: String(lvl.f_rsi),
                       label: localize(lvl.key, l),
                     }))}
-                    fixedMenuPosition
-                    @selected=${(e: Event) => {
-                      const v = parseFloat(getSelectValue(e));
+                    .value=${this._insulationValue()}
+                    @value-changed=${(e: CustomEvent<{ value: string }>) => {
+                      const v = parseFloat(e.detail.value);
                       if (!isNaN(v) && v !== this.moldFRsi) this._fire("moldFRsi", v);
                     }}
-                    @closed=${(e: Event) => e.stopPropagation()}
-                  >
-                    ${INSULATION_LEVELS.map(
-                      (lvl) =>
-                        html`<ha-list-item value=${String(lvl.f_rsi)}
-                          >${localize(lvl.key, l)}</ha-list-item
-                        >`,
-                    )}
-                  </ha-select>
+                  ></rs-segmented>
                   <span class="field-hint">${localize("mold.insulation_hint", l)}</span>
                 </div>
               </div>
