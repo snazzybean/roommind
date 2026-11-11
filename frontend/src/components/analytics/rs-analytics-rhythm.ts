@@ -9,6 +9,7 @@ import { localize } from "../../utils/localize";
 import { formatTempLocale, tempUnit } from "../../utils/temperature";
 import { formatHours, formatPercent } from "../../utils/format";
 import { tokens, srOnly } from "../../styles/tokens";
+import { floatingStyles } from "../../styles/floating-styles";
 import "../shared/rs-list-card";
 import "../shared/rs-segmented";
 
@@ -232,7 +233,7 @@ export class RsAnalyticsRhythm extends LitElement {
     add(localize("analytics.outdoor", l), day.outdoor[hour], temp);
     return html`
       <div
-        class="popup ${below ? "below" : ""} ${this._tapped ? "tapped" : ""}"
+        class="popup floating-surface ${below ? "below" : ""} ${this._tapped ? "tapped" : ""}"
         role=${this._tapped ? "group" : "tooltip"}
         @pointerdown=${() => {
           this._popupPressed = true;
@@ -347,6 +348,7 @@ export class RsAnalyticsRhythm extends LitElement {
   static styles = [
     tokens,
     srOnly,
+    floatingStyles,
     css`
       :host {
         display: block;
@@ -511,18 +513,10 @@ export class RsAnalyticsRhythm extends LitElement {
       .popup {
         position: absolute;
         z-index: 5;
-        box-sizing: border-box;
-        padding: 8px 10px;
-        border: 1px solid var(--divider-color);
-        border-radius: 8px;
-        background: var(--card-background-color);
-        box-shadow:
-          0 1px 2px rgba(0, 0, 0, 0.2),
-          0 6px 18px rgba(0, 0, 0, 0.22);
+        padding: 8px 12px;
         font-size: 12px;
         line-height: 1.5;
         font-variant-numeric: tabular-nums;
-        color: var(--primary-text-color);
         transform: translate(-50%, calc(-100% - 6px));
         pointer-events: none;
       }

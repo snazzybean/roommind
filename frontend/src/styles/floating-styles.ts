@@ -3,13 +3,11 @@ import { css } from "lit";
 /**
  * Look of every floating layer (tooltip, menu): one surface so they read as one system.
  * Placement comes from `utils/popover.ts`; `.floating` resets the UA popover styles.
+ * `.floating-surface` is the same look for a popup its parent positions itself.
  */
 export const floatingStyles = css`
-  .floating {
-    position: fixed;
-    inset: auto;
-    margin: 0;
-    z-index: 1100;
+  .floating,
+  .floating-surface {
     box-sizing: border-box;
     background: var(--card-background-color, var(--primary-background-color));
     border: 1px solid var(--divider-color);
@@ -19,6 +17,13 @@ export const floatingStyles = css`
       0 1px 3px rgb(0 0 0 / 12%),
       0 8px 24px rgb(0 0 0 / 28%);
     animation: floating-fade 0.12s ease-out;
+  }
+
+  .floating {
+    position: fixed;
+    inset: auto;
+    margin: 0;
+    z-index: 1100;
   }
 
   .floating:popover-open {
@@ -56,7 +61,8 @@ export const floatingStyles = css`
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .floating {
+    .floating,
+    .floating-surface {
       animation: none;
     }
   }
