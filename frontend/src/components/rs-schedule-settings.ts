@@ -5,28 +5,30 @@ import { localize } from "../utils/localize";
 import {
   formatTempLocale,
   tempUnit,
-  toDisplay,
-  toDisplayDelta,
-  toCelsius,
   isPlausibleTargetTemp,
   MIN_TARGET_TEMP_C,
   MAX_TARGET_TEMP_C,
-  tempStep,
   tempRange,
 } from "../utils/temperature";
 import { formatNumber } from "../utils/format";
 import { RsScheduleBase } from "./shared/rs-schedule-base";
 import { inputStyles } from "../styles/input-styles";
-import "./shared/rs-toggle-row";
-import "./shared/rs-chip-group";
+import { priceShiftLabel } from "./room-detail/rs-price-shift";
 import "./shared/rs-list-row";
+import "./shared/rs-info-icon";
 
 /** Mirrors _WEEKDAYS in the backend's schedule_utils.py. */
 const WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
 
-// Matches MAX_PRICE_SHIFT_K in const.py
-const PRICE_SHIFT_STEPS = [0, 0.5, 1, 1.5, 2];
+/** Which dialog a row of the card opens (`edit-click` detail `{ part }`). */
+export type ScheduleCardPart = "schedule" | "temperatures" | "price";
 
+/**
+ * The room's "Schedule & temperatures" card. View mode: one row per schedule, comfort, eco,
+ * pre-heat, device changes and price; each clickable row fires `edit-click` with the dialog it
+ * belongs to. Edit mode is the content of the schedule dialog (assigned helpers, adding one,
+ * selector); temperatures and price have their own dialog components.
+ */
 @customElement("rs-schedule-settings")
 export class RsScheduleSettings extends RsScheduleBase {
   @property({ attribute: false }) public schedules: ScheduleEntry[] = [];
@@ -62,87 +64,8 @@ export class RsScheduleSettings extends RsScheduleBase {
     RsScheduleBase.sharedStyles,
     inputStyles,
     css`
-      .fallback-hint {
-        font-size: 11px;
-        color: var(--secondary-text-color);
-        margin-top: 4px;
-        font-style: italic;
-      }
-
-      .temp-inputs {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 16px;
-        margin-top: 16px;
-      }
-
-      .temp-input-group {
-        display: flex;
-        flex-direction: column;
-        gap: 6px;
-      }
-
-      ha-textfield {
-        flex: 1;
-      }
-
-      .preheat-toggle,
-      .follow-device-toggle,
-      .price-shift {
-        margin-top: 16px;
-      }
-
-      .price-shift-label {
-        font-size: 14px;
-        margin-bottom: 4px;
-      }
-
-      .price-shift-hint {
-        font-size: 12px;
-        color: var(--secondary-text-color);
-        margin-bottom: 8px;
-      }
-
       .inline-warning.in-list {
         margin: 0 16px 8px;
-      }
-
-      .temp-grid-auto {
-        display: grid;
-        grid-template-columns: auto 1fr 1fr;
-        gap: 8px 12px;
-        align-items: center;
-        margin-top: 16px;
-      }
-      .temp-grid-header {
-        font-size: 12px;
-        font-weight: 600;
-        color: var(--secondary-text-color);
-        text-transform: uppercase;
-        letter-spacing: 0.3px;
-        text-align: center;
-      }
-      .temp-grid-row-label {
-        display: flex;
-        align-items: center;
-        gap: 4px;
-        font-size: 13px;
-        font-weight: 500;
-        color: var(--secondary-text-color);
-        white-space: nowrap;
-      }
-
-      @media (max-width: 600px) {
-        .temp-grid-auto {
-          grid-template-columns: 1fr 1fr;
-        }
-        .temp-grid-row-label {
-          grid-column: 1 / -1;
-          margin-top: 8px;
-        }
-        .temp-grid-header {
-          display: none;
-        }
       }
     `,
   ];
@@ -165,6 +88,7 @@ export class RsScheduleSettings extends RsScheduleBase {
       this.climateMode === "auto"
         ? `${fmt(heat)}–${fmt(cool)} ${unit}`
         : `${fmt(this.climateMode === "cool_only" ? cool : heat)} ${unit}`;
+    const open = (part: ScheduleCardPart) => (e: Event) => this._onEditClick(e, part);
 
     return html`
       ${
@@ -181,7 +105,7 @@ export class RsScheduleSettings extends RsScheduleBase {
                   .iconColor=${state === "active" ? "var(--primary-color)" : ""}
                   .heading=${hasMultiple ? `${index + 1} · ${name}` : name}
                   .secondary=${this._getStatusText(index, state)}
-                  @row-click=${this._onEditClick}
+                  @row-click=${open("schedule")}
                   @icon-click=${() => this._openEntityInfo(schedule.entity_id)}
                 ></rs-list-row>
                 ${this._renderRejectedTempWarning(state, true)}
@@ -194,7 +118,7 @@ export class RsScheduleSettings extends RsScheduleBase {
               icon="mdi:plus"
               .heading=${localize("detail.schedule.add", l)}
               .secondary=${localize("schedule.no_schedules", l)}
-              @row-click=${this._onEditClick}
+              @row-click=${open("schedule")}
             ></rs-list-row>`
       }
       ${
@@ -207,7 +131,7 @@ export class RsScheduleSettings extends RsScheduleBase {
               .heading=${this._getFriendlyName(this.scheduleSelectorEntity)}
               .secondary=${localize("schedule.view_selector_prefix", l).replace(/:\s*$/, "")}
               .value=${this._getSelectorValueText(l)}
-              @row-click=${this._onEditClick}
+              @row-click=${open("schedule")}
               @icon-click=${() => this._openEntityInfo(this.scheduleSelectorEntity)}
             ></rs-list-row>`
           : nothing
@@ -219,7 +143,7 @@ export class RsScheduleSettings extends RsScheduleBase {
         .heading=${localize("override.comfort", l)}
         .secondary=${localize("detail.schedule.comfort_sub", l)}
         .value=${band(this.comfortHeat, this.comfortCool)}
-        @row-click=${this._onEditClick}
+        @row-click=${open("temperatures")}
       ></rs-list-row>
       <rs-list-row
         clickable
@@ -228,30 +152,39 @@ export class RsScheduleSettings extends RsScheduleBase {
         .heading=${localize("override.eco", l)}
         .secondary=${localize("detail.schedule.eco_sub", l)}
         .value=${band(this.ecoHeat, this.ecoCool)}
-        @row-click=${this._onEditClick}
+        @row-click=${open("temperatures")}
       ></rs-list-row>
       ${
         this.showPreheat
           ? html`<rs-list-row
               switch
+              wrap
               icon="mdi:clock-fast"
               .heading=${localize("schedule.preheat_label", l)}
               .secondary=${localize("detail.schedule.preheat_sub", l)}
               .checked=${this.preheatEnabled}
               @toggle-changed=${(e: CustomEvent<boolean>) =>
                 this._fireValue("preheat-changed", e.detail)}
-            ></rs-list-row>`
+            >
+              <rs-info-icon slot="end" .text=${localize("schedule.preheat_hint", l)}></rs-info-icon>
+            </rs-list-row>`
           : nothing
       }
       <rs-list-row
         switch
+        wrap
         icon="mdi:gesture-tap"
         .heading=${localize("schedule.follow_device_setpoint_label", l)}
         .secondary=${localize("detail.schedule.follow_sub", l)}
         .checked=${this.followDeviceSetpoint}
         @toggle-changed=${(e: CustomEvent<boolean>) =>
           this._fireValue("follow-device-setpoint-changed", e.detail)}
-      ></rs-list-row>
+      >
+        <rs-info-icon
+          slot="end"
+          .text=${localize("schedule.follow_device_setpoint_hint", l)}
+        ></rs-info-icon>
+      </rs-list-row>
       ${
         this.priceConfigured
           ? html`<rs-list-row
@@ -262,111 +195,53 @@ export class RsScheduleSettings extends RsScheduleBase {
               .secondary=${localize("detail.schedule.price_sub", l)}
               .value=${
                 this.priceShift > 0
-                  ? `±${this._shiftLabel(this.priceShift)}`
+                  ? priceShiftLabel(this.priceShift, this.hass)
                   : localize("schedule.price_shift_off", l)
               }
-              @row-click=${this._onEditClick}
+              @row-click=${open("price")}
             ></rs-list-row>`
           : nothing
       }
     `;
   }
 
-  private _onEditClick(e: Event) {
+  private _onEditClick(e: Event, part: ScheduleCardPart) {
     e.stopPropagation();
-    this.dispatchEvent(new CustomEvent("edit-click", { bubbles: true, composed: true }));
+    this.dispatchEvent(
+      new CustomEvent("edit-click", { detail: { part }, bubbles: true, composed: true }),
+    );
   }
 
   private _fireValue(name: string, value: unknown) {
     this.dispatchEvent(new CustomEvent(name, { detail: { value }, bubbles: true, composed: true }));
   }
 
-  // ─── Edit mode ─────────────────────────────────────────────────
+  // ─── Edit mode (schedule dialog) ───────────────────────────────
 
   private _renderEditMode() {
     const l = this.hass.language;
-    const count = this.schedules.length;
-    const usedIds = new Set(this.schedules.map((s) => s.entity_id));
-
     return html`
-      ${this._renderScheduleList()}
-      ${this._renderAddRow(
-        localize("schedule.select_schedule", l),
-        this._getAvailableEntities(usedIds),
-        (eid) => this._addSchedule(eid),
-        localize("schedule.create_helper_hint", l),
-      )}
+      ${this._renderScheduleList()} ${this._renderAddSource()}
       ${this._renderSelectorSection(
-        count,
+        this.schedules.length,
         localize("schedule.selector_label", l),
         this.scheduleSelectorEntity ? this._getSelectorValueText(l) : "",
         localize("schedule.selector_warning", l),
         (value) => this._onSelectorEntityChange(value),
       )}
-      ${this._renderTemperatureInputs(l)}
-      ${
-        this.showPreheat
-          ? html`<rs-toggle-row
-              class="preheat-toggle"
-              .label=${localize("schedule.preheat_label", l)}
-              .hint=${localize("schedule.preheat_hint", l)}
-              .checked=${this.preheatEnabled}
-              @toggle-changed=${this._onPreheatToggle}
-            ></rs-toggle-row>`
-          : nothing
-      }
-      <rs-toggle-row
-        class="follow-device-toggle"
-        .label=${localize("schedule.follow_device_setpoint_label", l)}
-        .hint=${localize("schedule.follow_device_setpoint_hint", l)}
-        .checked=${this.followDeviceSetpoint}
-        @toggle-changed=${this._onFollowDeviceSetpointToggle}
-      ></rs-toggle-row>
-      ${this.priceConfigured ? this._renderPriceShift(l) : nothing}
     `;
   }
 
-  private _renderPriceShift(l: string) {
-    return html`<div class="price-shift">
-      <div class="price-shift-label">${localize("schedule.price_shift_label", l)}</div>
-      <div class="price-shift-hint">${localize("schedule.price_shift_hint", l)}</div>
-      <rs-chip-group
-        .label=${localize("schedule.price_shift_label", l)}
-        .chips=${PRICE_SHIFT_STEPS.map((k) => ({
-          id: String(k),
-          label: k === 0 ? localize("schedule.price_shift_off", l) : `±${this._shiftLabel(k)}`,
-          active: Math.abs(this.priceShift - k) < 0.01,
-        }))}
-        @chip-clicked=${this._onPriceShiftChip}
-      ></rs-chip-group>
-    </div>`;
-  }
-
-  private _shiftLabel(k: number): string {
-    return `${new Intl.NumberFormat(this.hass.language, { maximumFractionDigits: 1 }).format(
-      toDisplayDelta(k, this.hass),
-    )}\u00A0${tempUnit(this.hass)}`;
-  }
-
-  private _onPriceShiftChip(e: CustomEvent<string>) {
-    e.stopPropagation();
-    this.dispatchEvent(
-      new CustomEvent("price-shift-changed", {
-        detail: { value: Number(e.detail) },
-        bubbles: true,
-        composed: true,
-      }),
+  /** Ways to give the room a schedule: pick a Home Assistant schedule helper or create one there. */
+  private _renderAddSource() {
+    const l = this.hass.language;
+    const usedIds = new Set(this.schedules.map((s) => s.entity_id));
+    return this._renderAddRow(
+      localize("schedule.select_schedule", l),
+      this._getAvailableEntities(usedIds),
+      (eid) => this._addSchedule(eid),
+      localize("schedule.create_helper_hint", l),
     );
-  }
-
-  private _onFollowDeviceSetpointToggle(e: CustomEvent<boolean>) {
-    e.stopPropagation();
-    this._fireValue("follow-device-setpoint-changed", e.detail);
-  }
-
-  private _onPreheatToggle(e: CustomEvent<boolean>) {
-    e.stopPropagation();
-    this._fireValue("preheat-changed", e.detail);
   }
 
   // ─── Schedule list ─────────────────────────────────────────────
@@ -443,107 +318,6 @@ export class RsScheduleSettings extends RsScheduleBase {
       when = `${weekday} ${when}`;
     }
     return `${w.value} (${when})`;
-  }
-
-  // ─── Temperature inputs ────────────────────────────────────────
-
-  private _renderTemperatureInputs(l: string) {
-    if (this.climateMode === "auto") {
-      return html`
-        <div class="temp-grid-auto">
-          <div class="temp-grid-header"></div>
-          <div class="temp-grid-header">${localize("schedule.column_comfort", l)}</div>
-          <div class="temp-grid-header">${localize("schedule.column_eco", l)}</div>
-          <div class="temp-grid-row-label">
-            <ha-icon icon="mdi:fire" style="--mdc-icon-size:16px"></ha-icon>
-            ${localize("schedule.row_heat", l)}
-          </div>
-          <ha-textfield
-            type="number"
-            .value=${String(toDisplay(this.comfortHeat, this.hass))}
-            suffix=${tempUnit(this.hass)}
-            step=${tempStep(this.hass)}
-            min=${tempRange(5, 35, this.hass).min}
-            max=${tempRange(5, 35, this.hass).max}
-            @change=${this._onComfortHeatChange}
-          ></ha-textfield>
-          <ha-textfield
-            type="number"
-            .value=${String(toDisplay(this.ecoHeat, this.hass))}
-            suffix=${tempUnit(this.hass)}
-            step=${tempStep(this.hass)}
-            min=${tempRange(5, 35, this.hass).min}
-            max=${tempRange(5, 35, this.hass).max}
-            @change=${this._onEcoHeatChange}
-          ></ha-textfield>
-          <div class="temp-grid-row-label">
-            <ha-icon icon="mdi:snowflake" style="--mdc-icon-size:16px"></ha-icon>
-            ${localize("schedule.row_cool", l)}
-          </div>
-          <ha-textfield
-            type="number"
-            .value=${String(toDisplay(this.comfortCool, this.hass))}
-            suffix=${tempUnit(this.hass)}
-            step=${tempStep(this.hass)}
-            min=${tempRange(5, 35, this.hass).min}
-            max=${tempRange(5, 35, this.hass).max}
-            @change=${this._onComfortCoolChange}
-          ></ha-textfield>
-          <ha-textfield
-            type="number"
-            .value=${String(toDisplay(this.ecoCool, this.hass))}
-            suffix=${tempUnit(this.hass)}
-            step=${tempStep(this.hass)}
-            min=${tempRange(5, 35, this.hass).min}
-            max=${tempRange(5, 35, this.hass).max}
-            @change=${this._onEcoCoolChange}
-          ></ha-textfield>
-        </div>
-      `;
-    }
-
-    return html`
-      <div class="temp-inputs">
-        <div class="temp-input-group">
-          <ha-textfield
-            type="number"
-            label=${localize("schedule.comfort_label", l)}
-            suffix=${tempUnit(this.hass)}
-            step=${tempStep(this.hass)}
-            .value=${String(
-              toDisplay(
-                this.climateMode === "cool_only" ? this.comfortCool : this.comfortHeat,
-                this.hass,
-              ),
-            )}
-            min=${tempRange(5, 35, this.hass).min}
-            max=${tempRange(5, 35, this.hass).max}
-            @change=${
-              this.climateMode === "cool_only"
-                ? this._onComfortCoolChange
-                : this._onComfortHeatChange
-            }
-          ></ha-textfield>
-        </div>
-        <div class="temp-input-group">
-          <ha-textfield
-            type="number"
-            label=${localize("schedule.eco_label", l)}
-            suffix=${tempUnit(this.hass)}
-            step=${tempStep(this.hass)}
-            .value=${String(
-              toDisplay(this.climateMode === "cool_only" ? this.ecoCool : this.ecoHeat, this.hass),
-            )}
-            min=${tempRange(5, 35, this.hass).min}
-            max=${tempRange(5, 35, this.hass).max}
-            @change=${
-              this.climateMode === "cool_only" ? this._onEcoCoolChange : this._onEcoHeatChange
-            }
-          ></ha-textfield>
-        </div>
-      </div>
-      <div class="fallback-hint">${localize("schedule.comfort_hint", l)}</div>
-    `;
   }
 
   // ─── Selector value text ───────────────────────────────────────
@@ -676,92 +450,6 @@ export class RsScheduleSettings extends RsScheduleBase {
         composed: true,
       }),
     );
-  }
-
-  // ─── Temperature change handlers ──────────────────────────────
-
-  private _onComfortHeatChange(e: Event) {
-    const target = e.target as HTMLElement & { value: string };
-    const val = toCelsius(parseFloat(target.value) || toDisplay(21.0, this.hass), this.hass);
-    this.dispatchEvent(
-      new CustomEvent("comfort-heat-changed", {
-        detail: { value: val },
-        bubbles: true,
-        composed: true,
-      }),
-    );
-    if (this.comfortCool < val) {
-      this.dispatchEvent(
-        new CustomEvent("comfort-cool-changed", {
-          detail: { value: val },
-          bubbles: true,
-          composed: true,
-        }),
-      );
-    }
-  }
-
-  private _onComfortCoolChange(e: Event) {
-    const target = e.target as HTMLElement & { value: string };
-    const val = toCelsius(parseFloat(target.value) || toDisplay(24.0, this.hass), this.hass);
-    this.dispatchEvent(
-      new CustomEvent("comfort-cool-changed", {
-        detail: { value: val },
-        bubbles: true,
-        composed: true,
-      }),
-    );
-    if (this.comfortHeat > val) {
-      this.dispatchEvent(
-        new CustomEvent("comfort-heat-changed", {
-          detail: { value: val },
-          bubbles: true,
-          composed: true,
-        }),
-      );
-    }
-  }
-
-  private _onEcoHeatChange(e: Event) {
-    const target = e.target as HTMLElement & { value: string };
-    const val = toCelsius(parseFloat(target.value) || toDisplay(17.0, this.hass), this.hass);
-    this.dispatchEvent(
-      new CustomEvent("eco-heat-changed", {
-        detail: { value: val },
-        bubbles: true,
-        composed: true,
-      }),
-    );
-    if (this.ecoCool < val) {
-      this.dispatchEvent(
-        new CustomEvent("eco-cool-changed", {
-          detail: { value: val },
-          bubbles: true,
-          composed: true,
-        }),
-      );
-    }
-  }
-
-  private _onEcoCoolChange(e: Event) {
-    const target = e.target as HTMLElement & { value: string };
-    const val = toCelsius(parseFloat(target.value) || toDisplay(27.0, this.hass), this.hass);
-    this.dispatchEvent(
-      new CustomEvent("eco-cool-changed", {
-        detail: { value: val },
-        bubbles: true,
-        composed: true,
-      }),
-    );
-    if (this.ecoHeat > val) {
-      this.dispatchEvent(
-        new CustomEvent("eco-heat-changed", {
-          detail: { value: val },
-          bubbles: true,
-          composed: true,
-        }),
-      );
-    }
   }
 }
 

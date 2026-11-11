@@ -13,6 +13,9 @@ import type {
 } from "../types";
 import "./room-detail/rs-room-hero";
 import "./rs-schedule-settings";
+import type { ScheduleCardPart } from "./rs-schedule-settings";
+import "./room-detail/rs-target-temps";
+import "./room-detail/rs-price-shift";
 import "./rs-device-section";
 import "./rs-sensor-section";
 import "./rs-override-section";
@@ -28,7 +31,9 @@ import {
   devicesHelp,
   editDialogHelpStyles,
   presenceHelp,
+  priceHelp,
   scheduleHelp,
+  temperaturesHelp,
 } from "./room-detail/edit-dialog-help";
 import { localize, type TranslationKey } from "../utils/localize";
 import { fireSaveStatus } from "../utils/events";
@@ -37,7 +42,8 @@ import { DEFAULT_OCCUPANCY_ECO_DELAY } from "../utils/constants";
 import { NO_OVERRIDE, type EffectiveOverride } from "../utils/override";
 import { tokens } from "../styles/tokens";
 
-type EditableSection = "schedule" | "devices" | "sensors" | "presence" | "covers" | "heatSource";
+type EditableSection =
+  ScheduleCardPart | "devices" | "sensors" | "presence" | "covers" | "heatSource";
 
 @customElement("rs-room-detail")
 export class RsRoomDetail extends LitElement {
@@ -363,6 +369,12 @@ export class RsRoomDetail extends LitElement {
     this._editing = section;
   };
 
+  private _onScheduleEditClick(e: CustomEvent<{ part?: ScheduleCardPart } | undefined>) {
+    e.stopPropagation();
+    this._focusDevice = "";
+    this._editing = e.detail?.part ?? "schedule";
+  }
+
   private _onDevicesEditClick(e: CustomEvent<{ entityId?: string } | undefined>) {
     e.stopPropagation();
     this._focusDevice = e.detail?.entityId ?? "";
@@ -509,7 +521,7 @@ export class RsRoomDetail extends LitElement {
     return html`
       <rs-list-card
         .heading=${localize("room.section.schedule", l)}
-        @edit-click=${this._openEdit("schedule")}
+        @edit-click=${this._onScheduleEditClick}
       >
         <rs-schedule-settings
           .hass=${this.hass}
@@ -707,8 +719,8 @@ export class RsRoomDetail extends LitElement {
       case "schedule":
         return html`<rs-edit-dialog
           open
-          icon="mdi:calendar"
-          .heading=${localize("room.section.schedule", lang)}
+          icon="mdi:calendar-clock"
+          .heading=${localize("detail.schedule.dialog_schedule", lang)}
           hasInfo
           @rs-dialog-closed=${this._closeEdit}
         >
@@ -724,22 +736,51 @@ export class RsRoomDetail extends LitElement {
             .ecoCool=${this._ecoCool}
             .climateMode=${this._climateMode}
             .scheduleTempWarnings=${this.config?.live?.schedule_temp_warnings ?? []}
-            .preheatEnabled=${this._preheatEnabled}
-            .followDeviceSetpoint=${this._followDeviceSetpoint}
-            .priceShift=${this._priceShift}
-            .priceConfigured=${this.priceConfigured}
-            .showPreheat=${this._showPreheat()}
             .editing=${true}
             @schedules-changed=${this._onSchedulesChanged}
             @schedule-selector-changed=${this._onScheduleSelectorChanged}
+          ></rs-schedule-settings>
+        </rs-edit-dialog>`;
+      case "temperatures":
+        return html`<rs-edit-dialog
+          open
+          icon="mdi:thermometer"
+          .heading=${localize("detail.schedule.dialog_temps", lang)}
+          hasInfo
+          @rs-dialog-closed=${this._closeEdit}
+        >
+          ${temperaturesHelp(lang)}
+          <rs-target-temps
+            .hass=${this.hass}
+            .comfortHeat=${this._comfortHeat}
+            .comfortCool=${this._comfortCool}
+            .ecoHeat=${this._ecoHeat}
+            .ecoCool=${this._ecoCool}
+            .climateMode=${this._climateMode}
             @comfort-heat-changed=${this._onComfortHeatChanged}
             @comfort-cool-changed=${this._onComfortCoolChanged}
             @eco-heat-changed=${this._onEcoHeatChanged}
             @eco-cool-changed=${this._onEcoCoolChanged}
-            @preheat-changed=${this._onPreheatChanged}
-            @follow-device-setpoint-changed=${this._onFollowDeviceSetpointChanged}
+          ></rs-target-temps>
+        </rs-edit-dialog>`;
+      case "price":
+        return html`<rs-edit-dialog
+          open
+          icon="mdi:cash-clock"
+          .heading=${localize("schedule.price_shift_label", lang)}
+          hasInfo
+          @rs-dialog-closed=${this._closeEdit}
+        >
+          ${priceHelp(lang)}
+          <rs-price-shift
+            .hass=${this.hass}
+            .priceShift=${this._priceShift}
+            .climateMode=${this._climateMode}
+            .priceLevel=${this.config?.live?.price_level ?? null}
+            .shiftHeat=${this.config?.live?.price_shift_heat ?? 0}
+            .shiftCool=${this.config?.live?.price_shift_cool ?? 0}
             @price-shift-changed=${this._onPriceShiftChanged}
-          ></rs-schedule-settings>
+          ></rs-price-shift>
         </rs-edit-dialog>`;
       case "devices":
         return html`<rs-edit-dialog

@@ -46,7 +46,7 @@ export const editDialogHelpStyles = css`
 const CONTROL_DOCS_URL =
   "https://github.com/snazzybean/roommind/blob/main/docs/control-and-devices.md";
 
-export function scheduleHelp(lang: string) {
+export function temperaturesHelp(lang: string) {
   return html`<div slot="info">
     <p><strong>${localize("schedule.help_temps_title", lang)}</strong></p>
     <p>${localize("schedule.help_temps", lang)}</p>
@@ -56,9 +56,18 @@ export function scheduleHelp(lang: string) {
       <li>${unsafeHTML(localize("schedule.help_temps_3", lang))}</li>
       <li>${unsafeHTML(localize("schedule.help_temps_4", lang))}</li>
     </ol>
-    <p style="margin-top: 12px">
-      <strong>${localize("schedule.help_block_title", lang)}</strong>
-    </p>
+  </div>`;
+}
+
+export function priceHelp(lang: string) {
+  return html`<div slot="info">
+    <p>${localize("detail.price.info", lang)}</p>
+  </div>`;
+}
+
+export function scheduleHelp(lang: string) {
+  return html`<div slot="info">
+    <p><strong>${localize("schedule.help_block_title", lang)}</strong></p>
     <p>${unsafeHTML(localize("schedule.help_block", lang))}</p>
     <div class="yaml-block">
       ${unsafeHTML(
