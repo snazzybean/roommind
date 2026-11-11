@@ -82,7 +82,7 @@ export class RsSegmented extends LitElement {
 
       @media (pointer: coarse) {
         :host([size="md"]) button {
-          height: 38px;
+          height: var(--rs-touch);
         }
       }
 
@@ -92,9 +92,16 @@ export class RsSegmented extends LitElement {
         font-size: 12px;
       }
 
+      /* sm stays compact; the tap target grows only vertically, sideways it would cover a neighbour */
       @media (pointer: coarse) {
         :host([size="sm"]) button {
+          position: relative;
           height: 36px;
+        }
+        :host([size="sm"]) button::before {
+          content: "";
+          position: absolute;
+          inset: -4px 0;
         }
       }
 
