@@ -6,11 +6,13 @@ import { localize } from "../utils/localize";
 import { getSelectValue, openEntityInfo } from "../utils/events";
 import { tempUnit, toDisplayDelta, toCelsiusDelta, usesFahrenheit } from "../utils/temperature";
 import { resolveHeatingSystemType } from "../utils/device-utils";
+import { formatNumber } from "../utils/format";
 import { masterDetailStyles } from "../styles/master-detail-styles";
 import { inputStyles } from "../styles/input-styles";
 import "./shared/rs-master-detail";
 import "./shared/rs-info-icon";
 import "./shared/rs-toggle-row";
+import "./shared/rs-list-row";
 
 /**
  * UI-only sentinel for "inherit the global setting".  ha-select cannot render an
@@ -36,6 +38,8 @@ export class RsDeviceSection extends LitElement {
   @property({ type: String }) public coilDryFanModeGlobal = "low";
 
   @property({ type: Boolean }) public editing = false;
+  /** Device the edit view opens with (e.g. the row the user tapped). */
+  @property({ type: String }) public focusEntity = "";
   @state() private _systemTypeInfoExpanded = false;
   @state() private _showBoostHint = false;
   @state() private _selectedThermostats: Set<string> = new Set();
@@ -62,6 +66,9 @@ export class RsDeviceSection extends LitElement {
       if (!this._selectedForEdit && this.devices.length > 0) {
         this._selectedForEdit = this.devices[0].entity_id;
       }
+    }
+    if (changed.has("focusEntity") && this.devices.some((d) => d.entity_id === this.focusEntity)) {
+      this._selectedForEdit = this.focusEntity;
     }
   }
 
@@ -355,129 +362,103 @@ export class RsDeviceSection extends LitElement {
   }
 
   private _renderViewMode() {
-    const hasClimate = this._selectedThermostats.size > 0 || this._selectedCoolingDevices.size > 0;
-
+    const l = this.hass.language;
+    const ordered = [
+      ...this.devices.filter((d) => d.type === "trv"),
+      ...this.devices.filter((d) => d.type !== "trv"),
+    ];
     return html`
-      ${
-        hasClimate
-          ? html`
-              <div class="device-group">
-                <div class="section-subtitle">
-                  ${localize("devices.climate_entities", this.hass.language)}
-                </div>
-                ${[...this._selectedThermostats].map((id) => this._renderViewRow(id, "climate"))}
-                ${[...this._selectedCoolingDevices].map((id) => this._renderViewRow(id, "climate"))}
-              </div>
-            `
-          : nothing
-      }
-      ${
-        this._heatingSystemType
-          ? html`
-              <div class="device-group">
-                <div class="section-subtitle">
-                  ${localize("devices.heating_system_type", this.hass.language)}
-                </div>
-                <div class="view-row">
-                  <span class="view-name"
-                    >${
-                      this._heatingSystemType === "radiator"
-                        ? localize("devices.system_type_radiator", this.hass.language)
-                        : this._heatingSystemType === "underfloor"
-                          ? localize("devices.system_type_underfloor", this.hass.language)
-                          : this._heatingSystemType
-                    }</span
-                  >
-                </div>
-              </div>
-            `
-          : nothing
-      }
+      ${ordered.map((d) => this._renderViewRow(d))}
+      <rs-list-row
+        clickable
+        plain-icon
+        variant="primary"
+        icon="mdi:plus"
+        .heading=${localize("detail.devices.add", l)}
+        @row-click=${(e: Event) => this._fireEdit(e)}
+      ></rs-list-row>
     `;
   }
 
-  private _renderViewRow(entityId: string, type: "climate" | "temp" | "humidity") {
+  /** "Thermostat · Heizkörper · Absenkung · Direktes Ventil": type and what is set apart. */
+  private _deviceSummary(device: DeviceConfig): string {
+    const l = this.hass.language;
+    const parts: string[] = [localize(device.type === "trv" ? "card.thermostat" : "card.ac", l)];
+    if (device.type === "trv" && this._heatingSystemType) {
+      parts.push(
+        this._heatingSystemType === "radiator"
+          ? localize("devices.system_type_radiator", l)
+          : this._heatingSystemType === "underfloor"
+            ? localize("devices.system_type_underfloor", l)
+            : this._heatingSystemType,
+      );
+    }
+    if (device.idle_action === "fan_only") {
+      parts.push(
+        localize("devices.idle_action_fan_only", l) +
+          (device.idle_fan_mode ? ` (${device.idle_fan_mode})` : ""),
+      );
+    } else if (device.idle_action === "low") {
+      parts.push(localize("devices.idle_action_low", l));
+    } else if (device.idle_action === "setback") {
+      parts.push(localize("devices.idle_action_setback", l));
+    }
+    const hasValve =
+      device.type === "trv" && !!device.valve_opening_entity && !!device.valve_closing_entity;
+    if (device.setpoint_mode === "direct" && this.selectedTempSensor && !hasValve) {
+      parts.push(localize("devices.setpoint_mode_direct", l));
+    }
+    if (hasValve && this.selectedTempSensor) parts.push(localize("devices.valve_direct_badge", l));
+    if (this.valveProtectionEnabled && this.valveProtectionExclude.has(device.entity_id)) {
+      parts.push(localize("devices.valve_protection_excluded", l));
+    }
+    return parts.join(" · ");
+  }
+
+  private _renderViewRow(device: DeviceConfig) {
+    const l = this.hass.language;
+    const entityId = device.entity_id;
     const entityState = this.hass.states[entityId];
     const friendlyName = (entityState?.attributes?.friendly_name as string) || entityId;
-    const state = entityState?.state;
     const attrs = entityState?.attributes ?? {};
+    const action = attrs.hvac_action as string | undefined;
+    const unavailable = !entityState || entityState.state === "unavailable";
 
-    let displayValue = "";
-    if (type === "climate") {
-      const ct = attrs.current_temperature as number | undefined;
-      if (ct != null) displayValue = `${ct.toFixed(1)}${tempUnit(this.hass)}`;
-    } else if (type === "temp") {
-      const tempVal = entityId.startsWith("climate.") ? attrs.current_temperature : state;
-      if (tempVal != null && tempVal !== "" && tempVal !== "unknown" && tempVal !== "unavailable")
-        displayValue = `${Number(tempVal).toFixed(1)}${tempUnit(this.hass)}`;
-    } else {
-      if (state && state !== "unknown" && state !== "unavailable")
-        displayValue = `${Math.round(Number(state))}%`;
-    }
+    let status = "";
+    let color = "";
+    if (unavailable) status = localize("detail.devices.unavailable", l);
+    else if (action === "heating" || action === "preheating") {
+      status = localize("card.state.heating", l);
+      color = "var(--rs-heat)";
+    } else if (action === "cooling") {
+      status = localize("card.state.cooling", l);
+      color = "var(--rs-cool)";
+    } else if (entityState.state === "off") status = localize("card.state.off", l);
+    const ct = attrs.current_temperature;
+    // Device readings are already in Home Assistant's unit.
+    const temp =
+      typeof ct === "number" ? `${formatNumber(ct, this.hass, 1)} ${tempUnit(this.hass)}` : "";
+    const value = [status, temp].filter(Boolean).join(" · ");
 
-    const showExcludeBadge =
-      type === "climate" &&
-      this.valveProtectionEnabled &&
-      this.valveProtectionExclude.has(entityId);
+    return html`<rs-list-row
+      clickable
+      chevron
+      .icon=${device.type === "trv" ? "mdi:thermostat" : "mdi:air-conditioner"}
+      .iconColor=${color}
+      icon-label=${localize("detail.more_info", l)}
+      .heading=${friendlyName}
+      .secondary=${this._deviceSummary(device)}
+      .value=${value}
+      @row-click=${(e: Event) => this._fireEdit(e, entityId)}
+      @icon-click=${() => openEntityInfo(this, entityId)}
+    ></rs-list-row>`;
+  }
 
-    const device =
-      type === "climate" ? this.devices.find((d) => d.entity_id === entityId) : undefined;
-    const showIdleBadge =
-      device?.idle_action === "fan_only" ||
-      device?.idle_action === "setback" ||
-      device?.idle_action === "low";
-    const hasValve =
-      device?.type === "trv" && !!device?.valve_opening_entity && !!device?.valve_closing_entity;
-    const showDirectBadge =
-      device?.setpoint_mode === "direct" && !!this.selectedTempSensor && !hasValve;
-    const showValveBadge = hasValve && !!this.selectedTempSensor;
-
-    return html`
-      <div class="view-row">
-        <span class="view-name entity-link" @click=${() => openEntityInfo(this, entityId)}
-          >${friendlyName}</span
-        >
-        ${
-          showIdleBadge
-            ? html`<span class="valve-exclude-badge">
-                ${
-                  device!.idle_action === "fan_only"
-                    ? html`${localize("devices.idle_action_fan_only", this.hass.language)}${
-                        device!.idle_fan_mode ? ` (${device!.idle_fan_mode})` : nothing
-                      }`
-                    : device!.idle_action === "low"
-                      ? localize("devices.idle_action_low", this.hass.language)
-                      : localize("devices.idle_action_setback", this.hass.language)
-                }
-              </span>`
-            : nothing
-        }
-        ${
-          showDirectBadge
-            ? html`<span class="valve-exclude-badge">
-                ${localize("devices.setpoint_mode_direct", this.hass.language)}
-              </span>`
-            : nothing
-        }
-        ${
-          showValveBadge
-            ? html`<span class="valve-exclude-badge">
-                <ha-icon icon="mdi:valve"></ha-icon>
-                ${localize("devices.valve_direct_badge", this.hass.language)}
-              </span>`
-            : nothing
-        }
-        ${
-          showExcludeBadge
-            ? html`<span class="valve-exclude-badge">
-                <ha-icon icon="mdi:shield-off-outline"></ha-icon>
-                ${localize("devices.valve_protection_excluded", this.hass.language)}
-              </span>`
-            : nothing
-        }
-        ${displayValue ? html`<span class="view-value">${displayValue}</span>` : nothing}
-      </div>
-    `;
+  private _fireEdit(e: Event, entityId?: string) {
+    e.stopPropagation();
+    this.dispatchEvent(
+      new CustomEvent("edit-click", { detail: { entityId }, bubbles: true, composed: true }),
+    );
   }
 
   private _renderEditMode() {

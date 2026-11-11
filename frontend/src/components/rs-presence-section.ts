@@ -3,6 +3,7 @@ import { customElement, property } from "lit/decorators.js";
 import type { HomeAssistant } from "../types";
 import { localize } from "../utils/localize";
 import "./shared/rs-toggle-row";
+import "./shared/rs-list-row";
 
 @customElement("rs-presence-section")
 export class RsPresenceSection extends LitElement {
@@ -74,84 +75,9 @@ export class RsPresenceSection extends LitElement {
       white-space: nowrap;
     }
 
-    .presence-list {
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
-    }
-
-    .presence-row {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 10px 14px;
-      border-radius: 8px;
-      transition: background 0.3s;
-    }
-
-    .presence-row.home {
-      background: rgba(76, 175, 80, 0.1);
-    }
-
-    .presence-row.away {
-      background: rgba(0, 0, 0, 0.04);
-    }
-
-    .presence-dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      flex-shrink: 0;
-    }
-
-    .presence-row.home .presence-dot {
-      background: #4caf50;
-      box-shadow: 0 0 6px rgba(76, 175, 80, 0.5);
-    }
-
-    .presence-row.away .presence-dot {
-      background: var(--disabled-text-color, #bdbdbd);
-    }
-
-    .presence-name {
-      flex: 1;
-      font-size: 14px;
-      font-weight: 500;
-      min-width: 0;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    .presence-row.home .presence-name {
-      color: var(--primary-text-color);
-    }
-
-    .presence-row.away .presence-name {
-      color: var(--secondary-text-color);
-    }
-
-    .presence-state {
-      font-size: 12px;
-      white-space: nowrap;
-    }
-
-    .presence-row.home .presence-state {
-      color: #2e7d32;
-    }
-
-    .presence-row.away .presence-state {
-      color: var(--secondary-text-color);
-    }
-
     .section-divider {
       border-top: 1px solid var(--divider-color, #e0e0e0);
       margin: 8px 0;
-    }
-
-    .field-hint {
-      color: var(--secondary-text-color);
-      font-size: 12px;
     }
 
     .presence-card.missing {
@@ -194,14 +120,7 @@ export class RsPresenceSection extends LitElement {
     // unchecked - otherwise the dialog body collapses mid-cleanup.
     if (!this.editing && this._allPersons.length === 0) return nothing;
 
-    if (!this.editing) {
-      if (this.ignorePresence) {
-        return html`<span class="field-hint"
-          >${localize("presence.tile_ignored", this.language)}</span
-        >`;
-      }
-      return this._renderViewMode();
-    }
+    if (!this.editing) return this._renderViewMode();
 
     return html`
       <rs-toggle-row
@@ -274,38 +193,49 @@ export class RsPresenceSection extends LitElement {
   }
 
   private _renderViewMode() {
-    if (this.selectedPresencePersons.length === 0) {
-      return html`<span class="field-hint"
-        >${localize("presence.room_none_assigned", this.language)}</span
-      >`;
+    const l = this.language;
+    if (this.ignorePresence || this.selectedPresencePersons.length === 0) {
+      return html`<rs-list-row
+        clickable
+        chevron
+        icon=${this.ignorePresence ? "mdi:home-off-outline" : "mdi:home-account"}
+        .heading=${localize(
+          this.ignorePresence ? "presence.ignore_toggle" : "detail.presence.global",
+          l,
+        )}
+        .secondary=${localize(
+          this.ignorePresence ? "presence.tile_ignored" : "presence.room_none_assigned",
+          l,
+        )}
+        @row-click=${this._fireEdit}
+      ></rs-list-row>`;
     }
-    return html`
-      <div class="presence-list">
-        ${this.selectedPresencePersons.map((pid) => {
-          const name =
-            this.hass.states[pid]?.attributes?.friendly_name ?? pid.split(".").slice(1).join(".");
-          const st = this.hass.states[pid]?.state;
-          const isHome =
-            pid.startsWith("person.") || pid.startsWith("device_tracker.")
-              ? st === "home"
-              : st === "on";
-          return html`
-            <div class="presence-row ${isHome ? "home" : "away"}">
-              <span class="presence-dot"></span>
-              <span class="presence-name">${name}</span>
-              ${this._isMissing(pid) ? this._renderMissingIcon() : nothing}
-              <span class="presence-state"
-                >${
-                  isHome
-                    ? localize("presence.state_home", this.language)
-                    : localize("presence.state_away", this.language)
-                }</span
-              >
-            </div>
-          `;
-        })}
-      </div>
-    `;
+    return this.selectedPresencePersons.map((pid) => {
+      const name =
+        this.hass.states[pid]?.attributes?.friendly_name ?? pid.split(".").slice(1).join(".");
+      const st = this.hass.states[pid]?.state;
+      const isHome =
+        pid.startsWith("person.") || pid.startsWith("device_tracker.")
+          ? st === "home"
+          : st === "on";
+      const missing = this._isMissing(pid);
+      return html`<rs-list-row
+        clickable
+        chevron
+        icon=${missing ? "mdi:alert-circle-outline" : "mdi:account"}
+        .variant=${missing ? "warn" : "default"}
+        .iconColor=${!missing && isHome ? "var(--rs-ok)" : ""}
+        .heading=${String(name)}
+        .secondary=${missing ? localize("presence.missing_entity_hint", l) : ""}
+        .value=${missing ? "" : localize(isHome ? "presence.state_home" : "presence.state_away", l)}
+        @row-click=${this._fireEdit}
+      ></rs-list-row>`;
+    });
+  }
+
+  private _fireEdit(e: Event) {
+    e.stopPropagation();
+    this.dispatchEvent(new CustomEvent("edit-click", { bubbles: true, composed: true }));
   }
 
   private _onIgnoreToggle(e: CustomEvent<boolean>) {

@@ -3,12 +3,43 @@
  * Kept free of custom elements: the card is a separate bundle and must not define
  * the panel's tags a second time.
  */
-import type { ClimateMode, OverrideType } from "../types";
+import type { ClimateMode, OverrideType, RoomLiveData } from "../types";
 
 export const OVERRIDE_DURATIONS_H = [1, 2, 4];
 
+/** `duration` for an override without end (the backend stores no `override_until`). */
+export const OVERRIDE_PERMANENT_H = 0;
+
 /** Fallback duration of a dashboard quick override in a room without schedule (h). */
 export const QUICK_OVERRIDE_FALLBACK_H = 4;
+
+/** Override as the UI shows it: live data, or what the user just set before the poll confirms it. */
+export interface EffectiveOverride {
+  active: boolean;
+  type: OverrideType | null;
+  heat: number | null;
+  cool: number | null;
+  until: number | null;
+}
+
+export const NO_OVERRIDE: EffectiveOverride = {
+  active: false,
+  type: null,
+  heat: null,
+  cool: null,
+  until: null,
+};
+
+export function liveOverride(live: RoomLiveData | null | undefined): EffectiveOverride {
+  if (!live?.override_active || !live.override_type) return NO_OVERRIDE;
+  return {
+    active: true,
+    type: live.override_type,
+    heat: live.override_heat,
+    cool: live.override_cool,
+    until: live.override_until,
+  };
+}
 
 export interface RoomTemps {
   comfortHeat: number;

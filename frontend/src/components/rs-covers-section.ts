@@ -3,7 +3,8 @@ import { customElement, property, state } from "lit/decorators.js";
 import type { HomeAssistant, HassArea, CoverScheduleEntry } from "../types";
 import { localize, type TranslationKey } from "../utils/localize";
 import { getEntitiesForArea } from "../utils/room-state";
-import { getSelectValue } from "../utils/events";
+import { getSelectValue, openEntityInfo } from "../utils/events";
+import { formatPercent } from "../utils/format";
 import { masterDetailStyles } from "../styles/master-detail-styles";
 import { inputStyles } from "../styles/input-styles";
 import "./shared/rs-toggle-row";
@@ -11,6 +12,7 @@ import "./shared/rs-threshold-field";
 import "./shared/rs-master-detail";
 import "./shared/rs-info-icon";
 import "./rs-cover-schedule";
+import "./shared/rs-list-row";
 
 @customElement("rs-covers-section")
 export class RsCoverSection extends LitElement {
@@ -63,40 +65,6 @@ export class RsCoverSection extends LitElement {
       }
 
       /* Tile view rows (match rs-sensor-section visual rhythm) */
-      .view-row {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        padding: 6px 0;
-        font-size: 14px;
-        color: var(--primary-text-color);
-      }
-
-      .view-name {
-        flex: 1;
-        min-width: 0;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
-
-      .view-pill {
-        font-size: 10px;
-        font-weight: 500;
-        padding: 1px 7px;
-        border-radius: 8px;
-        background: rgba(255, 255, 255, 0.05);
-        color: var(--secondary-text-color);
-        letter-spacing: 0.3px;
-        text-transform: uppercase;
-        flex-shrink: 0;
-      }
-
-      .view-value {
-        font-weight: 500;
-        flex-shrink: 0;
-        color: var(--primary-text-color);
-      }
 
       /* Device-row style (matches rs-device-section) */
       .device-list-scroll {
@@ -208,22 +176,6 @@ export class RsCoverSection extends LitElement {
         .field-row {
           grid-template-columns: 1fr;
         }
-      }
-      .no-items {
-        color: var(--secondary-text-color);
-        font-size: 0.9em;
-        margin: 0;
-      }
-      .status-hint {
-        display: flex;
-        align-items: center;
-        flex-wrap: wrap;
-        gap: 6px;
-        color: var(--secondary-text-color);
-        font-size: 0.85em;
-      }
-      .status-hint.paused {
-        color: var(--warning-color, #ff9800);
       }
       .pill {
         font-size: 10px;
@@ -340,8 +292,22 @@ export class RsCoverSection extends LitElement {
   private _renderView(l: string) {
     const covers = [...this.selectedCovers];
     if (covers.length === 0) {
-      return html`<p class="no-items">${localize("covers.no_covers", l)}</p>`;
+      return html`<rs-list-row
+        clickable
+        plain-icon
+        variant="primary"
+        icon="mdi:plus"
+        .heading=${localize("detail.covers.add", l)}
+        .secondary=${localize("covers.no_covers", l)}
+        @row-click=${this._fireEdit}
+      ></rs-list-row>`;
     }
+    let status = "";
+    if (this.coverReason === "window_hold") status = localize("covers.window_hold_active", l);
+    else if (this.forcedReason === "schedule_active")
+      status = localize("covers.schedule_active", l);
+    else if (this.forcedReason === "night_close") status = localize("covers.night_close_active", l);
+    else if (this.autoEnabled) status = localize("covers.shading_active", l);
     return html`
       ${covers.map((eid) => {
         const st = this.hass.states[eid];
@@ -352,79 +318,59 @@ export class RsCoverSection extends LitElement {
           orient !== undefined
             ? RsCoverSection._DIRECTIONS.find((d) => d.deg === orient)
             : undefined;
-        const orientLabel = orientDir ? localize(orientDir.shortLabel, l) : undefined;
         const minPos = this.coverMinPositions[eid];
-        return html`
-          <div class="view-row">
-            <span class="view-name">${name}</span>
-            ${orientLabel ? html`<span class="view-pill">${orientLabel}</span>` : nothing}
-            ${
-              minPos !== undefined && minPos > 0
-                ? html`<span class="view-pill"
-                    >${localize("covers.per_cover_min_short", l)} ${minPos}%</span
-                  >`
-                : nothing
-            }
-            ${pos !== undefined ? html`<span class="view-value">${pos}%</span>` : nothing}
-          </div>
-        `;
+        const details = [
+          orientDir ? localize(orientDir.longLabel, l) : "",
+          minPos !== undefined && minPos > 0
+            ? `${localize("covers.per_cover_min_short", l)} ${formatPercent(minPos, this.hass)}`
+            : "",
+        ].filter(Boolean);
+        return html`<rs-list-row
+          clickable
+          chevron
+          icon="mdi:blinds-horizontal"
+          icon-label=${localize("detail.more_info", l)}
+          .heading=${name}
+          .secondary=${details.join(" · ")}
+          .value=${pos !== undefined ? formatPercent(pos, this.hass) : ""}
+          @row-click=${this._fireEdit}
+          @icon-click=${() => openEntityInfo(this, eid)}
+        ></rs-list-row>`;
       })}
       ${
         this.autoPaused
-          ? html`
-              <div class="status-hint paused">
-                <ha-icon icon="mdi:hand-back-right"></ha-icon>
-                <span>
-                  ${
-                    this.overrideUntil
-                      ? `${localize("covers.auto_paused_until", l)} ${new Date(
-                          this.overrideUntil * 1000,
-                        ).toLocaleTimeString(l, { hour: "2-digit", minute: "2-digit" })}`
-                      : localize("covers.auto_paused", l)
-                  }
-                </span>
-                <ha-button @click=${this._onResumeAuto}
-                  >${localize("covers.resume_auto", l)}</ha-button
-                >
-              </div>
-            `
-          : this.autoEnabled
-            ? html`
-                <div class="status-hint">
-                  <ha-icon icon="mdi:sun-angle-outline"></ha-icon>
-                  <span>${localize("covers.shading_active", l)}</span>
-                </div>
-              `
-            : nothing
-      }
-      ${
-        this.coverReason === "window_hold"
-          ? html`
-              <div class="status-hint">
-                <ha-icon icon="mdi:window-open-variant"></ha-icon>
-                <span>${localize("covers.window_hold_active", l)}</span>
-              </div>
-            `
+          ? html`<rs-list-row
+              variant="warn"
+              icon="mdi:hand-back-right"
+              .heading=${
+                this.overrideUntil
+                  ? `${localize("covers.auto_paused_until", l)} ${new Date(
+                      this.overrideUntil * 1000,
+                    ).toLocaleTimeString(l, { hour: "2-digit", minute: "2-digit" })}`
+                  : localize("covers.auto_paused", l)
+              }
+            >
+              <ha-button slot="end" @click=${this._onResumeAuto}
+                >${localize("covers.resume_auto", l)}</ha-button
+              >
+            </rs-list-row>`
           : nothing
       }
-      ${
-        this.forcedReason === "schedule_active"
-          ? html`
-              <div class="status-hint">
-                <ha-icon icon="mdi:calendar-clock"></ha-icon>
-                <span>${localize("covers.schedule_active", l)}</span>
-              </div>
-            `
-          : this.forcedReason === "night_close"
-            ? html`
-                <div class="status-hint">
-                  <ha-icon icon="mdi:weather-night"></ha-icon>
-                  <span>${localize("covers.night_close_active", l)}</span>
-                </div>
-              `
-            : nothing
-      }
+      <rs-list-row
+        clickable
+        chevron
+        icon=${this.autoEnabled ? "mdi:sun-angle-outline" : "mdi:sun-off-outline"}
+        .heading=${localize("covers.auto_control", l)}
+        .secondary=${status}
+        .value=${localize(this.autoEnabled ? "detail.on" : "detail.off", l)}
+        @row-click=${this._fireEdit}
+      ></rs-list-row>
     `;
+  }
+
+  private _fireEdit(e: Event) {
+    e.stopPropagation();
+    this.dispatchEvent(new CustomEvent("edit-click", { bubbles: true, composed: true }));
   }
 
   private _entityFilter = (entity: { entity_id: string }): boolean => {

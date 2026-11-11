@@ -3,12 +3,15 @@
  */
 import type {
   HassDeviceRegistryEntry,
+  HassEntity,
   HassEntityRegistryEntry,
   OverrideType,
   RoomConfig,
   RoomMode,
 } from "../types";
 import { localize, type TranslationKey } from "./localize";
+import { formatRemaining, type EffectiveOverride } from "./override";
+import { VACATION_SENTINEL } from "./constants";
 
 /**
  * Resolve the effective area_id for an entity.
@@ -331,3 +334,130 @@ export function roomHints(
 export function hintText(hint: RoomHint, language: string): string {
   return localize(hint.key, language, hint.params);
 }
+
+/* ---------- Why the room has its target (room hero) ---------- */
+
+/** Unix seconds of the active schedule's next change (`next_event`), null if unknown. */
+export function scheduleNextChange(
+  config: RoomConfig | null,
+  states: Record<string, HassEntity> | undefined,
+): number | null {
+  const eid = activeScheduleEntity(config);
+  const raw = eid ? states?.[eid]?.attributes?.next_event : undefined;
+  if (typeof raw !== "string") return null;
+  const ms = Date.parse(raw);
+  return Number.isFinite(ms) ? ms / 1000 : null;
+}
+
+/** Entity of the schedule the room follows now; the first one without a selector. */
+export function activeScheduleEntity(config: RoomConfig | null): string | null {
+  const schedules = (config?.schedules ?? []).filter((s) => !!s.entity_id);
+  if (!schedules.length) return null;
+  const idx = config?.live?.active_schedule_index ?? -1;
+  return (schedules[idx] ?? schedules[0]).entity_id;
+}
+
+export interface TargetReason {
+  icon: string;
+  /** What sets the target: override type, vacation, away, the schedule's name. */
+  label: string;
+  /** Until when, or in which state. */
+  detail: string;
+}
+
+export interface TargetReasonContext {
+  language: string;
+  states: Record<string, HassEntity> | undefined;
+  vacationActive: boolean;
+  vacationUntil: number | null;
+  now?: number;
+}
+
+/**
+ * Where the current target comes from, in the backend's order: override > vacation >
+ * presence away > schedule (an empty room caps it at eco). The live data carries no reason,
+ * so it is derived here; `override` is the effective one (optimistic before the poll).
+ */
+export function targetReason(
+  config: RoomConfig,
+  override: EffectiveOverride,
+  ctx: TargetReasonContext,
+): TargetReason {
+  const l = ctx.language;
+  const live = config.live;
+  const nowMs = ctx.now ?? Date.now();
+  const suppressed = !!live?.override_suppressed && !!live?.override_active;
+  if (override.active && override.type && !suppressed) {
+    const until = override.until;
+    let detail: string;
+    if (until == null) detail = localize("detail.reason.permanent", l);
+    else {
+      const left = formatRemaining(until, nowMs / 1000);
+      detail = left
+        ? localize("detail.reason.until_left", l, {
+            time: formatClock(until, l, nowMs),
+            left,
+          })
+        : localize("detail.reason.until", l, { time: formatClock(until, l, nowMs) });
+    }
+    return {
+      icon: OVERRIDE_ICONS[override.type],
+      label: localize(OVERRIDE_TYPE_KEYS[override.type], l),
+      detail,
+    };
+  }
+  if (ctx.vacationActive) {
+    const until = ctx.vacationUntil;
+    return {
+      icon: "mdi:airplane",
+      label: localize("panel.stat.vacation", l),
+      detail:
+        until && until < VACATION_SENTINEL
+          ? localize("detail.reason.until", l, {
+              time: new Intl.DateTimeFormat(l, {
+                day: "numeric",
+                month: "short",
+                hour: "2-digit",
+                minute: "2-digit",
+              }).format(new Date(until * 1000)),
+            })
+          : localize("detail.reason.permanent", l),
+    };
+  }
+  if (live?.presence_away) {
+    return {
+      icon: "mdi:home-off-outline",
+      label: localize("card.presence_away", l),
+      detail: suppressed
+        ? localize("card.hint.override_paused", l, {
+            type: localize(OVERRIDE_TYPE_KEYS[live.override_type ?? "custom"], l),
+          })
+        : localize("detail.reason.nobody_home", l),
+    };
+  }
+  const eid = activeScheduleEntity(config);
+  if (!eid) {
+    return {
+      icon: "mdi:home-thermometer-outline",
+      label: localize("detail.reason.no_schedule", l),
+      detail: localize("override.comfort", l),
+    };
+  }
+  const st = ctx.states?.[eid];
+  const name = (st?.attributes?.friendly_name as string | undefined) || eid;
+  const on = st?.state === "on";
+  const vacant = !!live?.occupancy_vacant;
+  const phase = localize(on && !vacant ? "override.comfort" : "override.eco", l);
+  const next = scheduleNextChange(config, ctx.states);
+  let detail = next
+    ? localize("detail.reason.phase_until", l, { phase, time: formatClock(next, l, nowMs) })
+    : phase;
+  if (vacant && on) detail = `${localize("card.hint.vacant", l)} · ${detail}`;
+  return { icon: "mdi:calendar-clock", label: name, detail };
+}
+
+const OVERRIDE_ICONS: Record<OverrideType, string> = {
+  boost: "mdi:sofa",
+  eco: "mdi:leaf",
+  custom: "mdi:thermometer",
+};

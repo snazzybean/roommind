@@ -3,9 +3,12 @@ import { customElement, property } from "lit/decorators.js";
 import type { HomeAssistant } from "../types";
 import { localize } from "../utils/localize";
 import { inputStyles } from "../styles/input-styles";
+import { formatNumber } from "../utils/format";
+import { formatTempLocale, tempUnit, toDisplayDelta } from "../utils/temperature";
 
 import "./shared/rs-info-icon";
 import "./shared/rs-toggle-row";
+import "./shared/rs-list-row";
 
 @customElement("rs-heat-source-section")
 export class RsHeatSourceSection extends LitElement {
@@ -27,17 +30,6 @@ export class RsHeatSourceSection extends LitElement {
       }
 
       /* Read-only summary (tile) */
-      .summary {
-        padding: 0 16px 16px;
-        font-size: 13px;
-        color: var(--secondary-text-color);
-        line-height: 1.6;
-      }
-
-      .summary.disabled {
-        font-style: italic;
-        opacity: 0.75;
-      }
 
       /* Editing layout */
       .feature-card {
@@ -132,26 +124,30 @@ export class RsHeatSourceSection extends LitElement {
     const lang = this.hass.language;
 
     if (!this.editing) {
-      if (!this.enabled) {
-        return html`<div class="summary disabled">
-          ${localize("heat_source.summary_disabled", lang)}
-        </div>`;
-      }
-      return html`<div class="summary">
-        ${localize("heat_source.primary_delta", lang)}:
-        <strong>${this.primaryDelta}${localize("heat_source.primary_delta_suffix", lang)}</strong>
-        · ${localize("heat_source.outdoor_threshold", lang)}:
-        <strong
-          >${this.outdoorThreshold}${localize("heat_source.outdoor_threshold_suffix", lang)}</strong
-        >
-        · ${localize("heat_source.ac_min_outdoor", lang)}:
-        <strong>${this.acMinOutdoor}${localize("heat_source.ac_min_outdoor_suffix", lang)}</strong>
-        ${
-          this.priceConfigured && this.priceAware
-            ? html`<br />${localize("heat_source.price_aware_summary", lang)}`
-            : nothing
-        }
-      </div>`;
+      const unit = tempUnit(this.hass);
+      const abs = (c: number) => `${formatTempLocale(c, this.hass, 0, 1)} ${unit}`;
+      const delta = `${formatNumber(toDisplayDelta(this.primaryDelta, this.hass), this.hass, 0, 1)} ${unit}`;
+      const summary = this.enabled
+        ? [
+            `${localize("heat_source.primary_delta", lang)}: ${delta}`,
+            `${localize("heat_source.outdoor_threshold", lang)}: ${abs(this.outdoorThreshold)}`,
+            `${localize("heat_source.ac_min_outdoor", lang)}: ${abs(this.acMinOutdoor)}`,
+            this.priceConfigured && this.priceAware
+              ? localize("heat_source.price_aware_summary", lang)
+              : "",
+          ]
+            .filter(Boolean)
+            .join(" · ")
+        : localize("heat_source.summary_disabled", lang);
+      return html`<rs-list-row
+        clickable
+        chevron
+        icon="mdi:swap-horizontal"
+        .heading=${localize("heat_source.toggle", lang)}
+        .secondary=${summary}
+        .value=${localize(this.enabled ? "detail.on" : "detail.off", lang)}
+        @row-click=${this._fireEdit}
+      ></rs-list-row>`;
     }
 
     return html`
@@ -266,6 +262,11 @@ export class RsHeatSourceSection extends LitElement {
         composed: true,
       }),
     );
+  }
+
+  private _fireEdit(e: Event) {
+    e.stopPropagation();
+    this.dispatchEvent(new CustomEvent("edit-click", { bubbles: true, composed: true }));
   }
 }
 

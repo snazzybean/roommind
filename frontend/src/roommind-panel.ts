@@ -12,17 +12,6 @@ import "./components/dashboard/rs-dashboard";
 import "./components/dashboard/rs-dashboard-edit";
 import "./components/shared/rs-icon-button";
 
-const BACK_PATH = "M20,11V13H8L13.5,18.5L12.08,19.92L4.16,12L12.08,4.08L13.5,5.5L8,11H20Z";
-
-const DELETE_PATH =
-  "M19,4H15.5L14.5,3H9.5L8.5,4H5V6H19M6,19A2,2 0 0,0 8,21H16A2,2 0 0,0 18,19V7H6V19Z";
-
-const CHART_PATH =
-  "M16,11.78L20.24,4.45L21.97,5.45L16.74,14.5L10.23,10.75L5.46,19H22V21H2V3H4V17.54L9.5,8L16,11.78Z";
-
-const THERMOMETER_PATH =
-  "M15 13V5A3 3 0 0 0 9 5V13A5 5 0 1 0 15 13M12 4A1 1 0 0 1 13 5V8H11V5A1 1 0 0 1 12 4Z";
-
 type TabId = "areas" | "analytics" | "settings";
 
 @customElement("roommind-panel")
@@ -111,10 +100,6 @@ export class RoomMindPanel extends LitElement {
       overflow: hidden;
       text-overflow: ellipsis;
       flex: 1;
-    }
-
-    .toolbar ha-icon-button {
-      color: var(--app-header-text-color, var(--primary-text-color));
     }
 
     .save-indicator {
@@ -299,11 +284,11 @@ export class RoomMindPanel extends LitElement {
       <div class="toolbar">
         ${
           inDetail
-            ? html`<ha-icon-button
-                .path=${BACK_PATH}
+            ? html`<rs-icon-button
+                icon="mdi:arrow-left"
                 .label=${localize("room.back", l)}
                 @click=${this._onBackFromDetail}
-              ></ha-icon-button>`
+              ></rs-icon-button>`
             : html`<ha-menu-button .hass=${this.hass} .narrow=${this.narrow}></ha-menu-button>`
         }
         <div class="title">
@@ -325,22 +310,20 @@ export class RoomMindPanel extends LitElement {
         }
         ${
           inDetail && this._rooms[this._selectedAreaId!]
-            ? html`<ha-icon-button
-                  .path=${CHART_PATH}
-                  @click=${this._onGoToAnalytics}
-                ></ha-icon-button
-                ><ha-icon-button
-                  .path=${DELETE_PATH}
-                  @click=${this._onDeleteRoom}
-                ></ha-icon-button>`
+            ? html`<rs-icon-button
+                icon="mdi:chart-line"
+                .label=${localize("detail.analytics", l)}
+                @click=${this._onGoToAnalytics}
+              ></rs-icon-button>`
             : nothing
         }
         ${
           !inDetail && this._activeTab === "analytics" && this._analyticsRoom
-            ? html`<ha-icon-button
-                .path=${THERMOMETER_PATH}
+            ? html`<rs-icon-button
+                icon="mdi:thermometer"
+                .label=${localize("detail.open_room", l)}
                 @click=${this._onGoToRoomFromAnalytics}
-              ></ha-icon-button>`
+              ></rs-icon-button>`
             : nothing
         }
       </div>
@@ -412,8 +395,12 @@ export class RoomMindPanel extends LitElement {
             .coilDryMinutes=${this._coilDryMinutes}
             .coilDryMode=${this._coilDryMode}
             .coilDryFanMode=${this._coilDryFanMode}
-            @back-clicked=${this._onBackFromDetail}
+            .outdoorTemp=${this._outdoorTemp}
+            .vacationActive=${this._vacationActive}
+            .vacationUntil=${this._vacationUntil}
             @room-updated=${this._onRoomUpdated}
+            @room-deleted=${this._onRoomDeleted}
+            @open-analytics=${this._onGoToAnalytics}
           ></rs-room-detail>
         `;
       }
@@ -544,27 +531,11 @@ export class RoomMindPanel extends LitElement {
     this._navigate("");
   }
 
-  private async _onDeleteRoom() {
-    if (!this._selectedAreaId) return;
-    const area = this.hass?.areas?.[this._selectedAreaId];
-    if (!area) return;
-
-    if (!confirm(localize("room.confirm_delete", this.hass.language, { name: area.name }))) {
-      return;
-    }
-
-    try {
-      await this.hass.callWS({
-        type: "roommind/rooms/delete",
-        area_id: this._selectedAreaId,
-      });
-      this._selectedAreaId = null;
-      this._navigate("");
-      this._loadRooms();
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.debug("[RoomMind] deleteRoom:", err);
-    }
+  /** The room page removed the room after its own confirmation. */
+  private _onRoomDeleted() {
+    this._selectedAreaId = null;
+    this._navigate("");
+    this._loadRooms();
   }
 
   private _onTabClicked(tab: TabId) {
