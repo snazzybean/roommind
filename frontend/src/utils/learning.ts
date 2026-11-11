@@ -4,11 +4,11 @@ import type { RoomConfig } from "../types";
 export const EKF_UPDATE_MINUTES = 3;
 
 /**
- * Updates after which "learn faster" counts as faded. Measured on a settled radiator room:
- * the boost multiplies the covariance by 2.5; the heat-loss figure is back after ~6 h, the
- * heating power ~1.3x after ~12 h (needs heating runs), so 250 updates (~12.5 h of learning).
+ * Updates after which "learn faster" counts as faded (sim ekf-room-change): the heat-loss
+ * variance is back within 1.2x after 20-31 updates, the heating power's after 45-120 in rooms
+ * that heat daily (it waits for heating runs), so 120 updates (~6 h of learning).
  */
-export const BOOST_FADE_UPDATES = 250;
+export const BOOST_FADE_UPDATES = 120;
 
 /** Confidence from which the model counts as ready (the MPC gate passes around 80 %). */
 export const MODEL_READY_CONFIDENCE = 0.8;
