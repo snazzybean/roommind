@@ -1,8 +1,10 @@
 /**
  * rs-badge – Small pill badge (e.g. "Beta") for section headers.
- * Used in list card headers and rs-settings-panel; the hint shows in the shared tooltip.
+ * Used in list card headers and rs-settings-panel. With `tooltip` the hint opens in the shared
+ * tooltip (a focusable button); without it stays a `title`, for headers that are themselves
+ * clickable (an expansion panel must not contain a second control).
  */
-import { LitElement, html, css } from "lit";
+import { LitElement, html, css, nothing } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import "./rs-tooltip";
 
@@ -10,6 +12,7 @@ import "./rs-tooltip";
 export class RsBadge extends LitElement {
   @property({ type: String }) public label = "";
   @property({ type: String }) public hint = "";
+  @property({ type: Boolean }) public tooltip = false;
 
   static styles = css`
     :host {
@@ -42,7 +45,9 @@ export class RsBadge extends LitElement {
   `;
 
   render() {
-    if (!this.hint) return html`<span class="badge">${this.label}</span>`;
+    if (!this.hint || !this.tooltip) {
+      return html`<span class="badge" title=${this.hint || nothing}>${this.label}</span>`;
+    }
     return html`<rs-tooltip .text=${this.hint}>
       <button type="button" class="badge" aria-label=${`${this.label}: ${this.hint}`}>
         ${this.label}

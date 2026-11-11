@@ -595,6 +595,7 @@ export class RsRoomDetail extends LitElement {
       >
         <rs-badge
           slot="header-extras"
+          tooltip
           .label=${localize("badge.beta", l)}
           .hint=${localize("badge.beta_hint", l)}
         ></rs-badge>
