@@ -17,6 +17,15 @@ def _num(value: object) -> float | None:
         return None
 
 
+def target_of(heat: object, target: object, cool: object) -> float | None:
+    """The line the cards draw: the heat side first, so an auto room does not jump to its cool target."""
+    for value in (heat, target, cool):
+        num = _num(value)
+        if num is not None:
+            return num
+    return None
+
+
 class RecentTemps:
     """Last six hours of room temperature and target in five-minute steps.
 
@@ -46,9 +55,7 @@ class RecentTemps:
                 continue
             if seeded and ts - seeded[-1][0] < RECENT_STEP_S:
                 continue
-            target = _num(row.get("heat_target"))
-            if target is None:
-                target = _num(row.get("target_temp"))
+            target = target_of(row.get("heat_target"), row.get("target_temp"), row.get("cool_target"))
             seeded.append((ts, round(temp, 2), None if target is None else round(target, 1)))
         if existing:
             seeded.extend(existing)

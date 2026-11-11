@@ -87,7 +87,7 @@ from .managers.head_offset_tracker import HeadOffsetTracker
 from .managers.heat_source_orchestrator import HeatSourcePlan, evaluate_heat_sources
 from .managers.mold_manager import MoldManager
 from .managers.price_manager import PriceManager
-from .managers.recent_temps import RECENT_WINDOW_S, RecentTemps
+from .managers.recent_temps import RECENT_WINDOW_S, RecentTemps, target_of
 from .managers.residual_heat_tracker import AcReboundTracker, ResidualHeatLearner, ResidualHeatTracker
 from .managers.valve_manager import ValveManager
 from .managers.weather_manager import WeatherManager
@@ -2593,11 +2593,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                     _LOGGER.debug("Room '%s': reading recent history failed", area_id, exc_info=True)
                     rows = []
                 self.recent_temps.seed(area_id, rows, now)
-            target = rs.get("target_temp")
-            if target is None:
-                target = rs.get("heat_target")
-            if target is None:
-                target = rs.get("cool_target")
+            target = target_of(rs.get("heat_target"), rs.get("target_temp"), rs.get("cool_target"))
             self.recent_temps.add(area_id, now, rs.get("current_temp"), target)
 
     async def async_room_removed(self, area_id: str) -> None:

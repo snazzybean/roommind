@@ -65,3 +65,20 @@ def test_forget_clears_series_and_seed_flag():
     rt.forget("a")
     assert rt.get("a") == []
     assert rt.needs_seed("a")
+
+
+def test_target_prefers_heat_side_then_target_then_cool():
+    from custom_components.roommind.managers.recent_temps import target_of
+
+    assert target_of("21", 24.0, 24.0) == 21.0
+    assert target_of(None, "", 26) == 26.0
+    assert target_of("", 22, None) == 22.0
+    assert target_of(None, None, None) is None
+
+
+def test_seed_uses_cool_target_for_cool_only_rows():
+    rt = RecentTemps()
+    rt.seed(
+        "a", [{"timestamp": "100", "room_temp": "25", "heat_target": "", "target_temp": "", "cool_target": "24"}], 200.0
+    )
+    assert rt.get("a") == [[100, 25.0, 24.0]]
