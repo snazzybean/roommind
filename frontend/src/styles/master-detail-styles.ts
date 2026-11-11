@@ -182,10 +182,11 @@ export const masterDetailStyles = css`
     width: 100%;
   }
 
+  /* 12 px keep the info icon's touch area off the field beside it */
   .detail-field.with-info {
     flex-direction: row;
     align-items: center;
-    gap: 6px;
+    gap: 12px;
   }
 
   .detail-field.with-info ha-select,

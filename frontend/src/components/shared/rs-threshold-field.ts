@@ -1,7 +1,7 @@
-import { LitElement, html, css, nothing } from "lit";
+import { LitElement, html, css } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import { inputStyles } from "../../styles/input-styles";
-import "./rs-info-icon";
+import "./rs-field";
 
 @customElement("rs-threshold-field")
 export class RsThresholdField extends LitElement {
@@ -20,27 +20,16 @@ export class RsThresholdField extends LitElement {
         display: block;
       }
 
-      .row {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-      }
-
       ha-textfield {
         display: block;
-        flex: 1;
-        min-width: 0;
-      }
-
-      rs-info-icon {
-        flex-shrink: 0;
+        width: 100%;
       }
     `,
   ];
 
   render() {
     return html`
-      <div class="row">
+      <rs-field .info=${this.hint}>
         <ha-textfield
           .label=${this.label}
           .suffix=${this.suffix}
@@ -51,8 +40,7 @@ export class RsThresholdField extends LitElement {
           type="number"
           @input=${this._onInput}
         ></ha-textfield>
-        ${this.hint ? html`<rs-info-icon .text=${this.hint}></rs-info-icon>` : nothing}
-      </div>
+      </rs-field>
     `;
   }
 

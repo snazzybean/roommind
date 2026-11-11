@@ -27,7 +27,8 @@ export class RsField extends LitElement {
         display: flex;
         align-items: center;
         gap: var(--rs-space-1);
-        margin-bottom: var(--rs-space-2);
+        /* keeps the info icon's touch area off the control below */
+        margin-bottom: var(--rs-space-3);
         font-size: var(--rs-font-md);
         color: var(--primary-text-color);
       }
