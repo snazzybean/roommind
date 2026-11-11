@@ -22,7 +22,7 @@ import "../shared/rs-icon-button";
 import "../shared/rs-info-icon";
 
 const CURVE_W = 400;
-const CURVE_H = 118;
+const CURVE_H = 72;
 
 interface HeroChip {
   icon: string;
@@ -73,20 +73,31 @@ export class RsRoomHero extends LitElement {
         padding: 18px 20px 20px;
       }
 
-      svg.bg {
+      /* own band below the temperature, edge to edge: the curve never sits behind text */
+      .band {
+        position: relative;
+        height: 72px;
+        margin: var(--rs-space-3) -20px 0;
+      }
+
+      @media (max-width: 600px) {
+        .band {
+          height: 56px;
+        }
+      }
+
+      .band svg {
         position: absolute;
-        left: 0;
+        inset: 0;
         width: 100%;
-        top: 64px;
-        height: ${CURVE_H}px;
-        z-index: -1;
+        height: 100%;
         pointer-events: none;
       }
 
       .curve-label {
         position: absolute;
         right: 16px;
-        top: 70px;
+        top: 4px;
         font-size: 10px;
         color: var(--secondary-text-color);
       }
@@ -202,7 +213,7 @@ export class RsRoomHero extends LitElement {
       }
 
       .now {
-        margin-top: 18px;
+        margin-top: 14px;
         font-size: 64px;
         font-weight: 300;
         letter-spacing: -1.5px;
@@ -352,7 +363,6 @@ export class RsRoomHero extends LitElement {
     const color = tone === "heat" ? "var(--rs-heat)" : tone === "cool" ? "var(--rs-cool)" : "";
 
     return html`<ha-card style=${color ? `--c: ${color}` : "--c: var(--secondary-text-color)"}>
-      ${this._renderCurve(!!color)}
       <div class="top">
         <span class="chip ${tone ?? ""}" aria-hidden="true"
           ><ha-icon .icon=${this.area.icon || "mdi:texture-box"}></ha-icon
@@ -364,7 +374,7 @@ export class RsRoomHero extends LitElement {
       </div>
       ${
         live
-          ? html`${this._renderTemps(live)} ${this._renderChips(live)}
+          ? html`${this._renderTemps(live, !!color)} ${this._renderChips(live)}
             ${this.config && !this.isOutdoor ? this._renderTarget(live) : nothing}`
           : html`<div class="nodata">
               ${localize(this.config ? "hero.waiting" : "hero.not_configured", this._lang)}
@@ -382,12 +392,8 @@ export class RsRoomHero extends LitElement {
     }
     const s = this._spark;
     if (!s) return nothing;
-    return html`<svg
-        class="bg"
-        viewBox="0 0 ${CURVE_W} ${CURVE_H}"
-        preserveAspectRatio="none"
-        aria-hidden="true"
-      >
+    return html`<div class="band">
+      <svg viewBox="0 0 ${CURVE_W} ${CURVE_H}" preserveAspectRatio="none" aria-hidden="true">
         ${svg`<defs>
           <linearGradient id="fade" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0" stop-color="var(--c)" stop-opacity=${active ? 0.2 : 0.12}></stop>
@@ -407,7 +413,8 @@ export class RsRoomHero extends LitElement {
       </svg>
       <span class="curve-label" aria-hidden="true"
         >${localize("detail.hero.last_hours", this._lang)}</span
-      >`;
+      >
+    </div>`;
   }
 
   private _renderName() {
@@ -482,7 +489,7 @@ export class RsRoomHero extends LitElement {
       ><span>·</span>${modeInfo}`;
   }
 
-  private _renderTemps(live: RoomLiveData) {
+  private _renderTemps(live: RoomLiveData, curveActive: boolean) {
     const l = this._lang;
     const unit = tempUnit(this.hass);
     const facts = [];
@@ -579,6 +586,7 @@ export class RsRoomHero extends LitElement {
             </div>`
           : html`<div class="now none">--</div>`
       }
+      ${this._renderCurve(curveActive)}
       ${facts.length ? html`<div class="facts">${facts}</div>` : nothing}
     `;
   }
