@@ -268,6 +268,8 @@ export interface HomeAssistant {
   connection?: HassConnection;
   /** Translated state as Home Assistant shows it (e.g. "Heizen"); missing in old releases. */
   formatEntityState?: (stateObj: HassEntity) => string;
+  /** HA's own light/dark choice (may differ from the OS). */
+  themes?: { darkMode?: boolean };
 }
 
 export interface HassArea {

@@ -622,7 +622,7 @@ export class RsCoverSection extends LitElement {
                                           .value=${this.nightPosition}
                                           .min=${0}
                                           .max=${100}
-                                          .step=${5}
+                                          .step=${1}
                                           suffix="%"
                                           @value-changed=${(e: CustomEvent<{ value: number }>) =>
                                             this._emit("covers_night_position", e.detail.value)}
@@ -654,7 +654,7 @@ export class RsCoverSection extends LitElement {
                                               .value=${this.nightCloseOffsetMinutes}
                                               .min=${-120}
                                               .max=${120}
-                                              .step=${5}
+                                              .step=${1}
                                               suffix="min"
                                               @value-changed=${(
                                                 e: CustomEvent<{ value: number }>,
@@ -694,7 +694,7 @@ export class RsCoverSection extends LitElement {
                                     .value=${this.deployThreshold}
                                     .min=${0.5}
                                     .max=${5.0}
-                                    .step=${0.5}
+                                    .step=${0.1}
                                     .hass=${this.hass}
                                     kind="temperature-delta"
                                     @value-changed=${(e: CustomEvent<{ value: number }>) =>
@@ -706,7 +706,7 @@ export class RsCoverSection extends LitElement {
                                     .value=${this.minPosition}
                                     .min=${0}
                                     .max=${80}
-                                    .step=${5}
+                                    .step=${1}
                                     suffix="%"
                                     @value-changed=${(e: CustomEvent<{ value: number }>) =>
                                       this._emit("covers_min_position", e.detail.value)}
@@ -719,7 +719,7 @@ export class RsCoverSection extends LitElement {
                                     .value=${this.overrideMinutes}
                                     .min=${0}
                                     .max=${480}
-                                    .step=${15}
+                                    .step=${1}
                                     suffix="min"
                                     @value-changed=${(e: CustomEvent<{ value: number }>) =>
                                       this._emit("covers_override_minutes", e.detail.value)}

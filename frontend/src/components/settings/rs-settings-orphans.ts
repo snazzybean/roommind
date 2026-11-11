@@ -7,6 +7,8 @@ import { RsSettingsBase } from "./rs-settings-base";
 import type { HomeAssistant, RoomWithoutArea } from "../../types";
 import { localize } from "../../utils/localize";
 import { fireSaveStatus } from "../../utils/events";
+import { errorText } from "../../utils/errors";
+import { alertStyles } from "../../styles/tokens";
 import "../shared/rs-confirm-button";
 
 @customElement("rs-settings-orphans")
@@ -14,9 +16,11 @@ export class RsSettingsOrphans extends RsSettingsBase {
   @property({ attribute: false }) public hass!: HomeAssistant;
   @property({ attribute: false }) public rooms: RoomWithoutArea[] = [];
   @state() private _deleting: ReadonlySet<string> = new Set();
+  @state() private _error = "";
 
   static styles = [
     RsSettingsBase.settingsBaseStyles,
+    alertStyles,
     css`
       .orphan-row {
         display: flex;
@@ -48,6 +52,7 @@ export class RsSettingsOrphans extends RsSettingsBase {
   render() {
     const l = this.hass.language;
     return html`
+      ${this._error ? html`<p class="rs-alert" role="alert">${this._error}</p>` : ""}
       ${this.rooms.map(
         (room, idx) => html`
           <div class="settings-section ${idx === 0 ? "first" : ""}">
@@ -86,6 +91,7 @@ export class RsSettingsOrphans extends RsSettingsBase {
     if (this._deleting.has(areaId)) return;
     this._deleting = new Set([...this._deleting, areaId]);
     fireSaveStatus(this, "saving");
+    this._error = "";
     try {
       await this.hass.callWS({ type: "roommind/rooms/delete", area_id: areaId });
       this._deleted(areaId);
@@ -97,6 +103,8 @@ export class RsSettingsOrphans extends RsSettingsBase {
       }
       // eslint-disable-next-line no-console
       console.debug("[RoomMind] delete room without area:", err);
+      const l = this.hass.language;
+      this._error = errorText(err, localize("detail.delete_error", l), l);
       fireSaveStatus(this, "error");
     } finally {
       const rest = new Set(this._deleting);

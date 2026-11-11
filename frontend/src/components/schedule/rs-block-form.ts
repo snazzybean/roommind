@@ -176,6 +176,7 @@ export class RsBlockForm extends LitElement {
         <label>
           ${localize("schedule_editor.from", l)}
           <select
+            style=${`color-scheme: ${this.hass.themes?.darkMode ? "dark" : "light"}`}
             aria-invalid=${error ? "true" : "false"}
             @change=${(e: Event) => this._onTime("start", e)}
           >
@@ -185,6 +186,7 @@ export class RsBlockForm extends LitElement {
         <label>
           ${localize("schedule_editor.to", l)}
           <select
+            style=${`color-scheme: ${this.hass.themes?.darkMode ? "dark" : "light"}`}
             aria-invalid=${error ? "true" : "false"}
             aria-describedby="time-error"
             @change=${(e: Event) => this._onTime("end", e)}

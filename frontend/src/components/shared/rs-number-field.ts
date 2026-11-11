@@ -114,7 +114,7 @@ export class RsNumberField extends LitElement {
     return html`<rs-field .info=${this.info} .hint=${this.hint}>
       <ha-textfield
         type="number"
-        inputmode="decimal"
+        .inputMode=${min >= 0 ? (Number.isInteger(this._step) ? "numeric" : "decimal") : ""}
         .label=${this.label}
         .suffix=${suffix}
         .value=${this._shownText()}
