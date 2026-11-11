@@ -1,7 +1,7 @@
 import { LitElement, html, css, nothing, type PropertyValues } from "lit";
 import { property, state } from "lit/decorators.js";
 import type { ClimateMode, HomeAssistant, OverrideType, RoomConfig } from "../types";
-import { localize, type TranslationKey } from "../utils/localize";
+import { localize, uiLanguage, type TranslationKey } from "../utils/localize";
 import { getModeClass, formatMode } from "../utils/room-state";
 import { modeStyles } from "../styles/shared-mode-styles";
 import { formatTemp, tempUnit, toCelsius, toDisplay, usesFahrenheit } from "../utils/temperature";
@@ -45,12 +45,6 @@ const CLIMATE_MODES: { value: ClimateMode; icon: string; key: TranslationKey }[]
   { value: "cool_only", icon: "mdi:snowflake", key: "mode.cool_only" },
 ];
 
-/** HA profile language once the frontend is connected, else the browser language. */
-export function editorLanguage(): string {
-  const root = document.querySelector("home-assistant") as { hass?: HomeAssistant } | null;
-  return root?.hass?.language ?? navigator.language ?? "en";
-}
-
 export class RoomMindRoomCard extends LitElement {
   @property({ attribute: false }) public hass!: HomeAssistant;
 
@@ -83,7 +77,7 @@ export class RoomMindRoomCard extends LitElement {
         { name: "hide_temperatures", selector: { boolean: {} } },
       ],
       computeLabel: (schema: { name: string }) =>
-        localize(`roomcard.editor.${schema.name}` as TranslationKey, editorLanguage()),
+        localize(`roomcard.editor.${schema.name}` as TranslationKey, uiLanguage()),
     };
   }
 

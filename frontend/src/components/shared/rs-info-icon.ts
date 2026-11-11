@@ -1,5 +1,6 @@
 import { LitElement, html, css } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
+import { localize, uiLanguage } from "../../utils/localize";
 import "./rs-tooltip";
 
 /**
@@ -13,7 +14,7 @@ export class RsInfoIcon extends LitElement {
   @property({ type: String }) public icon = "mdi:information-outline";
   @property({ type: Boolean }) public disclosure = false;
   @property({ type: Boolean }) public expanded = false;
-  /** Accessible name; "Info" when empty. */
+  /** Accessible name; a localized "More information" when empty. */
   @property({ type: String }) public label = "";
 
   @state() private _open = false;
@@ -73,7 +74,7 @@ export class RsInfoIcon extends LitElement {
       return html`<button
         type="button"
         class=${this.expanded ? "open" : ""}
-        aria-label=${this.label || "Info"}
+        aria-label=${this.label || localize("common.info", uiLanguage())}
         aria-expanded=${this.expanded ? "true" : "false"}
         @click=${() => this.dispatchEvent(new CustomEvent("info-toggle"))}
       >
@@ -90,7 +91,7 @@ export class RsInfoIcon extends LitElement {
         <button
           type="button"
           class=${this._open ? "open" : ""}
-          aria-label=${this.label || "Info"}
+          aria-label=${this.label || localize("common.info", uiLanguage())}
           aria-expanded=${this._open ? "true" : "false"}
         >
           <ha-icon .icon=${this.icon}></ha-icon>
