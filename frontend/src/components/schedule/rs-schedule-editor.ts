@@ -13,7 +13,6 @@ import { hideFromTopLayer, positionNear, showInTopLayer } from "../../utils/popo
 import { formatTempLocale, tempUnit, toDisplay, usesFahrenheit } from "../../utils/temperature";
 import {
   DAY_GROUPS,
-  TEMPLATES,
   blockTemps,
   clearDay,
   copyDay,
@@ -94,6 +93,7 @@ export class RsScheduleEditor extends LitElement {
   /** The helper has no state in Home Assistant (deleted or a stale link). */
   @state() private _missing = false;
   @state() private _week: Week = emptyWeek();
+  private _savedName = "";
   @state() private _name = "";
   @state() private _mobile = false;
   @state() private _open: OpenBlock | null = null;
@@ -250,50 +250,6 @@ export class RsScheduleEditor extends LitElement {
       .legend .lines {
         flex-basis: 100%;
         display: block;
-      }
-
-      .templates {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(min(220px, 100%), 1fr));
-        gap: var(--rs-space-3);
-        padding: 0 var(--rs-space-4) var(--rs-space-4);
-      }
-
-      .template {
-        display: flex;
-        flex-direction: column;
-        align-items: flex-start;
-        gap: var(--rs-space-2);
-        min-height: var(--rs-touch);
-        padding: var(--rs-space-3);
-        border: 1px solid var(--rs-border);
-        border-radius: var(--rs-radius-sm);
-        background: none;
-        color: var(--primary-text-color);
-        font: inherit;
-        text-align: left;
-        cursor: pointer;
-      }
-
-      .template:hover {
-        background: var(--rs-fill);
-      }
-
-      .template:focus-visible {
-        outline: 2px solid var(--primary-color);
-        outline-offset: 1px;
-      }
-
-      .template small {
-        color: var(--secondary-text-color);
-        font-size: var(--rs-font-sm);
-        line-height: 1.4;
-      }
-
-      .mini {
-        display: grid;
-        gap: 2px;
-        width: 84px;
       }
 
       .strip {
@@ -543,6 +499,7 @@ export class RsScheduleEditor extends LitElement {
       this._loaded = data;
       this._week = data.week;
       this._name = data.name;
+      this._savedName = data.name;
       this._savedJson = this._payloadJson();
     } catch (err) {
       if (token !== this._loadToken) return;
@@ -558,8 +515,13 @@ export class RsScheduleEditor extends LitElement {
     return !!this._loaded?.itemId && isAdmin(this.hass);
   }
 
+  /** An emptied name field keeps the last saved name, so block changes are still saved. */
+  private get _effectiveName(): string {
+    return this._name.trim() || this._savedName;
+  }
+
   private _payloadJson(): string {
-    return JSON.stringify({ name: this._name.trim(), week: serializeWeek(this._week) });
+    return JSON.stringify({ name: this._effectiveName, week: serializeWeek(this._week) });
   }
 
   private _change(week: Week) {
@@ -577,7 +539,7 @@ export class RsScheduleEditor extends LitElement {
     if (this._timer) clearTimeout(this._timer);
     this._timer = undefined;
     const loaded = this._loaded;
-    if (!loaded?.itemId || !this._canEdit || !this._name.trim()) return;
+    if (!loaded?.itemId || !this._canEdit || !this._effectiveName) return;
     if (this._inFlight) {
       this._again = true;
       return;
@@ -587,8 +549,10 @@ export class RsScheduleEditor extends LitElement {
     this._inFlight = true;
     fireSaveStatus(this, "saving");
     try {
-      await saveSchedule(this.hass, loaded.itemId, this._name.trim(), loaded.icon, this._week);
+      const name = this._effectiveName;
+      await saveSchedule(this.hass, loaded.itemId, name, loaded.icon, this._week);
       this._savedJson = json;
+      this._savedName = name;
       this._saveError = "";
       fireSaveStatus(this, "saved");
     } catch (err) {
@@ -730,10 +694,8 @@ export class RsScheduleEditor extends LitElement {
     const modeRooms = this._modeRooms(users);
     const look = this._lookFactory(modeRooms);
     const editable = this._canEdit;
-    const empty = this._week.every((d) => d.length === 0);
     return html`
       ${this._renderNotices(users, editable)} ${this._renderHead(users, editable)}
-      ${editable && empty ? this._renderTemplates() : nothing}
       ${
         this._mobile
           ? html`${this._renderLegendCard(modeRooms)}
@@ -802,7 +764,9 @@ export class RsScheduleEditor extends LitElement {
                 .value=${this._name}
                 required
                 .invalid=${nameMissing}
-                .validationMessage=${localize("schedule_editor.name_required", l)}
+                .validationMessage=${localize("schedule_editor.name_kept", l, {
+                  name: this._savedName,
+                })}
                 autocomplete="off"
                 @input=${this._onName}
               ></ha-textfield>`
@@ -823,33 +787,6 @@ export class RsScheduleEditor extends LitElement {
     </ha-card>`;
   }
 
-  private _renderTemplates() {
-    const l = this.hass.language;
-    return html`<rs-list-card .heading=${localize("schedule_editor.templates", l)}>
-      <p class="hint card-body">${localize("schedule_editor.templates_hint", l)}</p>
-      <div class="templates">
-        ${TEMPLATES.map((t) => {
-          const week = t.make();
-          return html`<button
-            type="button"
-            class="template"
-            @click=${() => this._applyTemplate(t.id)}
-          >
-            <span class="mini" aria-hidden="true">
-              ${week.map((day) => html`<span class="strip">${this._stripBlocks(day)}</span>`)}
-            </span>
-            <span
-              >${localize(`schedule_editor.tpl_${t.id}` as "schedule_editor.tpl_split", l)}</span
-            >
-            <small
-              >${localize(`schedule_editor.tpl_${t.id}_sub` as "schedule_editor.tpl_split_sub", l)}</small
-            >
-          </button>`;
-        })}
-      </div>
-    </rs-list-card>`;
-  }
-
   private _stripBlocks(day: ScheduleBlock[], nowMinute = -1) {
     return html`${day.map(
       (b) =>
@@ -867,7 +804,11 @@ export class RsScheduleEditor extends LitElement {
     editable: boolean,
   ) {
     const l = this.hass.language;
-    return html`<rs-list-card .heading=${localize("schedule_editor.week", l)} unclipped>
+    return html`<rs-list-card
+      .heading=${localize("schedule_editor.week", l)}
+      .info=${editable ? localize("schedule_editor.keyboard_hint", l) : ""}
+      unclipped
+    >
       <div class="card-body">
         ${editable ? html`<p class="hint">${localize("schedule_editor.drag_hint", l)}</p>` : nothing}
         <rs-week-grid
@@ -888,7 +829,6 @@ export class RsScheduleEditor extends LitElement {
             this._onDayAction(e.detail.day, e.detail.action)}
         ></rs-week-grid>
         ${this._renderLegend(modeRooms)}
-        ${editable ? html`<p class="hint">${localize("schedule_editor.keyboard_hint", l)}</p>` : nothing}
       </div>
     </rs-list-card>`;
   }
@@ -906,6 +846,7 @@ export class RsScheduleEditor extends LitElement {
     const sides = neededSides(modeRooms.map((r) => r.climate_mode ?? "auto"));
     const keyNote = sides.heat && sides.cool ? "both" : sides.heat ? "heat" : "cool";
     const off = this.scheduleOffAction === "off";
+    const own = this._ownTempKinds();
     return html`<div class="legend">
       <span
         ><i class="swatch" style="--swatch:${color};--swatch-tint:22%"></i
@@ -913,11 +854,24 @@ export class RsScheduleEditor extends LitElement {
           modeRooms.length ? this._bandList(modeRooms, "comfort") : ""
         }</span
       >
-      <span
-        ><i class="swatch" style="--swatch:${color};--swatch-tint:40%"></i
-        ><b>${localize("schedule_editor.own_title", l)}</b>
-        ${localize("schedule_editor.own_legend", l)}</span
-      >
+      ${
+        own.warm
+          ? html`<span
+              ><i class="swatch" style="--swatch:${color};--swatch-tint:40%"></i
+              ><b>${localize("schedule_editor.own_title", l)}</b>
+              ${localize("schedule_editor.own_legend", l)}</span
+            >`
+          : nothing
+      }
+      ${
+        own.cool
+          ? html`<span
+              ><i class="swatch" style="--swatch:var(--rs-cool);--swatch-tint:40%"></i
+              ><b>${localize("schedule_editor.own_title", l)}</b>
+              ${localize("schedule_editor.own_legend_cool", l)}</span
+            >`
+          : nothing
+      }
       <span
         ><i class="swatch" style="--swatch:var(--secondary-text-color);--swatch-tint:0%"></i
         ><b
@@ -933,6 +887,24 @@ export class RsScheduleEditor extends LitElement {
           : nothing
       }
     </div>`;
+  }
+
+  /**
+   * Which own-temperature tints the week shows (see `_lookFactory`): a heat or single value is
+   * the stronger the warmer, a cool-only value the stronger the cooler.
+   */
+  private _ownTempKinds(): { warm: boolean; cool: boolean } {
+    let warm = false;
+    let cool = false;
+    for (const day of this._week) {
+      for (const b of day) {
+        if (usesComfort(b)) continue;
+        const t = blockTemps(b);
+        if (t.heat !== undefined || t.single !== undefined) warm = true;
+        else if (t.cool !== undefined) cool = true;
+      }
+    }
+    return { warm, cool };
   }
 
   private _renderDayCard(
@@ -1313,18 +1285,6 @@ export class RsScheduleEditor extends LitElement {
         clearDay(this._week, day),
       );
     }
-  }
-
-  private _applyTemplate(id: string) {
-    const template = TEMPLATES.find((t) => t.id === id);
-    if (!template) return;
-    const l = this.hass.language;
-    this._withUndo(
-      localize("schedule_editor.template_applied", l, {
-        name: localize(`schedule_editor.tpl_${template.id}` as "schedule_editor.tpl_split", l),
-      }),
-      template.make(),
-    );
   }
 
   private _withUndo(message: string, next: Week) {

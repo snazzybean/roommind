@@ -113,6 +113,15 @@ export class RsWeekGrid extends LitElement {
         transform: translateX(-100%);
       }
 
+      /* near midnight the label stays inside the axis instead of hanging over its edge */
+      .axis .now-label.start {
+        transform: none;
+      }
+
+      .axis .now-label.end {
+        transform: translateX(-100%);
+      }
+
       .axis .now-label {
         color: var(--primary-text-color);
         font-weight: 500;
@@ -284,13 +293,17 @@ export class RsWeekGrid extends LitElement {
               html`<span
                 class=${h === 24 ? "last" : ""}
                 style="left:${(h / 24) * 100}%"
-                ?hidden=${nearNow(h) && h !== 0 && h !== 24}
+                ?hidden=${nearNow(h)}
                 >${h}</span
               >`,
           )}
           ${
             showNow
-              ? html`<span class="now-label" style="left:${nowPct}%">${hm(this.nowMinute)}</span>`
+              ? html`<span
+                  class="now-label ${this.nowMinute < 45 ? "start" : this.nowMinute > DAY_MINUTES - 45 ? "end" : ""}"
+                  style="left:${nowPct}%"
+                  >${hm(this.nowMinute)}</span
+                >`
               : nothing
           }
         </div>

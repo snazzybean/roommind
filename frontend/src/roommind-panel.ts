@@ -58,6 +58,8 @@ export class RoomMindPanel extends LitElement {
   @state() private _scheduleEntity: string | null = null;
   @state() private _scheduleRoom = "";
   @state() private _scheduleOffAction: "eco" | "off" = "eco";
+  /** The open room came from its analytics page; back returns there. */
+  @state() private _roomFromAnalytics = false;
   @state() private _analyticsRoom = "";
   @state() private _vacationActive = false;
   @state() private _vacationTemp: number | null = null;
@@ -373,7 +375,14 @@ export class RoomMindPanel extends LitElement {
           inDetail
             ? html`<rs-icon-button
                 icon="mdi:arrow-left"
-                .label=${localize("room.back", l)}
+                .label=${localize(
+                  inSchedule
+                    ? "room.back_to_room"
+                    : this._roomFromAnalytics
+                      ? "room.back_to_analytics"
+                      : "room.back",
+                  l,
+                )}
                 @click=${inSchedule ? this._onBackFromSchedule : this._onBackFromDetail}
               ></rs-icon-button>`
             : settingsPage
@@ -726,7 +735,15 @@ export class RoomMindPanel extends LitElement {
   };
 
   private _onBackFromDetail() {
+    const room = this._selectedAreaId;
     this._selectedAreaId = null;
+    if (this._roomFromAnalytics && room) {
+      this._roomFromAnalytics = false;
+      this._analyticsRoom = room;
+      this._activeTab = "analytics";
+      this._navigate(`/analytics/${room}`);
+      return;
+    }
     this._navigate("");
   }
 
@@ -739,6 +756,7 @@ export class RoomMindPanel extends LitElement {
 
   private _onTabClicked(tab: TabId) {
     this._stopEditing();
+    this._roomFromAnalytics = false;
     this._activeTab = tab;
     this._selectedAreaId = null;
     this._scheduleEntity = null;
@@ -752,6 +770,7 @@ export class RoomMindPanel extends LitElement {
 
   private _onAreaSelected(e: CustomEvent<{ areaId: string }>) {
     this._stopEditing();
+    this._roomFromAnalytics = false;
     this._selectedAreaId = e.detail.areaId;
     this._navigate(`/room/${e.detail.areaId}`);
   }
@@ -768,6 +787,7 @@ export class RoomMindPanel extends LitElement {
     if (!this._analyticsRoom) return;
     this._selectedAreaId = this._analyticsRoom;
     this._activeTab = "areas";
+    this._roomFromAnalytics = true;
     this._navigate(`/room/${this._analyticsRoom}`);
   }
 
