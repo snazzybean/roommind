@@ -65,7 +65,7 @@
             <a id="nextFileLink" class="nav" href="z_e1a10107a084a5d3_deprecation_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.17.2">coverage.py v7.17.2</a>,
-            created at 2026-11-11 19:19 +0000
+            created at 2026-11-11 19:44 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -731,12 +731,12 @@
     <p class="run"><span class="n"><a id="t649" href="#t649">649</a></span><span class="t">        <span class="nam">sensor_id</span> <span class="op">=</span> <span class="nam">settings</span><span class="op">.</span><span class="nam">get</span><span class="op">(</span><span class="str">&quot;outdoor_temp_sensor&quot;</span><span class="op">)</span> <span class="key">or</span> <span class="str">&quot;(not configured)&quot;</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t650" href="#t650">650</a></span><span class="t">        <span class="nam">weather_eid</span> <span class="op">=</span> <span class="nam">settings</span><span class="op">.</span><span class="nam">get</span><span class="op">(</span><span class="str">&quot;weather_entity&quot;</span><span class="op">)</span> <span class="key">or</span> <span class="str">&quot;(not configured)&quot;</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t651" href="#t651">651</a></span><span class="t">        <span class="nam">message</span> <span class="op">=</span> <span class="op">(</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t652" href="#t652">652</a></span><span class="t">            <span class="str">&quot;RoomMind cannot read an outdoor temperature. Thermal model &quot;</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t653" href="#t653">653</a></span><span class="t">            <span class="str">&quot;learning is paused for all rooms until a valid source returns.\n\n&quot;</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t652" href="#t652">652</a></span><span class="t">            <span class="str">&quot;RoomMind gets no outdoor temperature, so learning is paused in every &quot;</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t653" href="#t653">653</a></span><span class="t">            <span class="str">&quot;room until one arrives again.\n\n&quot;</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t654" href="#t654">654</a></span><span class="t">            <span class="fst">f&quot;</span><span class="fst">&#8226; Outdoor sensor: `</span><span class="op">{</span><span class="nam">sensor_id</span><span class="op">}</span><span class="fst">`\n</span><span class="fst">&quot;</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t655" href="#t655">655</a></span><span class="t">            <span class="fst">f&quot;</span><span class="fst">&#8226; Weather entity: `</span><span class="op">{</span><span class="nam">weather_eid</span><span class="op">}</span><span class="fst">`\n\n</span><span class="fst">&quot;</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t656" href="#t656">656</a></span><span class="t">            <span class="str">&quot;Check that the sensor is online or configure a weather entity in &quot;</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t657" href="#t657">657</a></span><span class="t">            <span class="str">&quot;Settings &#8594; Outdoor.&quot;</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t656" href="#t656">656</a></span><span class="t">            <span class="str">&quot;Check that the sensor reports values, or set a weather forecast in &quot;</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t657" href="#t657">657</a></span><span class="t">            <span class="str">&quot;RoomMind under Settings &#8250; Sensors &amp; data sources.&quot;</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t658" href="#t658">658</a></span><span class="t">        <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t659" href="#t659">659</a></span><span class="t">        <span class="nam">_LOGGER</span><span class="op">.</span><span class="nam">warning</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t660" href="#t660">660</a></span><span class="t">            <span class="str">&quot;Outdoor temperature unavailable for %d cycles &#8212; EKF learning paused&quot;</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
@@ -745,7 +745,7 @@
     <p class="run"><span class="n"><a id="t663" href="#t663">663</a></span><span class="t">        <span class="nam">async_create_notification</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t664" href="#t664">664</a></span><span class="t">            <span class="nam">self</span><span class="op">.</span><span class="nam">hass</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t665" href="#t665">665</a></span><span class="t">            <span class="nam">message</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t666" href="#t666">666</a></span><span class="t">            <span class="nam">title</span><span class="op">=</span><span class="str">&quot;RoomMind: outdoor temperature unavailable&quot;</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t666" href="#t666">666</a></span><span class="t">            <span class="nam">title</span><span class="op">=</span><span class="str">&quot;RoomMind: no outdoor temperature&quot;</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t667" href="#t667">667</a></span><span class="t">            <span class="nam">notification_id</span><span class="op">=</span><span class="nam">OUTDOOR_UNAVAILABLE_NOTIFICATION_ID</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t668" href="#t668">668</a></span><span class="t">        <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t669" href="#t669">669</a></span><span class="t">        <span class="nam">self</span><span class="op">.</span><span class="nam">_outdoor_warning_sent</span> <span class="op">=</span> <span class="key">True</span>&nbsp;</span><span class="r"></span></p>
@@ -3243,7 +3243,7 @@
             <a class="nav" href="z_e1a10107a084a5d3_deprecation_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.17.2">coverage.py v7.17.2</a>,
-            created at 2026-11-11 19:19 +0000
+            created at 2026-11-11 19:44 +0000
         </p>
     </div>
 </footer>
