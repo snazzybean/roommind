@@ -1,0 +1,38 @@
+name: ekf-room-change
+description: >
+  The radiator house learns for four days, then two rooms change at midnight: the kitchen
+  gets a radiator twice the size, the bedroom new windows and insulation (heat loss
+  halved, radiator unchanged). Five minutes later "learn faster" is pressed for the
+  kitchen and, by mistake, for the unchanged living room; the bedroom relearns on its
+  own. The model must follow both changes and control must stay on MPC.
+tags: [trv, mpc, model]
+extends: baseline-radiator-house
+duration: 9d
+house:
+  rooms:
+    schlafzimmer:
+      devices:
+        # pinned: the sim sizes radiators from the live heat loss, the insulation must not shrink it
+        - {entity_id: climate.schlafzimmer_trv, profile: generic_trv, h_radiator_w_k: 29.37}
+# The inherited cold spell, windows and override would blur the change, so none of them.
+timeline:
+  - {at: "+4d", do: sim.param, path: device.climate.kueche_trv.design_factor, value: 2.6}
+  - {at: "+4d", do: sim.param, path: room.schlafzimmer.h_air_out, value: 4.654}
+  - {at: "+4d", do: sim.param, path: room.schlafzimmer.h_mass_out, value: 2.76}
+  - {at: "+4d00h05m", do: roommind.ws, type: roommind/model/boost_learning, area_id: kueche}
+  - {at: "+4d00h05m", do: roommind.ws, type: roommind/model/boost_learning, area_id: wohnzimmer}
+expect:
+  - {invariant: no_rejected_commands}
+  - {invariant: setpoints_within_device_range}
+  # The old boost (P x 2.5, diagonal floored at 0.3 x the initial variance) made a 0.05 K
+  # reading move alpha by its whole value: confidence 0.98 -> 0.33-0.52, MPC off for
+  # 12 min, beta_h once on its 0.1 bound (seed 2). Scaling P as S P S keeps 0.93-0.97.
+  - {check: "room.kueche.mpc_active == true", at: "+4d00h10m", label: MPC stays on after the boost}
+  - {check: "room.wohnzimmer.mpc_active == true", at: "+4d00h10m", label: MPC stays on after a boost without a change}
+  - {check: "room.kueche.confidence > 0.9", at: "+4d00h30m", label: confidence barely moves after the boost}
+  - {check: "room.wohnzimmer.confidence > 0.9", at: "+4d00h30m", label: confidence barely moves after the boost}
+  # Without any boost the filter follows on its own: kitchen beta_h 0.79 -> 1.6 after the first
+  # morning heating, 1.9 settled (boost: 2.0 after the first heating); bedroom alpha
+  # 0.0114 -> 0.005-0.007 within 15 min (truth halves). Daily forecast error stays 0.04 K.
+  - {metric: model.learned_beta_h, room: kueche, min: 1.3}
+  - {metric: model.learned_alpha_per_h, room: schlafzimmer, max: 0.0095}

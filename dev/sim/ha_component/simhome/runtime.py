@@ -36,6 +36,39 @@ SIM_USER_NAME = "Sim"
 _MIN_STEP_S = 1e-6
 
 
+MODEL_TRACE_INTERVAL_S = 300.0
+
+
+def _sig(v: float) -> float:
+    return float(f"{v:.4g}")
+
+
+def model_snapshot(coordinator: Any) -> dict[str, Any]:
+    """Learned EKF state per room for the model trace: x, diag(P), P[0][*], P[1][2] and error sums.
+
+    Read only, so a traced run stays identical to an untraced one.
+    """
+    mgr = getattr(coordinator, "_model_manager", None)
+    out: dict[str, Any] = {}
+    for area_id, est in (getattr(mgr, "_estimators", None) or {}).items():
+        x, p = est._x, est._P
+        try:
+            std_h = est.prediction_std(max(x[2], 0.0), 20.0, 10.0, 5.0)
+        except Exception:  # noqa: BLE001 - a trace must never break the run
+            std_h = None
+        out[area_id] = {
+            "x": [_sig(v) for v in x],
+            "pd": [_sig(p[i][i]) for i in range(len(x))],
+            "p0": [_sig(v) for v in p[0]],
+            "p12": _sig(p[1][2]),
+            "n": est._n_updates,
+            "err_sum": round(est._err_sum, 4),
+            "err_n": est._err_n,
+            "std_h": round(std_h, 4) if std_h is not None else None,
+        }
+    return out
+
+
 class SimRuntime:
     def __init__(
         self, hass: HomeAssistant, inst_dir: Path, scenario: Scenario, world: World, state: dict[str, Any]
@@ -223,7 +256,11 @@ class SimRuntime:
         rooms = {}
         for area_id, live in (getattr(coordinator, "rooms", None) or {}).items():
             rooms[area_id] = {k: v for k, v in live.items() if _jsonable(v)}
-        rec = {"t": round(time.time(), 1), "rooms": rooms}
+        rec: dict[str, Any] = {"t": round(time.time(), 1), "rooms": rooms}
+        if rec["t"] % MODEL_TRACE_INTERVAL_S < OBSERVE_INTERVAL_S:
+            models = model_snapshot(coordinator)
+            if models:
+                rec["models"] = models
         self._buffers["observer"].append(json.dumps(rec, separators=(",", ":"), default=str))
 
     @callback
