@@ -302,3 +302,54 @@ def test_comfort_is_judged_against_the_schedule_not_the_price_shift():
     # Coasting 1 K below a 21 °C schedule while expensive: the room at 19.9 °C is too cold
     coast = _point(0, room_temp=19.9, heat_target=20.0, cool_target=25.0, price_shift=-1.0)
     assert compute_period_stats([coast, _point(1)], "auto")["comfort"]["below_pct"] == 50
+
+
+def _targeted(rows: list[tuple[float, str, float]], key: str = "heat_target") -> list[dict]:
+    return [_point(i, room_temp=t, mode=m, **{key: target}) for i, (t, m, target) in enumerate(rows)]
+
+
+def test_a_preheat_ending_under_eco_counts_against_the_coming_target():
+    """The run ends while eco 18 is still in force; 21 follows half an hour later."""
+    rows = [(19.5, "heating", 18.0), (20.6, "heating", 18.0)]
+    rows += [(21.4, "idle", 18.0)] * 5 + [(21.4, "idle", 21.0)] * 5
+    over = compute_period_stats(_targeted(rows), "auto")["heat_overshoot"]
+    assert over["max"] == pytest.approx(0.4)
+
+
+def test_a_run_ended_by_a_lower_target_counts_against_the_target_it_ran_for():
+    rows = [(18.5, "heating", 19.0), (19.0, "heating", 19.0), (19.0, "heating", 15.0)]
+    rows += [(19.4, "idle", 15.0)] * 4
+    over = compute_period_stats(_targeted(rows), "auto")["heat_overshoot"]
+    assert over["max"] == pytest.approx(0.4)
+
+
+def test_overshoot_at_a_constant_target_still_counts():
+    rows = [(20.5, "heating", 21.0), (21.0, "heating", 21.0), (21.9, "idle", 21.0), (21.6, "idle", 21.0)]
+    assert compute_period_stats(_targeted(rows), "auto")["heat_overshoot"]["max"] == pytest.approx(0.9)
+    cooling = [(25.0, "cooling", 24.0), (24.0, "idle", 26.0), (23.2, "idle", 26.0)]
+    assert compute_period_stats(_targeted(cooling, "cool_target"), "auto")["cool_overshoot"]["max"] == pytest.approx(
+        0.8
+    )
+
+
+def test_preheat_pulses_count_against_the_target_after_the_next_pulse():
+    """Short pre-heat pulses under eco: each window ends at the next pulse, the target rises later."""
+    rows = [(20.0, "heating", 18.0), (21.9, "idle", 18.0), (21.0, "heating", 18.0), (21.6, "idle", 18.0)]
+    rows += [(21.4, "idle", 18.0)] * 3 + [(21.2, "heating", 21.0), (21.0, "heating", 21.0), (21.1, "idle", 21.0)]
+    over = compute_period_stats(_targeted(rows), "auto")["heat_overshoot"]
+    assert over["max"] == pytest.approx(0.9)
+
+
+def test_a_preheat_hours_before_the_block_counts_against_the_block():
+    """The room is above eco already when the run starts: only a coming block explains it."""
+    rows = [(20.0, "heating", 18.0), (20.9, "idle", 18.0)] + [(20.6, "idle", 18.0)] * 25
+    rows += [(20.5, "idle", 21.0)]
+    over = compute_period_stats(_targeted(rows), "auto")["heat_overshoot"]
+    assert over["max"] == 0
+
+
+def test_a_run_from_below_eco_keeps_eco_as_its_target_even_before_a_block():
+    rows = [(16.8, "heating", 17.0), (18.0, "idle", 17.0)] + [(17.6, "idle", 17.0)] * 25
+    rows += [(17.5, "idle", 21.0)]
+    over = compute_period_stats(_targeted(rows), "auto")["heat_overshoot"]
+    assert over["max"] == pytest.approx(1.0)

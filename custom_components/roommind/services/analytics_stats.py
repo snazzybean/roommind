@@ -19,6 +19,8 @@ RHYTHM_MIN_DAYS = 2
 RHYTHM_MEANS = {"temp": "room_temp", "humidity": "humidity", "outdoor": "outdoor_temp"}
 # How long after a run the room may still carry it past the target (radiators keep giving heat)
 OVERSHOOT_WINDOW_S = 3600
+# A pre-heat starts at most this long before the block it heats for (PREHEAT_MAX_LEAD_HOURS)
+PREHEAT_LOOKAHEAD_S = 12 * 3600
 
 
 def _weighted(points: list[dict]) -> Iterator[tuple[dict, float]]:
@@ -65,19 +67,59 @@ def _comfort_side(deviation: float) -> str:
     return "within"
 
 
+def _reference_target(points: list[dict], run_start: int, end: int, target_key: str, sign: int) -> float | None:
+    """The target a run of ``points[run_start..end]`` worked towards.
+
+    The strictest target in force from the run's start to OVERSHOOT_WINDOW_S after its end
+    (heating: the highest heat target, cooling: the lowest cool target), so a run ended by a
+    lower target counts against the one it ran for. A run that started with the room already
+    past that target can only be a pre-heat: then the next stricter target within
+    PREHEAT_LOOKAHEAD_S is the reference (pre-heat starts up to hours before a block).
+    """
+    strictest = max if sign > 0 else min
+    end_ts = points[end]["ts"]
+    targets: list[float] = []
+    for p in points[run_start:]:
+        if p["ts"] - end_ts > OVERSHOOT_WINDOW_S:
+            break
+        if (t := p.get(target_key)) is not None:
+            targets.append(t)
+    if not targets:
+        return None
+    reference = strictest(targets)
+    first = points[run_start].get("room_temp")
+    if first is None or sign * (first - reference) < 0:
+        return reference
+    for p in points[end:]:
+        if p["ts"] - end_ts > PREHEAT_LOOKAHEAD_S:
+            break
+        t = p.get(target_key)
+        if t is not None and sign * (t - reference) > 0:
+            return float(t)
+    return reference
+
+
 def _run_overshoot(points: list[dict], mode: str, target_key: str, sign: int) -> dict | None:
     """How far the room went past the target after each run of ``mode``.
 
-    Measured against the target in force when the run ended, up to OVERSHOOT_WINDOW_S
-    later or until the next run of the same mode; samples with an open window are left out.
+    The peak is taken from the run's end up to OVERSHOOT_WINDOW_S later or until the next run
+    of the same mode; samples with an open window are left out. It is measured against the
+    target the run worked towards (``_reference_target``), not the one in force at its end:
+    pre-heat runs end under eco and runs end because the target dropped.
     ``sign`` is +1 for heating (above the heat target), -1 for cooling (below the cool target).
     """
+    strictest = max if sign > 0 else min
     overshoots: list[float] = []
+    run_start = 0
     for i, point in enumerate(points[:-1]):
-        if point.get("mode") != mode or points[i + 1].get("mode") == mode:
+        if point.get("mode") != mode:
             continue
-        target = point.get(target_key)
-        if target is None:
+        if i == 0 or points[i - 1].get("mode") != mode:
+            run_start = i
+        if points[i + 1].get("mode") == mode:
+            continue
+        reference = _reference_target(points, run_start, i, target_key, sign)
+        if reference is None:
             continue
         peak: float | None = None
         for later in points[i:]:
@@ -86,9 +128,9 @@ def _run_overshoot(points: list[dict], mode: str, target_key: str, sign: int) ->
             temp = later.get("room_temp")
             if temp is None or later.get("window_open"):
                 continue
-            peak = temp if peak is None else (max(peak, temp) if sign > 0 else min(peak, temp))
+            peak = temp if peak is None else strictest(peak, temp)
         if peak is not None:
-            overshoots.append(max(0.0, sign * (peak - target)))
+            overshoots.append(max(0.0, sign * (peak - reference)))
     if not overshoots:
         return None
     return {
