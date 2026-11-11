@@ -20,3 +20,9 @@ export function formatPercent(value: number, hass: Pick<HomeAssistant, "language
     maximumFractionDigits: 0,
   }).format(value / 100);
 }
+
+/** Duration of hours: "20 min" below an hour, else "1,5 h" (at most one decimal, 0 → "0 h"). */
+export function formatHours(hours: number, hass: Pick<HomeAssistant, "language">): string {
+  if (hours > 0 && hours < 1) return `${formatNumber(Math.round(hours * 60), hass)} min`;
+  return `${formatNumber(hours, hass, 0, 1)} h`;
+}

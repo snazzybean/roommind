@@ -14,6 +14,7 @@ export interface RsSegmentOption {
  * Manual activation on purpose: options often trigger a request, an arrow key must not send
  * one per step. `value` may be null (nothing picked). Fires `value-changed` with `{ value }`.
  * `wrap`: options flow onto a second line when they do not fit (many or long labels).
+ * `reselect`: a click on the picked option fires again (e.g. "today" moves its end to now).
  */
 @customElement("rs-segmented")
 export class RsSegmented extends LitElement {
@@ -24,6 +25,7 @@ export class RsSegmented extends LitElement {
   @property({ type: String, reflect: true }) public size: "sm" | "md" = "md";
   @property({ type: Boolean, reflect: true }) public disabled = false;
   @property({ type: Boolean, reflect: true }) public wrap = false;
+  @property({ type: Boolean }) public reselect = false;
 
   static styles = [
     tokens,
@@ -188,7 +190,7 @@ export class RsSegmented extends LitElement {
   }
 
   private _pick(o: RsSegmentOption) {
-    if (this.disabled || o.disabled || o.value === this.value) return;
+    if (this.disabled || o.disabled || (o.value === this.value && !this.reselect)) return;
     this.dispatchEvent(
       new CustomEvent("value-changed", {
         detail: { value: o.value },

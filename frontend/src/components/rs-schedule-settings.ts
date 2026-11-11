@@ -331,6 +331,7 @@ export class RsScheduleSettings extends RsScheduleBase {
       <div class="price-shift-label">${localize("schedule.price_shift_label", l)}</div>
       <div class="price-shift-hint">${localize("schedule.price_shift_hint", l)}</div>
       <rs-chip-group
+        .label=${localize("schedule.price_shift_label", l)}
         .chips=${PRICE_SHIFT_STEPS.map((k) => ({
           id: String(k),
           label: k === 0 ? localize("schedule.price_shift_off", l) : `±${this._shiftLabel(k)}`,

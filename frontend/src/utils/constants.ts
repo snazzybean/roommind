@@ -18,3 +18,8 @@ export function preheatLeadHours(comfortWeight: number): number {
     DEFAULT_COMFORT_WEIGHT;
   return (Math.floor((hours * 60) / 5) * 5) / 60;
 }
+
+/** MPC data gate; mirror MIN_IDLE_UPDATES, MIN_ACTIVE_UPDATES and MPC_MAX_PREDICTION_STD (mpc_controller). */
+export const MPC_MIN_IDLE_SAMPLES = 60;
+export const MPC_MIN_ACTIVE_SAMPLES = 20;
+export const MPC_MAX_PREDICTION_STD = 0.5;

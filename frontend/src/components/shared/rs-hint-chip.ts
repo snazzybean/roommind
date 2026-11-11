@@ -5,14 +5,15 @@ import "./rs-tooltip";
 
 /**
  * Status hint: icon plus text, or icon only with the text as tooltip and accessible name.
- * `variant` colours warnings (`warn`) and dangers (`error`); everything else stays neutral.
+ * `variant` colours warnings (`warn`), dangers (`error`) and a reached state (`ok`, e.g. "MPC
+ * active"); everything else stays neutral.
  * `info`: an explanation the text chip shows as tooltip (hover, focus, tap).
  */
 @customElement("rs-hint-chip")
 export class RsHintChip extends LitElement {
   @property({ type: String }) public icon = "";
   @property({ type: String }) public text = "";
-  @property({ type: String, reflect: true }) public variant: "default" | "warn" | "error" =
+  @property({ type: String, reflect: true }) public variant: "default" | "warn" | "error" | "ok" =
     "default";
   @property({ type: Boolean, reflect: true, attribute: "icon-only" }) public iconOnly = false;
   /** Icon-only chips: a short text (e.g. "+2") in place of the icon. */
@@ -41,6 +42,10 @@ export class RsHintChip extends LitElement {
         --chip-color: var(--rs-err);
       }
 
+      :host([variant="ok"]) {
+        --chip-color: var(--rs-ok);
+      }
+
       .chip {
         height: 26px;
         box-sizing: border-box;
@@ -61,7 +66,8 @@ export class RsHintChip extends LitElement {
       }
 
       :host([variant="warn"]) .chip,
-      :host([variant="error"]) .chip {
+      :host([variant="error"]) .chip,
+      :host([variant="ok"]) .chip {
         border-color: color-mix(in srgb, var(--chip-color) 55%, transparent);
         background: color-mix(
           in srgb,

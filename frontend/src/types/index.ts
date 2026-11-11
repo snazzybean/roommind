@@ -382,6 +382,8 @@ export interface AnalyticsData {
   price_unit?: string;
   model: {
     confidence: number;
+    /** One entry per local day, oldest first: [YYYY-MM-DD, confidence 0..1, data points, MPC active]. */
+    confidence_history?: Array<[string, number, number, boolean]>;
     model: {
       C: number;
       U: number;

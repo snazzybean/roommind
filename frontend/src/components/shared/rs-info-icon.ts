@@ -2,11 +2,19 @@ import { LitElement, html, css } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import "./rs-tooltip";
 
-/** Info button whose explanation opens in the shared `rs-tooltip` (text or slotted content). */
+/**
+ * Info button whose explanation opens in the shared `rs-tooltip` (text or slotted content).
+ * `disclosure`: for texts too long for a tooltip; the button only toggles (`aria-expanded` from
+ * `expanded`) and fires `info-toggle`, the parent shows the text in its own panel.
+ */
 @customElement("rs-info-icon")
 export class RsInfoIcon extends LitElement {
   @property({ type: String }) public text = "";
   @property({ type: String }) public icon = "mdi:information-outline";
+  @property({ type: Boolean }) public disclosure = false;
+  @property({ type: Boolean }) public expanded = false;
+  /** Accessible name; "Info" when empty. */
+  @property({ type: String }) public label = "";
 
   @state() private _open = false;
 
@@ -61,6 +69,17 @@ export class RsInfoIcon extends LitElement {
   `;
 
   render() {
+    if (this.disclosure) {
+      return html`<button
+        type="button"
+        class=${this.expanded ? "open" : ""}
+        aria-label=${this.label || "Info"}
+        aria-expanded=${this.expanded ? "true" : "false"}
+        @click=${() => this.dispatchEvent(new CustomEvent("info-toggle"))}
+      >
+        <ha-icon .icon=${this.icon}></ha-icon>
+      </button>`;
+    }
     return html`
       <rs-tooltip
         .text=${this.text}
@@ -71,7 +90,7 @@ export class RsInfoIcon extends LitElement {
         <button
           type="button"
           class=${this._open ? "open" : ""}
-          aria-label="Info"
+          aria-label=${this.label || "Info"}
           aria-expanded=${this._open ? "true" : "false"}
         >
           <ha-icon .icon=${this.icon}></ha-icon>

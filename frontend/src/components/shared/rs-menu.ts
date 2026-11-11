@@ -15,6 +15,8 @@ export interface RsMenuItem {
 /**
  * Overflow menu: a ⋮ button opening a list of actions in the top layer. Arrow keys move,
  * Enter picks, Esc/Tab/outside tap closes. Fires `menu-select` with `{ value }`.
+ * With `text` the trigger is an outlined button with icon, text and chevron instead; the text
+ * hides on narrow screens and stays the accessible name.
  */
 @customElement("rs-menu")
 export class RsMenu extends LitElement {
@@ -23,6 +25,9 @@ export class RsMenu extends LitElement {
   @property({ type: String }) public label = "";
   @property({ type: String }) public icon = "mdi:dots-vertical";
   @property({ type: String }) public size: "sm" | "md" = "sm";
+  /** Visible text: turns the trigger into a labelled button. */
+  @property({ type: String }) public text = "";
+  @property({ type: Boolean, reflect: true }) public disabled = false;
 
   @state() private _open = false;
 
@@ -78,6 +83,68 @@ export class RsMenu extends LitElement {
         opacity: 0.4;
         cursor: default;
       }
+
+      .text-trigger {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        height: 36px;
+        padding: 0 10px 0 12px;
+        border: 1px solid var(--rs-border);
+        border-radius: 18px;
+        background: none;
+        color: var(--primary-text-color);
+        font: inherit;
+        font-size: 13px;
+        font-weight: 500;
+        white-space: nowrap;
+        cursor: pointer;
+        --mdc-icon-size: 18px;
+        transition: background-color 0.15s ease;
+      }
+
+      @media (pointer: coarse) {
+        .text-trigger {
+          height: var(--rs-touch);
+        }
+      }
+
+      .text-trigger ha-icon {
+        color: var(--secondary-text-color);
+      }
+
+      .text-trigger .chevron {
+        --mdc-icon-size: 16px;
+      }
+
+      .text-trigger:hover:not(:disabled) {
+        background: var(--rs-fill);
+      }
+
+      .text-trigger:focus-visible {
+        outline: 2px solid var(--primary-color);
+        outline-offset: 1px;
+      }
+
+      .text-trigger:disabled {
+        opacity: 0.4;
+        cursor: default;
+      }
+
+      @media (max-width: 600px) {
+        .text-trigger {
+          padding: 0 8px 0 10px;
+        }
+        .text-trigger .text {
+          display: none;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .text-trigger {
+          transition: none;
+        }
+      }
     `,
   ];
 
@@ -89,15 +156,33 @@ export class RsMenu extends LitElement {
 
   render() {
     return html`
-      <rs-icon-button
-        .icon=${this.icon}
-        .label=${this.label}
-        .size=${this.size}
-        haspopup="menu"
-        .expanded=${this._open}
-        @click=${this._toggle}
-        @keydown=${this._onTriggerKey}
-      ></rs-icon-button>
+      ${
+        this.text
+          ? html`<button
+              type="button"
+              class="text-trigger"
+              aria-label=${this.label || this.text}
+              aria-haspopup="menu"
+              aria-expanded=${this._open ? "true" : "false"}
+              ?disabled=${this.disabled}
+              @click=${this._toggle}
+              @keydown=${this._onTriggerKey}
+            >
+              <ha-icon .icon=${this.icon} aria-hidden="true"></ha-icon>
+              <span class="text">${this.text}</span>
+              <ha-icon class="chevron" icon="mdi:chevron-down" aria-hidden="true"></ha-icon>
+            </button>`
+          : html`<rs-icon-button
+              .icon=${this.icon}
+              .label=${this.label}
+              .size=${this.size}
+              .disabled=${this.disabled}
+              haspopup="menu"
+              .expanded=${this._open}
+              @click=${this._toggle}
+              @keydown=${this._onTriggerKey}
+            ></rs-icon-button>`
+      }
       ${
         this._open
           ? html`<div
@@ -127,6 +212,7 @@ export class RsMenu extends LitElement {
   }
 
   protected updated(changed: Map<string, unknown>): void {
+    if (changed.has("disabled") && this.disabled) this.close();
     if (changed.has("_open") && this._open) {
       const menu = this.renderRoot.querySelector<HTMLElement>("[role=menu]");
       if (!menu) return;
@@ -144,6 +230,7 @@ export class RsMenu extends LitElement {
 
   private _toggle(e: Event) {
     e.stopPropagation();
+    if (this.disabled) return;
     if (this._open) this.close();
     else this._openMenu();
   }
@@ -160,7 +247,10 @@ export class RsMenu extends LitElement {
     hideFromTopLayer(this.renderRoot.querySelector<HTMLElement>("[role=menu]"));
     this._open = false;
     this._removeDocListeners();
-    if (refocus) this.renderRoot.querySelector("rs-icon-button")?.focusQuietly();
+    if (refocus) {
+      this.renderRoot.querySelector("rs-icon-button")?.focusQuietly();
+      this.renderRoot.querySelector<HTMLButtonElement>(".text-trigger")?.focus();
+    }
   }
 
   private _select(item: RsMenuItem) {
@@ -176,7 +266,7 @@ export class RsMenu extends LitElement {
   }
 
   private _onTriggerKey(e: KeyboardEvent) {
-    if (e.key === "ArrowDown" && !this._open) {
+    if (e.key === "ArrowDown" && !this._open && !this.disabled) {
       e.preventDefault();
       this._openMenu();
     }

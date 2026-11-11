@@ -7,11 +7,10 @@ import { formatTemp, tempUnit, toDisplay, toDisplayDelta } from "./temperature";
 import type { HomeAssistant } from "../types";
 import { HUMIDITY_LEVELS, humidityAxis, humidityLevel } from "./humidity";
 import { REASON_LABELS, TARGET_REASON_GROUPS, targetReasons } from "./target-reason";
+import { MAX_SAMPLE_GAP_MS } from "./analytics-spans";
 
 const FORECAST_MS = 3 * 3600_000;
 const HUMIDITY_COLOR = "rgb(233, 30, 99)";
-// Same cap as MAX_SAMPLE_GAP_S in analytics_stats.py: a sample counts until the next one
-const MAX_SAMPLE_GAP_MS = 900_000;
 const CHART_HEIGHT = 300;
 const MAIN_PLOT_HEIGHT = 252;
 const MAIN_TOP = 22;

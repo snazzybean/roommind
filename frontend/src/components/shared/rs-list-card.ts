@@ -6,13 +6,15 @@ import "./rs-info-icon";
 /**
  * Card holding `rs-list-row`s: optional header with heading, info icon (`info` text or the
  * `info` slot), an aside text on the right and the `header-extras` slot (badges, buttons).
- * Rows go into the default slot.
+ * Rows go into the default slot. `unclipped`: content may reach past the card (popups and
+ * chart tooltips positioned inside it); the card then does not clip row hovers at its corners.
  */
 @customElement("rs-list-card")
 export class RsListCard extends LitElement {
   @property({ type: String }) public heading = "";
   @property({ type: String }) public aside = "";
   @property({ type: String }) public info = "";
+  @property({ type: Boolean, reflect: true }) public unclipped = false;
 
   static styles = [
     tokens,
@@ -25,6 +27,10 @@ export class RsListCard extends LitElement {
       ha-card {
         overflow: hidden;
         padding-bottom: var(--rs-space-2);
+      }
+
+      :host([unclipped]) ha-card {
+        overflow: visible;
       }
 
       ha-card.headless {
