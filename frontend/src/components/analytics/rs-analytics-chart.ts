@@ -284,7 +284,7 @@ export class RsAnalyticsChart extends LitElement {
       style.getPropertyValue(name).trim() || fallback;
     return {
       temp: token("--primary-text-color", "#212121"),
-      prediction: token("--secondary-text-color", "#727272"),
+      prediction: token("--primary-color", "#03a9f4"),
       target: token("--success-color", "#4caf50"),
       heat: token("--rs-heat", "#ff8100"),
       cool: token("--rs-cool", "#2b9af9"),
