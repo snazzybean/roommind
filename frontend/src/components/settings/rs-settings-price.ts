@@ -6,6 +6,7 @@ import { RsSettingsBase } from "./rs-settings-base";
 import { customElement, property } from "lit/decorators.js";
 import type { HomeAssistant, PriceStatus } from "../../types";
 import { localize } from "../../utils/localize";
+import { describePriceStatus } from "../../utils/price-status";
 
 // A price sensor (with or without a forecast attribute) or something that is on while cheap
 const PRICE_DOMAINS = [
@@ -41,41 +42,24 @@ export class RsSettingsPrice extends RsSettingsBase {
         <span class="field-hint">${localize("settings.price_entity_hint", l)}</span>
         ${this.priceEntity ? this._renderStatus(l) : nothing}
       </div>
+      <div class="settings-section">
+        <p class="note">${localize("settings.price_room_hint", l)}</p>
+      </div>
     `;
   }
 
   private _renderStatus(l: string) {
-    const s = this.status;
-    // The status comes with the next rooms/list poll after a change
-    if (!s || s.entity_id !== this.priceEntity) {
+    const s = describePriceStatus(this.status, this.priceEntity, l);
+    if (s.state === "waiting") {
       return html`<div class="price-status muted">${localize("settings.price_waiting", l)}</div>`;
     }
-    if (!s.readable) {
+    if (s.state === "unreadable") {
       return html`<div class="price-status warning" role="status">
         ${localize("settings.price_unreadable", l)}
       </div>`;
     }
-    const level = s.level
-      ? localize(`settings.price_level_${s.level}`, l)
-      : localize("settings.price_level_unknown", l);
-    let detail: string;
-    if (s.kind === "forecast") {
-      detail = localize("settings.price_kind_forecast", l, {
-        hours: new Intl.NumberFormat(l, { maximumFractionDigits: 0 }).format(s.forecast_hours),
-      });
-    } else if (s.kind === "switch") {
-      detail = localize("settings.price_kind_switch", l);
-    } else {
-      detail = localize(
-        s.history_hours >= s.history_needed
-          ? "settings.price_kind_history"
-          : "settings.price_kind_history_learning",
-        l,
-        { hours: s.history_hours, needed: s.history_needed },
-      );
-    }
     return html`<div class="price-status" role="status">
-      <strong>${localize("settings.price_now", l, { level })}</strong> · ${detail}
+      <strong>${localize("settings.price_now", l, { level: s.level })}</strong> · ${s.detail}
     </div>`;
   }
 
@@ -83,7 +67,7 @@ export class RsSettingsPrice extends RsSettingsBase {
     RsSettingsBase.settingsBaseStyles,
     css`
       .price-status {
-        margin-top: 8px;
+        margin-top: var(--rs-space-3);
         font-size: 13px;
         color: var(--primary-text-color);
       }
@@ -93,7 +77,7 @@ export class RsSettingsPrice extends RsSettingsBase {
       }
 
       .price-status.warning {
-        color: var(--error-color, #db4437);
+        color: var(--error-color);
       }
     `,
   ];

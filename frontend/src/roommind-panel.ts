@@ -6,6 +6,10 @@ import { localize } from "./utils/localize";
 import { fireSaveStatus } from "./utils/events";
 import { computeAreaInfos, type AreaInfo } from "./utils/dashboard";
 import type { HouseSummary } from "./components/dashboard/rs-dashboard";
+import {
+  getSettingsCategory,
+  resolveSettingsCategory,
+} from "./components/settings/settings-categories";
 import "./components/rs-settings";
 import "./components/rs-analytics";
 import "./components/dashboard/rs-dashboard";
@@ -13,6 +17,24 @@ import "./components/dashboard/rs-dashboard-edit";
 import "./components/shared/rs-icon-button";
 
 type TabId = "areas" | "analytics" | "settings";
+
+/** Panel width from which settings show list and panel side by side (design system). */
+const SETTINGS_WIDE_MIN = 900;
+
+/** Esc in these stays with the control (close a dropdown, keep a typed but uncommitted value). */
+const ESC_KEEPING_TAGS = new Set([
+  "INPUT",
+  "TEXTAREA",
+  "SELECT",
+  "HA-SELECT",
+  "HA-COMBO-BOX",
+  "HA-ENTITY-PICKER",
+  "HA-TEXTFIELD",
+  "VAADIN-COMBO-BOX",
+  "VAADIN-COMBO-BOX-OVERLAY",
+  "MWC-LIST",
+  "HA-LIST-ITEM",
+]);
 
 @customElement("roommind-panel")
 export class RoomMindPanel extends LitElement {
@@ -50,6 +72,8 @@ export class RoomMindPanel extends LitElement {
   @state() private _groupByFloor = false;
   @state() private _editing = false;
   @state() private _elementsLoaded = false;
+  @state() private _settingsCategory = "";
+  @state() private _wide = window.innerWidth >= SETTINGS_WIDE_MIN;
 
   private _refreshInterval?: ReturnType<typeof setInterval>;
   private _routeApplied = false;
@@ -60,6 +84,7 @@ export class RoomMindPanel extends LitElement {
   /** Bumped on every dashboard settings save; polls started before it keep their old layout. */
   private _layoutEpoch = 0;
   private _layoutSaves = 0;
+  private _resizeObserver?: ResizeObserver;
 
   static styles = css`
     :host {
@@ -209,6 +234,12 @@ export class RoomMindPanel extends LitElement {
     this._loadRooms();
     this._refreshInterval = setInterval(() => this._loadRooms(), 5000);
     this.addEventListener("save-status", this._onSaveStatus as EventListener);
+    window.addEventListener("keydown", this._onSettingsKey);
+    this._resizeObserver ??= new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect.width ?? 0;
+      if (width > 0) this._wide = width >= SETTINGS_WIDE_MIN;
+    });
+    this._resizeObserver.observe(this);
     if (!this._routeApplied) {
       this._applyRoute();
       this._routeApplied = true;
@@ -240,6 +271,8 @@ export class RoomMindPanel extends LitElement {
     if (this._saveStatusTimeout) clearTimeout(this._saveStatusTimeout);
     this.removeEventListener("save-status", this._onSaveStatus as EventListener);
     window.removeEventListener("keydown", this._onEditKey);
+    window.removeEventListener("keydown", this._onSettingsKey);
+    this._resizeObserver?.disconnect();
     // NOTE: _boundVisibilityHandler intentionally NOT removed here.
     // It must survive disconnect to detect when tab becomes visible again
     // and trigger re-navigation if HA removed our element during idle.
@@ -280,6 +313,14 @@ export class RoomMindPanel extends LitElement {
       `;
     }
 
+    const settingsPage = this._settingsSubpage();
+    let title = localize("panel.title", l);
+    if (inDetail) {
+      title = this._rooms[this._selectedAreaId!]?.display_name || detailArea?.name || "";
+    } else if (settingsPage) {
+      title = localize(getSettingsCategory(settingsPage)!.title, l);
+    }
+
     return html`
       <div class="toolbar">
         ${
@@ -289,15 +330,15 @@ export class RoomMindPanel extends LitElement {
                 .label=${localize("room.back", l)}
                 @click=${this._onBackFromDetail}
               ></rs-icon-button>`
-            : html`<ha-menu-button .hass=${this.hass} .narrow=${this.narrow}></ha-menu-button>`
+            : settingsPage
+              ? html`<rs-icon-button
+                  icon="mdi:arrow-left"
+                  .label=${localize("settings.back", l)}
+                  @click=${this._onBackFromSettingsPage}
+                ></rs-icon-button>`
+              : html`<ha-menu-button .hass=${this.hass} .narrow=${this.narrow}></ha-menu-button>`
         }
-        <div class="title">
-          ${
-            inDetail
-              ? this._rooms[this._selectedAreaId!]?.display_name || detailArea?.name || ""
-              : localize("panel.title", l)
-          }
-        </div>
+        <div class="title">${title}</div>
         ${this._renderSaveIndicator()}
         ${
           !inDetail && this._activeTab === "areas" && this._roomsLoaded
@@ -329,7 +370,7 @@ export class RoomMindPanel extends LitElement {
       </div>
 
       ${
-        !inDetail
+        !inDetail && !settingsPage
           ? html`
               <div class="tabs">
                 ${(Object.keys(tabLabels) as TabId[]).map(
@@ -459,8 +500,45 @@ export class RoomMindPanel extends LitElement {
       .roomsWithoutArea=${this._roomsWithoutArea}
       .climateControlActive=${this._climateControlActive}
       .priceStatus=${this._priceStatus}
+      .category=${this._settingsCategory}
+      .wide=${this._wide}
+      @settings-category-changed=${this._onSettingsCategoryChanged}
     ></rs-settings>`;
   }
+
+  /** The settings category shown as its own page (narrow layout), else "". */
+  private _settingsSubpage() {
+    if (this._activeTab !== "settings" || this._selectedAreaId || this._wide) return "";
+    return resolveSettingsCategory(
+      this._settingsCategory,
+      this._roomsWithoutArea.length > 0,
+      false,
+    );
+  }
+
+  private _onSettingsCategoryChanged(e: CustomEvent<{ category: string }>) {
+    this._settingsCategory = e.detail.category;
+    this._navigate(this._settingsCategory ? `/settings/${this._settingsCategory}` : "/settings");
+  }
+
+  private _onBackFromSettingsPage = () => {
+    this._settingsCategory = "";
+    this._navigate("/settings");
+  };
+
+  private _onSettingsKey = (e: KeyboardEvent) => {
+    if (e.key !== "Escape" || e.defaultPrevented || !this._settingsSubpage()) return;
+    const path = e.composedPath();
+    const inControl = path.some(
+      (el) =>
+        el instanceof HTMLElement &&
+        (ESC_KEEPING_TAGS.has(el.tagName) ||
+          el.getAttribute("role") === "combobox" ||
+          el.getAttribute("role") === "listbox"),
+    );
+    if (inControl) return;
+    this._onBackFromSettingsPage();
+  };
 
   private async _loadRooms() {
     if (!this.hass) return;
@@ -542,6 +620,7 @@ export class RoomMindPanel extends LitElement {
     this._stopEditing();
     this._activeTab = tab;
     this._selectedAreaId = null;
+    this._settingsCategory = "";
     if (tab === "areas") {
       this._navigate("");
     } else {
@@ -725,9 +804,11 @@ export class RoomMindPanel extends LitElement {
       this._activeTab = "analytics";
       this._selectedAreaId = null;
       this._analyticsRoom = "";
-    } else if (path === "/settings") {
+    } else if (path === "/settings" || path.startsWith("/settings/")) {
       this._activeTab = "settings";
       this._selectedAreaId = null;
+      const requested = decodeURIComponent(path.slice(10));
+      this._settingsCategory = getSettingsCategory(requested) ? requested : "";
     } else {
       this._activeTab = "areas";
       this._selectedAreaId = null;

@@ -1,6 +1,6 @@
 /**
  * rs-badge – Small pill badge (e.g. "Beta") for section headers.
- * Used in list card headers and rs-settings-panel. With `tooltip` the hint opens in the shared
+ * Used in list card and settings page headers. With `tooltip` the hint opens in the shared
  * tooltip (a focusable button); without it stays a `title`, for headers that are themselves
  * clickable (an expansion panel must not contain a second control).
  */
