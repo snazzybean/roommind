@@ -1,4 +1,4 @@
-import { LitElement, html, css, nothing } from "lit";
+import { LitElement, html, css, nothing, type PropertyValues } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import type { HomeAssistant, HassArea } from "../types";
 import { getEntitiesForArea } from "../utils/room-state";
@@ -6,12 +6,19 @@ import { localize } from "../utils/localize";
 import { openEntityInfo } from "../utils/events";
 import { tempUnit } from "../utils/temperature";
 import { formatMinutes, formatNumber, formatPercent } from "../utils/format";
+import { tokens } from "../styles/tokens";
 import { inputStyles } from "../styles/input-styles";
+import { formStyles } from "../styles/form-styles";
 import { DEFAULT_OCCUPANCY_ECO_DELAY, MIN_OCCUPANCY_ECO_DELAY } from "../utils/constants";
-import "./shared/rs-toggle-row";
+import "./shared/rs-field";
+import "./shared/rs-icon-button";
+import "./shared/rs-info-icon";
 import "./shared/rs-list-row";
 
 type SensorKind = "temp" | "humidity" | "occupancy" | "window";
+
+const OCCUPANCY_CLASSES = ["occupancy", "motion", "presence"];
+const WINDOW_CLASSES = ["window", "door", "opening"];
 
 @customElement("rs-sensor-section")
 export class RsSensorSection extends LitElement {
@@ -29,307 +36,52 @@ export class RsSensorSection extends LitElement {
   @property({ type: Boolean }) public editing = false;
   @property() public language = "en";
 
-  @state() private _pickerOpen = false;
-  @state() private _collapsed: Partial<Record<SensorKind, boolean>> = {};
+  /** Kind whose entity picker is open. */
+  @state() private _pickerFor: SensorKind | null = null;
+  private _focusKind: SensorKind | null = null;
 
   static styles = [
+    tokens,
     inputStyles,
+    formStyles,
     css`
       :host {
         display: block;
+        --rs-form-inline: var(--rs-space-4);
+        container-type: inline-size;
       }
 
-      .sensor-block {
+      .group-title ha-icon {
+        --mdc-icon-size: 18px;
+        margin-inline-end: var(--rs-space-1);
+      }
+
+      .rows {
         display: flex;
         flex-direction: column;
-        gap: 6px;
-        padding: 12px 14px;
-        background: rgba(255, 255, 255, 0.02);
-        border: 1px solid var(--divider-color, rgba(255, 255, 255, 0.08));
-        border-radius: 12px;
       }
 
-      .sensor-block + .sensor-block {
-        margin-top: 12px;
-      }
-
-      .block-header {
+      .picker {
         display: flex;
         align-items: center;
-        gap: 8px;
-        padding-bottom: 6px;
-        cursor: pointer;
-        user-select: none;
+        gap: var(--rs-space-2);
       }
 
-      .block-header:hover .block-title {
-        color: var(--primary-color);
-      }
-
-      .block-header ha-icon {
-        --mdc-icon-size: 18px;
-        color: var(--secondary-text-color);
-      }
-
-      .chevron {
-        --mdc-icon-size: 18px;
-        color: var(--secondary-text-color);
-        transition: transform 0.2s ease;
-      }
-
-      .chevron.collapsed {
-        transform: rotate(-90deg);
-      }
-
-      .block-body {
-        display: flex;
-        flex-direction: column;
-        gap: 6px;
-      }
-
-      .sensor-block.collapsed .block-header {
-        padding-bottom: 0;
-      }
-
-      .block-title {
-        font-size: 13px;
-        font-weight: 500;
-        color: var(--primary-text-color);
-        letter-spacing: 0.2px;
+      .picker ha-entity-picker {
         flex: 1;
-      }
-
-      .count-chip {
-        font-size: 11px;
-        font-weight: 500;
-        padding: 1px 7px;
-        border-radius: 10px;
-        background: rgba(255, 255, 255, 0.06);
-        color: var(--secondary-text-color);
-      }
-
-      .count-chip.has-selection {
-        background: rgba(3, 169, 244, 0.15);
-        color: var(--primary-color);
-      }
-
-      .row-list {
-        display: flex;
-        flex-direction: column;
-        gap: 2px;
-        max-height: 168px;
-        overflow-y: auto;
-        overflow-x: hidden;
-        scrollbar-width: thin;
-      }
-
-      .row {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        padding: 6px 8px;
-        border-radius: 8px;
-        cursor: pointer;
-        border-left: 2px solid transparent;
-        transition:
-          background 0.15s,
-          border-color 0.15s;
         min-width: 0;
       }
 
-      .row:hover {
-        background: rgba(255, 255, 255, 0.03);
+      .pair {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: var(--rs-space-3);
       }
 
-      .row.selected {
-        background: rgba(3, 169, 244, 0.08);
-        border-left-color: var(--primary-color);
-      }
-
-      .row ha-checkbox,
-      .row ha-radio {
-        flex-shrink: 0;
-        margin: -4px 0;
-      }
-
-      .row-info {
-        flex: 1;
-        min-width: 0;
-        display: flex;
-        flex-direction: column;
-        gap: 1px;
-      }
-
-      .row-name-line {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        min-width: 0;
-      }
-
-      .row-name {
-        font-size: 13px;
-        font-weight: 450;
-        color: var(--primary-text-color);
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
-
-      .row-eid {
-        font-family: var(--code-font-family, monospace);
-        font-size: 10.5px;
-        color: var(--secondary-text-color);
-        opacity: 0.65;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
-
-      .external-badge {
-        display: inline-flex;
-        align-items: center;
-        font-size: 9.5px;
-        font-weight: 500;
-        color: var(--warning-color, #ff9800);
-        background: rgba(255, 152, 0, 0.1);
-        padding: 1px 6px;
-        border-radius: 8px;
-        letter-spacing: 0.3px;
-        text-transform: uppercase;
-        flex-shrink: 0;
-      }
-
-      .value-chip {
-        flex-shrink: 0;
-        font-size: 12px;
-        font-weight: 500;
-        padding: 3px 9px;
-        border-radius: 10px;
-        background: rgba(255, 255, 255, 0.05);
-        color: var(--primary-text-color);
-        font-variant-numeric: tabular-nums;
-      }
-
-      .row.selected .value-chip {
-        background: rgba(3, 169, 244, 0.15);
-        color: var(--primary-color);
-      }
-
-      .occupancy-dot {
-        width: 8px;
-        height: 8px;
-        border-radius: 50%;
-        flex-shrink: 0;
-        transition: background 0.2s;
-      }
-
-      .occupancy-dot.on {
-        background: var(--success-color, #4caf50);
-        box-shadow: 0 0 0 3px rgba(76, 175, 80, 0.18);
-      }
-
-      .occupancy-dot.off {
-        background: rgba(255, 255, 255, 0.2);
-      }
-
-      .window-dot.on {
-        background: var(--warning-color, #ff9800);
-        box-shadow: 0 0 0 3px rgba(255, 152, 0, 0.18);
-      }
-
-      .window-dot.off {
-        background: rgba(255, 255, 255, 0.2);
-      }
-
-      .delay-fields {
-        display: flex;
-        gap: 8px;
-        margin-top: 8px;
-      }
-
-      .occupancy-eco {
-        margin-top: 8px;
-      }
-
-      .delay-fields ha-textfield {
-        flex: 1;
-      }
-
-      .delay-hint {
-        display: flex;
-        align-items: flex-start;
-        gap: 6px;
-        font-size: 11.5px;
-        line-height: 1.5;
-        color: var(--warning-color, #ff9800);
-        margin-top: 6px;
-      }
-
-      .delay-hint ha-icon {
-        --mdc-icon-size: 16px;
-        flex-shrink: 0;
-        margin-top: 1px;
-      }
-
-      .empty-row {
-        color: var(--secondary-text-color);
-        font-size: 12.5px;
-        font-style: italic;
-        padding: 6px 4px;
-        opacity: 0.7;
-      }
-
-      .add-row,
-      .global-add {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-      }
-
-      .global-add {
-        margin-top: 12px;
-      }
-
-      .add-row ha-entity-picker,
-      .global-add ha-entity-picker {
-        flex: 1;
-      }
-
-      .add-button {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        padding: 6px 10px;
-        margin: 12px 0 0 0;
-        background: none;
-        border: none;
-        cursor: pointer;
-        color: var(--secondary-text-color);
-        font-size: 12px;
-        font-weight: 500;
-        border-radius: 6px;
-        transition:
-          color 0.15s,
-          background 0.15s;
-      }
-
-      .add-button:hover,
-      .add-button:focus-visible {
-        color: var(--primary-color);
-        background: rgba(3, 169, 244, 0.08);
-        outline: none;
-      }
-
-      .add-button ha-icon {
-        --mdc-icon-size: 16px;
-      }
-
-      .picker-close {
-        --mdc-icon-button-size: 32px;
-        --mdc-icon-size: 18px;
-        color: var(--secondary-text-color);
-        flex-shrink: 0;
+      @container (max-width: 520px) {
+        .pair {
+          grid-template-columns: 1fr;
+        }
       }
     `,
   ];
@@ -470,415 +222,351 @@ export class RsSensorSection extends LitElement {
 
   // ─── Edit mode ───
 
-  private _renderEditMode() {
-    const allAreaEntities = getEntitiesForArea(
-      this.area.area_id,
-      this.hass?.entities,
-      this.hass?.devices,
-    ).filter((e) => {
-      const idAfterDot = e.entity_id.substring(e.entity_id.indexOf(".") + 1);
-      return !idAfterDot.startsWith("roommind_");
-    });
-
-    const areaTempSensors = this.hass?.states
-      ? allAreaEntities.filter(
-          (e) =>
-            (e.entity_id.startsWith("sensor.") &&
-              this.hass.states[e.entity_id]?.attributes?.device_class === "temperature") ||
-            (e.entity_id.startsWith("climate.") &&
-              this.hass.states[e.entity_id]?.attributes?.current_temperature != null),
-        )
-      : [];
-
-    const areaHumiditySensors = this.hass?.states
-      ? allAreaEntities.filter(
-          (e) =>
-            e.entity_id.startsWith("sensor.") &&
-            this.hass.states[e.entity_id]?.attributes?.device_class === "humidity",
-        )
-      : [];
-
-    const areaOccupancySensors = this.hass?.states
-      ? allAreaEntities.filter(
-          (e) =>
-            (e.entity_id.startsWith("binary_sensor.") &&
-              ["occupancy", "motion", "presence"].includes(
-                this.hass.states[e.entity_id]?.attributes?.device_class as string,
-              )) ||
-            e.entity_id.startsWith("input_boolean."),
-        )
-      : [];
-
-    const areaTempIds = new Set(areaTempSensors.map((e) => e.entity_id));
-    const externalTempSensor =
-      this.temperatureSensor && !areaTempIds.has(this.temperatureSensor)
-        ? this.temperatureSensor
-        : null;
-
-    const areaHumidityIds = new Set(areaHumiditySensors.map((e) => e.entity_id));
-    const externalHumiditySensor =
-      this.humiditySensor && !areaHumidityIds.has(this.humiditySensor) ? this.humiditySensor : null;
-
-    const areaOccupancyIds = new Set(areaOccupancySensors.map((e) => e.entity_id));
-    const externalOccupancySensors = [...this.occupancySensors].filter(
-      (id) => !areaOccupancyIds.has(id),
+  /** The pressed row or button is gone after an add or remove: keep the focus in its section. */
+  protected updated(changed: PropertyValues): void {
+    if (changed.has("_pickerFor") && changed.get("_pickerFor") !== undefined) {
+      this._focusPicker(changed.get("_pickerFor") as SensorKind | null);
+    }
+    if (!this._focusKind || !this.editing) return;
+    const lists = ["temperatureSensor", "humiditySensor", "occupancySensors", "windowSensors"];
+    if (!lists.some((p) => changed.has(p))) return;
+    const section = this.renderRoot.querySelector(`section[data-kind="${this._focusKind}"]`);
+    this._focusKind = null;
+    const target = section?.querySelector<HTMLElement & { updateComplete?: Promise<unknown> }>(
+      "rs-list-row[clickable], rs-icon-button",
     );
+    void target?.updateComplete?.then(() => target.focus());
+  }
 
-    const areaWindowSensors = this.hass?.states
-      ? allAreaEntities.filter(
-          (e) =>
-            e.entity_id.startsWith("binary_sensor.") &&
-            ["window", "door", "opening"].includes(
-              this.hass.states[e.entity_id]?.attributes?.device_class as string,
-            ),
-        )
-      : [];
-    const areaWindowIds = new Set(areaWindowSensors.map((e) => e.entity_id));
-    const externalWindowSensors = [...this.windowSensors].filter((id) => !areaWindowIds.has(id));
+  /** Entities a kind accepts: the area candidates and the picker use the same rule. */
+  private _accepts(kind: SensorKind, entityId: string): boolean {
+    const attrs = this.hass.states[entityId]?.attributes ?? {};
+    const domain = entityId.split(".")[0];
+    const dc = attrs.device_class as string | undefined;
+    switch (kind) {
+      case "temp":
+        return (
+          (domain === "sensor" && dc === "temperature") ||
+          (domain === "climate" && attrs.current_temperature != null) ||
+          (domain === "input_number" && attrs.unit_of_measurement !== "%")
+        );
+      case "humidity":
+        return (
+          (domain === "sensor" && dc === "humidity") ||
+          (domain === "input_number" && attrs.unit_of_measurement === "%")
+        );
+      case "occupancy":
+        return (
+          (domain === "binary_sensor" && OCCUPANCY_CLASSES.includes(dc ?? "")) ||
+          domain === "input_boolean"
+        );
+      case "window":
+        return domain === "binary_sensor" && WINDOW_CLASSES.includes(dc ?? "");
+    }
+  }
 
-    const lang = this.hass.language;
+  private _assigned(kind: SensorKind): string[] {
+    if (kind === "temp") return this.temperatureSensor ? [this.temperatureSensor] : [];
+    if (kind === "humidity") return this.humiditySensor ? [this.humiditySensor] : [];
+    return [...(kind === "occupancy" ? this.occupancySensors : this.windowSensors)];
+  }
+
+  private _renderEditMode() {
+    const areaIds = getEntitiesForArea(this.area.area_id, this.hass?.entities, this.hass?.devices)
+      .map((e) => e.entity_id)
+      .filter((id) => !id.substring(id.indexOf(".") + 1).startsWith("roommind_"));
+    // Candidates as before: input_number helpers only through the picker
+    const inArea = (kind: SensorKind) =>
+      this.hass?.states
+        ? areaIds.filter((id) => !id.startsWith("input_number.") && this._accepts(kind, id))
+        : [];
+    const l = this.hass.language;
 
     return html`
-      ${this._renderBlock({
-        kind: "temp",
-        icon: "mdi:thermometer",
-        title: localize("devices.temp_sensors", lang),
-        emptyText: localize("devices.no_temp_sensors", lang),
-        areaSensors: areaTempSensors,
-        externalSensors: externalTempSensor ? [externalTempSensor] : [],
-        selectedCount: this.temperatureSensor ? 1 : 0,
-      })}
-      ${this._renderBlock({
-        kind: "humidity",
-        icon: "mdi:water-percent",
-        title: localize("devices.humidity_sensors", lang),
-        emptyText: localize("devices.no_humidity_sensors", lang),
-        areaSensors: areaHumiditySensors,
-        externalSensors: externalHumiditySensor ? [externalHumiditySensor] : [],
-        selectedCount: this.humiditySensor ? 1 : 0,
-      })}
-      ${this._renderBlock({
-        kind: "occupancy",
-        icon: "mdi:account-eye",
-        title: localize("devices.occupancy_sensors", lang),
-        emptyText: localize("devices.no_occupancy_sensors", lang),
-        areaSensors: areaOccupancySensors,
-        externalSensors: externalOccupancySensors,
-        selectedCount: this.occupancySensors.size,
-        extras: this._renderOccupancyExtras(lang),
-      })}
-      ${this._renderBlock({
-        kind: "window",
-        icon: "mdi:window-open-variant",
-        title: localize("devices.window_sensors", lang),
-        emptyText: localize("devices.no_window_sensors", lang),
-        areaSensors: areaWindowSensors,
-        externalSensors: externalWindowSensors,
-        selectedCount: this.windowSensors.size,
-        extras: this._renderWindowExtras(lang),
-      })}
-      ${this._renderGlobalAdd(lang)}
+      ${this._renderKind("temp", inArea("temp"), nothing, this._renderTempNote(l))}
+      ${this._renderKind("humidity", inArea("humidity"), nothing)}
+      ${this._renderKind("window", inArea("window"), this._renderWindowSettings(l))}
+      ${this._renderKind("occupancy", inArea("occupancy"), this._renderOccupancySettings(l))}
     `;
   }
 
-  private _renderOccupancyExtras(lang: string) {
-    if (this.occupancySensors.size === 0) return nothing;
-    return html`
-      <rs-toggle-row
-        class="occupancy-eco"
-        .label=${localize("devices.occupancy_eco", lang)}
-        .hint=${localize("devices.occupancy_eco_hint", lang)}
-        .checked=${this.occupancyEcoEnabled}
-        @toggle-changed=${(e: CustomEvent<boolean>) =>
-          this._fireSensorChanged("occupancy_eco_enabled", e.detail)}
-      ></rs-toggle-row>
-      ${
-        this.occupancyEcoEnabled
-          ? html`
-              <div class="delay-fields">
-                <ha-textfield
-                  type="number"
-                  min=${MIN_OCCUPANCY_ECO_DELAY}
-                  max="240"
-                  suffix="min"
-                  .label=${localize("devices.occupancy_eco_delay", lang)}
-                  .value=${String(this.occupancyEcoDelay)}
-                  @change=${this._onOccupancyEcoDelayChange}
-                ></ha-textfield>
-              </div>
-            `
-          : nothing
-      }
-    `;
+  /** Opened: focus the picker; closed with its button: back to the row that opened it. */
+  private _focusPicker(previous: SensorKind | null) {
+    type Focusable = HTMLElement & { updateComplete?: Promise<unknown>; open?: () => void };
+    const kind = this._pickerFor ?? previous;
+    if (!kind || this._focusKind) return;
+    const section = this.renderRoot.querySelector(`section[data-kind="${kind}"]`);
+    const target = section?.querySelector<Focusable>(
+      this._pickerFor ? "ha-entity-picker" : "rs-list-row[variant=primary]",
+    );
+    // HA's picker opens its search list itself; older releases only take the focus
+    void target?.updateComplete?.then(() =>
+      typeof target.open === "function" ? target.open() : target.focus(),
+    );
   }
 
-  private _renderWindowExtras(lang: string) {
+  private _kindMeta(kind: SensorKind) {
+    switch (kind) {
+      case "temp":
+        return {
+          icon: "mdi:thermometer",
+          title: "detail.sensors.temperature",
+          info: "sensors.temp_info",
+        } as const;
+      case "humidity":
+        return {
+          icon: "mdi:water-percent",
+          title: "detail.sensors.humidity",
+          info: "sensors.humidity_info",
+        } as const;
+      case "window":
+        return {
+          icon: "mdi:window-open-variant",
+          title: "detail.sensors.window",
+          info: "sensors.window_info",
+        } as const;
+      case "occupancy":
+        return {
+          icon: "mdi:motion-sensor",
+          title: "detail.sensors.occupancy",
+          info: "sensors.occupancy_info",
+        } as const;
+    }
+  }
+
+  private _renderKind(
+    kind: SensorKind,
+    areaCandidates: string[],
+    settings: unknown,
+    note: unknown = nothing,
+  ) {
+    const l = this.hass.language;
+    const meta = this._kindMeta(kind);
+    const assigned = this._assigned(kind);
+    const single = kind === "temp" || kind === "humidity";
+    const suggestions = areaCandidates.filter((id) => !assigned.includes(id));
+    return html`<section class="group" data-kind=${kind}>
+      <h4 class="group-title">
+        <ha-icon .icon=${meta.icon} aria-hidden="true"></ha-icon>
+        ${localize(meta.title, l)}
+        <rs-info-icon .text=${localize(meta.info, l)}></rs-info-icon>
+      </h4>
+      ${note}
+      <div class="rows">
+        ${assigned.map((id) => this._renderAssigned(kind, id, areaCandidates.includes(id)))}
+        ${
+          !assigned.length && kind !== "temp"
+            ? html`<p class="note">${localize("sensors.none_assigned", l)}</p>`
+            : nothing
+        }
+        ${suggestions.map(
+          (id) =>
+            html`<rs-list-row
+              clickable
+              plain-icon
+              icon="mdi:plus"
+              .heading=${this._entityName(id)}
+              .secondary=${localize(
+                single && assigned.length ? "sensors.use_instead" : "detail.devices.add_suggestion",
+                l,
+              )}
+              .value=${this._kindValue(kind, id)}
+              @row-click=${() => this._add(kind, id)}
+            ></rs-list-row>`,
+        )}
+        ${this._renderPicker(kind)}
+      </div>
+      ${settings}
+    </section>`;
+  }
+
+  private _renderAssigned(kind: SensorKind, entityId: string, inArea: boolean) {
+    const l = this.hass.language;
+    const name = this._entityName(entityId);
+    const on = this.hass.states[entityId]?.state === "on";
+    const color =
+      kind === "window" && on ? "var(--rs-warn)" : kind === "occupancy" && on ? "var(--rs-ok)" : "";
+    const icon =
+      kind === "window"
+        ? on
+          ? "mdi:window-open-variant"
+          : "mdi:window-closed-variant"
+        : this._kindMeta(kind).icon;
+    return html`<rs-list-row
+      single-line
+      .icon=${icon}
+      .iconColor=${color}
+      icon-label=${localize("detail.more_info", l)}
+      .heading=${name}
+      .secondary=${[entityId, inArea ? "" : localize("devices.other_area", l)]
+        .filter(Boolean)
+        .join(" · ")}
+      .value=${this._kindValue(kind, entityId)}
+      @icon-click=${() => openEntityInfo(this, entityId)}
+    >
+      <rs-icon-button
+        slot="end"
+        size="sm"
+        icon="mdi:close"
+        .label=${localize("common.remove_named", l, { name })}
+        @click=${() => this._remove(kind, entityId)}
+      ></rs-icon-button>
+    </rs-list-row>`;
+  }
+
+  private _renderPicker(kind: SensorKind) {
+    const l = this.hass.language;
+    if (this._pickerFor !== kind) {
+      return html`<rs-list-row
+        clickable
+        plain-icon
+        variant="primary"
+        icon="mdi:magnify"
+        .heading=${localize("sensors.choose_other", l)}
+        @row-click=${() => {
+          this._pickerFor = kind;
+        }}
+      ></rs-list-row>`;
+    }
+    const domains = {
+      temp: ["sensor", "climate", "input_number"],
+      humidity: ["sensor", "input_number"],
+      occupancy: ["binary_sensor", "input_boolean"],
+      window: ["binary_sensor"],
+    }[kind];
+    return html`<div class="picker">
+      <ha-entity-picker
+        .hass=${this.hass}
+        .includeDomains=${domains}
+        .entityFilter=${(e: { entity_id: string }) =>
+          !e.entity_id.substring(e.entity_id.indexOf(".") + 1).startsWith("roommind_") &&
+          !this._assigned(kind).includes(e.entity_id) &&
+          this._accepts(kind, e.entity_id)}
+        .value=${""}
+        .autofocus=${true}
+        .label=${localize("sensors.choose_other", l)}
+        @value-changed=${(e: CustomEvent) => {
+          const id = e.detail?.value as string;
+          (e.target as HTMLElement & { value: string }).value = "";
+          if (id) this._add(kind, id);
+        }}
+      ></ha-entity-picker>
+      <rs-icon-button
+        size="sm"
+        icon="mdi:close"
+        .label=${localize("common.close", l)}
+        @click=${() => {
+          this._pickerFor = null;
+        }}
+      ></rs-icon-button>
+    </div>`;
+  }
+
+  private _kindValue(kind: SensorKind, entityId: string): string {
+    if (kind === "temp") return this._tempValue(entityId);
+    if (kind === "humidity") return this._humidityValue(entityId);
+    return kind === "window"
+      ? this._binaryValue(entityId, "detail.sensors.open", "detail.sensors.closed")
+      : this._binaryValue(entityId, "detail.sensors.occupied", "detail.sensors.free");
+  }
+
+  private _entityName(entityId: string): string {
+    return (
+      (this.hass.states[entityId]?.attributes?.friendly_name as string | undefined) || entityId
+    );
+  }
+
+  private _renderTempNote(l: string) {
+    return html`<p class="note">
+      ${localize(
+        this.temperatureSensor ? "sensors.full_control_note" : "detail.sensors.no_temperature",
+        l,
+      )}
+    </p>`;
+  }
+
+  private _renderWindowSettings(l: string) {
     if (this.windowSensors.size === 0) return nothing;
     return html`
-      <div class="delay-fields">
-        <ha-textfield
-          type="number"
-          min="0"
-          suffix="s"
-          .label=${localize("devices.window_open_delay", lang)}
-          .value=${String(this.windowOpenDelay)}
-          @change=${this._onWindowOpenDelayChange}
-        ></ha-textfield>
-        <ha-textfield
-          type="number"
-          min="0"
-          suffix="s"
-          .label=${localize("devices.window_close_delay", lang)}
-          .value=${String(this.windowCloseDelay)}
-          @change=${this._onWindowCloseDelayChange}
-        ></ha-textfield>
+      <div class="pair">
+        <rs-field .info=${localize("sensors.window_open_delay_info", l)}>
+          <ha-textfield
+            type="number"
+            min="0"
+            suffix="s"
+            .label=${localize("devices.window_open_delay", l)}
+            .value=${String(this.windowOpenDelay)}
+            @change=${this._onWindowOpenDelayChange}
+          ></ha-textfield>
+        </rs-field>
+        <rs-field .info=${localize("sensors.window_close_delay_info", l)}>
+          <ha-textfield
+            type="number"
+            min="0"
+            suffix="s"
+            .label=${localize("devices.window_close_delay", l)}
+            .value=${String(this.windowCloseDelay)}
+            @change=${this._onWindowCloseDelayChange}
+          ></ha-textfield>
+        </rs-field>
       </div>
       ${
         this.heatingSystemType === "underfloor" && this.windowOpenDelay < 300
-          ? html`
-              <div class="delay-hint">
-                <ha-icon icon="mdi:information-outline"></ha-icon>
-                ${localize("devices.underfloor_delay_hint", lang)}
-              </div>
-            `
+          ? html`<p class="note warn">
+              <ha-icon icon="mdi:information-outline" aria-hidden="true"></ha-icon>
+              <span>${localize("devices.underfloor_delay_hint", l)}</span>
+            </p>`
           : nothing
       }
     `;
   }
 
-  private _renderGlobalAdd(lang: string) {
-    if (this._pickerOpen) {
-      return html`
-        <div class="global-add">
-          <ha-entity-picker
-            .hass=${this.hass}
-            .includeDomains=${[
-              "sensor",
-              "binary_sensor",
-              "climate",
-              "input_number",
-              "input_boolean",
-            ]}
-            .entityFilter=${this._globalEntityFilter}
-            .value=${""}
-            .autofocus=${true}
-            label=${localize("devices.add_entity", lang)}
-            @value-changed=${this._onGlobalPickerValueChanged}
-          ></ha-entity-picker>
-          <ha-icon-button
-            class="picker-close"
-            .path=${"M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z"}
-            @click=${() => (this._pickerOpen = false)}
-          ></ha-icon-button>
-        </div>
-      `;
-    }
+  private _renderOccupancySettings(l: string) {
+    if (this.occupancySensors.size === 0) return nothing;
     return html`
-      <button type="button" class="add-button global" @click=${() => (this._pickerOpen = true)}>
-        <ha-icon icon="mdi:plus"></ha-icon>
-        ${localize("devices.add_entity", lang)}
-      </button>
-    `;
-  }
-
-  private _renderBlock(opts: {
-    kind: SensorKind;
-    icon: string;
-    title: string;
-    emptyText: string;
-    areaSensors: { entity_id: string }[];
-    externalSensors: string[];
-    selectedCount: number;
-    extras?: unknown;
-  }) {
-    const total = opts.areaSensors.length + opts.externalSensors.length;
-    const isCollapsed = this._collapsed[opts.kind] ?? true;
-    return html`
-      <div class="sensor-block ${isCollapsed ? "collapsed" : ""}">
-        <div class="block-header" @click=${() => this._toggleBlock(opts.kind)}>
-          <ha-icon icon=${opts.icon}></ha-icon>
-          <div class="block-title">${opts.title}</div>
-          ${
-            opts.selectedCount > 0
-              ? html`<span class="count-chip has-selection">${opts.selectedCount}</span>`
-              : total > 0
-                ? html`<span class="count-chip">${total}</span>`
-                : nothing
-          }
-          <ha-icon
-            class="chevron ${isCollapsed ? "collapsed" : ""}"
-            icon="mdi:chevron-down"
-          ></ha-icon>
-        </div>
-        ${
-          isCollapsed
-            ? nothing
-            : html`
-                <div class="block-body">
-                  <div class="row-list">
-                    ${
-                      opts.areaSensors.length > 0 || opts.externalSensors.length > 0
-                        ? html`
-                            ${opts.areaSensors.map((e) =>
-                              this._renderEditRow(e.entity_id, opts.kind, false),
-                            )}
-                            ${opts.externalSensors.map((id) =>
-                              this._renderEditRow(id, opts.kind, true),
-                            )}
-                          `
-                        : html`<div class="empty-row">${opts.emptyText}</div>`
-                    }
-                  </div>
-                  ${opts.extras ?? nothing}
-                </div>
-              `
-        }
-      </div>
-    `;
-  }
-
-  private _toggleBlock(kind: SensorKind) {
-    const currentlyCollapsed = this._collapsed[kind] ?? true;
-    this._collapsed = { ...this._collapsed, [kind]: !currentlyCollapsed };
-  }
-
-  private _renderEditRow(entityId: string, kind: SensorKind, external: boolean) {
-    const state = this.hass.states[entityId];
-    const friendlyName = (state?.attributes?.friendly_name as string) || entityId;
-    const lang = this.hass.language;
-
-    if (kind === "occupancy" || kind === "window") {
-      const set = kind === "occupancy" ? this.occupancySensors : this.windowSensors;
-      const isSelected = set.has(entityId);
-      const isOn = state?.state === "on";
-      const dotClass = kind === "window" ? "occupancy-dot window-dot" : "occupancy-dot";
-      const onChange = (checked: boolean) =>
-        kind === "occupancy"
-          ? this._onOccupancyToggle(entityId, checked)
-          : this._onWindowToggle(entityId, checked);
-      return html`
-        <div
-          class="row ${isSelected ? "selected" : ""}"
-          @click=${(e: Event) => {
-            if ((e.target as HTMLElement).tagName === "HA-CHECKBOX") return;
-            onChange(!isSelected);
-          }}
-        >
-          <ha-checkbox
-            .checked=${isSelected}
-            @change=${(e: Event) => {
-              const t = e.target as HTMLElement & { checked: boolean };
-              onChange(t.checked);
-            }}
-          ></ha-checkbox>
-          <div class="row-info">
-            <div class="row-name-line">
-              <span class="row-name">${friendlyName}</span>
-              ${
-                external
-                  ? html`<span class="external-badge"
-                      >${localize("devices.other_area", lang)}</span
-                    >`
-                  : nothing
-              }
-            </div>
-            <div class="row-eid">${entityId}</div>
-          </div>
-          <span class="${dotClass} ${isOn ? "on" : "off"}"></span>
-        </div>
-      `;
-    }
-
-    const selected = kind === "temp" ? this.temperatureSensor : this.humiditySensor;
-    const isSelected = selected === entityId;
-    const unit = kind === "temp" ? tempUnit(this.hass) : "%";
-    const currentValue = entityId.startsWith("climate.")
-      ? state?.attributes?.current_temperature
-      : state?.state;
-    const hasValue = currentValue && currentValue !== "unknown" && currentValue !== "unavailable";
-    const formatted = hasValue
-      ? `${kind === "humidity" ? Math.round(Number(currentValue)) : Number(currentValue).toFixed(1)}${unit}`
-      : "";
-
-    return html`
-      <div
-        class="row ${isSelected ? "selected" : ""}"
-        @click=${() => this._onSensorSelected(isSelected ? "" : entityId, kind)}
+      <rs-list-row
+        switch
+        wrap
+        .heading=${localize("devices.occupancy_eco", l)}
+        .checked=${this.occupancyEcoEnabled}
+        @toggle-changed=${(e: CustomEvent<boolean>) =>
+          this._fireSensorChanged("occupancy_eco_enabled", e.detail)}
       >
-        <ha-radio .checked=${isSelected} name="${kind}-sensor"></ha-radio>
-        <div class="row-info">
-          <div class="row-name-line">
-            <span class="row-name">${friendlyName}</span>
-            ${
-              external
-                ? html`<span class="external-badge">${localize("devices.other_area", lang)}</span>`
-                : nothing
-            }
-          </div>
-          <div class="row-eid">${entityId}</div>
-        </div>
-        ${formatted ? html`<span class="value-chip">${formatted}</span>` : nothing}
-      </div>
+        <rs-info-icon slot="end" .text=${localize("sensors.occupancy_eco_info", l)}></rs-info-icon>
+      </rs-list-row>
+      ${
+        this.occupancyEcoEnabled
+          ? html`<rs-field .info=${localize("sensors.occupancy_eco_delay_info", l)}>
+              <ha-textfield
+                type="number"
+                min=${MIN_OCCUPANCY_ECO_DELAY}
+                max="240"
+                suffix="min"
+                .label=${localize("devices.occupancy_eco_delay", l)}
+                .value=${String(this.occupancyEcoDelay)}
+                @change=${this._onOccupancyEcoDelayChange}
+              ></ha-textfield>
+            </rs-field>`
+          : nothing
+      }
     `;
   }
 
-  private _globalEntityFilter = (entity: { entity_id: string }): boolean => {
-    const id = entity.entity_id;
-    const idAfterDot = id.substring(id.indexOf(".") + 1);
-    if (idAfterDot.startsWith("roommind_")) return false;
-    if (this.temperatureSensor === id) return false;
-    if (this.humiditySensor === id) return false;
-    if (this.occupancySensors.has(id)) return false;
-    if (this.windowSensors.has(id)) return false;
-    if (id.startsWith("sensor.")) {
-      const dc = this.hass.states[id]?.attributes?.device_class;
-      return dc === "temperature" || dc === "humidity";
-    }
-    if (id.startsWith("binary_sensor.")) {
-      const dc = this.hass.states[id]?.attributes?.device_class;
-      return (
-        dc === "occupancy" ||
-        dc === "motion" ||
-        dc === "presence" ||
-        dc === "window" ||
-        dc === "door" ||
-        dc === "opening"
-      );
-    }
-    if (id.startsWith("climate.")) {
-      return this.hass.states[id]?.attributes?.current_temperature != null;
-    }
-    return id.startsWith("input_number.") || id.startsWith("input_boolean.");
-  };
+  /** Temperature and humidity hold one entity each (a new one replaces it), the others a list. */
+  private _add(kind: SensorKind, entityId: string) {
+    this._pickerFor = null;
+    this._focusKind = kind;
+    if (kind === "temp" || kind === "humidity") this._onSensorSelected(entityId, kind);
+    else if (kind === "occupancy") this._onOccupancyToggle(entityId, true);
+    else this._onWindowToggle(entityId, true);
+  }
 
-  private _onGlobalPickerValueChanged = (e: CustomEvent) => {
-    const entityId = e.detail?.value as string;
-    const picker = e.target as HTMLElement & { value: string };
-    picker.value = "";
-    if (!entityId) {
-      return;
-    }
-
-    if (entityId.startsWith("binary_sensor.")) {
-      const dc = this.hass.states[entityId]?.attributes?.device_class;
-      if (dc === "window" || dc === "door" || dc === "opening") {
-        if (!this.windowSensors.has(entityId)) this._onWindowToggle(entityId, true);
-      } else if (!this.occupancySensors.has(entityId)) {
-        this._onOccupancyToggle(entityId, true);
-      }
-    } else if (entityId.startsWith("input_boolean.")) {
-      if (!this.occupancySensors.has(entityId)) this._onOccupancyToggle(entityId, true);
-    } else if (entityId.startsWith("input_number.")) {
-      const uom = this.hass.states[entityId]?.attributes?.unit_of_measurement;
-      this._onSensorSelected(entityId, uom === "%" ? "humidity" : "temp");
-    } else if (entityId.startsWith("climate.")) {
-      this._onSensorSelected(entityId, "temp");
-    } else {
-      const dc = this.hass.states[entityId]?.attributes?.device_class;
-      this._onSensorSelected(entityId, dc === "humidity" ? "humidity" : "temp");
-    }
-    this._pickerOpen = false;
-  };
+  private _remove(kind: SensorKind, entityId: string) {
+    this._focusKind = kind;
+    if (kind === "temp" || kind === "humidity") this._onSensorSelected("", kind);
+    else if (kind === "occupancy") this._onOccupancyToggle(entityId, false);
+    else this._onWindowToggle(entityId, false);
+  }
 
   private _onSensorSelected(entityId: string, kind: "temp" | "humidity") {
     const key = kind === "temp" ? "temperature_sensor" : "humidity_sensor";

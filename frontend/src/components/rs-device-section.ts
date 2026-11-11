@@ -592,6 +592,7 @@ export class RsDeviceSection extends LitElement {
       <rs-list-row
         class="detail-head"
         wrap
+        single-line
         .icon=${isTrv ? "mdi:thermostat" : "mdi:air-conditioner"}
         .iconColor=${status.color}
         icon-label=${localize("detail.more_info", l)}
