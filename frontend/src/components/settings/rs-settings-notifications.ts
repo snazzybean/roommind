@@ -9,6 +9,7 @@ import { customElement, property } from "lit/decorators.js";
 import type { HomeAssistant, NotificationTarget } from "../../types";
 import { localize } from "../../utils/localize";
 import "../shared/rs-icon-button";
+import "../shared/rs-list-row";
 import { getSelectValue } from "../../utils/events";
 
 @customElement("rs-settings-notifications")
@@ -17,6 +18,7 @@ export class RsSettingsNotifications extends RsSettingsBase {
   @property({ type: Boolean }) public notificationsEnabled = true;
   @property({ type: Array }) public notificationTargets: NotificationTarget[] = [];
   @property({ type: Number }) public notificationCooldown = 60;
+  @property({ type: Boolean }) public moldDetectionEnabled = false;
   @property({ type: Boolean }) public moldPreventionEnabled = false;
   @property({ type: Boolean }) public moldPreventionNotify = false;
 
@@ -34,6 +36,7 @@ export class RsSettingsNotifications extends RsSettingsBase {
           @toggle-changed=${(e: CustomEvent<boolean>) =>
             this._fire("moldNotificationsEnabled", e.detail)}
         ></rs-list-row>
+        ${this.notificationsEnabled && !this.moldDetectionEnabled ? this._renderMoldOff() : nothing}
       </div>
 
       ${
@@ -175,6 +178,41 @@ export class RsSettingsNotifications extends RsSettingsBase {
     `;
   }
 
+  /** Only mold detection and the prevention notice send anything from this page. */
+  private _renderMoldOff() {
+    const l = this.hass.language;
+    return html`<div class="mold-off">
+      <p class="hint">
+        ${localize(
+          this.moldPreventionEnabled
+            ? "notifications.mold_off_prevention"
+            : "notifications.mold_off",
+          l,
+        )}
+      </p>
+      <rs-list-row
+        href="/roommind/settings/mold"
+        chevron
+        icon="mdi:water-alert"
+        .heading=${localize("mold.title", l)}
+        @click=${this._onMoldClick}
+      ></rs-list-row>
+    </div>`;
+  }
+
+  private _onMoldClick(e: MouseEvent) {
+    // Ctrl/Cmd/Shift/middle click keep the browser's "open in new tab".
+    if (e.ctrlKey || e.metaKey || e.shiftKey || e.button === 1) return;
+    e.preventDefault();
+    this.dispatchEvent(
+      new CustomEvent("settings-category-changed", {
+        detail: { category: "mold" },
+        bubbles: true,
+        composed: true,
+      }),
+    );
+  }
+
   static styles = [
     RsSettingsBase.settingsBaseStyles,
     css`
@@ -183,6 +221,12 @@ export class RsSettingsNotifications extends RsSettingsBase {
         font-size: 13px;
         margin: 0 0 var(--rs-space-3);
         line-height: 1.5;
+      }
+      .mold-off {
+        margin-top: var(--rs-space-3);
+      }
+      .mold-off .hint {
+        margin-bottom: var(--rs-space-1);
       }
       .prevention-row {
         margin-top: var(--rs-space-2);

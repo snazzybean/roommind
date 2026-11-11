@@ -432,6 +432,7 @@ export class RsSettings extends LitElement {
           .notificationsEnabled=${this._moldNotificationsEnabled}
           .notificationTargets=${this._moldNotificationTargets}
           .notificationCooldown=${this._moldNotificationCooldown}
+          .moldDetectionEnabled=${this._moldDetectionEnabled}
           .moldPreventionEnabled=${this._moldPreventionEnabled}
           .moldPreventionNotify=${this._moldPreventionNotify}
           @setting-changed=${this._onSettingChanged}
