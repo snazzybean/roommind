@@ -7,6 +7,7 @@ import { RsSettingsBase } from "./rs-settings-base";
 import { customElement, property } from "lit/decorators.js";
 import type { HomeAssistant, NotificationTarget } from "../../types";
 import { localize } from "../../utils/localize";
+import "../shared/rs-icon-button";
 import { getSelectValue } from "../../utils/events";
 
 @customElement("rs-settings-notifications")
@@ -22,22 +23,22 @@ export class RsSettingsNotifications extends RsSettingsBase {
     const l = this.hass.language;
 
     return html`
-      <div class="toggle-row">
-        <div class="toggle-text">
-          <span class="toggle-label">${localize("notifications.enabled", l)}</span>
-          <span class="toggle-hint">${localize("notifications.enabled_hint", l)}</span>
-        </div>
-        <ha-switch
+      <div class="settings-section first">
+        <rs-list-row
+          switch
+          wrap
+          .heading=${localize("notifications.enabled", l)}
+          .secondary=${localize("notifications.enabled_hint", l)}
           .checked=${this.notificationsEnabled}
-          @change=${(e: Event) =>
-            this._fire("moldNotificationsEnabled", (e.target as HTMLInputElement).checked)}
-        ></ha-switch>
+          @toggle-changed=${(e: CustomEvent<boolean>) =>
+            this._fire("moldNotificationsEnabled", e.detail)}
+        ></rs-list-row>
       </div>
 
       ${
         this.notificationsEnabled
           ? html`
-              <div class="detail-section">
+              <div class="settings-section">
                 <p class="hint">${localize("notifications.desc", l)}</p>
 
                 <div class="target-list">
@@ -49,20 +50,19 @@ export class RsSettingsNotifications extends RsSettingsBase {
                     return html`
                       <div class="target-card">
                         <div class="target-header">
-                          <ha-icon
-                            icon="mdi:bell"
-                            style="--mdc-icon-size: 18px; color: var(--secondary-text-color)"
-                          ></ha-icon>
+                          <ha-icon icon="mdi:bell" aria-hidden="true"></ha-icon>
                           <span>${name}</span>
-                          <ha-icon-button
-                            .path=${"M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z"}
+                          <rs-icon-button
+                            size="sm"
+                            icon="mdi:close"
+                            .label=${localize("common.remove_named", l, { name: String(name) })}
                             @click=${() => {
                               this._fire(
                                 "moldNotificationTargets",
                                 this.notificationTargets.filter((_, i) => i !== idx),
                               );
                             }}
-                          ></ha-icon-button>
+                          ></rs-icon-button>
                         </div>
                         <div class="target-detail">
                           <ha-entity-picker
@@ -115,7 +115,7 @@ export class RsSettingsNotifications extends RsSettingsBase {
                   })}
                 </div>
 
-                <div style="margin-top: 8px">
+                <div class="add-target">
                   <ha-entity-picker
                     .hass=${this.hass}
                     .value=${""}
@@ -135,8 +135,10 @@ export class RsSettingsNotifications extends RsSettingsBase {
                   ></ha-entity-picker>
                   <span class="field-hint">${localize("notifications.add_target_hint", l)}</span>
                 </div>
+              </div>
 
-                <div class="threshold-grid" style="margin-top: 12px">
+              <div class="settings-section">
+                <div class="threshold-grid">
                   <div class="threshold-field">
                     <ha-textfield
                       .value=${String(this.notificationCooldown)}
@@ -159,24 +161,16 @@ export class RsSettingsNotifications extends RsSettingsBase {
                 ${
                   this.moldPreventionEnabled
                     ? html`
-                        <div class="toggle-row" style="margin-top: 12px">
-                          <div class="toggle-text">
-                            <span class="toggle-label"
-                              >${localize("notifications.mold_prevention_notify", l)}</span
-                            >
-                            <span class="toggle-hint"
-                              >${localize("notifications.mold_prevention_notify_hint", l)}</span
-                            >
-                          </div>
-                          <ha-switch
-                            .checked=${this.moldPreventionNotify}
-                            @change=${(e: Event) =>
-                              this._fire(
-                                "moldPreventionNotify",
-                                (e.target as HTMLInputElement).checked,
-                              )}
-                          ></ha-switch>
-                        </div>
+                        <rs-list-row
+                          class="prevention-row"
+                          switch
+                          wrap
+                          .heading=${localize("notifications.mold_prevention_notify", l)}
+                          .secondary=${localize("notifications.mold_prevention_notify_hint", l)}
+                          .checked=${this.moldPreventionNotify}
+                          @toggle-changed=${(e: CustomEvent<boolean>) =>
+                            this._fire("moldPreventionNotify", e.detail)}
+                        ></rs-list-row>
                       `
                     : nothing
                 }
@@ -193,15 +187,11 @@ export class RsSettingsNotifications extends RsSettingsBase {
       .hint {
         color: var(--secondary-text-color);
         font-size: 13px;
-        margin: 12px 0;
-        line-height: 1.4;
+        margin: 0 0 var(--rs-space-3);
+        line-height: 1.5;
       }
-      .detail-section {
-        margin-top: 4px;
-      }
-      .field-hint {
-        color: var(--secondary-text-color);
-        font-size: 12px;
+      .prevention-row {
+        margin-top: var(--rs-space-2);
       }
 
       .target-list {
@@ -214,16 +204,25 @@ export class RsSettingsNotifications extends RsSettingsBase {
         flex-direction: column;
         gap: 4px;
         padding: 8px 8px 8px 12px;
-        border-radius: 8px;
-        background: rgba(0, 0, 0, 0.04);
+        border-radius: var(--rs-radius-sm);
+        background: var(--rs-fill);
       }
       .target-header {
         display: flex;
         align-items: center;
         gap: 8px;
+        --mdc-icon-size: 18px;
+      }
+      .target-header ha-icon {
+        color: var(--secondary-text-color);
+      }
+      .add-target {
+        margin-top: var(--rs-space-2);
       }
       .target-header span {
         flex: 1;
+        min-width: 0;
+        overflow-wrap: anywhere;
         font-size: 14px;
         font-weight: 500;
       }
@@ -240,7 +239,7 @@ export class RsSettingsNotifications extends RsSettingsBase {
         min-width: 120px;
       }
 
-      @media (max-width: 600px) {
+      @container (max-width: 520px) {
         .target-detail {
           flex-direction: column;
           padding-left: 0;

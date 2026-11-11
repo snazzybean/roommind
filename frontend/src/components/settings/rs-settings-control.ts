@@ -6,9 +6,9 @@ import { RsSettingsBase } from "./rs-settings-base";
 import { customElement, property, state } from "lit/decorators.js";
 import type { HomeAssistant } from "../../types";
 import { localize } from "../../utils/localize";
-import { getSelectValue } from "../../utils/events";
 import { toDisplay, toCelsius, tempUnit, tempStep, tempRange } from "../../utils/temperature";
 import { preheatLeadHours } from "../../utils/constants";
+import "../shared/rs-segmented";
 
 const CONTROL_DOCS_URL =
   "https://github.com/snazzybean/roommind/blob/main/docs/control-and-devices.md";
@@ -30,25 +30,35 @@ export class RsSettingsControl extends RsSettingsBase {
 
     return html`
       <div class="settings-section first">
+        <span class="field-label">${localize("settings.control_mode", l)}</span>
+        <rs-segmented
+          .label=${localize("settings.control_mode", l)}
+          .options=${[
+            {
+              value: "mpc",
+              label: localize("settings.control_mode_mpc", l),
+              icon: "mdi:brain",
+            },
+            {
+              value: "bangbang",
+              label: localize("settings.control_mode_simple", l),
+              icon: "mdi:toggle-switch-outline",
+            },
+          ]}
+          .value=${this.controlMode}
+          @value-changed=${(e: CustomEvent<{ value: string }>) =>
+            this._setControlMode(e.detail.value as "mpc" | "bangbang")}
+        ></rs-segmented>
         <p class="hint">${localize("settings.control_mode_hint", l)}</p>
-        <div class="radio-group">
-          <label class="radio-option" @click=${() => this._setControlMode("mpc")}>
-            <ha-radio name="control_mode" .checked=${this.controlMode === "mpc"}></ha-radio>
-            <span>${localize("settings.control_mode_mpc", l)}</span>
-          </label>
-          <label class="radio-option" @click=${() => this._setControlMode("bangbang")}>
-            <ha-radio name="control_mode" .checked=${this.controlMode === "bangbang"}></ha-radio>
-            <span>${localize("settings.control_mode_simple", l)}</span>
-          </label>
-        </div>
       </div>
 
       <div class="settings-section">
-        <label class="section-label">${localize("settings.comfort_weight", l)}</label>
+        <span class="field-label">${localize("settings.comfort_weight", l)}</span>
         <div class="slider-row">
           <span class="slider-label">${localize("settings.comfort_weight_efficiency", l)}</span>
           <input
             type="range"
+            aria-label=${localize("settings.comfort_weight", l)}
             min="0"
             max="100"
             step="5"
@@ -111,37 +121,31 @@ export class RsSettingsControl extends RsSettingsBase {
       </div>
 
       <div class="settings-section">
-        <div class="toggle-row">
-          <div class="toggle-text">
-            <span class="toggle-label">${localize("settings.prediction_enabled", l)}</span>
-            <span class="toggle-hint">${localize("settings.prediction_enabled_hint", l)}</span>
-          </div>
-          <ha-switch
-            .checked=${this.predictionEnabled}
-            @change=${(e: Event) =>
-              this._fire("predictionEnabled", (e.target as HTMLInputElement).checked)}
-          ></ha-switch>
-        </div>
+        <rs-list-row
+          switch
+          wrap
+          .heading=${localize("settings.prediction_enabled", l)}
+          .secondary=${localize("settings.prediction_enabled_hint", l)}
+          .checked=${this.predictionEnabled}
+          @toggle-changed=${(e: CustomEvent<boolean>) => this._fire("predictionEnabled", e.detail)}
+        ></rs-list-row>
       </div>
 
       <div class="settings-section">
-        <ha-select
+        <span class="field-label">${localize("schedule.off_action_label", l)}</span>
+        <rs-segmented
+          wrap
           .label=${localize("schedule.off_action_label", l)}
-          .value=${this.scheduleOffAction}
           .options=${[
-            { value: "eco", label: localize("schedule.off_action_eco", l) },
-            { value: "off", label: localize("schedule.off_action_off", l) },
+            { value: "eco", label: localize("schedule.off_action_eco", l), icon: "mdi:leaf" },
+            { value: "off", label: localize("schedule.off_action_off", l), icon: "mdi:power" },
           ]}
-          fixedMenuPosition
-          @selected=${(e: Event) => {
-            const val = getSelectValue(e) as "eco" | "off";
+          .value=${this.scheduleOffAction}
+          @value-changed=${(e: CustomEvent<{ value: string }>) => {
+            const val = e.detail.value as "eco" | "off";
             if (val && val !== this.scheduleOffAction) this._fire("scheduleOffAction", val);
           }}
-          @closed=${(e: Event) => e.stopPropagation()}
-        >
-          <ha-list-item value="eco">${localize("schedule.off_action_eco", l)}</ha-list-item>
-          <ha-list-item value="off">${localize("schedule.off_action_off", l)}</ha-list-item>
-        </ha-select>
+        ></rs-segmented>
       </div>
     `;
   }
@@ -165,7 +169,11 @@ export class RsSettingsControl extends RsSettingsBase {
       .hint {
         color: var(--secondary-text-color);
         font-size: 13px;
-        margin: 0 0 12px;
+        line-height: 1.5;
+        margin: var(--rs-space-3) 0 0;
+      }
+      .settings-section > .hint:first-child {
+        margin: 0 0 var(--rs-space-3);
       }
       .helper-text {
         margin: 10px 0 0;
@@ -176,25 +184,6 @@ export class RsSettingsControl extends RsSettingsBase {
         font-weight: 500;
         color: var(--primary-text-color);
       }
-      .section-label {
-        display: block;
-        margin-bottom: 8px;
-        font-size: 14px;
-        color: var(--primary-text-color);
-      }
-
-      .radio-group {
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-      }
-      .radio-option {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        cursor: pointer;
-      }
-
       .slider-row {
         display: flex;
         align-items: center;

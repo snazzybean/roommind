@@ -19,52 +19,54 @@ export class RsSettingsVacation extends RsSettingsBase {
     const l = this.hass.language;
 
     return html`
-      <div class="toggle-row">
-        <div class="toggle-text">
-          <span class="toggle-label">${localize("vacation.title", l)}</span>
-          <span class="toggle-hint">${localize("vacation.hint", l)}</span>
-        </div>
-        <ha-switch
+      <div class="settings-section first">
+        <rs-list-row
+          switch
+          wrap
+          .heading=${localize("vacation.title", l)}
+          .secondary=${localize("vacation.hint", l)}
           .checked=${this.vacationActive}
-          @change=${(e: Event) => {
-            const active = (e.target as HTMLInputElement).checked;
+          @toggle-changed=${(e: CustomEvent<boolean>) => {
+            const active = e.detail;
             this._fire("vacationActive", active);
             if (!active) this._fire("vacationUntil", "");
           }}
-        ></ha-switch>
+        ></rs-list-row>
       </div>
 
       ${
         this.vacationActive
           ? html`
-              <div class="threshold-grid" style="margin-top: 12px; align-items: end">
-                <div class="threshold-field">
-                  <label class="field-label" for="vacation-until"
-                    >${localize("vacation.end_date", l)}</label
-                  >
-                  <ha-textfield
-                    id="vacation-until"
-                    .value=${this.vacationUntil}
-                    aria-label=${localize("vacation.end_date", l)}
-                    type="datetime-local"
-                    @change=${(e: Event) =>
-                      this._fire("vacationUntil", (e.target as HTMLInputElement).value)}
-                  ></ha-textfield>
-                </div>
-                <div class="threshold-field">
-                  <ha-textfield
-                    .value=${String(toDisplay(this.vacationTemp, this.hass))}
-                    .label=${localize("vacation.setback_temp", l)}
-                    .suffix=${tempUnit(this.hass)}
-                    type="number"
-                    step=${tempStep(this.hass)}
-                    min=${tempRange(5, 25, this.hass).min}
-                    max=${tempRange(5, 25, this.hass).max}
-                    @change=${(e: Event) => {
-                      const v = parseFloat((e.target as HTMLInputElement).value);
-                      if (!isNaN(v)) this._fire("vacationTemp", toCelsius(v, this.hass));
-                    }}
-                  ></ha-textfield>
+              <div class="settings-section">
+                <div class="threshold-grid" style="align-items: end">
+                  <div class="threshold-field">
+                    <label class="field-label" for="vacation-until"
+                      >${localize("vacation.end_date", l)}</label
+                    >
+                    <ha-textfield
+                      id="vacation-until"
+                      .value=${this.vacationUntil}
+                      aria-label=${localize("vacation.end_date", l)}
+                      type="datetime-local"
+                      @change=${(e: Event) =>
+                        this._fire("vacationUntil", (e.target as HTMLInputElement).value)}
+                    ></ha-textfield>
+                  </div>
+                  <div class="threshold-field">
+                    <ha-textfield
+                      .value=${String(toDisplay(this.vacationTemp, this.hass))}
+                      .label=${localize("vacation.setback_temp", l)}
+                      .suffix=${tempUnit(this.hass)}
+                      type="number"
+                      step=${tempStep(this.hass)}
+                      min=${tempRange(5, 25, this.hass).min}
+                      max=${tempRange(5, 25, this.hass).max}
+                      @change=${(e: Event) => {
+                        const v = parseFloat((e.target as HTMLInputElement).value);
+                        if (!isNaN(v)) this._fire("vacationTemp", toCelsius(v, this.hass));
+                      }}
+                    ></ha-textfield>
+                  </div>
                 </div>
               </div>
             `
@@ -76,9 +78,10 @@ export class RsSettingsVacation extends RsSettingsBase {
   static styles = [
     RsSettingsBase.settingsBaseStyles,
     css`
-      .field-label {
+      .threshold-field .field-label {
+        margin: 0;
         color: var(--secondary-text-color);
-        font-size: 12px;
+        font-size: var(--rs-font-sm);
       }
     `,
   ];

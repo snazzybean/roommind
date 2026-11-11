@@ -6,7 +6,8 @@ import { RsSettingsBase } from "./rs-settings-base";
 import { customElement, property } from "lit/decorators.js";
 import type { HomeAssistant } from "../../types";
 import { localize } from "../../utils/localize";
-import { getSelectValue } from "../../utils/events";
+import "../shared/rs-segmented";
+import "../shared/rs-icon-button";
 
 @customElement("rs-settings-presence")
 export class RsSettingsPresence extends RsSettingsBase {
@@ -20,23 +21,22 @@ export class RsSettingsPresence extends RsSettingsBase {
     const l = this.hass.language;
 
     return html`
-      <div class="toggle-row">
-        <div class="toggle-text">
-          <span class="toggle-label">${localize("presence.title", l)}</span>
-          <span class="toggle-hint">${localize("presence.hint", l)}</span>
-        </div>
-        <ha-switch
+      <div class="settings-section first">
+        <rs-list-row
+          switch
+          wrap
+          .heading=${localize("presence.title", l)}
+          .secondary=${localize("presence.hint", l)}
           .checked=${this.presenceEnabled}
-          @change=${(e: Event) =>
-            this._fire("presenceEnabled", (e.target as HTMLInputElement).checked)}
-        ></ha-switch>
+          @toggle-changed=${(e: CustomEvent<boolean>) => this._fire("presenceEnabled", e.detail)}
+        ></rs-list-row>
       </div>
 
       ${
         this.presenceEnabled
           ? html`
-              <div class="detail-section">
-                <span class="field-hint">${localize("presence.hint_detail", l)}</span>
+              <div class="settings-section stack">
+                <p class="note">${localize("presence.hint_detail", l)}</p>
                 ${
                   this.presencePersons.length > 0
                     ? html`
@@ -47,19 +47,18 @@ export class RsSettingsPresence extends RsSettingsBase {
                               pid.split(".").slice(1).join(".");
                             return html`
                               <div class="person-row">
-                                <ha-icon
-                                  icon="mdi:account"
-                                  style="--mdc-icon-size: 18px; color: var(--secondary-text-color)"
-                                ></ha-icon>
+                                <ha-icon icon="mdi:account" aria-hidden="true"></ha-icon>
                                 <span class="person-name">${name}</span>
-                                <ha-icon-button
-                                  .path=${"M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z"}
+                                <rs-icon-button
+                                  size="sm"
+                                  icon="mdi:close"
+                                  .label=${localize("common.remove_named", l, { name: String(name) })}
                                   @click=${() =>
                                     this._fire(
                                       "presencePersons",
                                       this.presencePersons.filter((p) => p !== pid),
                                     )}
-                                ></ha-icon-button>
+                                ></rs-icon-button>
                               </div>
                             `;
                           })}
@@ -82,42 +81,42 @@ export class RsSettingsPresence extends RsSettingsBase {
                     picker.value = "";
                   }}
                 ></ha-entity-picker>
-                <ha-select
+              </div>
+              <div class="settings-section">
+                <span class="field-label">${localize("presence.away_action_label", l)}</span>
+                <rs-segmented
+                  wrap
                   .label=${localize("presence.away_action_label", l)}
-                  .value=${this.presenceAwayAction}
                   .options=${[
-                    { value: "eco", label: localize("presence.away_action_eco", l) },
-                    { value: "off", label: localize("presence.away_action_off", l) },
+                    {
+                      value: "eco",
+                      label: localize("presence.away_action_eco", l),
+                      icon: "mdi:leaf",
+                    },
+                    {
+                      value: "off",
+                      label: localize("presence.away_action_off", l),
+                      icon: "mdi:power",
+                    },
                   ]}
-                  fixedMenuPosition
-                  @selected=${(e: Event) => {
-                    const val = getSelectValue(e) as "eco" | "off";
+                  .value=${this.presenceAwayAction}
+                  @value-changed=${(e: CustomEvent<{ value: string }>) => {
+                    const val = e.detail.value as "eco" | "off";
                     if (val && val !== this.presenceAwayAction)
                       this._fire("presenceAwayAction", val);
                   }}
-                  @closed=${(e: Event) => e.stopPropagation()}
-                  style="margin-top: 8px"
-                >
-                  <ha-list-item value="eco"
-                    >${localize("presence.away_action_eco", l)}</ha-list-item
-                  >
-                  <ha-list-item value="off"
-                    >${localize("presence.away_action_off", l)}</ha-list-item
-                  >
-                </ha-select>
-                <div class="toggle-row">
-                  <div class="toggle-text">
-                    <span class="toggle-label"
-                      >${localize("presence.clears_override_label", l)}</span
-                    >
-                    <span class="toggle-hint">${localize("presence.clears_override_hint", l)}</span>
-                  </div>
-                  <ha-switch
-                    .checked=${this.presenceClearsOverride}
-                    @change=${(e: Event) =>
-                      this._fire("presenceClearsOverride", (e.target as HTMLInputElement).checked)}
-                  ></ha-switch>
-                </div>
+                ></rs-segmented>
+              </div>
+              <div class="settings-section">
+                <rs-list-row
+                  switch
+                  wrap
+                  .heading=${localize("presence.clears_override_label", l)}
+                  .secondary=${localize("presence.clears_override_hint", l)}
+                  .checked=${this.presenceClearsOverride}
+                  @toggle-changed=${(e: CustomEvent<boolean>) =>
+                    this._fire("presenceClearsOverride", e.detail)}
+                ></rs-list-row>
               </div>
             `
           : nothing
@@ -128,13 +127,6 @@ export class RsSettingsPresence extends RsSettingsBase {
   static styles = [
     RsSettingsBase.settingsBaseStyles,
     css`
-      .detail-section {
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-        margin-top: 12px;
-      }
-
       .person-list {
         display: flex;
         flex-direction: column;
@@ -143,15 +135,21 @@ export class RsSettingsPresence extends RsSettingsBase {
       .person-row {
         display: flex;
         align-items: center;
-        gap: 10px;
-        padding: 4px 8px 4px 12px;
-        border-radius: 8px;
-        background: rgba(0, 0, 0, 0.04);
+        gap: var(--rs-space-3);
+        padding: 2px 4px 2px 12px;
+        border-radius: var(--rs-radius-sm);
+        background: var(--rs-fill);
+        --mdc-icon-size: 18px;
+      }
+      .person-row ha-icon {
+        color: var(--secondary-text-color);
       }
       .person-name {
         flex: 1;
-        font-size: 14px;
+        min-width: 0;
+        font-size: var(--rs-font-md);
         font-weight: 500;
+        overflow-wrap: anywhere;
       }
     `,
   ];

@@ -68,7 +68,7 @@ export class RsSettingsCompressor extends LitElement {
         margin-bottom: 4px;
       }
       .add-button {
-        margin-top: 12px;
+        margin: 12px 0 var(--rs-space-4, 16px);
       }
       .delete-row {
         margin-top: 16px;

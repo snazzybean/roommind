@@ -6,6 +6,7 @@ import { RsSettingsBase } from "./rs-settings-base";
 import { customElement, property, state } from "lit/decorators.js";
 import type { HomeAssistant, RoomConfig } from "../../types";
 import { localize } from "../../utils/localize";
+import "../shared/rs-icon-button";
 import { fireSaveStatus, getSelectValue } from "../../utils/events";
 
 @customElement("rs-settings-reset")
@@ -28,8 +29,8 @@ export class RsSettingsReset extends RsSettingsBase {
       <div class="settings-section first">
         <div class="reset-row">
           <div class="reset-text">
-            <span class="toggle-label">${localize("settings.reset_all_label", l)}</span>
-            <span class="toggle-hint">${localize("settings.reset_all_hint", l)}</span>
+            <span class="label">${localize("settings.reset_all_label", l)}</span>
+            <span class="note">${localize("settings.reset_all_hint", l)}</span>
           </div>
           <button class="reset-btn" @click=${this._resetAllModels}>
             <ha-icon icon="mdi:restart-alert"></ha-icon>
@@ -40,8 +41,8 @@ export class RsSettingsReset extends RsSettingsBase {
 
       <div class="settings-section">
         <div class="reset-text" style="margin-bottom: 12px">
-          <span class="toggle-label">${localize("settings.reset_room_label", l)}</span>
-          <span class="toggle-hint">${localize("settings.reset_room_hint", l)}</span>
+          <span class="label">${localize("settings.reset_room_label", l)}</span>
+          <span class="note">${localize("settings.reset_room_hint", l)}</span>
         </div>
         ${
           configuredRooms.length > 0
@@ -67,12 +68,14 @@ export class RsSettingsReset extends RsSettingsBase {
                   </ha-select>
                   ${
                     this._resetSelectedRoom
-                      ? html`<ha-icon-button
-                          .path=${"M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z"}
+                      ? html`<rs-icon-button
+                          size="sm"
+                          icon="mdi:close"
+                          .label=${localize("common.clear_selection", l)}
                           @click=${() => {
                             this._resetSelectedRoom = "";
                           }}
-                        ></ha-icon-button>`
+                        ></rs-icon-button>`
                       : nothing
                   }
                   <button
@@ -136,6 +139,11 @@ export class RsSettingsReset extends RsSettingsBase {
         flex-direction: column;
         gap: 4px;
         flex: 1;
+        min-width: 0;
+      }
+      .label {
+        font-size: var(--rs-font-md);
+        font-weight: 500;
       }
 
       .reset-btn {
@@ -143,10 +151,11 @@ export class RsSettingsReset extends RsSettingsBase {
         align-items: center;
         gap: 6px;
         padding: 8px 14px;
-        border: 1px solid var(--error-color, #d32f2f);
-        border-radius: 8px;
+        border: 1px solid var(--rs-err);
+        border-radius: var(--rs-radius-sm);
+        min-height: 40px;
         background: transparent;
-        color: var(--error-color, #d32f2f);
+        color: var(--rs-err);
         font-size: 13px;
         font-family: inherit;
         cursor: pointer;
@@ -155,7 +164,11 @@ export class RsSettingsReset extends RsSettingsBase {
         white-space: nowrap;
       }
       .reset-btn:hover {
-        background: rgba(211, 47, 47, 0.08);
+        background: color-mix(in srgb, var(--rs-err) 8%, transparent);
+      }
+      .reset-btn:focus-visible {
+        outline: 2px solid var(--rs-err);
+        outline-offset: 2px;
       }
       .reset-btn:disabled {
         opacity: 0.4;
@@ -167,14 +180,16 @@ export class RsSettingsReset extends RsSettingsBase {
 
       .reset-room-row {
         display: flex;
+        flex-wrap: wrap;
         align-items: center;
         gap: 12px;
       }
       .reset-room-row ha-select {
-        flex: 1;
+        flex: 1 1 200px;
+        min-width: 0;
       }
 
-      @media (max-width: 600px) {
+      @container (max-width: 520px) {
         .reset-row {
           flex-direction: column;
           align-items: flex-start;

@@ -7,7 +7,6 @@ import { customElement, property } from "lit/decorators.js";
 import type { HomeAssistant, HassEntity } from "../../types";
 import { localize } from "../../utils/localize";
 import { tempUnit } from "../../utils/temperature";
-import "../shared/rs-toggle-row";
 
 @customElement("rs-settings-sensors")
 export class RsSettingsSensors extends RsSettingsBase {
@@ -118,12 +117,15 @@ export class RsSettingsSensors extends RsSettingsBase {
       </div>
 
       <div class="settings-section">
-        <rs-toggle-row
-          .label=${localize("settings.outdoor_unavailable_notify", l)}
-          .hint=${localize("settings.outdoor_unavailable_notify_hint", l)}
+        <rs-list-row
+          switch
+          wrap
+          .heading=${localize("settings.outdoor_unavailable_notify", l)}
+          .secondary=${localize("settings.outdoor_unavailable_notify_hint", l)}
           .checked=${this.outdoorUnavailableNotify}
-          @toggle-changed=${(e: CustomEvent) => this._fire("outdoorUnavailableNotify", e.detail)}
-        ></rs-toggle-row>
+          @toggle-changed=${(e: CustomEvent<boolean>) =>
+            this._fire("outdoorUnavailableNotify", e.detail)}
+        ></rs-list-row>
       </div>
     `;
   }
@@ -134,18 +136,21 @@ export class RsSettingsSensors extends RsSettingsBase {
       .sensor-grid {
         display: grid;
         grid-template-columns: 1fr 1fr;
-        gap: 16px;
+        gap: var(--rs-space-4);
+      }
+      .sensor-field {
+        min-width: 0;
       }
       .current-value {
-        margin-top: 8px;
-        font-size: 14px;
+        margin-top: var(--rs-space-2);
+        font-size: var(--rs-font-md);
         color: var(--primary-text-color);
       }
       .current-value.muted {
         color: var(--secondary-text-color);
       }
 
-      @media (max-width: 600px) {
+      @container (max-width: 520px) {
         .sensor-grid {
           grid-template-columns: 1fr;
         }

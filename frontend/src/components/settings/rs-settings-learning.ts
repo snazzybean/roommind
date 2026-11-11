@@ -7,6 +7,7 @@ import { customElement, property, state } from "lit/decorators.js";
 import type { HomeAssistant, RoomConfig } from "../../types";
 import { localize } from "../../utils/localize";
 import { fireSaveStatus, getSelectValue } from "../../utils/events";
+import "../shared/rs-icon-button";
 
 const BOOST_COOLDOWN = 250;
 
@@ -39,25 +40,24 @@ export class RsSettingsLearning extends RsSettingsBase {
     return html`
       <!-- Learning toggle -->
       <div class="settings-section first">
-        <div class="toggle-row">
-          <div class="toggle-text">
-            <span class="toggle-label">${localize("settings.learning_title", l)}</span>
-            <span class="toggle-hint">${localize("settings.learning_hint", l)}</span>
-          </div>
-          <ha-switch
-            .checked=${learningActive}
-            @change=${(e: Event) => {
-              const active = (e.target as HTMLInputElement).checked;
-              this._fire("learningDisabledRooms", active ? [] : Object.keys(this.rooms));
-              if (!active) this._showLearningExceptions = false;
-            }}
-          ></ha-switch>
-        </div>
+        <rs-list-row
+          switch
+          wrap
+          .heading=${localize("settings.learning_title", l)}
+          .secondary=${localize("settings.learning_hint", l)}
+          .checked=${learningActive}
+          @toggle-changed=${(e: CustomEvent<boolean>) => {
+            const active = e.detail;
+            this._fire("learningDisabledRooms", active ? [] : Object.keys(this.rooms));
+            if (!active) this._showLearningExceptions = false;
+          }}
+        ></rs-list-row>
         ${
           learningActive && configuredRooms.length > 0
             ? html`
                 <button
                   class="exceptions-link"
+                  aria-expanded=${this._showLearningExceptions ? "true" : "false"}
                   @click=${() => {
                     this._showLearningExceptions = !this._showLearningExceptions;
                   }}
@@ -80,19 +80,18 @@ export class RsSettingsLearning extends RsSettingsBase {
                         <div class="room-toggles">
                           ${configuredRooms.map(
                             (room) => html`
-                              <div class="room-toggle-row">
-                                <span class="room-toggle-name">${room.name}</span>
-                                <ha-switch
-                                  .checked=${!this.learningDisabledRooms.includes(room.areaId)}
-                                  @change=${(e: Event) => {
-                                    const disabled = !(e.target as HTMLInputElement).checked;
-                                    const set = new Set(this.learningDisabledRooms);
-                                    if (disabled) set.add(room.areaId);
-                                    else set.delete(room.areaId);
-                                    this._fire("learningDisabledRooms", [...set]);
-                                  }}
-                                ></ha-switch>
-                              </div>
+                              <rs-list-row
+                                switch
+                                .heading=${room.name}
+                                .checked=${!this.learningDisabledRooms.includes(room.areaId)}
+                                @toggle-changed=${(e: CustomEvent<boolean>) => {
+                                  const disabled = !e.detail;
+                                  const set = new Set(this.learningDisabledRooms);
+                                  if (disabled) set.add(room.areaId);
+                                  else set.delete(room.areaId);
+                                  this._fire("learningDisabledRooms", [...set]);
+                                }}
+                              ></rs-list-row>
                             `,
                           )}
                         </div>
@@ -106,7 +105,7 @@ export class RsSettingsLearning extends RsSettingsBase {
 
       <!-- Boost learning -->
       <div class="settings-section">
-        <span class="toggle-label">${localize("settings.boost_title", l)}</span>
+        <span class="field-label">${localize("settings.boost_title", l)}</span>
         <p class="hint">${localize("settings.boost_hint", l)}</p>
 
         ${
@@ -133,12 +132,14 @@ export class RsSettingsLearning extends RsSettingsBase {
                   </ha-select>
                   ${
                     this._boostSelectedRoom
-                      ? html`<ha-icon-button
-                          .path=${"M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z"}
+                      ? html`<rs-icon-button
+                          size="sm"
+                          icon="mdi:close"
+                          .label=${localize("common.clear_selection", l)}
                           @click=${() => {
                             this._boostSelectedRoom = "";
                           }}
-                        ></ha-icon-button>`
+                        ></rs-icon-button>`
                       : nothing
                   }
                   ${
@@ -199,8 +200,11 @@ export class RsSettingsLearning extends RsSettingsBase {
       .hint {
         color: var(--secondary-text-color);
         font-size: 13px;
-        margin: 4px 0 12px;
-        line-height: 1.4;
+        margin: 0 0 var(--rs-space-3);
+        line-height: 1.5;
+      }
+      .field-label {
+        margin-bottom: var(--rs-space-1);
       }
 
       .exceptions-link {
@@ -209,8 +213,9 @@ export class RsSettingsLearning extends RsSettingsBase {
         gap: 4px;
         background: none;
         border: none;
-        padding: 8px 0 0;
+        padding: 4px 0;
         margin: 0;
+        min-height: 32px;
         cursor: pointer;
         font-size: 13px;
         color: var(--primary-color);
@@ -219,31 +224,26 @@ export class RsSettingsLearning extends RsSettingsBase {
       .exceptions-link:hover {
         text-decoration: underline;
       }
+      .exceptions-link:focus-visible,
+      .boost-btn:focus-visible {
+        outline: 2px solid var(--primary-color);
+        outline-offset: 2px;
+        border-radius: 4px;
+      }
 
       .room-toggles {
-        display: flex;
-        flex-direction: column;
-        gap: 4px;
-        margin-top: 12px;
-      }
-      .room-toggle-row {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 4px 0;
-      }
-      .room-toggle-name {
-        font-size: 14px;
-        color: var(--primary-text-color);
+        margin-top: var(--rs-space-1);
       }
 
       .room-select-row {
         display: flex;
+        flex-wrap: wrap;
         align-items: center;
-        gap: 12px;
+        gap: var(--rs-space-3);
       }
       .room-select-row ha-select {
-        flex: 1;
+        flex: 1 1 200px;
+        min-width: 0;
       }
 
       .boost-btn {
@@ -252,7 +252,8 @@ export class RsSettingsLearning extends RsSettingsBase {
         gap: 6px;
         padding: 8px 14px;
         border: 1px solid var(--primary-color);
-        border-radius: 8px;
+        border-radius: var(--rs-radius-sm);
+        min-height: 40px;
         background: transparent;
         color: var(--primary-color);
         font-size: 13px;
@@ -263,7 +264,7 @@ export class RsSettingsLearning extends RsSettingsBase {
         white-space: nowrap;
       }
       .boost-btn:hover {
-        background: rgba(var(--rgb-primary-color), 0.08);
+        background: var(--rs-fill-primary);
       }
       .boost-btn:disabled {
         opacity: 0.4;
@@ -277,7 +278,7 @@ export class RsSettingsLearning extends RsSettingsBase {
         display: flex;
         align-items: center;
         gap: 6px;
-        color: var(--success-color, #4caf50);
+        color: var(--success-color);
         font-size: 13px;
         --mdc-icon-size: 16px;
         white-space: nowrap;

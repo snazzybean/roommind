@@ -76,6 +76,9 @@ export class RsSettingsOrphans extends RsSettingsBase {
           </div>
         `,
       )}
+      <div class="settings-section">
+        <p class="note">${localize("settings.orphans_restore_hint", l)}</p>
+      </div>
     `;
   }
 
