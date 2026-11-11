@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from datetime import UTC
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -3380,3 +3381,75 @@ async def test_list_rooms_includes_recent_temps(ws_hass, store, connection):
 
     room = connection.send_result.call_args[0][1]["rooms"]["kitchen"]
     assert room["live"]["recent_temps"] == [[1000, 20.5, 21.0]]
+
+
+async def _save_sched_room(ws_hass, store, connection):
+    await store.async_load()
+    await _save_room(
+        ws_hass,
+        connection,
+        {"id": 2, "type": "roommind/rooms/save", "area_id": "sched", "comfort_temp": 22.0, "eco_temp": 17.0},
+    )
+    connection.send_result.reset_mock()
+
+
+@pytest.mark.asyncio
+async def test_override_until_schedule_change_uses_next_block(ws_hass, store, connection):
+    """A tap on the dashboard card holds until the schedule's next block boundary."""
+    await _save_sched_room(ws_hass, store, connection)
+    nxt = time.time() + 5000
+    with patch("custom_components.roommind.websocket_api.next_schedule_change", return_value=nxt):
+        await _override_set(
+            ws_hass,
+            connection,
+            {
+                "id": 3,
+                "type": "roommind/override/set",
+                "area_id": "sched",
+                "override_type": "eco",
+                "duration": 4,
+                "until_schedule_change": True,
+            },
+        )
+    assert store.get_room("sched")["override_until"] == nxt
+
+
+@pytest.mark.asyncio
+async def test_override_until_schedule_change_falls_back_to_duration(ws_hass, store, connection):
+    """Without a schedule the given duration applies, never an indefinite override."""
+    await _save_sched_room(ws_hass, store, connection)
+    before = time.time()
+    with patch("custom_components.roommind.websocket_api.next_schedule_change", return_value=None):
+        await _override_set(
+            ws_hass,
+            connection,
+            {
+                "id": 3,
+                "type": "roommind/override/set",
+                "area_id": "sched",
+                "override_type": "boost",
+                "duration": 4,
+                "until_schedule_change": True,
+            },
+        )
+    until = store.get_room("sched")["override_until"]
+    assert before + 4 * 3600 - 1 <= until <= time.time() + 4 * 3600 + 1
+
+
+@pytest.mark.asyncio
+async def test_override_until_schedule_change_ignores_past_boundary(ws_hass, store, connection):
+    await _save_sched_room(ws_hass, store, connection)
+    with patch("custom_components.roommind.websocket_api.next_schedule_change", return_value=time.time() - 10):
+        await _override_set(
+            ws_hass,
+            connection,
+            {
+                "id": 3,
+                "type": "roommind/override/set",
+                "area_id": "sched",
+                "override_type": "boost",
+                "duration": 1,
+                "until_schedule_change": True,
+            },
+        )
+    assert store.get_room("sched")["override_until"] > time.time() + 3000

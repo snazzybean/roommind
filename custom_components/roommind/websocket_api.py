@@ -51,7 +51,7 @@ from .utils.device_utils import (
     ValveEntities,
     get_valve_entities,
 )
-from .utils.schedule_utils import mask_override_band, override_preset_band
+from .utils.schedule_utils import mask_override_band, next_schedule_change, override_preset_band
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -637,6 +637,8 @@ async def async_resume_room(hass: HomeAssistant, area_id: str) -> None:
         vol.Optional("heat"): vol.Coerce(float),
         vol.Optional("cool"): vol.Coerce(float),
         vol.Optional("duration"): vol.Coerce(float),  # hours (omit or 0 for permanent)
+        # Until the active schedule's next block boundary; `duration` is the fallback without one
+        vol.Optional("until_schedule_change", default=False): bool,
     }
 )
 @websocket_api.async_response
@@ -672,6 +674,10 @@ async def websocket_override_set(
         return
 
     override_until = (time.time() + duration_hours * 3600) if duration_hours else None
+    if msg.get("until_schedule_change"):
+        next_change = next_schedule_change(hass, room)
+        if next_change is not None and next_change > time.time():
+            override_until = next_change
 
     await store.async_update_room(
         area_id,
