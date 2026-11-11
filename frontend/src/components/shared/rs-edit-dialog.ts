@@ -144,6 +144,12 @@ export class RsEditDialog extends LitElement {
         }
       }
 
+      @media (min-width: 601px) {
+        :host([compact]) .dialog {
+          max-width: 480px;
+        }
+      }
+
       @media (max-width: 600px) {
         .dialog {
           max-width: 100%;
@@ -341,6 +347,19 @@ export class RsEditDialog extends LitElement {
     `;
   }
 
+  /** Whether `el` sits inside this dialog, across shadow roots and slots. */
+  private _holds(el: Node): boolean {
+    let node: Node | null = el;
+    while (node) {
+      if (node === this) return true;
+      node =
+        (node as Element).assignedSlot ??
+        node.parentNode ??
+        (node instanceof ShadowRoot ? node.host : null);
+    }
+    return false;
+  }
+
   private _onBackdropClick(e: Event) {
     if (e.target === e.currentTarget) {
       this._close();
@@ -353,6 +372,9 @@ export class RsEditDialog extends LitElement {
 
   private _close() {
     this._infoExpanded = false;
+    // Fields commit on change, which a typed value only gets on blur: Esc must not drop it
+    const active = deepActiveElement();
+    if (active && this._holds(active)) active.blur();
     // Namespaced event: HA reserves the bare "dialog-closed" name for its own
     // dialog manager (read as `e.detail.dialog`). A composed event of that name
     // with a null detail bubbles up to <home-assistant> and crashes HA's

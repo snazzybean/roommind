@@ -8,7 +8,7 @@
  *
  * This wrapper preserves the small subset of the mwc-textfield API that
  * RoomMind uses (value, label, placeholder, type, min/max/step, suffix,
- * disabled) and forwards everything to `<ha-input>`. It is registered
+ * disabled, inputMode) and forwards everything to `<ha-input>`. It is registered
  * conditionally in `load-ha-elements.ts`, only when `ha-textfield` is
  * missing AND `ha-input` is available, so older HA versions keep using
  * their native `ha-textfield`.
@@ -35,6 +35,8 @@ export class HaTextfieldPolyfill extends LitElement {
   @property() public max: number | string = "";
   @property() public step: number | "any" | null = null;
   @property({ type: String }) public name = "";
+  /** Shadows HTMLElement.inputMode so a change re-renders; ha-input names it `inputmode`. */
+  @property({ type: String, attribute: "inputmode" }) public override inputMode = "";
 
   @query("ha-input") private _haInput?: HaInputLike;
 
@@ -74,6 +76,7 @@ export class HaTextfieldPolyfill extends LitElement {
         .max=${this.max !== "" ? this.max : undefined}
         .step=${this.step ?? undefined}
         .name=${this.name || undefined}
+        .inputmode=${this.inputMode || undefined}
         .hint=${this.helper}
         .withoutSpinButtons=${this.type === "number"}
         @input=${this._sync}
