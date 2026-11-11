@@ -117,30 +117,21 @@ export function quickValueOf(live: RoomLiveData | undefined): QuickValue | null 
 }
 
 /**
- * Options of the quick choice. Without a schedule "Normal" already is comfort, so comfort is
- * left out there (a running comfort override keeps its option until it ends).
+ * Options of the quick choice. Comfort stays offered without a schedule too: away, vacation,
+ * an empty room or the price shift can hold the room below comfort there.
  */
 export function quickOptions(
   config: RoomConfig | null | undefined,
   language: string,
 ): { value: QuickValue; label: string; icon: string }[] {
   const hasSchedule = (config?.schedules ?? []).some((s) => !!s.entity_id);
-  const showComfort = hasSchedule || quickValueOf(config?.live) === "comfort";
   return [
     {
       value: "schedule",
       label: localize(hasSchedule ? "card.quick.schedule" : "card.quick.normal", language),
       icon: hasSchedule ? "mdi:calendar-clock" : "mdi:home-thermometer-outline",
     },
-    ...(showComfort
-      ? [
-          {
-            value: "comfort" as const,
-            label: localize("override.comfort", language),
-            icon: "mdi:sofa",
-          },
-        ]
-      : []),
+    { value: "comfort", label: localize("override.comfort", language), icon: "mdi:sofa" },
     { value: "eco", label: localize("override.eco", language), icon: "mdi:leaf" },
   ];
 }

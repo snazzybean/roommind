@@ -134,20 +134,19 @@ export class RsOverrideSection extends LitElement {
     const ov = this.getEffectiveOverride();
     const value: Choice = this._overridePending ?? (ov.active && ov.type ? ov.type : "schedule");
     const hasSchedule = (this.config?.schedules ?? []).some((s) => !!s.entity_id);
+    const disabled = this.disabled && !this._overridePending;
+    // With control off a running override must still be endable: "schedule" stays usable
+    const locked = (v: string) => disabled && (v !== "schedule" || !ov.active);
     const options: RsSegmentOption[] = [
       {
         value: "schedule",
         label: localize(hasSchedule ? "card.quick.schedule" : "card.quick.normal", l),
         icon: hasSchedule ? "mdi:calendar-clock" : "mdi:home-thermometer-outline",
       },
-      // Without a schedule "Normal" already is comfort; a running comfort override stays shown
-      ...(hasSchedule || value === "boost"
-        ? [{ value: "boost", label: localize("override.comfort", l), icon: "mdi:sofa" }]
-        : []),
+      { value: "boost", label: localize("override.comfort", l), icon: "mdi:sofa" },
       { value: "eco", label: localize("override.eco", l), icon: "mdi:leaf" },
       { value: "custom", label: localize("override.custom", l), icon: "mdi:thermometer" },
-    ];
-    const disabled = this.disabled && !this._overridePending;
+    ].map((o) => ({ ...o, disabled: locked(o.value) }));
 
     return html`
       <div class="qlabel">${localize("detail.override.label", l)}</div>
@@ -156,7 +155,6 @@ export class RsOverrideSection extends LitElement {
         .label=${localize("detail.override.label", l)}
         .options=${options}
         .value=${value}
-        .disabled=${disabled}
         @value-changed=${this._onChoice}
       ></rs-segmented>
       ${disabled ? html`<div class="note">${localize("detail.override.control_off", l)}</div>` : nothing}
