@@ -51,6 +51,13 @@ export class RsConfidenceChart extends LitElement {
     this._resize?.disconnect();
   }
 
+  protected willUpdate(changed: Map<string, unknown>): void {
+    if (changed.has("history")) {
+      this._focusIdx = null;
+      this._activeIdx = null;
+    }
+  }
+
   render() {
     const l = this.language;
     const days = this.history;
