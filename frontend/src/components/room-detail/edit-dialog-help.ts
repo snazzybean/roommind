@@ -56,6 +56,7 @@ export function temperaturesHelp(lang: string) {
       <li>${unsafeHTML(localize("schedule.help_temps_3", lang))}</li>
       <li>${unsafeHTML(localize("schedule.help_temps_4", lang))}</li>
     </ol>
+    <p>${localize("schedule.help_temps_adjust", lang)}</p>
   </div>`;
 }
 
@@ -109,18 +110,7 @@ export function scheduleHelp(lang: string) {
 
 export function devicesHelp(lang: string) {
   return html`<div slot="info">
-    <b>${localize("devices.info.types_title", lang)}</b><br />
-    ${localize("devices.info.types_body", lang)}
-    <br /><br />
-    <b>${localize("devices.info.control_title", lang)}</b><br />
-    ${localize("devices.info.control_body", lang)}
-    <br /><br />
-    <b>${localize("devices.info.modes_title", lang)}</b><br />
-    ${localize("devices.info.modes_body", lang)}
-    <br /><br />
-    <b>${localize("devices.info.heat_source_title", lang)}</b><br />
-    ${localize("devices.info.heat_source_body", lang)}
-    <br />
+    <p>${localize("devices.info.intro", lang)}</p>
     <a class="helper-link" href=${CONTROL_DOCS_URL} target="_blank" rel="noreferrer">
       ${localize("common.learn_more", lang)}
     </a>

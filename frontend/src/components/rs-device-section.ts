@@ -6,7 +6,7 @@ import { localize } from "../utils/localize";
 import { getSelectValue, openEntityInfo } from "../utils/events";
 import { tempUnit } from "../utils/temperature";
 import { resolveHeatingSystemType } from "../utils/device-utils";
-import { formatNumber } from "../utils/format";
+import { formatMinutes, formatNumber } from "../utils/format";
 import { tokens } from "../styles/tokens";
 import { inputStyles } from "../styles/input-styles";
 import { formStyles } from "../styles/form-styles";
@@ -687,7 +687,7 @@ export class RsDeviceSection extends LitElement {
                 .value=${device.idle_fan_mode === "" ? "__keep__" : (device.idle_fan_mode ?? "low")}
                 .options=${[
                   { value: "__keep__", label: localize("devices.idle_fan_mode_keep", l) },
-                  ...fanModes.map((fm) => ({ value: fm, label: fm })),
+                  ...fanModes.map((fm) => ({ value: fm, label: this._fanModeLabel(id, fm) })),
                 ]}
                 @selected=${(e: Event) => {
                   const v = getSelectValue(e);
@@ -699,7 +699,10 @@ export class RsDeviceSection extends LitElement {
                 <ha-list-item value="__keep__"
                   >${localize("devices.idle_fan_mode_keep", l)}</ha-list-item
                 >
-                ${fanModes.map((fm) => html`<ha-list-item value=${fm}>${fm}</ha-list-item>`)}
+                ${fanModes.map(
+                  (fm) =>
+                    html`<ha-list-item value=${fm}>${this._fanModeLabel(id, fm)}</ha-list-item>`,
+                )}
               </ha-select>
             </rs-field>`
           : nothing
@@ -847,12 +850,17 @@ export class RsDeviceSection extends LitElement {
     const id = device.entity_id;
     const coilDry = device.coil_dry ?? "inherit";
     const fanModes = (this.hass.states[id]?.attributes?.fan_modes ?? []) as string[];
+    const modeLabel = (m: string) =>
+      localize(m === "dry" ? "devices.coil_dry_mode_dry" : "devices.coil_dry_mode_fan_only", l);
     const modeInherit = localize("devices.coil_dry_mode_inherit", l, {
-      value: this.coilDryModeGlobal,
+      value: modeLabel(this.coilDryModeGlobal),
     });
     const fanInherit = localize("devices.coil_dry_fan_mode_inherit", l, {
-      value: this._globalFanModeLabel(l),
+      value: this._globalFanModeLabel(l, id),
     });
+    const ownMinutes = (device.coil_dry_minutes ?? 0) > 0;
+    // Nothing runs for this device: its details would only be noise
+    const runs = coilDry === "on" || (coilDry === "inherit" && this.coilDryEnabledGlobal);
     return html`<div class="group">
       <h4 class="group-title">
         ${localize("devices.group_coil_dry", l)}
@@ -882,19 +890,40 @@ export class RsDeviceSection extends LitElement {
           : nothing
       }
       ${
-        coilDry !== "off"
-          ? html`<rs-number-field
+        runs
+          ? html`<rs-field
                 .label=${localize("devices.coil_dry_minutes", l)}
-                .info=${localize("devices.coil_dry_minutes_info", l, {
-                  minutes: this.coilDryMinutesGlobal,
-                })}
-                suffix="min"
-                .min=${0}
-                .max=${60}
-                .value=${device.coil_dry_minutes ?? 0}
-                @value-changed=${(e: CustomEvent<{ value: number }>) =>
-                  this._onCoilDryMinutesChange(id, e.detail.value)}
-              ></rs-number-field>
+                .info=${localize("devices.coil_dry_minutes_info", l)}
+              >
+                ${this._choice(
+                  localize("devices.coil_dry_minutes", l),
+                  [
+                    {
+                      value: INHERIT,
+                      label: localize("devices.coil_dry_mode_inherit", l, {
+                        value: formatMinutes(this.coilDryMinutesGlobal, l),
+                      }),
+                    },
+                    { value: "own", label: localize("devices.coil_dry_minutes_own", l) },
+                  ],
+                  ownMinutes ? "own" : INHERIT,
+                  (v) =>
+                    this._onCoilDryMinutesChange(id, v === "own" ? this.coilDryMinutesGlobal : 0),
+                )}
+              </rs-field>
+              ${
+                ownMinutes
+                  ? html`<rs-number-field
+                      .label=${localize("devices.coil_dry_minutes_own", l)}
+                      suffix="min"
+                      .min=${1}
+                      .max=${60}
+                      .value=${device.coil_dry_minutes ?? this.coilDryMinutesGlobal}
+                      @value-changed=${(e: CustomEvent<{ value: number }>) =>
+                        this._onCoilDryMinutesChange(id, e.detail.value)}
+                    ></rs-number-field>`
+                  : nothing
+              }
               <rs-field
                 .label=${localize("devices.coil_dry_mode", l)}
                 .info=${localize("devices.coil_dry_mode_info", l)}
@@ -903,8 +932,8 @@ export class RsDeviceSection extends LitElement {
                   localize("devices.coil_dry_mode", l),
                   [
                     { value: INHERIT, label: modeInherit },
-                    { value: "fan_only", label: "fan_only" },
-                    { value: "dry", label: "dry" },
+                    { value: "fan_only", label: modeLabel("fan_only") },
+                    { value: "dry", label: modeLabel("dry") },
                   ],
                   device.coil_dry_mode || INHERIT,
                   (v) => this._onCoilDryModeChange(id, fromInherit(v)),
@@ -925,7 +954,7 @@ export class RsDeviceSection extends LitElement {
                   .options=${[
                     { value: INHERIT, label: fanInherit },
                     { value: "__keep__", label: localize("devices.coil_dry_fan_mode_keep", l) },
-                    ...fanModes.map((fm) => ({ value: fm, label: fm })),
+                    ...fanModes.map((fm) => ({ value: fm, label: this._fanModeLabel(id, fm) })),
                   ]}
                   @selected=${(e: Event) =>
                     this._onCoilDryFanModeChange(id, fromInherit(getSelectValue(e)))}
@@ -936,12 +965,21 @@ export class RsDeviceSection extends LitElement {
                   <ha-list-item value="__keep__"
                     >${localize("devices.coil_dry_fan_mode_keep", l)}</ha-list-item
                   >
-                  ${fanModes.map((fm) => html`<ha-list-item value=${fm}>${fm}</ha-list-item>`)}
+                  ${fanModes.map(
+                    (fm) =>
+                      html`<ha-list-item value=${fm}>${this._fanModeLabel(id, fm)}</ha-list-item>`,
+                  )}
                 </ha-select>
               </rs-field>`
           : nothing
       }
     </div>`;
+  }
+
+  /** A fan speed as Home Assistant names it for this device ("low" → "Niedrig"). */
+  private _fanModeLabel(entityId: string, mode: string): string {
+    const st = this.hass.states[entityId];
+    return (st && this.hass.formatEntityAttributeValue?.(st, "fan_mode", mode)) || mode;
   }
 
   /** Removing drops the device's own settings, so it asks once. */
@@ -1092,10 +1130,10 @@ export class RsDeviceSection extends LitElement {
   }
 
   /** Global fan mode as shown in the inherit option ("" means keep current). */
-  private _globalFanModeLabel(lang: string): string {
+  private _globalFanModeLabel(lang: string, entityId: string): string {
     return this.coilDryFanModeGlobal === ""
       ? localize("devices.coil_dry_fan_mode_keep", lang)
-      : this.coilDryFanModeGlobal;
+      : this._fanModeLabel(entityId, this.coilDryFanModeGlobal);
   }
 
   private _onCoilDryChange(entityId: string, value: string) {

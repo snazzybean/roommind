@@ -22,9 +22,10 @@ export const formStyles = css`
     align-items: center;
     gap: var(--rs-space-1);
     margin: 0;
-    font-size: 13px;
+    /* a group heads its fields, so it is never smaller than their labels (rs-field, 14 px) */
+    font-size: var(--rs-font-lg);
     font-weight: 500;
-    color: var(--secondary-text-color);
+    color: var(--primary-text-color);
   }
 
   .note {
