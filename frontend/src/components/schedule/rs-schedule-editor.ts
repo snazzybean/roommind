@@ -485,9 +485,11 @@ export class RsScheduleEditor extends LitElement {
     // Left without flush() (browser back, sidebar): send the change instead of dropping it.
     if (this._timer || this._saving) {
       void this._flush().then((message) => {
-        if (message && this._host?.isConnected) {
-          showToast(this._host, message, this.hass.language);
-        }
+        // The panel itself may be gone too (sidebar): Home Assistant's root still shows toasts.
+        const target = this._host?.isConnected
+          ? this._host
+          : document.querySelector<HTMLElement>("home-assistant");
+        if (message && target) showToast(target, message, this.hass.language);
       });
     }
   }
