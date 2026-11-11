@@ -531,7 +531,9 @@ export class RsRoomCard extends LitElement {
         hum != null
           ? html`<span
               class="hum"
-              aria-label=${localize("card.humidity", this._lang, { value: hum.toFixed(0) })}
+              aria-label=${localize("card.humidity", this._lang, {
+                value: formatPercent(hum, { language: this._lang }),
+              })}
               ><ha-icon icon="mdi:water-percent" aria-hidden="true"></ha-icon>${formatPercent(
                 hum,
                 this.hass,

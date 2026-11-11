@@ -4,7 +4,7 @@ import type { ClimateMode, HomeAssistant, OverrideType, RoomConfig } from "../ty
 import { localize, uiLanguage, type TranslationKey } from "../utils/localize";
 import { errorText } from "../utils/errors";
 import { getModeClass, formatMode } from "../utils/room-state";
-import { formatHours, formatMinutes, formatRemaining } from "../utils/format";
+import { formatHours, formatMinutes, formatPercent, formatRemaining } from "../utils/format";
 import { modeStyles } from "../styles/shared-mode-styles";
 import { tokens } from "../styles/tokens";
 import {
@@ -266,7 +266,9 @@ export class RoomMindRoomCard extends LitElement {
             ${
               live?.current_humidity != null
                 ? html`<div class="target-block">
-                    ${localize("card.humidity", l, { value: live.current_humidity.toFixed(0) })}
+                    ${localize("card.humidity", l, {
+                      value: formatPercent(live.current_humidity, { language: l }),
+                    })}
                   </div>`
                 : nothing
             }
@@ -397,7 +399,9 @@ export class RoomMindRoomCard extends LitElement {
             ${
               live.current_humidity != null
                 ? html`<span class="humidity"
-                    >${localize("card.humidity", l, { value: live.current_humidity.toFixed(0) })}</span
+                    >${localize("card.humidity", l, {
+                      value: formatPercent(live.current_humidity, { language: l }),
+                    })}</span
                   >`
                 : nothing
             }

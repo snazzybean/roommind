@@ -559,12 +559,11 @@ export class RsRoomHero extends LitElement {
             ><ha-icon icon="mdi:water-alert" aria-hidden="true"></ha-icon>${localize(
               "room.mold_surface_rh",
               l,
-              { value: formatNumber(live.mold_surface_rh, this.hass) },
+              { value: formatPercent(live.mold_surface_rh, this.hass) },
             )}${
               live.mold_surface_temp != null
                 ? ` · ${localize("room.mold_surface_temp", l, {
-                    value: formatTempLocale(live.mold_surface_temp, this.hass),
-                    unit,
+                    value: `${formatTempLocale(live.mold_surface_temp, this.hass)} ${unit}`,
                   })}`
                 : ""
             }</span
@@ -721,8 +720,7 @@ export class RsRoomHero extends LitElement {
     if (live.mold_prevention_active) {
       adjustments.push(
         localize("card.mold_prevention", l, {
-          delta: formatNumber(toDisplayDelta(live.mold_prevention_delta, this.hass), this.hass),
-          unit,
+          delta: `${formatNumber(toDisplayDelta(live.mold_prevention_delta, this.hass), this.hass)} ${unit}`,
         }),
       );
     }

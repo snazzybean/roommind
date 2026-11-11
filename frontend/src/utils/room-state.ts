@@ -11,7 +11,7 @@ import type {
 } from "../types";
 import { localize, type TranslationKey } from "./localize";
 import type { EffectiveOverride } from "./override";
-import { formatMinutes, formatRemaining } from "./format";
+import { formatMinutes, formatNumber, formatRemaining } from "./format";
 import { VACATION_SENTINEL } from "./constants";
 
 /**
@@ -311,7 +311,9 @@ export function roomHints(
       icon: "mdi:shield-check",
       severity: "info",
       key: "card.mold_prevention",
-      params: { delta: ctx.displayDelta(live.mold_prevention_delta).toFixed(0), unit: ctx.unit },
+      params: {
+        delta: `${formatNumber(ctx.displayDelta(live.mold_prevention_delta), { language: ctx.language })} ${ctx.unit}`,
+      },
     });
   }
   if (live.learning_paused_reason) {

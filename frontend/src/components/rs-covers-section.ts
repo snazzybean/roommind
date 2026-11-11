@@ -2,7 +2,7 @@ import { LitElement, html, css, nothing, type PropertyValues } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import type { HomeAssistant, HassArea, CoverScheduleEntry } from "../types";
 import { localize, type TranslationKey } from "../utils/localize";
-import { getEntitiesForArea } from "../utils/room-state";
+import { formatClock, getEntitiesForArea } from "../utils/room-state";
 import { getSelectValue, openEntityInfo } from "../utils/events";
 import { formatPercent } from "../utils/format";
 import { masterDetailStyles } from "../styles/master-detail-styles";
@@ -344,9 +344,7 @@ export class RsCoverSection extends LitElement {
               icon="mdi:hand-back-right"
               .heading=${
                 this.overrideUntil
-                  ? `${localize("covers.auto_paused_until", l)} ${new Date(
-                      this.overrideUntil * 1000,
-                    ).toLocaleTimeString(l, { hour: "2-digit", minute: "2-digit" })}`
+                  ? `${localize("covers.auto_paused_until", l)} ${formatClock(this.overrideUntil, l)}`
                   : localize("covers.auto_paused", l)
               }
             >
