@@ -37,7 +37,6 @@ export class RsSettingsMold extends RsSettingsBase {
         <rs-list-row
           switch
           wrap
-          icon="mdi:bell-alert"
           .heading=${localize("mold.detection", l)}
           .secondary=${localize("mold.detection_desc", l)}
           .checked=${this.moldDetectionEnabled}
@@ -46,7 +45,7 @@ export class RsSettingsMold extends RsSettingsBase {
         ${
           this.moldDetectionEnabled
             ? html`
-                <div class="threshold-grid indented">
+                <div class="threshold-grid sub">
                   <rs-number-field
                     .label=${localize("mold.threshold", l)}
                     suffix="%"
@@ -77,7 +76,6 @@ export class RsSettingsMold extends RsSettingsBase {
         <rs-list-row
           switch
           wrap
-          icon="mdi:shield-check"
           .heading=${localize("mold.prevention", l)}
           .secondary=${localize("mold.prevention_desc", l)}
           .checked=${this.moldPreventionEnabled}
@@ -87,7 +85,7 @@ export class RsSettingsMold extends RsSettingsBase {
         ${
           this.moldPreventionEnabled
             ? html`
-                <div class="indented">
+                <div class="sub">
                   <span class="field-label">${localize("mold.intensity", l)}</span>
                   <rs-segmented
                     wrap
@@ -158,16 +156,8 @@ export class RsSettingsMold extends RsSettingsBase {
   static styles = [
     RsSettingsBase.settingsBaseStyles,
     css`
-      /* options of a switched-on row line up with its text, not with the icon */
-      .indented {
-        margin-top: var(--rs-space-2);
-        margin-inline-start: 56px;
-      }
-
-      @container (max-width: 520px) {
-        .indented {
-          margin-inline-start: 0;
-        }
+      .sub {
+        margin-top: var(--rs-space-3);
       }
     `,
   ];

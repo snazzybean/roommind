@@ -59,7 +59,7 @@ export class RsSettingsCoilDry extends RsSettingsBase {
         <rs-list-row
           switch
           wrap
-          .heading=${localize("coil_dry.title", l)}
+          .heading=${localize("coil_dry.switch", l)}
           .secondary=${localize("coil_dry.hint", l)}
           .checked=${this.coilDryEnabled}
           @toggle-changed=${(e: CustomEvent<boolean>) => this._fire("coilDryEnabled", e.detail)}

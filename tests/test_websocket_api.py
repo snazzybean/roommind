@@ -298,9 +298,9 @@ async def test_list_rooms_learning_paused_respects_learning_disabled(ws_hass, st
 
 
 @pytest.mark.asyncio
-async def test_list_rooms_learning_paused_none_for_managed_mode(ws_hass, store, connection):
-    """Managed Mode rooms (no temperature_sensor) never train the EKF, so
-    learning_paused_reason must be None even when outdoor is unavailable."""
+async def test_list_rooms_learning_paused_for_managed_mode(ws_hass, store, connection):
+    """Managed Mode rooms (no temperature_sensor) train on the device reading, so they
+    pause without an outdoor temperature like every other room."""
     await store.async_load()
     save_msg = {
         "id": 2,
@@ -323,7 +323,7 @@ async def test_list_rooms_learning_paused_none_for_managed_mode(ws_hass, store, 
     await _list_rooms(ws_hass, connection, {"id": 3, "type": "roommind/rooms/list"})
 
     rooms = connection.send_result.call_args[0][1]["rooms"]
-    assert rooms["kitchen"]["live"]["learning_paused_reason"] is None
+    assert rooms["kitchen"]["live"]["learning_paused_reason"] == "outdoor_unavailable"
 
 
 @pytest.mark.asyncio

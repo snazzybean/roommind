@@ -21,6 +21,7 @@ import { errorText } from "../utils/errors";
 import { fireSaveStatus } from "../utils/events";
 import { VACATION_SENTINEL } from "../utils/constants";
 import { formatMinutes, formatNumber, formatPercent } from "../utils/format";
+import { learningRoomIds } from "../utils/learning";
 import { formatTempLocale, tempUnit, toDisplayDelta } from "../utils/temperature";
 import { describePriceStatus } from "../utils/price-status";
 import { tokens, alertStyles } from "../styles/tokens";
@@ -438,6 +439,7 @@ export class RsSettings extends LitElement {
           .hass=${this.hass}
           .rooms=${this.rooms}
           .learningDisabledRooms=${this._learningDisabledRooms}
+          .controlMode=${this._controlMode}
           @setting-changed=${this._onSettingChanged}
         ></rs-settings-learning>`;
       case "reset":
@@ -563,7 +565,7 @@ export class RsSettings extends LitElement {
         return { text: `${localize("settings.price_now", l, { level: s.level })} · ${s.detail}` };
       }
       case "learning": {
-        const ids = Object.keys(this.rooms);
+        const ids = learningRoomIds(this.rooms);
         const paused = this._learningDisabledRooms.filter((id) => ids.includes(id)).length;
         let text: string;
         if (!ids.length) text = localize("settings.summary.learning_no_rooms", l);
@@ -641,6 +643,13 @@ export class RsSettings extends LitElement {
           : { text: off, on: false };
       case "notifications": {
         if (!this._moldNotificationsEnabled) return { text: off, on: false };
+        // Only mold detection and the prevention notice send anything from this page
+        if (
+          !this._moldDetectionEnabled &&
+          !(this._moldPreventionEnabled && this._moldPreventionNotify)
+        ) {
+          return { text: localize("settings.summary.notify_no_source", l), on: false };
+        }
         const n = this._moldNotificationTargets.filter((t) => t.entity_id).length;
         const key =
           n === 0

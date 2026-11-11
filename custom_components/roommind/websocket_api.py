@@ -286,15 +286,8 @@ async def websocket_list_rooms(
     for area_id, room_config in rooms.items():
         room_data = dict(room_config)
         live = live_states.get(area_id, {})
-        # Managed Mode rooms (no temperature_sensor) never train the EKF, so
-        # surfacing "learning paused" would be misleading.
-        has_external_sensor = bool(room_config.get("temperature_sensor"))
-        if (
-            not outdoor_available
-            and has_external_sensor
-            and area_id not in learning_disabled
-            and not room_config.get("is_outdoor", False)
-        ):
+        # Managed Mode rooms train too (on the device reading), only outdoor areas never do.
+        if not outdoor_available and area_id not in learning_disabled and not room_config.get("is_outdoor", False):
             learning_paused_reason: str | None = "outdoor_unavailable"
         else:
             learning_paused_reason = None

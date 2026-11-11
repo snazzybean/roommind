@@ -7,18 +7,27 @@ import { RsSettingsBase } from "./rs-settings-base";
 import { customElement, property, state } from "lit/decorators.js";
 import type { HomeAssistant, RoomConfig } from "../../types";
 import { localize, type TranslationKey } from "../../utils/localize";
-import { fireSaveStatus } from "../../utils/events";
 import { formatMinutes, formatPercent } from "../../utils/format";
-import { boostHoursLeft, learningState, type LearningState } from "../../utils/learning";
+import { errorText } from "../../utils/errors";
+import { showToast } from "../../utils/toast";
+import {
+  boostHoursLeft,
+  learningRoomIds,
+  learningState,
+  type LearningState,
+} from "../../utils/learning";
 import "../shared/rs-icon-button";
+import "../shared/rs-confirm-dialog";
 
 const STATE_KEYS: Record<LearningState, TranslationKey> = {
-  not_learning: "settings.learning_state.not_learning",
+  outdoor: "settings.learning_state.outdoor",
   paused: "settings.learning_state.paused",
   waiting: "settings.learning_state.waiting",
   no_data: "settings.learning_state.no_data",
   learning: "settings.learning_state.learning",
   ready: "settings.learning_state.ready",
+  managed: "settings.learning_state.managed",
+  simple: "settings.learning_state.simple",
 };
 
 @customElement("rs-settings-learning")
@@ -26,8 +35,13 @@ export class RsSettingsLearning extends RsSettingsBase {
   @property({ attribute: false }) public hass!: HomeAssistant;
   @property({ attribute: false }) public rooms: Record<string, RoomConfig> = {};
   @property({ type: Array }) public learningDisabledRooms: string[] = [];
+  @property({ type: String }) public controlMode: "mpc" | "bangbang" = "mpc";
   /** Anchors of boosts started on this page, until the polled room data carries them. */
   @state() private _boosted: Record<string, number> = {};
+  /** Room the "learn faster" confirmation is open for. */
+  @state() private _boostTarget: { areaId: string; name: string } | null = null;
+  @state() private _boostBusy = false;
+  @state() private _boostError = "";
 
   render() {
     const l = this.hass.language;
@@ -39,21 +53,20 @@ export class RsSettingsLearning extends RsSettingsBase {
       }))
       .sort((a, b) => a.name.localeCompare(b.name));
 
-    const allRoomIds = Object.keys(this.rooms);
-    const learningActive =
-      allRoomIds.length === 0 || this.learningDisabledRooms.length < allRoomIds.length;
-    const disabledCount = this.learningDisabledRooms.filter((id) => allRoomIds.includes(id)).length;
+    const learnIds = learningRoomIds(this.rooms);
+    const disabledCount = this.learningDisabledRooms.filter((id) => learnIds.includes(id)).length;
+    const learningActive = learnIds.length === 0 || disabledCount < learnIds.length;
 
     return html`
       <div class="settings-section first">
         <rs-list-row
           switch
           wrap
-          .heading=${localize("settings.learning_title", l)}
+          .heading=${localize("settings.learning_switch", l)}
           .secondary=${localize("settings.learning_hint", l)}
           .checked=${learningActive}
           @toggle-changed=${(e: CustomEvent<boolean>) =>
-            this._fire("learningDisabledRooms", e.detail ? [] : allRoomIds)}
+            this._fire("learningDisabledRooms", e.detail ? [] : learnIds)}
         ></rs-list-row>
       </div>
 
@@ -79,18 +92,35 @@ export class RsSettingsLearning extends RsSettingsBase {
           <a href="/roommind/settings/reset">${localize("settings.reset_title", l)}</a>
         </p>
       </div>
+
+      <rs-confirm-dialog
+        .open=${this._boostTarget !== null}
+        icon="mdi:school-outline"
+        .heading=${
+          this._boostTarget
+            ? localize("settings.boost_room", l, { room: this._boostTarget.name })
+            : ""
+        }
+        .message=${localize("settings.boost_confirm", l)}
+        .confirmLabel=${localize("settings.boost_title", l)}
+        .destructive=${false}
+        .busy=${this._boostBusy}
+        .error=${this._boostError}
+        @cancel=${() => {
+          this._boostTarget = null;
+          this._boostError = "";
+        }}
+        @confirm=${this._boostLearning}
+      ></rs-confirm-dialog>
     `;
   }
 
   private _renderRoom(areaId: string, name: string, config: RoomConfig) {
     const l = this.hass.language;
     const paused = this.learningDisabledRooms.includes(areaId);
-    const state = learningState(config, paused);
+    const state = learningState(config, paused, this.controlMode);
     const confidence = formatPercent(Math.round((config.live?.confidence ?? 0) * 100), this.hass);
-    const outdoor = state === "not_learning" && config.is_outdoor;
-    const stateText = localize(outdoor ? "settings.learning_state.outdoor" : STATE_KEYS[state], l, {
-      confidence,
-    });
+    const stateText = localize(STATE_KEYS[state], l, { confidence });
     const hours = paused
       ? null
       : boostHoursLeft(
@@ -104,10 +134,12 @@ export class RsSettingsLearning extends RsSettingsBase {
           >`
         : nothing;
 
-    if (state === "not_learning") {
+    if (state === "outdoor") {
       return html`<rs-list-row .heading=${name} .secondary=${stateText}></rs-list-row>`;
     }
-    const canBoost = (state === "learning" || state === "ready") && hours == null;
+    const canBoost =
+      (state === "learning" || state === "ready" || state === "managed" || state === "simple") &&
+      hours == null;
     return html`<rs-list-row
       switch
       .heading=${name}
@@ -128,26 +160,34 @@ export class RsSettingsLearning extends RsSettingsBase {
         .label=${localize("settings.boost_room", l, { room: name })}
         .disabled=${!canBoost}
         @click=${() => {
-          if (canBoost) this._boostLearning(areaId, name);
+          if (!canBoost) return;
+          this._boostError = "";
+          this._boostTarget = { areaId, name };
         }}
       ></rs-icon-button>
     </rs-list-row>`;
   }
 
-  private async _boostLearning(areaId: string, name: string) {
-    if (!confirm(localize("settings.boost_confirm", this.hass.language, { room: name }))) return;
+  private _boostLearning = async () => {
+    const target = this._boostTarget;
+    if (!target) return;
+    const l = this.hass.language;
+    this._boostBusy = true;
+    this._boostError = "";
     try {
-      fireSaveStatus(this, "saving");
       const result = await this.hass.callWS<{ n_observations: number }>({
         type: "roommind/model/boost_learning",
-        area_id: areaId,
+        area_id: target.areaId,
       });
-      fireSaveStatus(this, "saved");
-      this._boosted = { ...this._boosted, [areaId]: result.n_observations };
-    } catch {
-      fireSaveStatus(this, "error");
+      this._boosted = { ...this._boosted, [target.areaId]: result.n_observations };
+      this._boostTarget = null;
+      showToast(this, localize("settings.boost_done", l, { room: target.name }), l);
+    } catch (err) {
+      this._boostError = errorText(err, localize("error.unknown", l), l);
+    } finally {
+      this._boostBusy = false;
     }
-  }
+  };
 
   static styles = [
     RsSettingsBase.settingsBaseStyles,

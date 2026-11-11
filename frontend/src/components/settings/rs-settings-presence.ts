@@ -25,8 +25,7 @@ export class RsSettingsPresence extends RsSettingsBase {
         <rs-list-row
           switch
           wrap
-          .heading=${localize("presence.title", l)}
-          .secondary=${localize("presence.hint", l)}
+          .heading=${localize("presence.switch", l)}
           .checked=${this.presenceEnabled}
           @toggle-changed=${(e: CustomEvent<boolean>) => this._fire("presenceEnabled", e.detail)}
         ></rs-list-row>

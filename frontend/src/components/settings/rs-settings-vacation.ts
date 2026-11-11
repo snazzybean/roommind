@@ -23,7 +23,7 @@ export class RsSettingsVacation extends RsSettingsBase {
         <rs-list-row
           switch
           wrap
-          .heading=${localize("vacation.title", l)}
+          .heading=${localize("vacation.switch", l)}
           .secondary=${localize("vacation.hint", l)}
           .checked=${this.vacationActive}
           @toggle-changed=${(e: CustomEvent<boolean>) => {

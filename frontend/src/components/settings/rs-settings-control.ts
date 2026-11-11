@@ -53,35 +53,46 @@ export class RsSettingsControl extends RsSettingsBase {
         <p class="hint">${localize("settings.control_mode_hint", l)}</p>
       </div>
 
-      <div class="settings-section">
-        <span class="field-label">${localize("settings.comfort_weight", l)}</span>
-        <div class="slider-row">
-          <span class="slider-label">${localize("settings.comfort_weight_efficiency", l)}</span>
-          <input
-            type="range"
-            aria-label=${localize("settings.comfort_weight", l)}
-            min="0"
-            max="100"
-            step="5"
-            .value=${String(this.comfortWeight)}
-            @input=${(e: Event) => {
-              const v = parseInt((e.target as HTMLInputElement).value, 10);
-              this._dragWeight = isNaN(v) ? null : v;
-            }}
-            @change=${(e: Event) => {
-              const v = parseInt((e.target as HTMLInputElement).value, 10);
-              this._dragWeight = null;
-              if (!isNaN(v) && v !== this.comfortWeight) this._fire("comfortWeight", v);
-            }}
-          />
-          <span class="slider-label">${localize("settings.comfort_weight_comfort", l)}</span>
-        </div>
-        ${this.controlMode === "mpc" ? html`<p class="preheat-lead">${this._preheatLeadText(l)}</p>` : nothing}
-        <p class="hint helper-text">${localize("settings.comfort_weight_hint", l)}</p>
-        <a class="helper-link" href=${CONTROL_DOCS_URL} target="_blank" rel="noreferrer">
-          ${localize("common.learn_more", l)}
-        </a>
-      </div>
+      ${
+        // The weight and the pre-heat lead only act in the MPC
+        this.controlMode === "mpc"
+          ? html`
+              <div class="settings-section">
+                <span class="field-label">${localize("settings.comfort_weight", l)}</span>
+                <div class="slider-row">
+                  <span class="slider-label"
+                    >${localize("settings.comfort_weight_efficiency", l)}</span
+                  >
+                  <input
+                    type="range"
+                    aria-label=${localize("settings.comfort_weight", l)}
+                    min="0"
+                    max="100"
+                    step="5"
+                    .value=${String(this.comfortWeight)}
+                    @input=${(e: Event) => {
+                      const v = parseInt((e.target as HTMLInputElement).value, 10);
+                      this._dragWeight = isNaN(v) ? null : v;
+                    }}
+                    @change=${(e: Event) => {
+                      const v = parseInt((e.target as HTMLInputElement).value, 10);
+                      this._dragWeight = null;
+                      if (!isNaN(v) && v !== this.comfortWeight) this._fire("comfortWeight", v);
+                    }}
+                  />
+                  <span class="slider-label"
+                    >${localize("settings.comfort_weight_comfort", l)}</span
+                  >
+                </div>
+                <p class="preheat-lead">${this._preheatLeadText(l)}</p>
+                <p class="hint helper-text">${localize("settings.comfort_weight_hint", l)}</p>
+                <a class="helper-link" href=${CONTROL_DOCS_URL} target="_blank" rel="noreferrer">
+                  ${localize("common.learn_more", l)}
+                </a>
+              </div>
+            `
+          : nothing
+      }
 
       <div class="settings-section">
         <p class="hint">${localize("settings.smart_control_hint", l)}</p>

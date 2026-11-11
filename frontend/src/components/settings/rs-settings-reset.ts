@@ -7,6 +7,7 @@ import { customElement, property, state } from "lit/decorators.js";
 import type { HomeAssistant, RoomConfig } from "../../types";
 import { localize } from "../../utils/localize";
 import { errorText } from "../../utils/errors";
+import { showToast } from "../../utils/toast";
 import { alertStyles } from "../../styles/tokens";
 import "../shared/rs-icon-button";
 import "../shared/rs-confirm-button";
@@ -22,11 +23,10 @@ export class RsSettingsReset extends RsSettingsBase {
 
   render() {
     const l = this.hass.language;
+    // Only rooms with something learned; a reset room drops out with the next poll
     const configuredRooms = Object.entries(this.rooms)
-      .map(([areaId]) => ({
-        areaId,
-        name: this.hass.areas?.[areaId]?.name ?? areaId,
-      }))
+      .filter(([, config]) => (config.live?.n_observations ?? 0) > 0)
+      .map(([areaId]) => ({ areaId, name: this._roomName(areaId) }))
       .sort((a, b) => a.name.localeCompare(b.name));
 
     return html`
@@ -103,12 +103,19 @@ export class RsSettingsReset extends RsSettingsBase {
     `;
   }
 
+  private _roomName(areaId: string): string {
+    return this.rooms[areaId]?.display_name || this.hass.areas?.[areaId]?.name || areaId;
+  }
+
   private async _resetRoomModel(areaId: string) {
+    const l = this.hass.language;
     this._error = "";
     try {
       fireSaveStatus(this, "saving");
       await this.hass.callWS({ type: "roommind/thermal/reset", area_id: areaId });
       fireSaveStatus(this, "saved");
+      this._resetSelectedRoom = "";
+      showToast(this, localize("settings.reset_done", l, { room: this._roomName(areaId) }), l);
     } catch (err) {
       const l = this.hass.language;
       this._error = errorText(err, localize("error.unknown", l), l);
@@ -122,6 +129,8 @@ export class RsSettingsReset extends RsSettingsBase {
       fireSaveStatus(this, "saving");
       await this.hass.callWS({ type: "roommind/thermal/reset_all" });
       fireSaveStatus(this, "saved");
+      this._resetSelectedRoom = "";
+      showToast(this, localize("settings.reset_all_done", this.hass.language), this.hass.language);
     } catch (err) {
       const l = this.hass.language;
       this._error = errorText(err, localize("error.unknown", l), l);

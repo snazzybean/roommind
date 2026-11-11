@@ -10,24 +10,40 @@ export const EKF_UPDATE_MINUTES = 3;
  */
 export const BOOST_FADE_UPDATES = 120;
 
-/** Confidence from which the model counts as ready (the MPC gate passes around 80 %). */
-export const MODEL_READY_CONFIDENCE = 0.8;
-
 export type LearningState =
-  "not_learning" | "paused" | "waiting" | "no_data" | "learning" | "ready";
+  "outdoor" | "paused" | "waiting" | "no_data" | "learning" | "ready" | "managed" | "simple";
 
-/** Rooms that never train: no own temperature sensor (Managed) or an outdoor area. */
+/** Only outdoor areas never train; Managed rooms learn on the device reading. */
 export function roomLearns(config: RoomConfig): boolean {
-  return !!config.temperature_sensor && !config.is_outdoor;
+  return !config.is_outdoor;
 }
 
-export function learningState(config: RoomConfig, paused: boolean): LearningState {
-  if (!roomLearns(config)) return "not_learning";
+/** Area ids of the rooms that learn; stale ids of deleted rooms are not among them. */
+export function learningRoomIds(rooms: Record<string, RoomConfig>): string[] {
+  return Object.entries(rooms)
+    .filter(([, config]) => roomLearns(config))
+    .map(([id]) => id);
+}
+
+/**
+ * "ready" is the backend's MPC gate (`mpc_active`: 5-min forecast within 0.5 °C plus enough
+ * idle and heating/cooling updates), not a confidence threshold: confidence is a separate
+ * figure and the controller can run MPC well below 80 %. Managed rooms and simple on/off
+ * control learn without ever controlling by the model.
+ */
+export function learningState(
+  config: RoomConfig,
+  paused: boolean,
+  controlMode: "mpc" | "bangbang" = "mpc",
+): LearningState {
+  if (!roomLearns(config)) return "outdoor";
   if (paused) return "paused";
   const live = config.live;
   if (live?.learning_paused_reason) return "waiting";
   if (!live?.n_observations) return "no_data";
-  if (live.mpc_active || (live.confidence ?? 0) >= MODEL_READY_CONFIDENCE) return "ready";
+  if (!config.temperature_sensor) return "managed";
+  if (live.mpc_active) return "ready";
+  if (controlMode === "bangbang") return "simple";
   return "learning";
 }
 
