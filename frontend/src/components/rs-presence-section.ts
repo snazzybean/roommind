@@ -2,9 +2,13 @@ import { LitElement, html, css, nothing } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import type { HomeAssistant } from "../types";
 import { localize } from "../utils/localize";
-import "./shared/rs-toggle-row";
+import { tokens } from "../styles/tokens";
+import { formStyles } from "../styles/form-styles";
+import "./shared/rs-icon-button";
+import "./shared/rs-info-icon";
 import "./shared/rs-list-row";
-import "./shared/rs-tooltip";
+
+const SETTINGS_PATH = "/roommind/settings/presence";
 
 @customElement("rs-presence-section")
 export class RsPresenceSection extends LitElement {
@@ -16,223 +20,212 @@ export class RsPresenceSection extends LitElement {
   @property({ type: Boolean }) public editing = false;
   @property() public language = "en";
 
-  static styles = css`
-    :host {
-      display: block;
-    }
+  private _focusPersons = false;
 
-    .presence-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-      gap: 8px;
-      margin-top: 12px;
-    }
+  static styles = [
+    tokens,
+    formStyles,
+    css`
+      :host {
+        display: block;
+        --rs-form-inline: var(--rs-space-4);
+      }
 
-    .presence-card {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 8px 12px 8px 6px;
-      border: 1px solid var(--divider-color);
-      border-radius: 10px;
-      background: var(--card-background-color);
-      cursor: pointer;
-      transition:
-        border-color 0.15s ease,
-        background 0.15s ease;
-      user-select: none;
-    }
+      .rows {
+        display: flex;
+        flex-direction: column;
+      }
 
-    .presence-card:hover {
-      background: rgba(255, 255, 255, 0.03);
-    }
+      .group-sub {
+        margin: var(--rs-space-4) 0 0;
+        font-size: var(--rs-font-sm);
+        color: var(--secondary-text-color);
+      }
+    `,
+  ];
 
-    .presence-card.active {
-      border-color: rgba(3, 169, 244, 0.4);
-      background: rgba(3, 169, 244, 0.08);
-    }
-
-    .presence-card ha-checkbox {
-      flex-shrink: 0;
-    }
-
-    .person-icon {
-      --mdc-icon-size: 18px;
-      color: var(--secondary-text-color);
-      flex-shrink: 0;
-    }
-
-    .presence-card.active .person-icon {
-      color: var(--primary-color);
-    }
-
-    .person-name {
-      flex: 1;
-      font-size: 14px;
-      font-weight: 450;
-      min-width: 0;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    .section-divider {
-      border-top: 1px solid var(--divider-color, #e0e0e0);
-      margin: 8px 0;
-    }
-
-    .presence-card.missing {
-      border-color: var(--warning-color, #ff9800);
-    }
-
-    .missing-icon {
-      --mdc-icon-size: 16px;
-      color: var(--warning-color, #ff9800);
-      flex-shrink: 0;
-    }
-
-    .missing-hint {
-      margin-top: 8px;
-      color: var(--secondary-text-color);
-      font-size: 12px;
-    }
-  `;
-
-  /**
-   * Global persons plus any entries the room still references on its own.
-   *
-   * Entries can drop out of the global list (or out of Home Assistant
-   * entirely) while a room still references them. They would stay in the room
-   * config forever unless the UI keeps offering them for deselection (#397).
-   */
-  private get _allPersons(): string[] {
-    const extra = this.selectedPresencePersons.filter((pid) => !this.presencePersons.includes(pid));
-    return [...this.presencePersons, ...extra];
-  }
-
-  /** True when the entity is gone from Home Assistant, i.e. dead config. */
+  /** True when the entity is gone from Home Assistant, i.e. dead config (#397). */
   private _isMissing(pid: string): boolean {
     return !this.hass.states[pid];
   }
 
+  private _name(pid: string): string {
+    return String(
+      this.hass.states[pid]?.attributes?.friendly_name ?? pid.split(".").slice(1).join("."),
+    );
+  }
+
+  /** Home/away as the backend reads it; unavailable and unknown count as home there. */
+  private _state(pid: string): { text: string; home: boolean } {
+    const l = this.language;
+    const st = this.hass.states[pid]?.state;
+    if (st === undefined || st === "unavailable" || st === "unknown") {
+      return { text: localize("detail.devices.unavailable", l), home: false };
+    }
+    const home =
+      pid.startsWith("person.") || pid.startsWith("device_tracker.") ? st === "home" : st === "on";
+    return { text: localize(home ? "presence.state_home" : "presence.state_away", l), home };
+  }
+
+  /** Why the room's presence settings have no effect right now, if they have none. */
+  private _inactiveReason(): string {
+    if (!this.presenceEnabled) return localize("presence.room_disabled", this.language);
+    if (this.presencePersons.length === 0) {
+      return localize("presence.room_no_persons", this.language);
+    }
+    return "";
+  }
+
+  protected updated(): void {
+    if (!this._focusPersons || !this.editing) return;
+    this._focusPersons = false;
+    const target = this.renderRoot.querySelector<
+      HTMLElement & { updateComplete?: Promise<unknown> }
+    >(".persons rs-icon-button, .persons rs-list-row[clickable]");
+    void target?.updateComplete?.then(() => target.focus());
+  }
+
   render() {
-    if (!this.presenceEnabled) return nothing;
-    // Keep the editor mounted while open, even after the last entry was
-    // unchecked - otherwise the dialog body collapses mid-cleanup.
-    if (!this.editing && this._allPersons.length === 0) return nothing;
-
-    if (!this.editing) return this._renderViewMode();
-
-    return html`
-      <rs-toggle-row
-        .label=${localize("presence.ignore_toggle", this.language)}
-        .checked=${this.ignorePresence}
-        @toggle-changed=${this._onIgnoreToggle}
-      ></rs-toggle-row>
-      ${
-        !this.ignorePresence
-          ? html`<div class="section-divider"></div>
-              ${this._renderEditMode()}`
-          : nothing
-      }
-    `;
+    return this.editing ? this._renderEditMode() : this._renderViewMode();
   }
 
   private _renderEditMode() {
-    const persons = this._allPersons;
-    const hasMissing = persons.some((pid) => this._isMissing(pid));
+    const l = this.language;
+    const reason = this._inactiveReason();
     return html`
-      <div class="presence-grid">
-        ${persons.map((pid) => {
-          const active = this.selectedPresencePersons.includes(pid);
-          const missing = this._isMissing(pid);
-          const name =
-            this.hass.states[pid]?.attributes?.friendly_name ?? pid.split(".").slice(1).join(".");
-          return html`
-            <div
-              class="presence-card ${active ? "active" : ""} ${missing ? "missing" : ""}"
-              role="checkbox"
-              tabindex="0"
-              aria-checked=${active}
-              @click=${() => this._onTogglePerson(pid, active)}
-              @keydown=${(e: KeyboardEvent) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  this._onTogglePerson(pid, active);
-                }
-              }}
-            >
-              <ha-checkbox
-                .checked=${active}
-                tabindex="-1"
-                @click=${(e: Event) => e.stopPropagation()}
-                @change=${() => this._onTogglePerson(pid, active)}
-              ></ha-checkbox>
-              <ha-icon class="person-icon" icon="mdi:account"></ha-icon>
-              <span class="person-name">${name}</span>
-              ${missing ? this._renderMissingIcon() : nothing}
-            </div>
-          `;
-        })}
-      </div>
       ${
-        hasMissing
-          ? html`<div class="missing-hint">
-              ${localize("presence.missing_entity_hint", this.language)}
+        reason
+          ? html`<div class="group">
+              <p class="note warn">
+                <ha-icon icon="mdi:information-outline" aria-hidden="true"></ha-icon>
+                <span>${reason}</span>
+              </p>
+              ${this._renderSettingsLink()}
             </div>`
           : nothing
       }
+      <div class="group">
+        <rs-list-row
+          switch
+          wrap
+          icon="mdi:home-off-outline"
+          .heading=${localize("presence.ignore_toggle", l)}
+          .secondary=${localize("presence.ignore_sub", l)}
+          .checked=${this.ignorePresence}
+          @toggle-changed=${this._onIgnoreToggle}
+        >
+          <rs-info-icon slot="end" .text=${localize("presence.ignore_info", l)}></rs-info-icon>
+        </rs-list-row>
+      </div>
+      ${this.ignorePresence ? nothing : this._renderPersons()}
     `;
   }
 
-  private _renderMissingIcon() {
-    const hint = localize("presence.missing_entity_hint", this.language);
-    return html`<rs-tooltip mode="label" .text=${hint}>
-      <ha-icon
-        class="missing-icon"
-        icon="mdi:alert-circle-outline"
-        role="img"
-        aria-label=${hint}
-      ></ha-icon>
-    </rs-tooltip>`;
+  private _renderSettingsLink() {
+    return html`<rs-list-row
+      href=${SETTINGS_PATH}
+      chevron
+      icon="mdi:cog-outline"
+      .heading=${localize("presence.open_settings", this.language)}
+      @click=${this._onSettingsClick}
+    ></rs-list-row>`;
+  }
+
+  private _renderPersons() {
+    const l = this.language;
+    const selected = this.selectedPresencePersons;
+    const others = this.presencePersons.filter((pid) => !selected.includes(pid));
+    return html`<div class="group persons">
+      <h4 class="group-title">
+        ${localize("presence.room_persons", l)}
+        <rs-info-icon .text=${localize("presence.persons_info", l)}></rs-info-icon>
+      </h4>
+      <div class="rows">
+        ${
+          selected.length
+            ? selected.map((pid) => this._renderAssigned(pid))
+            : html`<p class="note">${localize("presence.room_none_assigned", l)}</p>`
+        }
+        ${
+          others.length
+            ? html`<p class="group-sub">${localize("presence.others", l)}</p>
+                ${others.map(
+                  (pid) =>
+                    html`<rs-list-row
+                      clickable
+                      plain-icon
+                      icon="mdi:plus"
+                      .heading=${this._name(pid)}
+                      .secondary=${localize("detail.devices.add_suggestion", l)}
+                      .value=${this._state(pid).text}
+                      @row-click=${() => this._setPersons([...selected, pid])}
+                    ></rs-list-row>`,
+                )}`
+            : nothing
+        }
+      </div>
+    </div>`;
+  }
+
+  private _renderAssigned(pid: string) {
+    const l = this.language;
+    const name = this._name(pid);
+    const missing = this._isMissing(pid);
+    const state = this._state(pid);
+    return html`<rs-list-row
+      .icon=${missing ? "mdi:alert-circle-outline" : "mdi:account"}
+      .variant=${missing ? "warn" : "default"}
+      .iconColor=${!missing && state.home ? "var(--rs-ok)" : ""}
+      .heading=${name}
+      .secondary=${missing ? localize("presence.missing_entity_hint", l) : ""}
+      .value=${missing ? "" : state.text}
+    >
+      <rs-icon-button
+        slot="end"
+        size="sm"
+        icon="mdi:close"
+        .label=${localize("common.remove_named", l, { name })}
+        @click=${() => this._setPersons(this.selectedPresencePersons.filter((p) => p !== pid))}
+      ></rs-icon-button>
+    </rs-list-row>`;
   }
 
   private _renderViewMode() {
     const l = this.language;
-    if (this.ignorePresence || this.selectedPresencePersons.length === 0) {
+    const reason = this._inactiveReason();
+    if (reason || this.ignorePresence || this.selectedPresencePersons.length === 0) {
+      const heading = reason
+        ? "presence.room_inactive"
+        : this.ignorePresence
+          ? "presence.ignore_toggle"
+          : "detail.presence.global";
+      const secondary = reason
+        ? reason
+        : localize(
+            this.ignorePresence ? "presence.tile_ignored" : "presence.room_none_assigned",
+            l,
+          );
       return html`<rs-list-row
         clickable
         chevron
-        icon=${this.ignorePresence ? "mdi:home-off-outline" : "mdi:home-account"}
-        .heading=${localize(
-          this.ignorePresence ? "presence.ignore_toggle" : "detail.presence.global",
-          l,
-        )}
-        .secondary=${localize(
-          this.ignorePresence ? "presence.tile_ignored" : "presence.room_none_assigned",
-          l,
-        )}
+        icon=${reason || this.ignorePresence ? "mdi:home-off-outline" : "mdi:home-account"}
+        .heading=${localize(heading, l)}
+        .secondary=${secondary}
         @row-click=${this._fireEdit}
       ></rs-list-row>`;
     }
     return this.selectedPresencePersons.map((pid) => {
-      const name =
-        this.hass.states[pid]?.attributes?.friendly_name ?? pid.split(".").slice(1).join(".");
-      const st = this.hass.states[pid]?.state;
-      const isHome =
-        pid.startsWith("person.") || pid.startsWith("device_tracker.")
-          ? st === "home"
-          : st === "on";
       const missing = this._isMissing(pid);
+      const state = this._state(pid);
       return html`<rs-list-row
         clickable
         chevron
         icon=${missing ? "mdi:alert-circle-outline" : "mdi:account"}
         .variant=${missing ? "warn" : "default"}
-        .iconColor=${!missing && isHome ? "var(--rs-ok)" : ""}
-        .heading=${String(name)}
+        .iconColor=${!missing && state.home ? "var(--rs-ok)" : ""}
+        .heading=${this._name(pid)}
         .secondary=${missing ? localize("presence.missing_entity_hint", l) : ""}
-        .value=${missing ? "" : localize(isHome ? "presence.state_home" : "presence.state_away", l)}
+        .value=${missing ? "" : state.text}
         @row-click=${this._fireEdit}
       ></rs-list-row>`;
     });
@@ -241,6 +234,19 @@ export class RsPresenceSection extends LitElement {
   private _fireEdit(e: Event) {
     e.stopPropagation();
     this.dispatchEvent(new CustomEvent("edit-click", { bubbles: true, composed: true }));
+  }
+
+  private _onSettingsClick(e: MouseEvent) {
+    // Ctrl/Cmd/Shift/middle click keep the browser's "open in new tab".
+    if (e.ctrlKey || e.metaKey || e.shiftKey || e.button === 1) return;
+    e.preventDefault();
+    this.dispatchEvent(
+      new CustomEvent("open-settings", {
+        detail: { category: "presence" },
+        bubbles: true,
+        composed: true,
+      }),
+    );
   }
 
   private _onIgnoreToggle(e: CustomEvent<boolean>) {
@@ -253,13 +259,8 @@ export class RsPresenceSection extends LitElement {
     );
   }
 
-  private _onTogglePerson(pid: string, currentlyActive: boolean) {
-    let next: string[];
-    if (currentlyActive) {
-      next = this.selectedPresencePersons.filter((p) => p !== pid);
-    } else {
-      next = [...this.selectedPresencePersons, pid];
-    }
+  private _setPersons(next: string[]) {
+    this._focusPersons = true;
     this.dispatchEvent(
       new CustomEvent("presence-persons-changed", {
         detail: next,

@@ -443,6 +443,7 @@ export class RoomMindPanel extends LitElement {
             @room-updated=${this._onRoomUpdated}
             @room-deleted=${this._onRoomDeleted}
             @open-analytics=${this._onGoToAnalytics}
+            @open-settings=${this._onOpenSettings}
           ></rs-room-detail>
         `;
       }
@@ -520,6 +521,14 @@ export class RoomMindPanel extends LitElement {
   private _onSettingsCategoryChanged(e: CustomEvent<{ category: string }>) {
     this._settingsCategory = e.detail.category;
     this._navigate(this._settingsCategory ? `/settings/${this._settingsCategory}` : "/settings");
+  }
+
+  /** A room dialog links to a settings category (e.g. presence while it is off). */
+  private _onOpenSettings(e: CustomEvent<{ category: string }>) {
+    this._selectedAreaId = null;
+    this._activeTab = "settings";
+    this._settingsCategory = e.detail.category;
+    this._navigate(`/settings/${this._settingsCategory}`);
   }
 
   private _onBackFromSettingsPage = () => {

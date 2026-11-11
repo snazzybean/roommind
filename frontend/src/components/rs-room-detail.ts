@@ -587,11 +587,10 @@ export class RsRoomDetail extends LitElement {
       </rs-list-card>
 
       ${
-        this.presenceEnabled &&
-        (this.presencePersons.length > 0 || this._selectedPresencePersons.length > 0)
+        this.presenceEnabled || this._selectedPresencePersons.length > 0 || this._ignorePresence
           ? html`<rs-list-card
               .heading=${localize("room.section.presence", l)}
-              .info=${localize("presence.ignore_hint", l)}
+              .info=${localize("presence.persons_info", l)}
               @edit-click=${this._openEdit("presence")}
             >
               <rs-presence-section
