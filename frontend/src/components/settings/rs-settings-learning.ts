@@ -10,9 +10,7 @@ import { localize, type TranslationKey } from "../../utils/localize";
 import { fireSaveStatus } from "../../utils/events";
 import { formatMinutes, formatPercent } from "../../utils/format";
 import { boostHoursLeft, learningState, type LearningState } from "../../utils/learning";
-import "../shared/rs-menu";
-
-const BOOST_ACTION = "boost";
+import "../shared/rs-icon-button";
 
 const STATE_KEYS: Record<LearningState, TranslationKey> = {
   not_learning: "settings.learning_state.not_learning",
@@ -109,7 +107,7 @@ export class RsSettingsLearning extends RsSettingsBase {
     if (state === "not_learning") {
       return html`<rs-list-row .heading=${name} .secondary=${stateText}></rs-list-row>`;
     }
-    const canBoost = state === "learning" || state === "ready";
+    const canBoost = (state === "learning" || state === "ready") && hours == null;
     return html`<rs-list-row
       switch
       .heading=${name}
@@ -123,21 +121,16 @@ export class RsSettingsLearning extends RsSettingsBase {
       }}
     >
       ${boostLine}
-      <rs-menu
+      <rs-icon-button
         slot="end"
-        .label=${localize("settings.learning_room_actions", l, { room: name })}
-        .items=${[
-          {
-            value: BOOST_ACTION,
-            label: localize("settings.boost_btn", l),
-            icon: "mdi:school-outline",
-            disabled: !canBoost || hours != null,
-          },
-        ]}
-        @menu-select=${(e: CustomEvent<{ value: string }>) => {
-          if (e.detail.value === BOOST_ACTION) this._boostLearning(areaId, name);
+        size="sm"
+        icon="mdi:school-outline"
+        .label=${localize("settings.boost_room", l, { room: name })}
+        .disabled=${!canBoost}
+        @click=${() => {
+          if (canBoost) this._boostLearning(areaId, name);
         }}
-      ></rs-menu>
+      ></rs-icon-button>
     </rs-list-row>`;
   }
 
