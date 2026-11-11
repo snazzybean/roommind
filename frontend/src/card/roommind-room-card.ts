@@ -4,7 +4,13 @@ import type { ClimateMode, HomeAssistant, OverrideType, RoomConfig } from "../ty
 import { localize, uiLanguage, type TranslationKey } from "../utils/localize";
 import { getModeClass, formatMode } from "../utils/room-state";
 import { modeStyles } from "../styles/shared-mode-styles";
-import { formatTemp, tempUnit, toCelsius, toDisplay, usesFahrenheit } from "../utils/temperature";
+import {
+  formatTempLocale,
+  tempUnit,
+  toCelsius,
+  toDisplay,
+  usesFahrenheit,
+} from "../utils/temperature";
 import { MAX_TARGET_TEMP_C, MIN_TARGET_TEMP_C } from "../utils/temperature";
 import {
   OVERRIDE_DURATIONS_H,
@@ -250,7 +256,7 @@ export class RoomMindRoomCard extends LitElement {
           </div>
           <div class="temps">
             <span class="current">
-              ${live?.current_temp != null ? formatTemp(live.current_temp, this.hass) : "--"}<span
+              ${live?.current_temp != null ? formatTempLocale(live.current_temp, this.hass) : "--"}<span
                 class="unit"
                 >${tempUnit(this.hass)}</span
               >
@@ -343,7 +349,7 @@ export class RoomMindRoomCard extends LitElement {
     return html`
       <div class="temps">
         <span class="current">
-          ${live.current_temp != null ? formatTemp(live.current_temp, this.hass) : "--"}<span
+          ${live.current_temp != null ? formatTempLocale(live.current_temp, this.hass) : "--"}<span
             class="unit"
             >${unit}</span
           >
@@ -356,8 +362,8 @@ export class RoomMindRoomCard extends LitElement {
                   <strong
                     >${
                       showRange
-                        ? `${formatTemp(live.heat_target!, this.hass)} – ${formatTemp(live.cool_target!, this.hass)}`
-                        : formatTemp(single!, this.hass)
+                        ? `${formatTempLocale(live.heat_target!, this.hass)} – ${formatTempLocale(live.cool_target!, this.hass)}`
+                        : formatTempLocale(single!, this.hass)
                     }${unit}</strong
                   >
                 </span>`
@@ -627,7 +633,7 @@ export class RoomMindRoomCard extends LitElement {
             sideIcon
               ? html`<ha-icon class="side-icon" icon=${sideIcon} aria-hidden="true"></ha-icon>`
               : nothing
-          }${formatTemp(valueC, this.hass)}${tempUnit(this.hass)}</span
+          }${formatTempLocale(valueC, this.hass)}${tempUnit(this.hass)}</span
         >
         <button
           class="step"
