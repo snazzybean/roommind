@@ -1052,21 +1052,22 @@ class ThermalEKF:
             "forecast_error": {"day": self._err_day, "sum": self._err_sum, "n": self._err_n},
         }
 
-    def boost_covariance(self, factor: float = 2.5, floor_frac: float = 0.3) -> None:
-        """Multiply covariance P by *factor*, floored at *floor_frac* of P_initial.
+    def boost_covariance(self, factor: float = 2.5) -> None:
+        """Widen the parameter variances by *factor* to re-learn faster after a change in the room.
 
-        Used to accelerate re-learning after room physics change (e.g. new
-        radiator, insulation, furniture).  The floor prevents repeated clicks
-        from destroying the matrix.
+        P becomes S P S with S = diag(1, s_1..s_n): every correlation stays as learned and the
+        temperature variance is left alone. A variance never grows past its initial value, so
+        repeated calls stop there. (A floor at a share of the initial variance with plain
+        off-diagonals made alpha ~400x as uncertain as learned while its correlations collapsed;
+        a sensor-noise reading then moved alpha by its whole value.)
         """
-        p_init_diag = self._p_init_diag()
-        for i in range(self._N):
-            for j in range(self._N):
-                boosted = self._P[i][j] * factor
-                if i == j:
-                    floor = p_init_diag[i] * floor_frac
-                    boosted = max(boosted, floor)
-                self._P[i][j] = boosted
+        p_init = self._p_init_diag()
+        scale = [1.0]
+        for i in range(1, self._N):
+            var = self._P[i][i]
+            target = min(var * factor, p_init[i])
+            scale.append(math.sqrt(target / var) if var > 0 and target > var else 1.0)
+        self._P = [[self._P[i][j] * scale[i] * scale[j] for j in range(self._N)] for i in range(self._N)]
         self._enforce_psd()
 
     @classmethod
