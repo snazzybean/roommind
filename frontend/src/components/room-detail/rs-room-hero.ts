@@ -158,6 +158,9 @@ export class RsRoomHero extends LitElement {
       .name-row rs-icon-button {
         color: var(--secondary-text-color);
         margin: -8px 0;
+        /* above the enlarged touch area of the info icon in the line below */
+        position: relative;
+        z-index: 1;
       }
 
       .name-edit {

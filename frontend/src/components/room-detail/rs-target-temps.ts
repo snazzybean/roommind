@@ -83,7 +83,8 @@ export class RsTargetTemps extends LitElement {
           grid-column: 1 / -1;
           margin-top: 8px;
         }
-        .temp-grid-header {
+        /* the corner cell only; the column headers stay above the first pair of fields */
+        .temp-grid-header.corner {
           display: none;
         }
       }
@@ -108,7 +109,7 @@ export class RsTargetTemps extends LitElement {
     if (this.climateMode === "auto") {
       return html`
         <div class="temp-grid-auto">
-          <div class="temp-grid-header"></div>
+          <div class="temp-grid-header corner"></div>
           <div class="temp-grid-header">${localize("schedule.column_comfort", l)}</div>
           <div class="temp-grid-header">${localize("schedule.column_eco", l)}</div>
           <div class="temp-grid-row-label">

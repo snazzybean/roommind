@@ -67,6 +67,18 @@ export class RsInfoIcon extends LitElement {
     ha-icon {
       --mdc-icon-size: 16px;
     }
+
+    /* 44 px tap area on touch without growing the icon or moving its neighbours */
+    @media (pointer: coarse) {
+      button {
+        position: relative;
+      }
+      button::before {
+        content: "";
+        position: absolute;
+        inset: -12px;
+      }
+    }
   `;
 
   render() {
