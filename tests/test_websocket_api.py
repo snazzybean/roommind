@@ -1339,6 +1339,21 @@ async def test_thermal_reset_all(ws_hass, store, connection):
 
 
 @pytest.mark.asyncio
+async def test_thermal_reset_all_clears_history_of_rooms_without_model(ws_hass, store, connection):
+    """An outdoor area learns no model but keeps a history: reset all deletes it too."""
+    await store.async_load()
+    await store.async_save_room("terrace", {"is_outdoor": True})
+
+    coordinator = _make_coordinator_with_model(ws_hass)
+
+    msg = {"id": 22, "type": "roommind/thermal/reset_all"}
+    await _thermal_reset_all(ws_hass, connection, msg)
+
+    removed = sorted(c.args[0] for c in coordinator.history_store.remove_room.call_args_list)
+    assert removed == ["room_a", "room_b", "terrace"]
+
+
+@pytest.mark.asyncio
 async def test_thermal_reset_nonexistent_room(ws_hass, store, connection):
     """Resetting a room that has no model data still succeeds (idempotent)."""
     await store.async_load()

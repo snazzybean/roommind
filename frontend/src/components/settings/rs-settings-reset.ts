@@ -23,10 +23,9 @@ export class RsSettingsReset extends RsSettingsBase {
 
   render() {
     const l = this.hass.language;
-    // Only rooms with something learned; a reset room drops out with the next poll
-    const configuredRooms = Object.entries(this.rooms)
-      .filter(([, config]) => (config.live?.n_observations ?? 0) > 0)
-      .map(([areaId]) => ({ areaId, name: this._roomName(areaId) }))
+    // Every room: one without a model (outdoor area, sensors only) still has a history to drop
+    const configuredRooms = Object.keys(this.rooms)
+      .map((areaId) => ({ areaId, name: this._roomName(areaId) }))
       .sort((a, b) => a.name.localeCompare(b.name));
 
     return html`
@@ -90,7 +89,12 @@ export class RsSettingsReset extends RsSettingsBase {
                     destructive
                     icon="mdi:restart"
                     .label=${localize("settings.reset_btn", l)}
-                    .confirmMessage=${localize("settings.reset_room_confirm", l)}
+                    .confirmMessage=${localize(
+                      this._historyOnly(this._resetSelectedRoom)
+                        ? "settings.reset_room_confirm_history"
+                        : "settings.reset_room_confirm",
+                      l,
+                    )}
                     .disabled=${!this._resetSelectedRoom}
                     @confirmed=${() =>
                       this._resetSelectedRoom && this._resetRoomModel(this._resetSelectedRoom)}
@@ -101,6 +105,11 @@ export class RsSettingsReset extends RsSettingsBase {
         }
       </div>
     `;
+  }
+
+  /** Outdoor areas learn nothing; a reset only deletes their history. */
+  private _historyOnly(areaId: string): boolean {
+    return !!this.rooms[areaId]?.is_outdoor;
   }
 
   private _roomName(areaId: string): string {
@@ -115,7 +124,10 @@ export class RsSettingsReset extends RsSettingsBase {
       await this.hass.callWS({ type: "roommind/thermal/reset", area_id: areaId });
       fireSaveStatus(this, "saved");
       this._resetSelectedRoom = "";
-      showToast(this, localize("settings.reset_done", l, { room: this._roomName(areaId) }), l);
+      const done = this._historyOnly(areaId)
+        ? "settings.reset_done_history"
+        : "settings.reset_done";
+      showToast(this, localize(done, l, { room: this._roomName(areaId) }), l);
     } catch (err) {
       const l = this.hass.language;
       this._error = errorText(err, localize("error.unknown", l), l);

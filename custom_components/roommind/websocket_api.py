@@ -1044,9 +1044,9 @@ async def websocket_thermal_reset_all(
     await store.async_clear_all_thermal_data()
     await _async_drop_boost_anchors(store)
 
-    # Clear history CSV files for all rooms
+    # Clear history CSV files for all rooms, also those without a model (outdoor areas)
     if coordinator and coordinator.history_store:
-        for area_id in room_ids:
+        for area_id in sorted(set(room_ids) | set(store.get_rooms())):
             await hass.async_add_executor_job(coordinator.history_store.remove_room, area_id)
 
     connection.send_result(msg["id"], {"success": True})
