@@ -453,13 +453,17 @@ export class RsSensorSection extends LitElement {
 
   private _renderPicker(kind: SensorKind) {
     const l = this.hass.language;
+    const label = localize(
+      this._assigned(kind).length ? "sensors.choose_other" : "sensors.choose",
+      l,
+    );
     if (this._pickerFor !== kind) {
       return html`<rs-list-row
         clickable
         plain-icon
         variant="primary"
         icon="mdi:magnify"
-        .heading=${localize("sensors.choose_other", l)}
+        .heading=${label}
         @row-click=${() => {
           this._pickerFor = kind;
         }}
@@ -481,7 +485,7 @@ export class RsSensorSection extends LitElement {
           this._accepts(kind, e.entity_id)}
         .value=${""}
         .autofocus=${true}
-        .label=${localize("sensors.choose_other", l)}
+        .label=${label}
         @value-changed=${(e: CustomEvent) => {
           const id = e.detail?.value as string;
           (e.target as HTMLElement & { value: string }).value = "";

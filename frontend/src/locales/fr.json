@@ -862,6 +862,7 @@
   "sensors.none_assigned": "Aucun attribué pour l'instant.",
   "sensors.use_instead": "Utiliser à la place",
   "sensors.choose_other": "Choisir une autre entité",
+  "sensors.choose": "Choisir une entité",
   "common.decrease": "Diminuer",
   "common.increase": "Augmenter",
   "schedule_editor.add_block": "Ajouter un créneau",

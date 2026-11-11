@@ -862,6 +862,7 @@
   "sensors.none_assigned": "Noch keiner zugewiesen.",
   "sensors.use_instead": "Stattdessen verwenden",
   "sensors.choose_other": "Andere Entität wählen",
+  "sensors.choose": "Entität wählen",
   "common.decrease": "Weniger",
   "common.increase": "Mehr",
   "schedule_editor.add_block": "Block hinzufügen",

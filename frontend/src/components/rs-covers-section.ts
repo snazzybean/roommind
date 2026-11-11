@@ -292,13 +292,14 @@ export class RsCoverSection extends LitElement {
 
   private _renderPicker() {
     const l = this.hass.language;
+    const label = localize(this.selectedCovers.size ? "sensors.choose_other" : "sensors.choose", l);
     if (!this._pickerOpen) {
       return html`<rs-list-row
         clickable
         plain-icon
         variant="primary"
         icon="mdi:magnify"
-        .heading=${localize("sensors.choose_other", l)}
+        .heading=${label}
         @row-click=${() => {
           this._pickerOpen = true;
           void this.updateComplete.then(() => {
@@ -317,7 +318,7 @@ export class RsCoverSection extends LitElement {
         .includeDomains=${["cover"]}
         .entityFilter=${this._entityFilter}
         .value=${""}
-        .label=${localize("sensors.choose_other", l)}
+        .label=${label}
         @value-changed=${this._onEntityPicked}
       ></ha-entity-picker>
       <rs-icon-button

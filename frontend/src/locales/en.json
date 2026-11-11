@@ -862,6 +862,7 @@
   "sensors.none_assigned": "None assigned yet.",
   "sensors.use_instead": "Use instead",
   "sensors.choose_other": "Choose another entity",
+  "sensors.choose": "Choose an entity",
   "common.decrease": "Decrease",
   "common.increase": "Increase",
   "schedule_editor.add_block": "Add block",
