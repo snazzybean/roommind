@@ -4,7 +4,7 @@ import type { HomeAssistant, HassArea, DeviceConfig, DeviceType } from "../types
 import { getEntitiesForArea } from "../utils/room-state";
 import { localize } from "../utils/localize";
 import { getSelectValue, openEntityInfo } from "../utils/events";
-import { tempUnit } from "../utils/temperature";
+import { tempUnit, toDisplayDelta } from "../utils/temperature";
 import { resolveHeatingSystemType } from "../utils/device-utils";
 import { formatMinutes, formatNumber } from "../utils/format";
 import { tokens } from "../styles/tokens";
@@ -17,6 +17,9 @@ import "./shared/rs-number-field";
 import "./shared/rs-info-icon";
 import "./shared/rs-list-row";
 import "./shared/rs-segmented";
+
+// Mirrors DEFAULT_IDLE_SETBACK_OFFSET in utils/device_utils.py.
+const IDLE_SETBACK_OFFSET_C = 2;
 
 /**
  * UI-only sentinel for "inherit the global setting".  ha-select cannot render an
@@ -669,7 +672,11 @@ export class RsDeviceSection extends LitElement {
       <h4 class="group-title">
         ${localize("devices.idle_action", l)}
         <rs-info-icon
-          .text=${localize(isTrv ? "devices.idle_info_trv" : "devices.idle_info_ac", l)}
+          .text=${isTrv
+            ? localize("devices.idle_info_trv", l)
+            : localize("devices.idle_info_ac", l, {
+                delta: `${formatNumber(toDisplayDelta(IDLE_SETBACK_OFFSET_C, this.hass), this.hass)} ${tempUnit(this.hass)}`,
+              })}
         ></rs-info-icon>
       </h4>
       ${this._choice(
