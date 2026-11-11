@@ -1132,35 +1132,11 @@ export class RoomMindRoomCard extends LitElement {
         cursor: default;
       }
 
-      .segment.active,
-      .segment.pending {
+      /* one selected look for every option, like the panel's segmented controls */
+      .segment.active {
         border-color: var(--primary-color);
         background: rgba(var(--rgb-primary-color, 3, 169, 244), 0.1);
         color: var(--primary-color);
-      }
-
-      /* Picked but not running yet: must not look like the active climate mode. */
-      .segment.pending {
-        border-style: dashed;
-        background: transparent;
-      }
-
-      .segment.active.boost {
-        border-color: var(--warning-color);
-        background: color-mix(in srgb, var(--warning-color) 15%, transparent);
-        color: var(--warning-color);
-      }
-
-      .segment.active.eco {
-        border-color: var(--success-color);
-        background: color-mix(in srgb, var(--success-color) 15%, transparent);
-        color: var(--success-color);
-      }
-
-      .segment.active.custom {
-        border-color: var(--rs-cool);
-        background: color-mix(in srgb, var(--rs-cool) 15%, transparent);
-        color: var(--rs-cool);
       }
 
       .custom-row {

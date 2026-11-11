@@ -179,6 +179,12 @@ export class RsScheduleEditor extends LitElement {
         min-width: 0;
       }
 
+      .name-error {
+        margin-top: var(--rs-space-1);
+        font-size: var(--rs-font-sm);
+        color: var(--rs-err);
+      }
+
       .name-text {
         font-size: var(--rs-font-xl);
         overflow-wrap: anywhere;
@@ -760,16 +766,20 @@ export class RsScheduleEditor extends LitElement {
         ${
           editable
             ? html`<ha-textfield
-                .label=${localize("schedule_editor.name", l)}
-                .value=${this._name}
-                required
-                .invalid=${nameMissing}
-                .validationMessage=${localize("schedule_editor.name_kept", l, {
-                  name: this._savedName,
-                })}
-                autocomplete="off"
-                @input=${this._onName}
-              ></ha-textfield>`
+                  .label=${localize("schedule_editor.name", l)}
+                  .value=${this._name}
+                  required
+                  .invalid=${nameMissing}
+                  autocomplete="off"
+                  @input=${this._onName}
+                ></ha-textfield>
+                ${
+                  nameMissing
+                    ? html`<div class="name-error" role="alert">
+                        ${localize("schedule_editor.name_kept", l, { name: this._savedName })}
+                      </div>`
+                    : nothing
+                }`
             : html`<div class="name-text">${this._name}</div>`
         }
       </div>
