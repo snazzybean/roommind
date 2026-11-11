@@ -4,26 +4,43 @@
 import type { AnalyticsData } from "../types";
 import type { RoomConfig, HomeAssistant } from "../types";
 
+const COLUMNS = [
+  "room_temp",
+  "outdoor_temp",
+  "target_temp",
+  "mode",
+  "predicted_temp",
+  "window_open",
+  "heating_power",
+  "solar_irradiance",
+  "blind_position",
+  "cover_reason",
+  "device_setpoint",
+  "humidity",
+  "heat_target",
+  "cool_target",
+  "target_reason",
+  "mold_boost",
+  "price",
+  "price_level",
+  "price_shift",
+] as const;
+
+/** A CSV field: empty for null, quoted when it holds a comma, quote or line break. */
+function field(value: unknown): string {
+  if (value == null) return "";
+  const text = String(value);
+  return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
 export function buildCsvString(data: AnalyticsData): string | null {
   const points = [...data.history, ...data.detail];
   if (points.length === 0) return null;
 
-  const header =
-    "timestamp,datetime,room_temp,outdoor_temp,target_temp,mode,predicted_temp,window_open,heating_power,solar_irradiance,blind_position,cover_reason,device_setpoint,humidity";
-  const rows = points.map((p) => {
-    const dt = new Date(p.ts * 1000).toISOString();
-    const rt = p.room_temp ?? "";
-    const ot = p.outdoor_temp ?? "";
-    const tt = p.target_temp ?? "";
-    const pt = p.predicted_temp ?? "";
-    const hp = p.heating_power ?? "";
-    const si = p.solar_irradiance ?? "";
-    const bp = p.blind_position ?? "";
-    const cr = p.cover_reason ?? "";
-    const ds = p.device_setpoint ?? "";
-    const hu = p.humidity ?? "";
-    return `${p.ts},${dt},${rt},${ot},${tt},${p.mode},${pt},${p.window_open},${hp},${si},${bp},${cr},${ds},${hu}`;
-  });
+  const header = ["timestamp", "datetime", ...COLUMNS].join(",");
+  const rows = points.map((p) =>
+    [p.ts, new Date(p.ts * 1000).toISOString(), ...COLUMNS.map((c) => p[c])].map(field).join(","),
+  );
 
   return [header, ...rows].join("\n");
 }
