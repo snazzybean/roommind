@@ -17,9 +17,10 @@ def _num(value: object) -> float | None:
         return None
 
 
-def target_of(heat: object, target: object, cool: object) -> float | None:
-    """The line the cards draw: the heat side first, so an auto room does not jump to its cool target."""
-    for value in (heat, target, cool):
+def target_of(heat: object, target: object, cool: object, side: str = "heat") -> float | None:
+    """The line the cards draw: the given side first, then the single target, then the other side."""
+    order = (cool, target, heat) if side == "cool" else (heat, target, cool)
+    for value in order:
         num = _num(value)
         if num is not None:
             return num
@@ -36,6 +37,17 @@ class RecentTemps:
     def __init__(self) -> None:
         self._series: dict[str, deque[tuple[float, float, float | None]]] = {}
         self._seeded: set[str] = set()
+        # Side of the last run per room: an auto room cooling in summer shows its cool target,
+        # and keeps it while idle between runs instead of jumping to the heat target
+        self._side: dict[str, str] = {}
+
+    def target_for(self, area_id: str, mode: object, heat: object, target: object, cool: object) -> float | None:
+        """Target of the side in force: cooling -> cool, heating -> heat, idle -> the last run's side."""
+        if mode == "cooling":
+            self._side[area_id] = "cool"
+        elif mode == "heating":
+            self._side[area_id] = "heat"
+        return target_of(heat, target, cool, self._side.get(area_id, "heat"))
 
     def needs_seed(self, area_id: str) -> bool:
         return area_id not in self._seeded
@@ -55,7 +67,9 @@ class RecentTemps:
                 continue
             if seeded and ts - seeded[-1][0] < RECENT_STEP_S:
                 continue
-            target = target_of(row.get("heat_target"), row.get("target_temp"), row.get("cool_target"))
+            target = self.target_for(
+                area_id, row.get("mode"), row.get("heat_target"), row.get("target_temp"), row.get("cool_target")
+            )
             seeded.append((ts, round(temp, 2), None if target is None else round(target, 1)))
         if existing:
             seeded.extend(existing)
@@ -78,4 +92,5 @@ class RecentTemps:
 
     def forget(self, area_id: str) -> None:
         self._series.pop(area_id, None)
+        self._side.pop(area_id, None)
         self._seeded.discard(area_id)

@@ -82,3 +82,24 @@ def test_seed_uses_cool_target_for_cool_only_rows():
         "a", [{"timestamp": "100", "room_temp": "25", "heat_target": "", "target_temp": "", "cool_target": "24"}], 200.0
     )
     assert rt.get("a") == [[100, 25.0, 24.0]]
+
+
+def test_an_auto_room_draws_the_side_of_its_last_run():
+    rt = RecentTemps()
+    t0 = 4_000_000.0
+    assert rt.target_for("a", "idle", 21.0, 21.0, 24.0) == 21.0
+    assert rt.target_for("a", "cooling", 21.0, 24.0, 24.0) == 24.0
+    # Idle between cooling runs keeps the cool side instead of jumping to 21
+    assert rt.target_for("a", "idle", 21.0, 21.0, 24.0) == 24.0
+    assert rt.target_for("a", "heating", 21.0, 21.0, 24.0) == 21.0
+    assert rt.target_for("a", "idle", 21.0, 21.0, 24.0) == 21.0
+    rt.target_for("a", "cooling", 21.0, 24.0, 24.0)
+    rt.forget("a")
+    assert rt.target_for("a", "idle", 21.0, 21.0, 24.0) == 21.0
+    rows = [
+        {"timestamp": str(t0 - 900), "room_temp": "24.6", "mode": "cooling", "heat_target": "21", "cool_target": "24"},
+        {"timestamp": str(t0 - 600), "room_temp": "24.1", "mode": "idle", "heat_target": "21", "cool_target": "24"},
+    ]
+    rt.seed("b", rows, t0)
+    assert [p[2] for p in rt.get("b")] == [24.0, 24.0]
+    assert rt.target_for("b", "idle", 21.0, 21.0, 24.0) == 24.0
