@@ -1,6 +1,6 @@
 /**
- * rs-analytics-model – Model status: confidence, the stages towards predictive control, the
- * measured forecast error per day and the learned figures as tiles.
+ * rs-analytics-model – Model status: confidence, the stages towards predictive control and the
+ * learned figures as tiles.
  */
 import { LitElement, html, css, nothing } from "lit";
 import { customElement, property } from "lit/decorators.js";
@@ -18,7 +18,6 @@ import "../shared/rs-list-card";
 import "../shared/rs-stat-tile";
 import "../shared/rs-hint-chip";
 import "../shared/rs-info-icon";
-import "./rs-forecast-error-chart";
 
 // Fixed reference so rooms and renovations stay comparable; the model knows no watts (C is unknown)
 const HEAT_LOSS_REFERENCE_K = 10;
@@ -61,6 +60,9 @@ export class RsAnalyticsModel extends LitElement {
   @property({ type: Boolean }) public managed = false;
   /** Hours until "learn faster" has faded, null when it is not running. */
   @property({ attribute: false }) public boostHours: number | null = null;
+  /** From the room's climate mode (the EKF lists every mode as applicable from the start). */
+  @property({ type: Boolean }) public canHeat = true;
+  @property({ type: Boolean }) public canCool = false;
 
   render() {
     const l = this.language;
@@ -98,13 +100,8 @@ export class RsAnalyticsModel extends LitElement {
                     </div>`
                   : nothing
               }
-              ${this._renderStages()}
             </div>
-            <rs-forecast-error-chart
-              .hass=${this.hass}
-              .language=${l}
-              .days=${hasModel ? (m?.daily_history ?? []) : []}
-            ></rs-forecast-error-chart>
+            ${this._renderStages()}
           </div>
           <div class="tiles">${this._tiles().map((t) => this._renderTile(t))}</div>
         </div>
@@ -187,7 +184,11 @@ export class RsAnalyticsModel extends LitElement {
       },
       {
         title: "analytics.stage_learn",
-        sub: "analytics.stage_learn_sub",
+        sub: this.canCool
+          ? this.canHeat
+            ? "analytics.stage_learn_sub"
+            : "analytics.stage_learn_sub_cool"
+          : "analytics.stage_learn_sub_heat",
         icon: "mdi:school-outline",
         state: learnDone ? "done" : dataDone ? "current" : "todo",
       },
@@ -289,7 +290,8 @@ export class RsAnalyticsModel extends LitElement {
         value: hasCooled && model ? rate(model.Q_cool) : null,
       });
     }
-    if (model && model.Q_solar > 0.1) {
+    // Shown once the data contained sun or occupancy: before that the value is the start guess
+    if (model && m?.solar_learned && model.Q_solar > 0.1) {
       tiles.push({
         id: "solar_gain",
         icon: "mdi:white-balance-sunny",
@@ -307,7 +309,7 @@ export class RsAnalyticsModel extends LitElement {
       tiles.push({
         id: "occupancy_gain",
         icon: "mdi:account-group-outline",
-        value: rate(model.Q_occupancy),
+        value: m.occupancy_learned ? rate(model.Q_occupancy) : null,
       });
     }
     tiles.push({
@@ -377,7 +379,7 @@ export class RsAnalyticsModel extends LitElement {
 
       @container (min-width: 760px) {
         .top {
-          grid-template-columns: minmax(240px, 290px) minmax(0, 1fr);
+          grid-template-columns: minmax(200px, 260px) minmax(0, 1fr);
           gap: var(--rs-space-6);
           align-items: start;
         }
@@ -428,7 +430,7 @@ export class RsAnalyticsModel extends LitElement {
 
       .steps {
         list-style: none;
-        margin: var(--rs-space-4) 0 0;
+        margin: 0;
         padding: 0;
       }
 

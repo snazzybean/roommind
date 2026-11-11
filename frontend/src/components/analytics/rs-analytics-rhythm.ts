@@ -10,6 +10,7 @@ import { formatTempLocale, tempUnit } from "../../utils/temperature";
 import { formatHours, formatPercent } from "../../utils/format";
 import { tokens, srOnly } from "../../styles/tokens";
 import { floatingStyles } from "../../styles/floating-styles";
+import { formatIsoDay, haTimeZone, isoDateInZone } from "../../utils/analytics-time";
 import "../shared/rs-list-card";
 import "../shared/rs-segmented";
 
@@ -21,12 +22,6 @@ const POPUP_WIDTH = 190;
 // Sticky toolbars plus the popup itself; closer to the top it opens below the cell
 const POPUP_MIN_TOP = 300;
 
-const isoDate = (ms: number) => {
-  const d = new Date(ms);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-};
-
 const shade = (variable: string, share: number) =>
   `color-mix(in srgb, var(${variable}) ${Math.round(30 + 70 * Math.sqrt(share))}%, var(--rs-idle))`;
 
@@ -37,6 +32,12 @@ export class RsAnalyticsRhythm extends LitElement {
   @property({ type: Number }) public rangeStart = 0;
   @property({ type: Number }) public rangeEnd = 0;
   @property({ type: String }) public language = "en";
+  /** Same flags as the summary: the legend names only what the room can do or did. */
+  @property({ type: Boolean }) public canHeat = true;
+  @property({ type: Boolean }) public canCool = false;
+  @property({ type: Boolean }) public hasWindowSensor = false;
+
+  private readonly _touch = matchMedia("(pointer: coarse)").matches;
 
   @state() private _view: RhythmView = "activity";
   // Touch keeps the popup open and offers the day in it; a mouse picks the day by clicking
@@ -123,8 +124,10 @@ export class RsAnalyticsRhythm extends LitElement {
           ${this._selected ? this._renderPopup(days) : nothing}
         </div>
         <div class="foot">
-          ${this._renderLegend(view)}
-          <div>${localize("analytics.rhythm_hint", l)}</div>
+          ${this._renderLegend(view, days)}
+          <div>
+            ${localize(this._touch ? "analytics.rhythm_hint_touch" : "analytics.rhythm_hint", l)}
+          </div>
           <div class="sr-only" aria-live="polite">${this._selected ? this._when(days) : ""}</div>
         </div>
       </rs-list-card>
@@ -132,7 +135,10 @@ export class RsAnalyticsRhythm extends LitElement {
   }
 
   private _renderRow(day: RhythmDay, row: number, view: RhythmView) {
-    const inRange = day.date >= isoDate(this.rangeStart) && day.date <= isoDate(this.rangeEnd);
+    const zone = haTimeZone(this.hass);
+    const inRange =
+      day.date >= isoDateInZone(this.rangeStart, zone) &&
+      day.date <= isoDateInZone(this.rangeEnd, zone);
     return html`
       <button
         class="day-label ${inRange ? "in-range" : ""}"
@@ -186,13 +192,28 @@ export class RsAnalyticsRhythm extends LitElement {
     return formatPercent(Math.floor(day.within * 100), this.hass);
   }
 
-  private _renderLegend(view: RhythmView) {
+  private _renderLegend(view: RhythmView, days: RhythmDay[]) {
     const l = this.language;
     if (view === "activity") {
+      const any = (key: "heat" | "cool" | "window") => days.some((d) => d[key].some((v) => !!v));
       return html`<div class="legend">
-        <span><i class="key warm"></i>${localize("analytics.heating_period", l)}</span>
-        <span><i class="key cold"></i>${localize("analytics.cooling_period", l)}</span>
-        <span><i class="key window-key"></i>${localize("analytics.window_open_period", l)}</span>
+        ${
+          this.canHeat || any("heat")
+            ? html`<span><i class="key warm"></i>${localize("analytics.heating_period", l)}</span>`
+            : nothing
+        }
+        ${
+          this.canCool || any("cool")
+            ? html`<span><i class="key cold"></i>${localize("analytics.cooling_period", l)}</span>`
+            : nothing
+        }
+        ${
+          this.hasWindowSensor || any("window")
+            ? html`<span
+                ><i class="key window-key"></i>${localize("analytics.window_open_period", l)}</span
+              >`
+            : nothing
+        }
       </div>`;
     }
     return html`<div class="legend">
@@ -248,7 +269,7 @@ export class RsAnalyticsRhythm extends LitElement {
                   <div class="popup-line"><span>${label}</span><span>${value}</span></div>
                 `,
               )
-            : html`<div class="popup-line">${localize("analytics.no_data", l)}</div>`
+            : html`<div class="popup-line">${localize("analytics.rhythm_no_values", l)}</div>`
         }
         ${
           this._tapped
@@ -273,7 +294,7 @@ export class RsAnalyticsRhythm extends LitElement {
   }
 
   private _formatDay(date: string, options: Intl.DateTimeFormatOptions): string {
-    return new Intl.DateTimeFormat(this.language, options).format(new Date(`${date}T12:00:00`));
+    return formatIsoDay(date, this.language, options);
   }
 
   private _formatHour(hour: number): string {

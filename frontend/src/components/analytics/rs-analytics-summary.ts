@@ -9,6 +9,7 @@ import { localize } from "../../utils/localize";
 import { formatHours, formatNumber, formatPercent } from "../../utils/format";
 import { tempUnit, toDisplayDelta } from "../../utils/temperature";
 import { timeSpans } from "../../utils/analytics-spans";
+import { formatClock, formatDay, haTimeZone, sameDayInZone } from "../../utils/analytics-time";
 import { tokens } from "../../styles/tokens";
 import "../shared/rs-list-card";
 import "../shared/rs-stat-tile";
@@ -19,6 +20,8 @@ type PriceLevel = "cheap" | "normal" | "expensive";
 const PRICE_LEVELS: readonly PriceLevel[] = ["cheap", "normal", "expensive"];
 const RING_SIZE = 132;
 const RING_STROKE = 12;
+/** Mirrors COMFORT_TOLERANCE_K (analytics_stats). */
+const COMFORT_TOLERANCE_K = 0.5;
 
 @customElement("rs-analytics-summary")
 export class RsAnalyticsSummary extends LitElement {
@@ -33,6 +36,8 @@ export class RsAnalyticsSummary extends LitElement {
   @property({ type: Boolean }) public canHeat = true;
   @property({ type: Boolean }) public canCool = false;
   @property({ type: Boolean }) public hasWindowSensor = false;
+  /** The room follows the price (price shift or price-aware heat source): show the price tiles. */
+  @property({ type: Boolean }) public showPrice = false;
   @property({ type: String }) public language = "en";
 
   render() {
@@ -42,7 +47,7 @@ export class RsAnalyticsSummary extends LitElement {
     return html`
       <rs-list-card
         .heading=${localize("analytics.summary", l)}
-        .info=${localize("analytics.info.summary", l)}
+        .info=${localize("analytics.info.summary", l, { tolerance: this._delta(COMFORT_TOLERANCE_K) })}
       >
         <div class="wrap">
           <div class="body">
@@ -59,7 +64,7 @@ export class RsAnalyticsSummary extends LitElement {
                   : nothing
               }
               ${this.hasWindowSensor || s.window_hours > 0 ? this._windowTile(s) : nothing}
-              ${s.price ? this._priceTiles(s.price) : nothing}
+              ${s.price && this.showPrice ? this._priceTiles(s.price) : nothing}
             </div>
           </div>
         </div>
@@ -164,11 +169,15 @@ export class RsAnalyticsSummary extends LitElement {
     overshoot: RunOvershoot | null | undefined,
   ) {
     const l = this.language;
-    const parts = [
-      localize(starts === 1 ? "analytics.run" : "analytics.runs", l, {
-        count: formatNumber(starts, this.hass),
-      }),
-    ];
+    // A run going since before the range is not counted; "0 runs" next to hours of it reads wrong
+    const parts =
+      starts > 0 || hours <= 0
+        ? [
+            localize(starts === 1 ? "analytics.run" : "analytics.runs", l, {
+              count: formatNumber(starts, this.hass),
+            }),
+          ]
+        : [];
     if (overshoot) {
       parts.push(
         localize(kind === "cool" ? "analytics.overshoot_cool" : "analytics.overshoot_heat", l, {
@@ -231,15 +240,17 @@ export class RsAnalyticsSummary extends LitElement {
         : nothing;
     }
     return modes.map(([mode, hours], i) => {
-      const level = (lv: PriceLevel) =>
-        `${formatHours(hours[lv] ?? 0, this.language)} ${localize(`settings.price_level_${lv}`, l)}`;
-      const others = PRICE_LEVELS.filter((lv) => lv !== "cheap" && (hours[lv] ?? 0) > 0).map(level);
-      if (i === 0 && shifted) others.push(shifted);
+      const total = PRICE_LEVELS.reduce((sum, lv) => sum + (hours[lv] ?? 0), 0);
+      // Shares of the run time: "3 min cheap" read as if the room had hardly heated
+      const share = (lv: PriceLevel) =>
+        `${formatPercent((100 * (hours[lv] ?? 0)) / total, this.hass)} ${localize(`settings.price_level_${lv}`, l)}`;
       const present = PRICE_LEVELS.filter((lv) => (hours[lv] ?? 0) > 0);
+      const others = present.filter((lv) => lv !== "cheap").map(share);
+      if (i === 0 && shifted) others.push(shifted);
       return html`<rs-stat-tile
         icon="mdi:cash-clock"
         .label=${localize(mode === "heating" ? "analytics.price_heating" : "analytics.price_cooling", l)}
-        .value=${level("cheap")}
+        .value=${share("cheap")}
         .sub=${others.join(" · ")}
       >
         <div slot="visual">
@@ -266,11 +277,8 @@ export class RsAnalyticsSummary extends LitElement {
     const start = this.rangeStart;
     const length = Math.max(this.rangeEnd - start, 1);
     const pct = (ms: number) => Math.min(Math.max(((ms - start) / length) * 100, 0), 100);
-    const sameDay = new Date(start).toDateString() === new Date(this.rangeEnd).toDateString();
-    const fmt = new Intl.DateTimeFormat(
-      this.language,
-      sameDay ? { hour: "2-digit", minute: "2-digit" } : { day: "numeric", month: "short" },
-    );
+    const zone = haTimeZone(this.hass);
+    const format = sameDayInZone(start, this.rangeEnd, zone) ? formatClock : formatDay;
     return html`<div slot="visual" aria-hidden="true">
       <div class="strip">
         ${spans
@@ -283,7 +291,8 @@ export class RsAnalyticsSummary extends LitElement {
           )}
       </div>
       <div class="axis">
-        <span>${fmt.format(start)}</span><span>${fmt.format(this.rangeEnd)}</span>
+        <span>${format(start, this.language, zone)}</span
+        ><span>${format(this.rangeEnd, this.language, zone)}</span>
       </div>
     </div>`;
   }

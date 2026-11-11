@@ -420,6 +420,9 @@ export interface AnalyticsData {
     prediction_std_idle: number;
     prediction_std_heating: number;
     has_occupancy_sensors: boolean;
+    /** Sun / occupancy were in the data (variance below its start), else the gain is the start guess */
+    solar_learned?: boolean;
+    occupancy_learned?: boolean;
     solar_gain_now?: number;
     solar_gain_today_max?: number;
     /** Radiator rooms: rise a regular run's stored heat gives after the stop (°C), its decay time */
