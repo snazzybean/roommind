@@ -85,11 +85,17 @@ export class RsBlockForm extends LitElement {
         padding: 0 var(--rs-space-2);
         border: 1px solid var(--rs-border);
         border-radius: var(--rs-radius-sm);
-        background-color: var(--card-background-color, var(--primary-background-color));
+        background-color: var(--rs-surface);
         color: var(--primary-text-color);
         font: inherit;
         font-size: 16px;
         font-variant-numeric: tabular-nums;
+      }
+
+      /* the open list is drawn by the browser; without its own colours it stays light in dark mode */
+      select option {
+        background-color: var(--rs-surface);
+        color: var(--primary-text-color);
       }
 
       select:focus-visible {

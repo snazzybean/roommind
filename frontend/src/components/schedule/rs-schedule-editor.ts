@@ -91,6 +91,8 @@ export class RsScheduleEditor extends LitElement {
 
   @state() private _loaded: LoadedSchedule | null = null;
   @state() private _loadError = "";
+  /** The helper has no state in Home Assistant (deleted or a stale link). */
+  @state() private _missing = false;
   @state() private _week: Week = emptyWeek();
   @state() private _name = "";
   @state() private _mobile = false;
@@ -513,6 +515,9 @@ export class RsScheduleEditor extends LitElement {
 
   protected willUpdate(changed: PropertyValues<this>): void {
     if (changed.has("entityId") && this.entityId) void this._load();
+    // A helper created a moment ago may get its state after the registry entry
+    else if (this._missing && changed.has("hass") && this.hass.states[this.entityId])
+      void this._load();
   }
 
   protected updated(changed: Map<string, unknown>): void {
@@ -530,6 +535,8 @@ export class RsScheduleEditor extends LitElement {
     this._loaded = null;
     this._loadError = "";
     this._open = null;
+    this._missing = !this.hass.states[this.entityId];
+    if (this._missing) return;
     try {
       const data = await loadSchedule(this.hass, this.entityId);
       if (token !== this._loadToken) return;
@@ -704,6 +711,12 @@ export class RsScheduleEditor extends LitElement {
 
   render() {
     const l = this.hass.language;
+    if (this._missing) {
+      return html`<div class="notice" role="status">
+        <ha-icon icon="mdi:calendar-remove-outline" aria-hidden="true"></ha-icon>
+        <span>${localize("schedule_editor.not_found", l, { entity: this.entityId })}</span>
+      </div>`;
+    }
     if (this._loadError) {
       return html`<div class="notice error" role="alert">
         <ha-icon icon="mdi:alert-circle-outline"></ha-icon>

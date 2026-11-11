@@ -936,6 +936,7 @@
   "schedule_editor.keys_heat": "Le temperature proprie vengono salvate come valore di riscaldamento, perché le stanze solo riscaldano.",
   "schedule_editor.keys_cool": "Le temperature proprie vengono salvate come valore di raffrescamento, perché le stanze solo raffrescano.",
   "schedule_editor.load_error": "Impossibile caricare la programmazione: {error}",
+  "schedule_editor.not_found": "La programmazione {entity} non esiste più in Home Assistant.",
   "schedule_editor.create_error": "Non è stato possibile creare la programmazione.",
   "schedule_editor.name": "Nome",
   "schedule_editor.name_required": "Il nome non può essere vuoto.",

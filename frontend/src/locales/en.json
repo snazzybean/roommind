@@ -936,6 +936,7 @@
   "schedule_editor.keys_heat": "Own temperatures are stored as a heating value because the rooms only heat.",
   "schedule_editor.keys_cool": "Own temperatures are stored as a cooling value because the rooms only cool.",
   "schedule_editor.load_error": "Could not load the schedule: {error}",
+  "schedule_editor.not_found": "The schedule {entity} no longer exists in Home Assistant.",
   "schedule_editor.create_error": "The schedule could not be created.",
   "schedule_editor.name": "Name",
   "schedule_editor.name_required": "The name must not be empty.",

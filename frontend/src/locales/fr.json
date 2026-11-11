@@ -936,6 +936,7 @@
   "schedule_editor.keys_heat": "Les températures propres sont enregistrées en valeur de chauffage, car les pièces ne font que chauffer.",
   "schedule_editor.keys_cool": "Les températures propres sont enregistrées en valeur de refroidissement, car les pièces ne font que refroidir.",
   "schedule_editor.load_error": "Impossible de charger le planning : {error}",
+  "schedule_editor.not_found": "Le planning {entity} n'existe plus dans Home Assistant.",
   "schedule_editor.create_error": "Le planning n'a pas pu être créé.",
   "schedule_editor.name": "Nom",
   "schedule_editor.name_required": "Le nom ne peut pas être vide.",

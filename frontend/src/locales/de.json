@@ -936,6 +936,7 @@
   "schedule_editor.keys_heat": "Eigene Temperaturen werden als Heizwert gespeichert, weil die Räume nur heizen.",
   "schedule_editor.keys_cool": "Eigene Temperaturen werden als Kühlwert gespeichert, weil die Räume nur kühlen.",
   "schedule_editor.load_error": "Zeitplan konnte nicht geladen werden: {error}",
+  "schedule_editor.not_found": "Den Zeitplan {entity} gibt es in Home Assistant nicht mehr.",
   "schedule_editor.create_error": "Der Zeitplan konnte nicht angelegt werden.",
   "schedule_editor.name": "Name",
   "schedule_editor.name_required": "Der Name darf nicht leer sein.",
