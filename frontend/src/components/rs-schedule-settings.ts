@@ -63,6 +63,13 @@ export class RsScheduleSettings extends RsScheduleBase {
   @property({ type: Number }) public priceShift = 0;
   /** A price source is set in the settings; without one the option is hidden. */
   @property({ type: Boolean }) public priceConfigured = false;
+  /** What the room does while its schedule is off / everybody is away (global settings). */
+  @property({ type: String }) public scheduleOffAction: "eco" | "off" = "eco";
+  @property({ type: String }) public presenceAwayAction: "eco" | "off" = "eco";
+  /** Presence detection applies to this room (on globally, persons to watch, not ignored). */
+  @property({ type: Boolean }) public presenceActive = false;
+  /** An empty room drops to eco (occupancy eco with sensors). */
+  @property({ type: Boolean }) public occupancyEco = false;
   /** Default name of a schedule created from the dialog. */
   @property({ type: String }) public roomName = "";
 
@@ -198,7 +205,7 @@ export class RsScheduleSettings extends RsScheduleBase {
         chevron
         icon="mdi:sofa"
         .heading=${localize("override.comfort", l)}
-        .secondary=${localize("detail.schedule.comfort_sub", l)}
+        .secondary=${this._comfortSub()}
         .value=${band(this.comfortHeat, this.comfortCool)}
         @row-click=${open("temperatures")}
       ></rs-list-row>
@@ -207,7 +214,7 @@ export class RsScheduleSettings extends RsScheduleBase {
         chevron
         icon="mdi:leaf"
         .heading=${localize("override.eco", l)}
-        .secondary=${localize("detail.schedule.eco_sub", l)}
+        .secondary=${this._ecoSub()}
         .value=${band(this.ecoHeat, this.ecoCool)}
         @row-click=${open("temperatures")}
       ></rs-list-row>
@@ -232,7 +239,12 @@ export class RsScheduleSettings extends RsScheduleBase {
         wrap
         icon="mdi:gesture-tap"
         .heading=${localize("schedule.follow_device_setpoint_label", l)}
-        .secondary=${localize("detail.schedule.follow_sub", l)}
+        .secondary=${localize(
+          this.schedules.length
+            ? "detail.schedule.follow_sub"
+            : "detail.schedule.follow_sub_no_schedule",
+          l,
+        )}
         .checked=${this.followDeviceSetpoint}
         @toggle-changed=${(e: CustomEvent<boolean>) =>
           this._fireValue("follow-device-setpoint-changed", e.detail)}
@@ -260,6 +272,34 @@ export class RsScheduleSettings extends RsScheduleBase {
           : nothing
       }
     `;
+  }
+
+  /** When comfort applies in this room. */
+  private _comfortSub(): string {
+    const l = this.hass.language;
+    if (this.schedules.length) return localize("detail.schedule.comfort_sub", l);
+    return localize(
+      this.presenceActive
+        ? "detail.schedule.comfort_sub_home"
+        : "detail.schedule.comfort_sub_always",
+      l,
+    );
+  }
+
+  /** When eco applies in this room: schedule off, nobody home, room empty, else only by choice. */
+  private _ecoSub(): string {
+    const l = this.hass.language;
+    const when: string[] = [];
+    if (this.schedules.length && this.scheduleOffAction === "eco") {
+      when.push(localize("detail.schedule.when_schedule_off", l));
+    }
+    if (this.presenceActive && this.presenceAwayAction === "eco") {
+      when.push(localize("detail.schedule.when_away", l));
+    }
+    if (this.occupancyEco) when.push(localize("detail.schedule.when_empty", l));
+    if (!when.length) return localize("detail.schedule.eco_sub_manual", l);
+    const list = new Intl.ListFormat(l, { type: "disjunction" }).format(when);
+    return localize("detail.schedule.eco_sub", l, { when: list });
   }
 
   private _onEditClick(e: Event, part: ScheduleCardPart) {
@@ -534,45 +574,35 @@ export class RsScheduleSettings extends RsScheduleBase {
     const entityState = this.hass?.states?.[schedule.entity_id];
     if (!entityState) return localize("schedule.state_active", l);
 
-    const isOn = entityState.state === "on";
-    if (isOn) {
+    const unit = tempUnit(this.hass);
+    // Block temperatures are entity attributes (display units); comfort/eco are °C
+    const shown = (v: number) => formatNumber(v, this.hass, 0, 1);
+    const fmt = (c: number) => formatTempLocale(c, this.hass, 0, 1);
+    const band = (heat: string, cool: string) =>
+      this.climateMode === "auto"
+        ? `${heat}–${cool} ${unit}`
+        : `${this.climateMode === "cool_only" ? cool : heat} ${unit}`;
+
+    if (entityState.state === "on") {
       const { blockTemp, heatTemp, coolTemp } = this._readBlockTemps(index);
       if (blockTemp != null) {
-        return localize("schedule.from_schedule", l, {
-          temp: formatNumber(Number(blockTemp), this.hass, 0, 1),
-          unit: tempUnit(this.hass),
-        });
+        return localize("schedule.from_schedule", l, { temp: `${shown(blockTemp)} ${unit}` });
       }
       if (heatTemp != null || coolTemp != null) {
-        // heatTemp/coolTemp are entity attributes (already display units); the
-        // comfort fallbacks are backend Celsius and need converting.
-        return localize("schedule.from_schedule_split", l, {
-          heat:
-            heatTemp != null
-              ? formatNumber(Number(heatTemp), this.hass, 0, 1)
-              : formatTempLocale(this.comfortHeat, this.hass),
-          cool:
-            coolTemp != null
-              ? formatNumber(Number(coolTemp), this.hass, 0, 1)
-              : formatTempLocale(this.comfortCool, this.hass),
-          unit: tempUnit(this.hass),
+        return localize("schedule.from_schedule", l, {
+          temp: band(
+            heatTemp != null ? shown(heatTemp) : fmt(this.comfortHeat),
+            coolTemp != null ? shown(coolTemp) : fmt(this.comfortCool),
+          ),
         });
       }
       return localize("schedule.fallback", l, {
-        temp: formatTempLocale(
-          this.climateMode === "cool_only" ? this.comfortCool : this.comfortHeat,
-          this.hass,
-        ),
-        unit: tempUnit(this.hass),
+        temp: band(fmt(this.comfortHeat), fmt(this.comfortCool)),
       });
     }
-
+    if (this.scheduleOffAction === "off") return localize("schedule.off_detail", l);
     return localize("schedule.eco_detail", l, {
-      temp: formatTempLocale(
-        this.climateMode === "cool_only" ? this.ecoCool : this.ecoHeat,
-        this.hass,
-      ),
-      unit: tempUnit(this.hass),
+      temp: band(fmt(this.ecoHeat), fmt(this.ecoCool)),
     });
   }
 

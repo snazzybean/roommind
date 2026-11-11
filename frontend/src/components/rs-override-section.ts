@@ -30,7 +30,8 @@ const OPTIMISTIC_TIMEOUT_MS = 15000;
 
 /**
  * Temporary override of a room: schedule (no override), comfort, eco or a custom band, then
- * how long. Picking a type only arms it; the duration sends it. Shows the user's choice at
+ * how long. Picking a type only arms it; the duration sends it. Tapping the type of a running
+ * override arms it again (new duration), tapping the armed type again puts it away. Shows the user's choice at
  * once (optimistic) and fires `override-state` with the effective override whenever that
  * changes, so the hero can show it before the poll confirms.
  */
@@ -44,6 +45,8 @@ export class RsOverrideSection extends LitElement {
   @property({ type: Number }) public ecoHeat = 17.0;
   @property({ type: Number }) public ecoCool = 27.0;
   @property() public language = "en";
+  /** Climate control is off for this room: RoomMind sends nothing, an override would not act. */
+  @property({ type: Boolean }) public disabled = false;
 
   @state() private _overridePending: OverrideType | null = null;
   @state() private _overrideCustomHeat = 21;
@@ -74,6 +77,12 @@ export class RsOverrideSection extends LitElement {
 
       .custom {
         margin-top: var(--rs-space-1);
+      }
+
+      .note {
+        margin-top: var(--rs-space-2);
+        font-size: var(--rs-font-sm);
+        color: var(--secondary-text-color);
       }
 
       .error {
@@ -131,19 +140,26 @@ export class RsOverrideSection extends LitElement {
         label: localize(hasSchedule ? "card.quick.schedule" : "card.quick.normal", l),
         icon: hasSchedule ? "mdi:calendar-clock" : "mdi:home-thermometer-outline",
       },
-      { value: "boost", label: localize("override.comfort", l), icon: "mdi:sofa" },
+      // Without a schedule "Normal" already is comfort; a running comfort override stays shown
+      ...(hasSchedule || value === "boost"
+        ? [{ value: "boost", label: localize("override.comfort", l), icon: "mdi:sofa" }]
+        : []),
       { value: "eco", label: localize("override.eco", l), icon: "mdi:leaf" },
       { value: "custom", label: localize("override.custom", l), icon: "mdi:thermometer" },
     ];
+    const disabled = this.disabled && !this._overridePending;
 
     return html`
       <div class="qlabel">${localize("detail.override.label", l)}</div>
       <rs-segmented
+        reselect
         .label=${localize("detail.override.label", l)}
         .options=${options}
         .value=${value}
+        .disabled=${disabled}
         @value-changed=${this._onChoice}
       ></rs-segmented>
+      ${disabled ? html`<div class="note">${localize("detail.override.control_off", l)}</div>` : nothing}
       ${this._overridePending ? this._renderPending(this._overridePending) : nothing}
       <div class="error" role="alert">${this._overrideError}</div>
     `;
@@ -211,6 +227,11 @@ export class RsOverrideSection extends LitElement {
     e.stopPropagation();
     const choice = e.detail.value;
     this._overrideError = "";
+    // A second tap on the armed type puts it away again
+    if (choice !== "schedule" && choice === this._overridePending) {
+      this._overridePending = null;
+      return;
+    }
     if (choice === "schedule") {
       this._overridePending = null;
       if (this.getEffectiveOverride().active) this._onClearOverride();

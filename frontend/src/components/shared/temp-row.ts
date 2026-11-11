@@ -19,6 +19,8 @@ export function tempRow(opts: {
   hass: HomeAssistant;
   side: "heat" | "cool";
   label: string;
+  /** Screen reader name when the visible label alone is ambiguous (e.g. "Comfort, heat below"). */
+  ariaLabel?: string;
   celsius: number;
   onChange: (celsius: number) => void;
 }) {
@@ -32,7 +34,7 @@ export function tempRow(opts: {
     >
     <rs-stepper
       .language=${hass.language}
-      .label=${label}
+      .label=${opts.ariaLabel || label}
       .value=${shown}
       .min=${Math.ceil(toDisplay(MIN_TARGET_TEMP_C, hass))}
       .max=${Math.floor(toDisplay(MAX_TARGET_TEMP_C, hass))}

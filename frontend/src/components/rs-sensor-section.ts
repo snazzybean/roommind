@@ -35,11 +35,14 @@ export class RsSensorSection extends LitElement {
   @property({ type: Number }) public windowCloseDelay = 0;
   @property({ type: String }) public heatingSystemType = "";
   @property({ type: Boolean }) public editing = false;
+  /** Outdoor area: only temperature and humidity, nothing that controls. */
+  @property({ type: Boolean }) public outdoor = false;
   @property() public language = "en";
 
   /** Kind whose entity picker is open. */
   @state() private _pickerFor: SensorKind | null = null;
   private _focusKind: SensorKind | null = null;
+  private _areaIds = new Set<string>();
 
   static styles = [
     tokens,
@@ -119,7 +122,9 @@ export class RsSensorSection extends LitElement {
           ? this._row(
               this.temperatureSensor,
               "mdi:thermometer",
-              localize("detail.sensors.temperature", l),
+              this.temperatureSensor.startsWith("climate.")
+                ? `${localize("detail.sensors.temperature", l)} · ${localize("sensors.device_sensor", l)}`
+                : localize("detail.sensors.temperature", l),
               this._tempValue(this.temperatureSensor),
             )
           : html`<rs-list-row
@@ -127,7 +132,10 @@ export class RsSensorSection extends LitElement {
               chevron
               icon="mdi:thermometer-off"
               .heading=${localize("detail.sensors.temperature", l)}
-              .secondary=${localize("detail.sensors.no_temperature", l)}
+              .secondary=${localize(
+                this.outdoor ? "sensors.outdoor_no_temperature" : "detail.sensors.no_temperature",
+                l,
+              )}
               @row-click=${this._fireEdit}
             ></rs-list-row>`
       }
@@ -141,6 +149,22 @@ export class RsSensorSection extends LitElement {
             )
           : nothing
       }
+      ${this.outdoor ? nothing : this._renderControlRows(delays, occupancyNote)}
+      <rs-list-row
+        clickable
+        plain-icon
+        variant="primary"
+        icon="mdi:plus"
+        .heading=${localize("detail.sensors.add", l)}
+        @row-click=${this._fireEdit}
+      ></rs-list-row>
+    `;
+  }
+
+  /** Window and occupancy rows; they only matter where RoomMind controls. */
+  private _renderControlRows(delays: string[], occupancyNote: string) {
+    const l = this.hass.language;
+    return html`
       ${[...this.windowSensors].map((id) => {
         const open = this.hass.states[id]?.state === "on";
         return this._row(
@@ -161,14 +185,6 @@ export class RsSensorSection extends LitElement {
           on ? "var(--rs-ok)" : "",
         );
       })}
-      <rs-list-row
-        clickable
-        plain-icon
-        variant="primary"
-        icon="mdi:plus"
-        .heading=${localize("detail.sensors.add", l)}
-        @row-click=${this._fireEdit}
-      ></rs-list-row>
     `;
   }
 
@@ -201,8 +217,11 @@ export class RsSensorSection extends LitElement {
   }
 
   private _humidityValue(entityId: string): string {
-    const num = Number(this.hass.states[entityId]?.state);
-    return Number.isFinite(num) ? formatPercent(num, this.hass) : "";
+    const st = this.hass.states[entityId];
+    const num = Number(st?.state);
+    if (st?.state != null && st.state !== "" && Number.isFinite(num))
+      return formatPercent(num, this.hass);
+    return st ? localize("detail.devices.unavailable", this.hass.language) : "";
   }
 
   private _binaryValue(
@@ -276,18 +295,29 @@ export class RsSensorSection extends LitElement {
     const areaIds = getEntitiesForArea(this.area.area_id, this.hass?.entities, this.hass?.devices)
       .map((e) => e.entity_id)
       .filter((id) => !id.substring(id.indexOf(".") + 1).startsWith("roommind_"));
-    // Candidates as before: input_number helpers only through the picker
+    this._areaIds = new Set(areaIds);
+    // Candidates as before: input_number helpers only through the picker. Climate devices
+    // measure next to the radiator or at the air inlet: pickable, but never suggested
     const inArea = (kind: SensorKind) =>
       this.hass?.states
-        ? areaIds.filter((id) => !id.startsWith("input_number.") && this._accepts(kind, id))
+        ? areaIds.filter(
+            (id) =>
+              !id.startsWith("input_number.") &&
+              !id.startsWith("climate.") &&
+              this._accepts(kind, id),
+          )
         : [];
     const l = this.hass.language;
 
     return html`
       ${this._renderKind("temp", inArea("temp"), nothing, this._renderTempNote(l))}
       ${this._renderKind("humidity", inArea("humidity"), nothing)}
-      ${this._renderKind("window", inArea("window"), this._renderWindowSettings(l))}
-      ${this._renderKind("occupancy", inArea("occupancy"), this._renderOccupancySettings(l))}
+      ${
+        this.outdoor
+          ? nothing
+          : html`${this._renderKind("window", inArea("window"), this._renderWindowSettings(l))}
+            ${this._renderKind("occupancy", inArea("occupancy"), this._renderOccupancySettings(l))}`
+      }
     `;
   }
 
@@ -354,7 +384,7 @@ export class RsSensorSection extends LitElement {
       </h4>
       ${note}
       <div class="rows">
-        ${assigned.map((id) => this._renderAssigned(kind, id, areaCandidates.includes(id)))}
+        ${assigned.map((id) => this._renderAssigned(kind, id, this._areaIds.has(id)))}
         ${
           !assigned.length && kind !== "temp"
             ? html`<p class="note">${localize("sensors.none_assigned", l)}</p>`
@@ -399,7 +429,13 @@ export class RsSensorSection extends LitElement {
       .iconColor=${color}
       icon-label=${localize("detail.more_info", l)}
       .heading=${name}
-      .secondary=${[entityId, inArea ? "" : localize("devices.other_area", l)]
+      .secondary=${[
+        entityId,
+        kind === "temp" && entityId.startsWith("climate.")
+          ? localize("sensors.device_sensor", l)
+          : "",
+        inArea ? "" : localize("devices.other_area", l),
+      ]
         .filter(Boolean)
         .join(" · ")}
       .value=${this._kindValue(kind, entityId)}
@@ -478,12 +514,14 @@ export class RsSensorSection extends LitElement {
   }
 
   private _renderTempNote(l: string) {
-    return html`<p class="note">
-      ${localize(
-        this.temperatureSensor ? "sensors.full_control_note" : "detail.sensors.no_temperature",
-        l,
-      )}
-    </p>`;
+    const key = this.outdoor
+      ? "sensors.outdoor_note"
+      : !this.temperatureSensor
+        ? "detail.sensors.no_temperature"
+        : this.temperatureSensor.startsWith("climate.")
+          ? "sensors.device_sensor_note"
+          : "sensors.full_control_note";
+    return html`<p class="note">${localize(key, l)}</p>`;
   }
 
   private _renderWindowSettings(l: string) {

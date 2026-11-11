@@ -58,6 +58,9 @@ export class RsRoomDetail extends LitElement {
   @property({ type: Boolean }) public priceConfigured = false;
   @property({ attribute: false }) public presencePersons: string[] = [];
   @property({ type: Boolean }) public climateControlActive = true;
+  /** Global: what rooms do while their schedule is off / everybody is away. */
+  @property({ type: String }) public scheduleOffAction: "eco" | "off" = "eco";
+  @property({ type: String }) public presenceAwayAction: "eco" | "off" = "eco";
 
   @property({ type: Boolean }) public valveProtectionEnabled = false;
   @property({ type: String }) public controlMode: "mpc" | "bangbang" = "mpc";
@@ -444,6 +447,7 @@ export class RsRoomDetail extends LitElement {
                     .ecoHeat=${this._ecoHeat}
                     .ecoCool=${this._ecoCool}
                     .language=${l}
+                    .disabled=${!(this.climateControlActive && this._climateControlEnabled)}
                     @override-state=${this._onOverrideState}
                   ></rs-override-section>`
                 : nothing
@@ -452,7 +456,8 @@ export class RsRoomDetail extends LitElement {
           ${outdoor ? nothing : this._renderControlCard()}
         </div>
         <div class="col right">
-          ${outdoor ? nothing : this._renderSectionCards()} ${this._renderRoomCard()}
+          ${outdoor ? this._renderSensorsCard() : this._renderSectionCards()}
+          ${this._renderRoomCard()}
           ${
             this._error && this._editing === null
               ? html`<div class="error" role="alert">${this._error}</div>`
@@ -464,25 +469,61 @@ export class RsRoomDetail extends LitElement {
     `;
   }
 
+  /** What the room's devices can do; unknown device states count as able. */
+  private _deviceAbilities(): { heat: boolean; cool: boolean; mixed: boolean } {
+    const modes = (eid: string): string[] | null => {
+      const m = this.hass.states[eid]?.attributes?.hvac_modes;
+      return Array.isArray(m) ? (m as string[]) : null;
+    };
+    const can = (eid: string, wanted: string[]) => {
+      const m = modes(eid);
+      return m === null || m.some((x) => wanted.includes(x));
+    };
+    const trvs = this._devices.filter((d) => d.type === "trv");
+    const acs = this._devices.filter((d) => d.type === "ac");
+    return {
+      heat: trvs.length > 0 || acs.some((d) => can(d.entity_id, ["heat", "heat_cool", "auto"])),
+      cool: acs.some((d) => can(d.entity_id, ["cool", "heat_cool", "auto"])),
+      mixed: trvs.length > 0 && acs.length > 0,
+    };
+  }
+
   private _renderControlCard() {
     const l = this.hass.language;
-    const modes: { value: ClimateMode; key: TranslationKey; icon: string; desc: TranslationKey }[] =
-      [
-        { value: "auto", key: "mode.auto", icon: "mdi:autorenew", desc: "mode.auto_desc" },
-        {
-          value: "heat_only",
-          key: "mode.heat_only",
-          icon: "mdi:fire",
-          desc: "mode.heat_only_desc",
-        },
-        {
-          value: "cool_only",
-          key: "mode.cool_only",
-          icon: "mdi:snowflake",
-          desc: "mode.cool_only_desc",
-        },
-      ];
+    const ability = this._deviceAbilities();
+    const judged = this._devices.length > 0;
+    const autoDesc: TranslationKey =
+      !judged || (ability.heat && ability.cool)
+        ? "mode.auto_desc"
+        : ability.heat
+          ? "mode.auto_desc_heat"
+          : "mode.auto_desc_cool";
+    const modes: {
+      value: ClimateMode;
+      key: TranslationKey;
+      icon: string;
+      desc: TranslationKey;
+      fits: boolean;
+    }[] = [
+      { value: "auto", key: "mode.auto", icon: "mdi:autorenew", desc: autoDesc, fits: true },
+      {
+        value: "heat_only",
+        key: "mode.heat_only",
+        icon: "mdi:fire",
+        desc: ability.mixed ? "mode.heat_only_desc" : "mode.heat_only_desc_plain",
+        fits: !judged || ability.heat,
+      },
+      {
+        value: "cool_only",
+        key: "mode.cool_only",
+        icon: "mdi:snowflake",
+        desc: "mode.cool_only_desc",
+        fits: !judged || ability.cool,
+      },
+    ];
     const current = modes.find((m) => m.value === this._climateMode) ?? modes[0];
+    // A stored mode the devices cannot do stays selected and says so; it is not rewritten
+    const offered = modes.filter((m) => m.fits || m.value === current.value);
     const secondary = !this.climateControlActive
       ? localize("card.control_off_global", l)
       : localize(this._climateControlEnabled ? "detail.control.on" : "detail.control.off", l);
@@ -500,11 +541,13 @@ export class RsRoomDetail extends LitElement {
         <div class="mode-label">${localize("room.section.climate_mode", l)}</div>
         <rs-segmented
           .label=${localize("room.section.climate_mode", l)}
-          .options=${modes.map((m) => ({ value: m.value, label: localize(m.key, l), icon: m.icon }))}
+          .options=${offered.map((m) => ({ value: m.value, label: localize(m.key, l), icon: m.icon }))}
           .value=${this._climateMode}
           @value-changed=${this._onModeChanged}
         ></rs-segmented>
-        <div class="mode-desc">${localize(current.desc, l)}</div>
+        <div class="mode-desc">
+          ${localize(current.fits ? current.desc : "mode.unsupported", l)}
+        </div>
       </div>
     </rs-list-card>`;
   }
@@ -534,6 +577,10 @@ export class RsRoomDetail extends LitElement {
           .priceShift=${this._priceShift}
           .priceConfigured=${this.priceConfigured}
           .showPreheat=${this._showPreheat()}
+          .scheduleOffAction=${this.scheduleOffAction}
+          .presenceAwayAction=${this.presenceAwayAction}
+          .presenceActive=${this._presenceActive()}
+          .occupancyEco=${this._occupancyEcoEnabled && this._selectedOccupancySensors.size > 0}
           .editing=${false}
           @preheat-changed=${this._onPreheatChanged}
           @follow-device-setpoint-changed=${this._onFollowDeviceSetpointChanged}
@@ -560,27 +607,7 @@ export class RsRoomDetail extends LitElement {
         ></rs-device-section>
       </rs-list-card>
 
-      <rs-list-card
-        .heading=${localize("room.section.sensors", l)}
-        @edit-click=${this._openEdit("sensors")}
-      >
-        <rs-sensor-section
-          .hass=${this.hass}
-          .area=${this.area}
-          .editing=${false}
-          .temperatureSensor=${this._selectedTempSensor}
-          .humiditySensor=${this._selectedHumiditySensor}
-          .occupancySensors=${this._selectedOccupancySensors}
-          .occupancyEcoEnabled=${this._occupancyEcoEnabled}
-          .occupancyEcoDelay=${this._occupancyEcoDelay}
-          .windowSensors=${this._selectedWindowSensors}
-          .windowOpenDelay=${this._windowOpenDelay}
-          .windowCloseDelay=${this._windowCloseDelay}
-          .heatingSystemType=${resolveHeatingSystemType(this._devices)}
-          .language=${l}
-        ></rs-sensor-section>
-      </rs-list-card>
-
+      ${this._renderSensorsCard()}
       ${
         this.presenceEnabled || this._selectedPresencePersons.length > 0 || this._ignorePresence
           ? html`<rs-list-card
@@ -594,6 +621,7 @@ export class RsRoomDetail extends LitElement {
                 .presencePersons=${this.presencePersons}
                 .selectedPresencePersons=${this._selectedPresencePersons}
                 .ignorePresence=${this._ignorePresence}
+                .awayAction=${this.presenceAwayAction}
                 .editing=${false}
                 .language=${l}
               ></rs-presence-section>
@@ -623,6 +651,7 @@ export class RsRoomDetail extends LitElement {
 
       ${
         this._selectedTempSensor &&
+        this._climateMode !== "cool_only" &&
         this._devices.some((d) => d.type === "trv") &&
         this._devices.some((d) => d.type === "ac")
           ? html`<rs-list-card
@@ -645,6 +674,31 @@ export class RsRoomDetail extends LitElement {
     `;
   }
 
+  private _renderSensorsCard() {
+    const l = this.hass.language;
+    return html`<rs-list-card
+      .heading=${localize("room.section.sensors", l)}
+      @edit-click=${this._openEdit("sensors")}
+    >
+      <rs-sensor-section
+        .hass=${this.hass}
+        .area=${this.area}
+        .editing=${false}
+        .outdoor=${this._isOutdoor}
+        .temperatureSensor=${this._selectedTempSensor}
+        .humiditySensor=${this._selectedHumiditySensor}
+        .occupancySensors=${this._selectedOccupancySensors}
+        .occupancyEcoEnabled=${this._occupancyEcoEnabled}
+        .occupancyEcoDelay=${this._occupancyEcoDelay}
+        .windowSensors=${this._selectedWindowSensors}
+        .windowOpenDelay=${this._windowOpenDelay}
+        .windowCloseDelay=${this._windowCloseDelay}
+        .heatingSystemType=${resolveHeatingSystemType(this._devices)}
+        .language=${l}
+      ></rs-sensor-section>
+    </rs-list-card>`;
+  }
+
   /** Outdoor flag, analytics and removal: there for every room, outdoor ones included. */
   private _renderRoomCard() {
     const l = this.hass.language;
@@ -664,7 +718,10 @@ export class RsRoomDetail extends LitElement {
                 chevron
                 icon="mdi:chart-line"
                 .heading=${localize("detail.analytics", l)}
-                .secondary=${localize("detail.analytics_sub", l)}
+                .secondary=${localize(
+                  this._isOutdoor ? "detail.analytics_sub_outdoor" : "detail.analytics_sub",
+                  l,
+                )}
                 @row-click=${this._onOpenAnalytics}
               ></rs-list-row>
               <rs-list-row
@@ -812,6 +869,7 @@ export class RsRoomDetail extends LitElement {
             .hass=${this.hass}
             .area=${this.area}
             .editing=${true}
+            .outdoor=${this._isOutdoor}
             .temperatureSensor=${this._selectedTempSensor}
             .humiditySensor=${this._selectedHumiditySensor}
             .occupancySensors=${this._selectedOccupancySensors}
@@ -841,6 +899,7 @@ export class RsRoomDetail extends LitElement {
             .presencePersons=${this.presencePersons}
             .selectedPresencePersons=${this._selectedPresencePersons}
             .ignorePresence=${this._ignorePresence}
+            .awayAction=${this.presenceAwayAction}
             .editing=${true}
             .language=${this.hass.language}
             @presence-persons-changed=${this._onPresencePersonsChanged}
@@ -984,12 +1043,20 @@ export class RsRoomDetail extends LitElement {
     this._autoSave();
   }
 
+  /** Presence detection switches this room: on globally, someone to watch, not ignored. */
+  private _presenceActive(): boolean {
+    if (!this.presenceEnabled || this._ignorePresence) return false;
+    return (this._selectedPresencePersons.length || this.presencePersons.length) > 0;
+  }
+
   /**
    * Only where the pre-heat lead applies: MPC with a room sensor, not cool_only. Underfloor
    * heating pre-heats through its own control, unless an orchestrated AC heats the room.
    */
   private _showPreheat(): boolean {
     if (
+      // Without a schedule or price shift there is no warmer block to start early for
+      (!this._schedules.length && !(this._priceShift > 0)) ||
       this.controlMode !== "mpc" ||
       !this._selectedTempSensor ||
       this._climateMode === "cool_only"

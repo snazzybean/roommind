@@ -500,6 +500,8 @@ export class RoomMindPanel extends LitElement {
             .priceConfigured=${!!this._priceEntity}
             .presencePersons=${this._presencePersons}
             .climateControlActive=${this._climateControlActive}
+            .scheduleOffAction=${this._scheduleOffAction}
+            .presenceAwayAction=${this._presenceAwayAction}
             .valveProtectionEnabled=${this._valveProtectionEnabled}
             .controlMode=${this._controlMode}
             .coilDryEnabled=${this._coilDryEnabled}

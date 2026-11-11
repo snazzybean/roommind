@@ -96,11 +96,15 @@ export class RsRoomHero extends LitElement {
         pointer-events: none;
       }
 
+      /* a backing keeps the dashed target line from striking the label through */
       .curve-label {
         position: absolute;
-        right: 16px;
-        top: 4px;
-        font-size: 10px;
+        right: 12px;
+        top: 2px;
+        padding: 0 4px;
+        border-radius: 4px;
+        background: var(--ha-card-background, var(--card-background-color));
+        font-size: 11px;
         color: var(--secondary-text-color);
       }
 
@@ -300,6 +304,10 @@ export class RsRoomHero extends LitElement {
         line-height: 1.2;
         white-space: nowrap;
         font-variant-numeric: tabular-nums;
+      }
+
+      .target .v.inactive {
+        color: var(--secondary-text-color);
       }
 
       .why {
@@ -600,7 +608,14 @@ export class RsRoomHero extends LitElement {
     const l = this._lang;
     if (this.isOutdoor || !this.config) return [];
     const withTarget = !!this.config;
-    const inReason = new Set(["override", "presence_away", "room_vacant", "mold_prevention"]);
+    const inReason = new Set([
+      "override",
+      "presence_away",
+      "room_vacant",
+      "mold_prevention",
+      "price_shift",
+      "not_controlled",
+    ]);
     const hints: RoomHint[] = roomHints(this.config, "controlled", {
       climateControlActive: this.climateControlActive,
       controlMode: this.controlMode,
@@ -697,16 +712,26 @@ export class RsRoomHero extends LitElement {
         : mode === "cool_only"
           ? (live.target_temp ?? cool)
           : (live.target_temp ?? heat);
-      value = single != null ? `${fmt(single)} ${unit}` : "--";
+      const devicesOff = live.heat_target === null && live.cool_target === null;
+      value =
+        single != null ? `${fmt(single)} ${unit}` : devicesOff ? localize("detail.off", l) : "--";
     }
-    const reason = targetReason(this.config!, ov, {
-      language: l,
-      states: this.hass.states,
-      vacationActive: this.vacationActive,
-      vacationUntil: this.vacationUntil,
-    });
+    // Climate control off: RoomMind sends nothing, so the target is not in force
+    const inactive = !this.climateControlActive;
+    const reason = inactive
+      ? {
+          icon: "mdi:power-off",
+          label: localize("hero.control_off", l),
+          detail: localize("card.not_controlled", l),
+        }
+      : targetReason(this.config!, ov, {
+          language: l,
+          states: this.hass.states,
+          vacationActive: this.vacationActive,
+          vacationUntil: this.vacationUntil,
+        });
     const adjustments: string[] = [];
-    const price = priceShiftInfo(this.config);
+    const price = inactive ? null : priceShiftInfo(this.config);
     if (price) {
       const shiftValue = `${new Intl.NumberFormat(l, {
         signDisplay: "always",
@@ -719,7 +744,7 @@ export class RsRoomHero extends LitElement {
           : "hero.price_charging";
       adjustments.push(localize(key, l, { value: shiftValue }));
     }
-    if (live.mold_prevention_active) {
+    if (live.mold_prevention_active && !inactive) {
       adjustments.push(
         localize("card.mold_prevention", l, {
           delta: `${formatNumber(toDisplayDelta(live.mold_prevention_delta, this.hass), this.hass)} ${unit}`,
@@ -729,7 +754,7 @@ export class RsRoomHero extends LitElement {
     return html`<div class="target">
       <div>
         <div class="lbl">${localize("hero.target", l)}</div>
-        <div class="v">${value}</div>
+        <div class="v ${inactive ? "inactive" : ""}">${value}</div>
       </div>
       <div class="why">
         <b

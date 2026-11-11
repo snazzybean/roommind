@@ -18,6 +18,8 @@ export class RsPresenceSection extends LitElement {
   @property({ attribute: false }) public selectedPresencePersons: string[] = [];
   @property({ type: Boolean }) public ignorePresence = false;
   @property({ type: Boolean }) public editing = false;
+  /** Global presence_away_action: eco or devices off. */
+  @property({ type: String }) public awayAction: "eco" | "off" = "eco";
   @property() public language = "en";
 
   private _focusPersons = false;
@@ -144,11 +146,13 @@ export class RsPresenceSection extends LitElement {
         ${
           selected.length
             ? selected.map((pid) => this._renderAssigned(pid))
-            : html`<p class="note">${localize("presence.room_none_assigned", l)}</p>`
+            : html`<p class="note">${localize(this._allCountKey(), l)}</p>`
         }
         ${
           others.length
-            ? html`<p class="group-sub">${localize("presence.others", l)}</p>
+            ? html`<p class="group-sub">
+                  ${localize(selected.length ? "presence.others" : "presence.only_some", l)}
+                </p>
                 ${others.map(
                   (pid) =>
                     html`<rs-list-row
@@ -156,7 +160,11 @@ export class RsPresenceSection extends LitElement {
                       plain-icon
                       icon="mdi:plus"
                       .heading=${this._name(pid)}
-                      .secondary=${localize("detail.devices.add_suggestion", l)}
+                      .secondary=${localize(
+                        // Everybody counts already; picking one narrows the room to that person
+                        selected.length ? "detail.devices.add_suggestion" : "presence.only_this",
+                        l,
+                      )}
                       .value=${this._state(pid).text}
                       @row-click=${() => this._setPersons([...selected, pid])}
                     ></rs-list-row>`,
@@ -165,6 +173,12 @@ export class RsPresenceSection extends LitElement {
         }
       </div>
     </div>`;
+  }
+
+  private _allCountKey() {
+    return this.awayAction === "off"
+      ? ("presence.room_none_assigned_off" as const)
+      : ("presence.room_none_assigned" as const);
   }
 
   private _renderAssigned(pid: string) {
@@ -201,10 +215,7 @@ export class RsPresenceSection extends LitElement {
           : "detail.presence.global";
       const secondary = reason
         ? reason
-        : localize(
-            this.ignorePresence ? "presence.tile_ignored" : "presence.room_none_assigned",
-            l,
-          );
+        : localize(this.ignorePresence ? "presence.tile_ignored" : this._allCountKey(), l);
       return html`<rs-list-row
         clickable
         chevron

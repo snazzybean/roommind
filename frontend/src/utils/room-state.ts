@@ -470,6 +470,8 @@ export function targetReason(
           : localize("detail.reason.permanent", l),
     };
   }
+  // schedule_off_action / presence_away_action "off": the backend resolves no target at all
+  const devicesOff = !!live && live.heat_target === null && live.cool_target === null;
   if (live?.presence_away) {
     return {
       icon: "mdi:home-off-outline",
@@ -478,7 +480,7 @@ export function targetReason(
         ? localize("card.hint.override_paused", l, {
             type: localize(OVERRIDE_TYPE_KEYS[live.override_type ?? "custom"], l),
           })
-        : localize("detail.reason.nobody_home", l),
+        : localize(devicesOff ? "detail.reason.nobody_home_off" : "detail.reason.nobody_home", l),
     };
   }
   const eid = activeScheduleEntity(config);
@@ -493,7 +495,9 @@ export function targetReason(
   const name = (st?.attributes?.friendly_name as string | undefined) || eid;
   const on = st?.state === "on";
   const vacant = !!live?.occupancy_vacant;
-  const phase = localize(on && !vacant ? "override.comfort" : "override.eco", l);
+  const phase = devicesOff
+    ? localize("detail.off", l)
+    : localize(on && !vacant ? "override.comfort" : "override.eco", l);
   const next = scheduleNextChange(config, ctx.states);
   let detail = next
     ? localize("detail.reason.phase_until", l, { phase, time: formatClock(next, l, nowMs) })
