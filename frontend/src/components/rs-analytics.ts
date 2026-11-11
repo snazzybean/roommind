@@ -4,7 +4,7 @@
  */
 import { LitElement, html, css, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
-import type { HomeAssistant, RoomConfig, AnalyticsData } from "../types";
+import type { HomeAssistant, RoomConfig, AnalyticsData, AnalyticsDataPoint } from "../types";
 import { localize } from "../utils/localize";
 import "./analytics/rs-analytics-toolbar";
 import "./analytics/rs-analytics-summary";
@@ -36,6 +36,8 @@ export class RsAnalytics extends LitElement {
 
   private _refreshInterval?: ReturnType<typeof setInterval>;
   private _dataRoom = "";
+  private _pointsOf: AnalyticsData | null = null;
+  private _pointsCache: AnalyticsDataPoint[] = [];
   private _fetchId = 0;
 
   connectedCallback() {
@@ -157,11 +159,26 @@ export class RsAnalytics extends LitElement {
     return html`<rs-analytics-summary
       .hass=${this.hass}
       .stats=${this._data?.stats ?? null}
+      .points=${this._points()}
+      .rangeStart=${this._rangeStart}
+      .rangeEnd=${this._rangeEnd}
+      .bandSides=${bandSides(room.climate_mode)}
       .canHeat=${room.climate_mode !== "cool_only"}
       .canCool=${room.climate_mode !== "heat_only" && (room.devices ?? []).some((d) => d.type === "ac")}
       .hasWindowSensor=${(room.window_sensors?.length ?? 0) > 0}
       .language=${this.hass.language}
     ></rs-analytics-summary>`;
+  }
+
+  /** History and detail as loaded; one array per answer so the summary does not redraw needlessly. */
+  private _points(): AnalyticsDataPoint[] {
+    const data = this._data;
+    if (!data) return [];
+    if (this._pointsOf !== data) {
+      this._pointsOf = data;
+      this._pointsCache = [...data.history, ...data.detail];
+    }
+    return this._pointsCache;
   }
 
   private _onRoomSelected(e: CustomEvent) {
@@ -245,6 +262,7 @@ export class RsAnalytics extends LitElement {
   static styles = css`
     :host {
       display: block;
+      min-width: 0;
     }
 
     rs-analytics-chart {

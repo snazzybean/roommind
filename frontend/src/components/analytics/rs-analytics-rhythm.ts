@@ -6,8 +6,11 @@ import { LitElement, html, css, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import type { AnalyticsRhythm, HomeAssistant, RhythmDay } from "../../types";
 import { localize } from "../../utils/localize";
-import { tempUnit, toDisplay } from "../../utils/temperature";
-import "../shared/rs-chip-group";
+import { formatTempLocale, tempUnit } from "../../utils/temperature";
+import { formatNumber, formatPercent } from "../../utils/format";
+import { tokens, srOnly } from "../../styles/tokens";
+import "../shared/rs-list-card";
+import "../shared/rs-segmented";
 
 type RhythmView = "activity" | "comfort";
 
@@ -69,32 +72,25 @@ export class RsAnalyticsRhythm extends LitElement {
     const hasComfort = days.some((d) => d.within != null);
     const view = hasComfort ? this._view : "activity";
     return html`
-      <ha-card>
-        <div class="header">
-          <div>
-            <div class="title">${localize("analytics.rhythm", l)}</div>
-            <div class="subtitle">
-              ${this._formatDay(days[days.length - 1].date, { day: "numeric", month: "short" })} –
-              ${this._formatDay(days[0].date, { day: "numeric", month: "short" })}
-            </div>
-          </div>
+      <rs-list-card unclipped .heading=${localize("analytics.rhythm", l)}>
+        <div class="bar">
+          <span class="period"
+            >${this._formatDay(days[days.length - 1].date, { day: "numeric", month: "short" })} –
+            ${this._formatDay(days[0].date, { day: "numeric", month: "short" })}</span
+          >
           ${
             hasComfort
-              ? html`<rs-chip-group
-                  .chips=${[
-                    {
-                      id: "activity",
-                      label: localize("analytics.rhythm_activity", l),
-                      active: view === "activity",
-                    },
-                    {
-                      id: "comfort",
-                      label: localize("analytics.rhythm_comfort", l),
-                      active: view === "comfort",
-                    },
+              ? html`<rs-segmented
+                  size="sm"
+                  wrap
+                  .label=${localize("analytics.rhythm_view", l)}
+                  .options=${[
+                    { value: "activity", label: localize("analytics.rhythm_activity", l) },
+                    { value: "comfort", label: localize("analytics.rhythm_comfort", l) },
                   ]}
-                  @chip-clicked=${this._onChip}
-                ></rs-chip-group>`
+                  .value=${view}
+                  @value-changed=${this._onView}
+                ></rs-segmented>`
               : nothing
           }
         </div>
@@ -130,7 +126,7 @@ export class RsAnalyticsRhythm extends LitElement {
           <div>${localize("analytics.rhythm_hint", l)}</div>
           <div class="sr-only" aria-live="polite">${this._selected ? this._when(days) : ""}</div>
         </div>
-      </ha-card>
+      </rs-list-card>
     `;
   }
 
@@ -173,22 +169,20 @@ export class RsAnalyticsRhythm extends LitElement {
     const below = day.below[hour];
     const above = day.above[hour];
     if (below == null || above == null) return null;
-    if (below === 0 && above === 0) return "var(--rs-ok)";
+    if (below === 0 && above === 0) return "var(--rs-on-target)";
     return below >= above ? shade("--rs-cold", below) : shade("--rs-warm", above);
   }
 
   private _rowTotal(day: RhythmDay, view: RhythmView): string {
-    const l = this.language;
-    const number = (v: number) => new Intl.NumberFormat(l, { maximumFractionDigits: 1 }).format(v);
     if (view === "activity") {
       const sum = (values: Array<number | null>) =>
         values.reduce<number>((a, v) => a + (v ?? 0), 0);
       const hours = sum(day.heat) + sum(day.cool);
-      return hours > 0 ? `${number(hours)} h` : "";
+      return hours > 0 ? `${formatNumber(hours, this.hass, 0, 1)}\u00A0h` : "";
     }
     if (day.within == null) return "";
     // Floor: 99.6 % on target must not read as 100 %
-    return `${number(Math.floor(day.within * 100))} %`;
+    return formatPercent(Math.floor(day.within * 100), this.hass);
   }
 
   private _renderLegend(view: RhythmView) {
@@ -221,13 +215,8 @@ export class RsAnalyticsRhythm extends LitElement {
     const day = days[row];
     if (!day) return nothing;
     const unit = tempUnit(this.hass);
-    const percent = (v: number) =>
-      new Intl.NumberFormat(l, { style: "percent", maximumFractionDigits: 0 }).format(v);
-    const temp = (v: number) =>
-      `${new Intl.NumberFormat(l, {
-        minimumFractionDigits: 1,
-        maximumFractionDigits: 1,
-      }).format(toDisplay(v, this.hass))}\u00A0${unit}`;
+    const percent = (v: number) => formatPercent(v * 100, this.hass);
+    const temp = (v: number) => `${formatTempLocale(v, this.hass)}\u00A0${unit}`;
     const lines: Array<[string, string]> = [];
     const add = (label: string, value: number | null, format: (v: number) => string) => {
       if (value != null) lines.push([label, format(value)]);
@@ -239,7 +228,7 @@ export class RsAnalyticsRhythm extends LitElement {
     share(localize("analytics.heating_period", l), day.heat[hour]);
     share(localize("analytics.cooling_period", l), day.cool[hour]);
     share(localize("analytics.window_open_period", l), day.window[hour]);
-    add(localize("analytics.humidity", l), day.humidity[hour], (v) => `${Math.round(v)}\u00A0%`);
+    add(localize("analytics.humidity", l), day.humidity[hour], (v) => formatPercent(v, this.hass));
     add(localize("analytics.outdoor", l), day.outdoor[hour], temp);
     return html`
       <div
@@ -292,8 +281,9 @@ export class RsAnalyticsRhythm extends LitElement {
     );
   }
 
-  private _onChip(e: CustomEvent<string>) {
-    this._view = e.detail as RhythmView;
+  private _onView(e: CustomEvent<{ value: string }>) {
+    e.stopPropagation();
+    this._view = e.detail.value as RhythmView;
   }
 
   private _onPointer(e: PointerEvent) {
@@ -354,245 +344,240 @@ export class RsAnalyticsRhythm extends LitElement {
     );
   }
 
-  static styles = css`
-    :host {
-      display: block;
-      --rs-cold: var(--state-climate-cool-color, #2b9af9);
-      --rs-warm: var(--state-climate-heat-color, #ff8100);
-      --rs-idle: color-mix(in srgb, var(--primary-text-color) 7%, var(--card-background-color));
-      --rs-ok: color-mix(in srgb, var(--success-color, #4caf50) 35%, var(--rs-idle));
-    }
-
-    ha-card {
-      margin-bottom: 16px;
-    }
-
-    .header {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      padding: 16px 16px 8px;
-    }
-
-    .title {
-      font-size: 16px;
-      font-weight: 500;
-    }
-
-    .subtitle {
-      font-size: 12px;
-      color: var(--secondary-text-color);
-    }
-
-    .grid-wrap {
-      position: relative;
-    }
-
-    .grid {
-      display: grid;
-      grid-template-columns: max-content repeat(24, minmax(0, 1fr)) 40px;
-      gap: 2px;
-      align-items: center;
-      padding: 0 16px;
-      font-size: 11px;
-      color: var(--secondary-text-color);
-      font-variant-numeric: tabular-nums;
-      touch-action: pan-y;
-      outline: none;
-    }
-
-    .grid:focus-visible {
-      outline: 2px solid var(--primary-color);
-      outline-offset: 2px;
-      border-radius: 4px;
-    }
-
-    .hour-label {
-      white-space: nowrap;
-    }
-
-    .day-label {
-      height: 100%;
-      padding: 0 6px;
-      border: none;
-      border-radius: 4px;
-      background: transparent;
-      color: inherit;
-      font: inherit;
-      text-align: left;
-      white-space: nowrap;
-      cursor: pointer;
-      touch-action: manipulation;
-    }
-
-    .day-label:hover {
-      color: var(--primary-color);
-    }
-
-    .day-label:focus-visible {
-      outline: 2px solid var(--primary-color);
-    }
-
-    .day-label.in-range {
-      color: var(--primary-color);
-      font-weight: 500;
-      background: color-mix(in srgb, var(--primary-color) 14%, transparent);
-      box-shadow: inset 2px 0 var(--primary-color);
-    }
-
-    .day-total {
-      text-align: right;
-      white-space: nowrap;
-    }
-
-    .cell {
-      position: relative;
-      height: 18px;
-      border-radius: 3px;
-      cursor: pointer;
-    }
-
-    .cell.selected {
-      box-shadow: 0 0 0 1.5px var(--primary-text-color);
-    }
-
-    .cell.window::after {
-      content: "";
-      position: absolute;
-      left: 50%;
-      top: 50%;
-      width: 4px;
-      height: 4px;
-      margin: -2px 0 0 -2px;
-      border-radius: 50%;
-      background: var(--primary-text-color);
-    }
-
-    .foot {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-      padding: 10px 16px 14px;
-      font-size: 12px;
-      color: var(--secondary-text-color);
-    }
-
-    .legend {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: 4px 14px;
-    }
-
-    .legend span {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-    }
-
-    .key {
-      width: 10px;
-      height: 10px;
-      border-radius: 3px;
-    }
-
-    .key.warm {
-      background: var(--rs-warm);
-    }
-
-    .key.cold {
-      background: var(--rs-cold);
-    }
-
-    .key.window-key {
-      width: 4px;
-      height: 4px;
-      margin: 0 3px;
-      border-radius: 50%;
-      background: var(--primary-text-color);
-    }
-
-    .key.ok {
-      background: var(--rs-ok);
-    }
-
-    .popup {
-      position: absolute;
-      z-index: 5;
-      box-sizing: border-box;
-      padding: 8px 10px;
-      border: 1px solid var(--divider-color);
-      border-radius: 8px;
-      background: var(--card-background-color);
-      box-shadow:
-        0 1px 2px rgba(0, 0, 0, 0.2),
-        0 6px 18px rgba(0, 0, 0, 0.22);
-      font-size: 12px;
-      line-height: 1.5;
-      font-variant-numeric: tabular-nums;
-      color: var(--primary-text-color);
-      transform: translate(-50%, calc(-100% - 6px));
-      pointer-events: none;
-    }
-
-    .popup.below {
-      transform: translate(-50%, 6px);
-    }
-
-    .popup.tapped {
-      pointer-events: auto;
-    }
-
-    .popup-action {
-      width: 100%;
-      min-height: 44px;
-      margin-top: 6px;
-      border: none;
-      border-radius: 6px;
-      background: color-mix(in srgb, var(--primary-color) 14%, transparent);
-      color: var(--primary-color);
-      font: inherit;
-      font-weight: 500;
-      cursor: pointer;
-      touch-action: manipulation;
-    }
-
-    .popup-action:focus-visible {
-      outline: 2px solid var(--primary-color);
-    }
-
-    .popup-title {
-      margin-bottom: 2px;
-      font-weight: 500;
-    }
-
-    .popup-line {
-      display: flex;
-      justify-content: space-between;
-      gap: 12px;
-      color: var(--secondary-text-color);
-    }
-
-    .popup-line span:last-child {
-      color: var(--primary-text-color);
-      white-space: nowrap;
-    }
-
-    .sr-only {
-      position: absolute;
-      width: 1px;
-      height: 1px;
-      overflow: hidden;
-      clip-path: inset(50%);
-    }
-
-    @media (max-width: 600px) {
-      .grid {
-        grid-template-columns: max-content repeat(24, minmax(0, 1fr)) 34px;
-        gap: 1px;
+  static styles = [
+    tokens,
+    srOnly,
+    css`
+      :host {
+        display: block;
+        margin-bottom: var(--rs-space-4);
+        --rs-cold: var(--rs-cool);
+        --rs-warm: var(--rs-heat);
+        --rs-idle: color-mix(in srgb, var(--primary-text-color) 7%, var(--card-background-color));
+        --rs-on-target: color-mix(in srgb, var(--rs-ok) 35%, var(--rs-idle));
       }
-    }
-  `;
+
+      .bar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--rs-space-2);
+        padding: 0 var(--rs-space-4);
+      }
+
+      .period {
+        font-size: 13px;
+        color: var(--secondary-text-color);
+      }
+
+      rs-segmented {
+        flex: none;
+      }
+
+      .grid-wrap {
+        position: relative;
+        padding-top: var(--rs-space-2);
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: max-content repeat(24, minmax(0, 1fr)) 40px;
+        gap: 2px;
+        align-items: center;
+        padding: 0 16px;
+        font-size: 11px;
+        color: var(--secondary-text-color);
+        font-variant-numeric: tabular-nums;
+        touch-action: pan-y;
+        outline: none;
+      }
+
+      .grid:focus-visible {
+        outline: 2px solid var(--primary-color);
+        outline-offset: 2px;
+        border-radius: 4px;
+      }
+
+      .hour-label {
+        white-space: nowrap;
+      }
+
+      .day-label {
+        height: 100%;
+        padding: 0 6px;
+        border: none;
+        border-radius: 4px;
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        text-align: left;
+        white-space: nowrap;
+        cursor: pointer;
+        touch-action: manipulation;
+      }
+
+      .day-label:hover {
+        color: var(--primary-color);
+      }
+
+      .day-label:focus-visible {
+        outline: 2px solid var(--primary-color);
+      }
+
+      .day-label.in-range {
+        color: var(--primary-color);
+        font-weight: 500;
+        background: color-mix(in srgb, var(--primary-color) 14%, transparent);
+        box-shadow: inset 2px 0 var(--primary-color);
+      }
+
+      .day-total {
+        text-align: right;
+        white-space: nowrap;
+      }
+
+      .cell {
+        position: relative;
+        height: 18px;
+        border-radius: 3px;
+        cursor: pointer;
+      }
+
+      .cell.selected {
+        box-shadow: 0 0 0 1.5px var(--primary-text-color);
+      }
+
+      .cell.window::after {
+        content: "";
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: 4px;
+        height: 4px;
+        margin: -2px 0 0 -2px;
+        border-radius: 50%;
+        background: var(--primary-text-color);
+      }
+
+      .foot {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        padding: 10px 16px 14px;
+        font-size: 12px;
+        color: var(--secondary-text-color);
+      }
+
+      .legend {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 4px 14px;
+      }
+
+      .legend span {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .key {
+        width: 10px;
+        height: 10px;
+        border-radius: 3px;
+      }
+
+      .key.warm {
+        background: var(--rs-warm);
+      }
+
+      .key.cold {
+        background: var(--rs-cold);
+      }
+
+      .key.window-key {
+        width: 4px;
+        height: 4px;
+        margin: 0 3px;
+        border-radius: 50%;
+        background: var(--primary-text-color);
+      }
+
+      .key.ok {
+        background: var(--rs-on-target);
+      }
+
+      .popup {
+        position: absolute;
+        z-index: 5;
+        box-sizing: border-box;
+        padding: 8px 10px;
+        border: 1px solid var(--divider-color);
+        border-radius: 8px;
+        background: var(--card-background-color);
+        box-shadow:
+          0 1px 2px rgba(0, 0, 0, 0.2),
+          0 6px 18px rgba(0, 0, 0, 0.22);
+        font-size: 12px;
+        line-height: 1.5;
+        font-variant-numeric: tabular-nums;
+        color: var(--primary-text-color);
+        transform: translate(-50%, calc(-100% - 6px));
+        pointer-events: none;
+      }
+
+      .popup.below {
+        transform: translate(-50%, 6px);
+      }
+
+      .popup.tapped {
+        pointer-events: auto;
+      }
+
+      .popup-action {
+        width: 100%;
+        min-height: 44px;
+        margin-top: 6px;
+        border: none;
+        border-radius: 6px;
+        background: color-mix(in srgb, var(--primary-color) 14%, transparent);
+        color: var(--primary-color);
+        font: inherit;
+        font-weight: 500;
+        cursor: pointer;
+        touch-action: manipulation;
+      }
+
+      .popup-action:focus-visible {
+        outline: 2px solid var(--primary-color);
+      }
+
+      .popup-title {
+        margin-bottom: 2px;
+        font-weight: 500;
+      }
+
+      .popup-line {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        color: var(--secondary-text-color);
+      }
+
+      .popup-line span:last-child {
+        color: var(--primary-text-color);
+        white-space: nowrap;
+      }
+
+      @media (max-width: 600px) {
+        .grid {
+          grid-template-columns: max-content repeat(24, minmax(0, 1fr)) 34px;
+          gap: 1px;
+        }
+      }
+    `,
+  ];
 }
 
 declare global {

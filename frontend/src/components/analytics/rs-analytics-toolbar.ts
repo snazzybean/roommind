@@ -1,14 +1,28 @@
 /**
- * rs-analytics-toolbar – Room selector, range buttons, export/diagnostics dropdowns.
+ * rs-analytics-toolbar – Room chips, range choice with custom date range, export and
+ * diagnostics menus.
  */
 import { LitElement, html, css, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import type { HomeAssistant, RoomConfig, AnalyticsData } from "../../types";
 import { localize } from "../../utils/localize";
-import { getSelectValue } from "../../utils/events";
+import { formatTempLocale } from "../../utils/temperature";
 import { buildCsvString, downloadString, buildExportFilename } from "../../utils/analytics-export";
 import { copyToClipboard } from "../../utils/clipboard";
-import { inputStyles } from "../../styles/input-styles";
+import { tokens } from "../../styles/tokens";
+import type { ChipItem } from "../shared/rs-chip-group";
+import type { RsSegmentOption } from "../shared/rs-segmented";
+import type { RsMenuItem } from "../shared/rs-menu";
+import "../shared/rs-chip-group";
+import "../shared/rs-segmented";
+import "../shared/rs-menu";
+
+const QUICK_RANGES = [
+  { key: "24h", labelKey: "analytics.range_1d", days: 1 },
+  { key: "2d", labelKey: "analytics.range_2d", days: 2 },
+  { key: "7d", labelKey: "analytics.range_7d", days: 7 },
+  { key: "30d", labelKey: "analytics.range_30d", days: 30 },
+] as const;
 
 @customElement("rs-analytics-toolbar")
 export class RsAnalyticsToolbar extends LitElement {
@@ -21,187 +35,127 @@ export class RsAnalyticsToolbar extends LitElement {
   @property({ attribute: false }) public data: AnalyticsData | null = null;
   @property({ type: String }) public language = "en";
 
-  @state() private _openDropdown: "csv" | "diag" | null = null;
   @state() private _diagLoading = false;
-
-  private _boundCloseDropdowns = this._closeDropdowns.bind(this);
-
-  connectedCallback() {
-    super.connectedCallback();
-    document.addEventListener("click", this._boundCloseDropdowns);
-  }
-
-  disconnectedCallback() {
-    super.disconnectedCallback();
-    document.removeEventListener("click", this._boundCloseDropdowns);
-  }
-
-  protected updated(changedProps: Map<string, unknown>) {
-    if ((changedProps.has("rooms") || changedProps.has("selectedRoom")) && this.selectedRoom) {
-      this.updateComplete.then(() => {
-        const select = this.renderRoot?.querySelector("ha-select") as HTMLElement & {
-          value?: string;
-        };
-        if (select && select.value !== this.selectedRoom) {
-          select.value = this.selectedRoom;
-        }
-      });
-    }
-  }
 
   render() {
     const l = this.language;
-    const configuredRooms = this._getConfiguredRooms();
-
     return html`
-      ${this._renderRoomSelector(configuredRooms, l)}
-      ${this.selectedRoom ? this._renderRangeButtons(l) : nothing}
+      <rs-chip-group
+        scrollable
+        .label=${localize("analytics.room", l)}
+        .chips=${this._roomChips()}
+        @chip-clicked=${this._onRoomChip}
+      ></rs-chip-group>
+      ${this.selectedRoom ? this._renderControls(l) : nothing}
     `;
   }
 
-  private _getConfiguredRooms(): Array<{ area_id: string; name: string }> {
-    return Object.entries(this.rooms).map(([area_id, config]) => {
-      const area = this.hass?.areas?.[area_id];
-      return { area_id, name: config.display_name || area?.name || area_id };
+  private _roomChips(): ChipItem[] {
+    return Object.entries(this.rooms).map(([areaId, config]) => {
+      const area = this.hass?.areas?.[areaId];
+      const temp = config.live?.current_temp;
+      return {
+        id: areaId,
+        label: config.display_name || area?.name || areaId,
+        icon: area?.icon || "mdi:texture-box",
+        meta: temp != null ? `${formatTempLocale(temp, this.hass)}°` : undefined,
+        active: areaId === this.selectedRoom,
+      };
     });
   }
 
-  private _renderRoomSelector(rooms: Array<{ area_id: string; name: string }>, l: string) {
-    return html`
-      <div class="selector-row">
-        <ha-select
-          .value=${this.selectedRoom}
-          .label=${localize("analytics.select_room", l)}
-          .options=${rooms.map((r) => ({ value: r.area_id, label: r.name }))}
-          naturalMenuWidth
-          fixedMenuPosition
-          @selected=${this._onRoomSelected}
-          @closed=${(e: Event) => e.stopPropagation()}
-        >
-          ${rooms.map((r) => html` <ha-list-item value=${r.area_id}>${r.name}</ha-list-item> `)}
-        </ha-select>
-      </div>
-    `;
-  }
-
-  private _renderRangeButtons(l: string) {
-    const quickRanges = [
-      { key: "24h", label: localize("analytics.range_1d", l), days: 1 },
-      { key: "2d", label: localize("analytics.range_2d", l), days: 2 },
-      { key: "7d", label: localize("analytics.range_7d", l), days: 7 },
-      { key: "30d", label: localize("analytics.range_30d", l), days: 30 },
+  private _renderControls(l: string) {
+    const hasData = !!this.data && (this.data.history.length > 0 || this.data.detail.length > 0);
+    const custom = this.activeQuick === null;
+    const fmt = new Intl.DateTimeFormat(l, {
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+    // Within one day the end needs its time only ("11.11., 00:00 – 14:20")
+    const sameDay =
+      new Date(this.rangeStart).toDateString() === new Date(this.rangeEnd).toDateString();
+    const fmtEnd = sameDay
+      ? new Intl.DateTimeFormat(l, { hour: "2-digit", minute: "2-digit" })
+      : fmt;
+    // A start at midnight (every quick range) reads as the date alone, keeps the line short
+    const startDate = new Date(this.rangeStart);
+    const fmtStart =
+      !sameDay && startDate.getHours() === 0 && startDate.getMinutes() === 0
+        ? new Intl.DateTimeFormat(l, { month: "2-digit", day: "2-digit" })
+        : fmt;
+    const quick: RsSegmentOption[] = QUICK_RANGES.map((r) => ({
+      value: r.key,
+      label: localize(r.labelKey, l),
+    }));
+    const actions = (prefix: string): RsMenuItem[] => [
+      {
+        value: `${prefix}-download`,
+        label: localize("analytics.export_download", l),
+        icon: "mdi:download",
+      },
+      {
+        value: `${prefix}-copy`,
+        label: localize("analytics.export_clipboard", l),
+        icon: "mdi:content-copy",
+      },
     ];
-    const hasData = this.data && (this.data.history.length > 0 || this.data.detail.length > 0);
-
-    const fmt = (ms: number) => {
-      return new Date(ms).toLocaleString(this.hass.language, {
-        month: "2-digit",
-        day: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit",
-      });
-    };
-
     return html`
-      <div class="range-row">
-        <div class="range-controls">
-          <div class="range-bar">
-            ${quickRanges.map(
-              (r) => html`
-                <button
-                  class="range-chip"
-                  ?active=${this.activeQuick === r.key}
-                  @click=${() => this._onQuickRange(r.key, r.days)}
-                >
-                  ${r.label}
-                </button>
-              `,
-            )}
-            <div class="range-chip picker-chip ${this.activeQuick === null ? "picker-active" : ""}">
-              <ha-date-range-picker
-                .hass=${this.hass}
-                .startDate=${new Date(this.rangeStart)}
-                .endDate=${new Date(this.rangeEnd)}
-                .ranges=${false}
-                time-picker
-                auto-apply
-                minimal
-                @value-changed=${this._onDateRangeChanged}
-              ></ha-date-range-picker>
-            </div>
+      <div class="controls">
+        <rs-segmented
+          class="quick"
+          reselect
+          .label=${localize("analytics.range", l)}
+          .options=${quick}
+          .value=${this.activeQuick}
+          @value-changed=${this._onQuick}
+        ></rs-segmented>
+        <div class="custom">
+          <div class="picker ${custom ? "active" : ""}">
+            <ha-date-range-picker
+              .hass=${this.hass}
+              .startDate=${new Date(this.rangeStart)}
+              .endDate=${new Date(this.rangeEnd)}
+              .ranges=${false}
+              time-picker
+              auto-apply
+              minimal
+              @value-changed=${this._onDateRangeChanged}
+            ></ha-date-range-picker>
           </div>
-          <span class="date-label ${this.activeQuick === null ? "custom-active" : ""}"
-            >${fmt(this.rangeStart)} – ${fmt(this.rangeEnd)}</span
+          <span class="range-text ${custom ? "custom" : ""}"
+            >${fmtStart.format(this.rangeStart)} – ${fmtEnd.format(this.rangeEnd)}</span
           >
-        </div>
-        <div class="action-buttons">
-          <div class="export-split">
-            <button
-              class="export-btn"
-              ?disabled=${!hasData}
-              @click=${(e: Event) => {
-                e.stopPropagation();
-                this._toggleDropdown("csv");
-              }}
-            >
-              <ha-icon icon="mdi:download"></ha-icon>
-              ${localize("analytics.export", l)}
-              <ha-icon class="arrow-icon" icon="mdi:chevron-down"></ha-icon>
-            </button>
-            ${
-              this._openDropdown === "csv"
-                ? html`<div class="export-dropdown" @click=${(e: Event) => e.stopPropagation()}>
-                    <button @click=${this._exportCsv}>
-                      <ha-icon icon="mdi:download"></ha-icon>
-                      ${localize("analytics.export_download", l)}
-                    </button>
-                    <button @click=${this._copyCsvToClipboard}>
-                      <ha-icon icon="mdi:content-copy"></ha-icon>
-                      ${localize("analytics.export_clipboard", l)}
-                    </button>
-                  </div>`
-                : nothing
-            }
-          </div>
-          <div class="export-split">
-            <button
-              class="export-btn"
-              ?disabled=${this._diagLoading}
-              @click=${(e: Event) => {
-                e.stopPropagation();
-                this._toggleDropdown("diag");
-              }}
-            >
-              <ha-icon icon=${this._diagLoading ? "mdi:loading" : "mdi:bug-outline"}></ha-icon>
-              ${localize("analytics.copy_diagnostics", l)}
-              <ha-icon class="arrow-icon" icon="mdi:chevron-down"></ha-icon>
-            </button>
-            ${
-              this._openDropdown === "diag"
-                ? html`<div class="export-dropdown" @click=${(e: Event) => e.stopPropagation()}>
-                    <button @click=${this._exportDiagnostics}>
-                      <ha-icon icon="mdi:download"></ha-icon>
-                      ${localize("analytics.export_download", l)}
-                    </button>
-                    <button @click=${this._copyDiagnosticsToClipboard}>
-                      <ha-icon icon="mdi:content-copy"></ha-icon>
-                      ${localize("analytics.export_clipboard", l)}
-                    </button>
-                  </div>`
-                : nothing
-            }
-          </div>
+          <span class="grow"></span>
+          <rs-menu
+            icon="mdi:download"
+            .text=${localize("analytics.export", l)}
+            .label=${localize("analytics.export", l)}
+            .items=${actions("csv")}
+            .disabled=${!hasData}
+            @menu-select=${this._onMenu}
+          ></rs-menu>
+          <rs-menu
+            .icon=${this._diagLoading ? "mdi:loading" : "mdi:stethoscope"}
+            .text=${localize("analytics.copy_diagnostics", l)}
+            .label=${localize("analytics.copy_diagnostics", l)}
+            .items=${actions("diag")}
+            .disabled=${this._diagLoading}
+            @menu-select=${this._onMenu}
+          ></rs-menu>
         </div>
       </div>
     `;
   }
 
-  private _onRoomSelected(e: Event) {
-    const value = getSelectValue(e);
-    if (value && value !== this.selectedRoom) {
+  private _onRoomChip(e: CustomEvent<string>) {
+    e.stopPropagation();
+    const areaId = e.detail;
+    if (areaId && areaId !== this.selectedRoom) {
       this.dispatchEvent(
         new CustomEvent("room-selected", {
-          detail: { areaId: value },
+          detail: { areaId },
           bubbles: true,
           composed: true,
         }),
@@ -209,45 +163,56 @@ export class RsAnalyticsToolbar extends LitElement {
     }
   }
 
-  private _onQuickRange(key: string, days: number) {
+  private _onQuick(e: CustomEvent<{ value: string }>) {
+    e.stopPropagation();
+    const range = QUICK_RANGES.find((r) => r.key === e.detail.value);
+    if (!range) return;
     const now = new Date();
     const start = new Date(now);
-    start.setDate(start.getDate() - (days - 1));
+    start.setDate(start.getDate() - (range.days - 1));
     start.setHours(0, 0, 0, 0);
-    this.dispatchEvent(
-      new CustomEvent("range-changed", {
-        detail: {
-          activeQuick: key,
-          rangeStart: start.getTime(),
-          rangeEnd: now.getTime(),
-          chartAnchor: now.getTime(),
-        },
-        bubbles: true,
-        composed: true,
-      }),
-    );
+    this._fireRange(range.key, start.getTime(), now.getTime());
   }
 
   private _onDateRangeChanged(e: CustomEvent) {
+    e.stopPropagation();
     const { startDate, endDate } = e.detail.value as { startDate: Date; endDate: Date };
     if (!startDate || !endDate) return;
+    this._fireRange(null, startDate.getTime(), endDate.getTime());
+  }
+
+  private _fireRange(activeQuick: string | null, rangeStart: number, rangeEnd: number) {
     this.dispatchEvent(
       new CustomEvent("range-changed", {
-        detail: {
-          activeQuick: null,
-          rangeStart: startDate.getTime(),
-          rangeEnd: endDate.getTime(),
-          chartAnchor: endDate.getTime(),
-        },
+        detail: { activeQuick, rangeStart, rangeEnd, chartAnchor: rangeEnd },
         bubbles: true,
         composed: true,
       }),
     );
   }
 
+  private _onMenu(e: CustomEvent<{ value: string }>) {
+    e.stopPropagation();
+    switch (e.detail.value) {
+      case "csv-download":
+        this._exportCsv();
+        break;
+      case "csv-copy":
+        this._copyCsv();
+        break;
+      case "diag-download":
+        this._diagnostics((json) =>
+          downloadString(json, "roommind_diagnostics.json", "application/json"),
+        );
+        break;
+      case "diag-copy":
+        this._diagnostics((json) => copyToClipboard(json));
+        break;
+    }
+  }
+
   private _exportCsv() {
-    if (!this.data) return;
-    const csv = buildCsvString(this.data);
+    const csv = this.data ? buildCsvString(this.data) : null;
     if (!csv) return;
     const filename = buildExportFilename(
       this.hass,
@@ -259,19 +224,22 @@ export class RsAnalyticsToolbar extends LitElement {
       "csv",
     );
     downloadString(csv, filename, "text/csv");
-    this._openDropdown = null;
   }
 
-  private async _exportDiagnostics() {
+  private _copyCsv() {
+    const csv = this.data ? buildCsvString(this.data) : null;
+    if (csv) copyToClipboard(csv);
+  }
+
+  /** The whole integration's diagnostics, not the room's; one request at a time. */
+  private async _diagnostics(use: (json: string) => void) {
     if (this._diagLoading) return;
     this._diagLoading = true;
-    this._openDropdown = null;
     try {
       const result = await this.hass.callWS<Record<string, unknown>>({
         type: "roommind/diagnostics/get",
       });
-      const json = JSON.stringify(result, null, 2);
-      downloadString(json, "roommind_diagnostics.json", "application/json");
+      use(JSON.stringify(result, null, 2));
     } catch (err) {
       // eslint-disable-next-line no-console
       console.warn("[RoomMind] diagnostics export failed:", err);
@@ -280,234 +248,76 @@ export class RsAnalyticsToolbar extends LitElement {
     }
   }
 
-  private _copyCsvToClipboard() {
-    if (!this.data) return;
-    const csv = buildCsvString(this.data);
-    if (!csv) return;
-    copyToClipboard(csv);
-    this._openDropdown = null;
-  }
-
-  private async _copyDiagnosticsToClipboard() {
-    if (this._diagLoading) return;
-    this._diagLoading = true;
-    this._openDropdown = null;
-    try {
-      const result = await this.hass.callWS<Record<string, unknown>>({
-        type: "roommind/diagnostics/get",
-      });
-      const json = JSON.stringify(result, null, 2);
-      copyToClipboard(json);
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.warn("[RoomMind] diagnostics clipboard failed:", err);
-    } finally {
-      this._diagLoading = false;
-    }
-  }
-
-  private _toggleDropdown(id: "csv" | "diag") {
-    this._openDropdown = this._openDropdown === id ? null : id;
-  }
-
-  private _closeDropdowns() {
-    if (this._openDropdown) {
-      this._openDropdown = null;
-    }
-  }
-
   static styles = [
-    inputStyles,
+    tokens,
     css`
       :host {
-        display: block;
+        display: flex;
+        flex-direction: column;
+        gap: var(--rs-space-3);
+        margin-bottom: var(--rs-space-4);
+        min-width: 0;
       }
 
-      .selector-row {
-        margin-bottom: 16px;
-      }
-
-      .selector-row ha-select {
-        width: 100%;
-      }
-
-      .range-row {
+      .controls {
+        display: flex;
         flex-wrap: wrap;
+        align-items: center;
+        gap: var(--rs-space-2) var(--rs-space-3);
+        min-width: 0;
+      }
+
+      .quick {
+        flex: 0 1 360px;
+      }
+
+      .custom {
+        flex: 1 1 auto;
         display: flex;
         align-items: center;
-        justify-content: space-between;
-        margin-bottom: 16px;
-        gap: 12px;
+        gap: var(--rs-space-2);
+        min-width: 0;
       }
 
-      .range-controls {
+      .picker {
         display: flex;
         align-items: center;
-        gap: 8px;
-        position: relative;
-      }
-
-      .range-bar {
-        display: inline-flex;
-        border-radius: 12px;
-        border: 1px solid var(--divider-color);
-        background: var(--card-background-color);
-      }
-
-      .range-bar > :first-child {
-        border-radius: 12px 0 0 12px;
-      }
-
-      .range-bar > :last-child {
-        border-radius: 0 12px 12px 0;
-      }
-
-      .range-chip {
-        padding: 7px 14px;
-        border: none;
-        border-right: 1px solid var(--divider-color);
-        background: transparent;
+        justify-content: center;
+        flex: none;
+        border-radius: 50%;
         color: var(--secondary-text-color);
-        font-size: 12px;
-        font-weight: 500;
-        cursor: pointer;
-        transition:
-          background 0.15s ease,
-          color 0.15s ease;
-        font-family: inherit;
-        white-space: nowrap;
+        --mdc-icon-size: 20px;
       }
 
-      .range-chip:last-child {
-        border-right: none;
-      }
-
-      .range-chip:hover:not([active]) {
-        background: rgba(var(--rgb-primary-color, 3, 169, 244), 0.08);
-        color: var(--primary-text-color);
-      }
-
-      .range-chip[active] {
-        background: var(--primary-color);
-        color: var(--text-primary-color, #fff);
-      }
-
-      .picker-chip {
-        display: flex;
-        align-items: center;
-        padding: 0;
-        cursor: pointer;
-      }
-
-      .picker-chip ha-date-range-picker {
-        --mdc-icon-size: 18px;
-        --mdc-icon-button-size: 32px;
-      }
-
-      .picker-chip.picker-active {
-        background: var(--primary-color);
-        color: var(--text-primary-color, #fff);
-      }
-
-      .date-label {
-        font-size: 12px;
-        color: var(--secondary-text-color);
-        white-space: nowrap;
-      }
-
-      .date-label.custom-active {
+      .picker.active {
+        background: var(--rs-fill-primary);
         color: var(--primary-color);
       }
 
-      .action-buttons {
-        display: flex;
-        gap: 8px;
-      }
-
-      .export-split {
-        position: relative;
-        display: inline-flex;
-      }
-
-      .export-btn {
-        display: inline-flex;
-        align-items: center;
-        gap: 4px;
-        padding: 7px 14px;
-        border: 1px solid var(--divider-color);
-        border-radius: 12px;
-        background: var(--card-background-color);
+      .range-text {
+        font-size: 13px;
         color: var(--secondary-text-color);
-        font-size: 12px;
-        font-weight: 500;
-        cursor: pointer;
-        transition: all 0.15s ease;
-        font-family: inherit;
+        font-variant-numeric: tabular-nums;
         white-space: nowrap;
-        --mdc-icon-size: 14px;
-      }
-
-      .export-btn:hover {
-        color: var(--primary-text-color);
-        border-color: var(--primary-color);
-      }
-
-      .export-btn[disabled] {
-        opacity: 0.4;
-        cursor: default;
-      }
-
-      .arrow-icon {
-        --mdc-icon-size: 14px;
-        margin-left: 2px;
-        margin-right: -4px;
-      }
-
-      .export-dropdown {
-        position: absolute;
-        top: 100%;
-        right: 0;
-        margin-top: 4px;
-        min-width: 100%;
-        background: var(--card-background-color);
-        border: 1px solid var(--divider-color);
-        border-radius: 8px;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-        z-index: 10;
         overflow: hidden;
+        text-overflow: ellipsis;
+        min-width: 0;
       }
 
-      .export-dropdown button {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        width: 100%;
-        padding: 10px 14px;
-        border: none;
-        background: transparent;
-        color: var(--primary-text-color);
-        font-size: 12px;
-        font-family: inherit;
-        cursor: pointer;
-        white-space: nowrap;
-        --mdc-icon-size: 14px;
+      .range-text.custom {
+        color: var(--primary-color);
       }
 
-      .export-dropdown button:hover {
-        background: rgba(var(--rgb-primary-color, 3, 169, 244), 0.08);
-      }
-
-      .export-dropdown button + button {
-        border-top: 1px solid var(--divider-color);
+      .grow {
+        flex: 1;
       }
 
       @media (max-width: 600px) {
-        .range-controls {
-          flex-wrap: wrap;
+        .quick {
+          flex: 1 1 100%;
         }
-        .range-chip {
-          padding: 6px 10px;
-          font-size: 11px;
+        .range-text {
+          font-size: var(--rs-font-sm);
         }
       }
     `,

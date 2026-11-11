@@ -5,7 +5,9 @@ import { LitElement, html, css, nothing, type PropertyValues } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import type { HomeAssistant, AnalyticsData } from "../../types";
 import { localize } from "../../utils/localize";
-import { infoIconStyles } from "../../styles/info-icon-styles";
+import { tokens } from "../../styles/tokens";
+import "../shared/rs-list-card";
+import "../shared/rs-info-icon";
 import {
   buildChartSeries,
   buildChartOptions,
@@ -172,17 +174,16 @@ export class RsAnalyticsChart extends LitElement {
     const tops = panelTops(panels);
 
     return html`
-      <ha-card>
-        <div class="card-header">
-          <span>${localize("analytics.history_chart", l)}</span>
-          <ha-icon
-            class="info-icon chart-info-toggle ${this._chartInfoExpanded ? "info-active" : ""}"
-            icon="mdi:information-outline"
-            @click=${() => {
-              this._chartInfoExpanded = !this._chartInfoExpanded;
-            }}
-          ></ha-icon>
-        </div>
+      <rs-list-card unclipped .heading=${localize("analytics.history_chart", l)}>
+        <rs-info-icon
+          slot="header-extras"
+          disclosure
+          .label=${localize("analytics.chart_info_title", l)}
+          .expanded=${this._chartInfoExpanded}
+          @info-toggle=${() => {
+            this._chartInfoExpanded = !this._chartInfoExpanded;
+          }}
+        ></rs-info-icon>
         ${
           this._chartInfoExpanded
             ? html`<div class="chart-info-panel">
@@ -221,7 +222,7 @@ export class RsAnalyticsChart extends LitElement {
                 <span>${localize("analytics.no_data", l)}</span>
               </div>`
         }
-      </ha-card>
+      </rs-list-card>
     `;
   }
 
@@ -235,7 +236,9 @@ export class RsAnalyticsChart extends LitElement {
           const hidden = this._hiddenSeries.has(id);
           return html`
             <button
+              type="button"
               class="legend-item ${hidden ? "legend-hidden" : ""}"
+              aria-pressed=${hidden ? "false" : "true"}
               @click=${() => this._toggleSeries(id)}
             >
               <span
@@ -303,14 +306,11 @@ export class RsAnalyticsChart extends LitElement {
   }
 
   static styles = [
-    infoIconStyles,
+    tokens,
     css`
       :host {
         display: block;
-      }
-
-      ha-card {
-        margin-bottom: 16px;
+        margin-bottom: var(--rs-space-4);
       }
 
       .chart-wrap {
@@ -327,24 +327,11 @@ export class RsAnalyticsChart extends LitElement {
         pointer-events: none;
       }
 
-      .card-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 16px 16px 0;
-        font-size: 16px;
-        font-weight: 500;
-      }
-
-      .chart-info-toggle {
-        --mdc-icon-size: 20px;
-      }
-
       .chart-info-panel {
         margin: 8px 16px 4px;
         padding: 12px 14px;
-        border-radius: 8px;
-        background: var(--secondary-background-color, rgba(128, 128, 128, 0.06));
+        border-radius: var(--rs-radius-sm);
+        background: var(--rs-fill);
         font-size: 13px;
         line-height: 1.6;
         color: var(--secondary-text-color);
@@ -393,7 +380,12 @@ export class RsAnalyticsChart extends LitElement {
       }
 
       .legend-item:hover {
-        background: var(--secondary-background-color, rgba(128, 128, 128, 0.1));
+        background: var(--rs-fill);
+      }
+
+      .legend-item:focus-visible {
+        outline: 2px solid var(--primary-color);
+        outline-offset: 1px;
       }
 
       .legend-item.legend-hidden {

@@ -1,15 +1,56 @@
 /**
- * rs-analytics-model – Model status card with confidence, stats grid, and info panels.
+ * rs-analytics-model – Model status: confidence, the stages towards predictive control, the
+ * confidence per day and the learned figures as tiles.
  */
 import { LitElement, html, css, nothing } from "lit";
-import { customElement, property, state } from "lit/decorators.js";
+import { customElement, property } from "lit/decorators.js";
 import type { HomeAssistant, AnalyticsData } from "../../types";
 import { localize, type TranslationKey } from "../../utils/localize";
-import { infoIconStyles } from "../../styles/info-icon-styles";
+import { formatNumber, formatPercent } from "../../utils/format";
 import { tempUnit, toDisplayDelta } from "../../utils/temperature";
+import {
+  MPC_MAX_PREDICTION_STD,
+  MPC_MIN_ACTIVE_SAMPLES,
+  MPC_MIN_IDLE_SAMPLES,
+} from "../../utils/constants";
+import { tokens, srOnly } from "../../styles/tokens";
+import "../shared/rs-list-card";
+import "../shared/rs-stat-tile";
+import "../shared/rs-hint-chip";
+import "../shared/rs-info-icon";
+import "./rs-confidence-chart";
 
 // Fixed reference so rooms and renovations stay comparable; the model knows no watts (C is unknown)
 const HEAT_LOSS_REFERENCE_K = 10;
+// Samples a figure needs before the tile shows it
+const MIN_TILE_SAMPLES = 10;
+const PENDING = "—";
+
+type StageState = "done" | "current" | "todo" | "off";
+
+interface Stage {
+  title: TranslationKey;
+  sub: TranslationKey;
+  icon: string;
+  state: StageState;
+  /** The last stage while MPC runs: an ongoing state, not a step still to take. */
+  reached?: boolean;
+}
+
+interface Tile {
+  id: string;
+  icon: string;
+  tone?: "heat" | "cool";
+  value: string | null;
+  detail?: string;
+}
+
+const STAGE_STATE_KEY: Record<StageState, TranslationKey> = {
+  done: "analytics.stage_state_done",
+  current: "analytics.stage_state_current",
+  todo: "analytics.stage_state_todo",
+  off: "analytics.stage_state_off",
+};
 
 @customElement("rs-analytics-model")
 export class RsAnalyticsModel extends LitElement {
@@ -19,467 +60,440 @@ export class RsAnalyticsModel extends LitElement {
   @property({ type: String }) public controlMode: "mpc" | "bangbang" = "mpc";
   @property({ type: Boolean }) public managed = false;
 
-  @state() private _expandedStat: string | null = null;
-
   render() {
     const l = this.language;
-    const hasModel = !!this.data?.model?.model;
     const m = this.data?.model;
-    const model = m?.model;
-    const confidence = m?.confidence ?? 0;
-    const n_samples = m?.n_samples ?? 0;
-    const n_heating = m?.n_heating ?? 0;
-    const n_cooling = m?.n_cooling ?? 0;
-    const applicable_modes = m?.applicable_modes ?? [];
-    const predStdIdle = m?.prediction_std_idle;
-    const predStdHeat = m?.prediction_std_heating;
-
-    const mpcActive = m?.mpc_active ?? false;
-    const confidencePct = Math.round(confidence * 100);
-    const modes = new Set(applicable_modes);
-    const canHeat = modes.has("heating");
-    const canCool = modes.has("cooling");
-    const hasHeated = n_heating >= 10;
-    const hasCooled = n_cooling >= 10;
-    const hasIdleData = n_samples - n_heating - n_cooling >= 10;
-    const n_observations = m?.n_observations ?? n_samples;
-    const ph = "\u2014";
-
-    const statItems: Array<{
-      id: string;
-      labelKey: TranslationKey;
-      infoKey: TranslationKey;
-      detail?: string;
-    }> = [];
-    // ``detail`` (reference, current figures) goes into the info panel, not under the value:
-    // second lines in some tiles made the grid look restless
-    const stat = (
-      id: string,
-      value: string | number,
-      labelKey: TranslationKey,
-      unit: string,
-      infoKey: TranslationKey,
-      detail?: string,
-    ) => {
-      statItems.push({ id, labelKey, infoKey, detail });
-      const active = this._expandedStat === id;
-      return html`
-        <div class="model-stat ${active ? "active" : ""}" @click=${() => this._toggleStat(id)}>
-          <div class="stat-content">
-            <span class="model-value ${value === ph ? "pending" : ""}">${value}</span>
-            <span class="model-label">${localize(labelKey, l)}${unit ? ` (${unit})` : ""}</span>
-          </div>
-          <ha-icon
-            class="info-icon ${active ? "info-active" : ""}"
-            icon="mdi:information-outline"
-          ></ha-icon>
-        </div>
-      `;
-    };
-
+    const hasModel = !!m?.model;
+    const confidence = hasModel ? (m?.confidence ?? 0) : 0;
+    const observations = hasModel ? (m?.n_observations ?? m?.n_samples ?? 0) : 0;
     return html`
-      <ha-card>
-        <div class="card-header">
-          <span>${localize("analytics.model_status", l)}</span>
-        </div>
-        <div class="card-content">
-          <div class="confidence-hero">
-            <div class="confidence-top">
-              <div class="confidence-main">
-                <span class="confidence-value">${hasModel ? confidencePct + "%" : "0%"}</span>
-                <span class="confidence-label">
-                  ${localize("analytics.confidence", l)}
-                  <ha-icon
-                    class="info-icon ${this._expandedStat === "confidence" ? "info-active" : ""}"
-                    icon="mdi:information-outline"
-                    @click=${() => this._toggleStat("confidence")}
-                  ></ha-icon>
-                </span>
+      <rs-list-card .heading=${localize("analytics.model_status", l)}>
+        ${this._controlChip()}
+        <div class="wrap">
+          <div class="top">
+            <div class="status">
+              <div class="confidence">
+                <span class="confidence-value"
+                  >${formatPercent(Math.round(confidence * 100), this.hass)}</span
+                >
+                <span class="confidence-label"
+                  >${localize("analytics.confidence", l)}
+                  <rs-info-icon .text=${localize("analytics.info.confidence", l)}></rs-info-icon
+                ></span>
               </div>
-              <div class="confidence-meta">
-                <span class="meta-value">${hasModel ? n_observations : 0}</span>
-                <span class="meta-label">
-                  ${localize("analytics.data_points", l)}
-                  <ha-icon
-                    class="info-icon ${this._expandedStat === "data_points" ? "info-active" : ""}"
-                    icon="mdi:information-outline"
-                    @click=${() => this._toggleStat("data_points")}
-                  ></ha-icon>
-                </span>
+              <div class="points">
+                ${formatNumber(observations, this.hass)} ${localize("analytics.data_points", l)}
+                <rs-info-icon .text=${localize("analytics.info.data_points", l)}></rs-info-icon>
               </div>
+              ${this._renderStages()}
             </div>
-            <div class="confidence-bar">
-              <div class="confidence-fill" style="width: ${hasModel ? confidencePct : 0}%"></div>
-            </div>
-            ${
-              // Managed rooms (no external sensor) never run MPC, so "learning" would stay forever.
-              this.managed
-                ? nothing
-                : this.controlMode === "bangbang"
-                  ? html`<div class="control-mode-badge bangbang">
-                      <ha-icon icon="mdi:power"></ha-icon>
-                      ${localize("settings.control_mode_simple", l)}
-                    </div>`
-                  : html`<div class="control-mode-badge ${mpcActive ? "mpc" : "bangbang"}">
-                      <ha-icon icon=${mpcActive ? "mdi:brain" : "mdi:school-outline"}></ha-icon>
-                      ${
-                        mpcActive
-                          ? localize("analytics.control_mode_mpc", l)
-                          : localize("analytics.control_mode_bangbang", l)
-                      }
-                    </div>`
-            }
-            ${
-              this._expandedStat === "confidence"
-                ? html`<div class="info-panel stat-info-panel">
-                    <strong>${localize("analytics.confidence", l)}</strong>
-                    ${localize("analytics.info.confidence", l)}
-                  </div>`
-                : nothing
-            }
-            ${
-              this._expandedStat === "data_points"
-                ? html`<div class="info-panel stat-info-panel">
-                    <strong>${localize("analytics.data_points", l)}</strong>
-                    ${localize("analytics.info.data_points", l)}
-                  </div>`
-                : nothing
-            }
+            <rs-confidence-chart
+              .hass=${this.hass}
+              .language=${l}
+              .history=${hasModel ? (m?.confidence_history ?? []) : []}
+            ></rs-confidence-chart>
           </div>
-
-          <div class="model-grid">
-            ${stat(
-              "time_constant",
-              hasIdleData && model && model.U > 0 ? (1 / model.U).toFixed(1) + "h" : ph,
-              "analytics.time_constant",
-              "",
-              "analytics.info.time_constant",
-            )}
-            ${stat(
-              "heat_loss",
-              hasIdleData && model && model.U > 0
-                ? toDisplayDelta(model.U * HEAT_LOSS_REFERENCE_K, this.hass).toFixed(2) +
-                    tempUnit(this.hass) +
-                    "/h"
-                : ph,
-              "analytics.heat_loss",
-              "",
-              "analytics.info.heat_loss",
-              localize("analytics.heat_loss_sub", l, {
-                delta: `${Math.round(toDisplayDelta(HEAT_LOSS_REFERENCE_K, this.hass))}\u00A0${tempUnit(this.hass)}`,
-              }),
-            )}
-            ${
-              canHeat
-                ? stat(
-                    "heating_rate",
-                    hasHeated && model
-                      ? toDisplayDelta(model.Q_heat, this.hass).toFixed(1) +
-                          tempUnit(this.hass) +
-                          "/h"
-                      : ph,
-                    "analytics.heating_rate",
-                    "",
-                    "analytics.info.heating_rate",
-                  )
-                : nothing
-            }
-            ${
-              canHeat && hasHeated && m?.afterglow_k != null
-                ? stat(
-                    "afterglow",
-                    m.afterglow_learned ? this._afterglowValue(m.afterglow_k) : ph,
-                    "analytics.afterglow",
-                    "",
-                    "analytics.info.afterglow",
-                    this._afterglowSub(m),
-                  )
-                : nothing
-            }
-            ${
-              canCool
-                ? stat(
-                    "cooling_rate",
-                    hasCooled && model
-                      ? toDisplayDelta(model.Q_cool, this.hass).toFixed(1) +
-                          tempUnit(this.hass) +
-                          "/h"
-                      : ph,
-                    "analytics.cooling_rate",
-                    "",
-                    "analytics.info.cooling_rate",
-                  )
-                : nothing
-            }
-            ${
-              model && model.Q_solar > 0.1
-                ? stat(
-                    "solar_gain",
-                    toDisplayDelta(model.Q_solar, this.hass).toFixed(1) +
-                      tempUnit(this.hass) +
-                      "/h",
-                    "analytics.solar_gain",
-                    "",
-                    "analytics.info.solar_gain",
-                    this._solarSub(m),
-                  )
-                : nothing
-            }
-            ${
-              model && m?.has_occupancy_sensors
-                ? stat(
-                    "occupancy_gain",
-                    toDisplayDelta(model.Q_occupancy, this.hass).toFixed(1) +
-                      tempUnit(this.hass) +
-                      "/h",
-                    "analytics.occupancy_gain",
-                    "",
-                    "analytics.info.occupancy_gain",
-                  )
-                : nothing
-            }
-            ${stat(
-              "accuracy_idle",
-              hasIdleData && predStdIdle != null
-                ? "\u00B1" + toDisplayDelta(predStdIdle, this.hass).toFixed(2) + tempUnit(this.hass)
-                : ph,
-              "analytics.accuracy_idle",
-              "",
-              "analytics.info.accuracy_idle",
-            )}
-            ${
-              canHeat
-                ? stat(
-                    "accuracy_heating",
-                    hasHeated && predStdHeat != null
-                      ? "\u00B1" +
-                          toDisplayDelta(predStdHeat, this.hass).toFixed(2) +
-                          tempUnit(this.hass)
-                      : ph,
-                    "analytics.accuracy_heating",
-                    "",
-                    "analytics.info.accuracy_heating",
-                  )
-                : nothing
-            }
-          </div>
-          ${
-            this._expandedStat && statItems.find((s) => s.id === this._expandedStat)
-              ? html`<div class="info-panel stat-info-panel">
-                  <strong
-                    >${localize(
-                      statItems.find((s) => s.id === this._expandedStat)!.labelKey,
-                      l,
-                    )}</strong
-                  >
-                  ${localize(statItems.find((s) => s.id === this._expandedStat)!.infoKey, l)}
-                  ${
-                    statItems.find((s) => s.id === this._expandedStat)!.detail
-                      ? html`<div class="stat-detail">
-                          ${statItems.find((s) => s.id === this._expandedStat)!.detail}
-                        </div>`
-                      : nothing
-                  }
-                </div>`
-              : nothing
-          }
+          <div class="tiles">${this._tiles().map((t) => this._renderTile(t))}</div>
         </div>
-      </ha-card>
+      </rs-list-card>
     `;
   }
 
-  private _solarSub(m: AnalyticsData["model"] | undefined): string | undefined {
-    if (m?.solar_gain_now == null || m.solar_gain_today_max == null) return undefined;
-    const fmt = (v: number) => toDisplayDelta(v, this.hass).toFixed(1) + tempUnit(this.hass) + "/h";
-    return localize("analytics.solar_gain_sub", this.language)
-      .replace("{now}", fmt(m.solar_gain_now))
-      .replace("{today}", fmt(m.solar_gain_today_max));
+  private _controlChip() {
+    const l = this.language;
+    // Managed rooms (no external sensor) never run MPC, so "learning" would stay forever
+    if (this.managed) return nothing;
+    if (this.controlMode === "bangbang") {
+      return html`<rs-hint-chip
+        slot="header-extras"
+        icon="mdi:power"
+        .text=${localize("settings.control_mode_simple", l)}
+      ></rs-hint-chip>`;
+    }
+    const active = this.data?.model?.mpc_active ?? false;
+    return html`<rs-hint-chip
+      slot="header-extras"
+      .variant=${active ? "ok" : "default"}
+      .icon=${active ? "mdi:brain" : "mdi:school-outline"}
+      .text=${localize(active ? "analytics.control_mode_mpc" : "analytics.control_mode_bangbang", l)}
+    ></rs-hint-chip>`;
+  }
+
+  /**
+   * Stages from the real state: MPC running means all of them are reached (its gate also knows
+   * the outdoor limits, the sample counts here do not); else the mirrored data gate.
+   */
+  private _stages(): Stage[] {
+    const m = this.data?.model;
+    const mpcActive = !!m?.model && !!m.mpc_active;
+    const heating = m?.n_heating ?? 0;
+    const cooling = m?.n_cooling ?? 0;
+    const idle = (m?.n_samples ?? 0) - heating - cooling;
+    const dataDone =
+      mpcActive ||
+      (!!m?.model &&
+        idle >= MPC_MIN_IDLE_SAMPLES &&
+        Math.max(heating, cooling) >= MPC_MIN_ACTIVE_SAMPLES);
+    const accurate =
+      m?.prediction_std_idle != null &&
+      m.prediction_std_idle < MPC_MAX_PREDICTION_STD &&
+      (heating < MPC_MIN_ACTIVE_SAMPLES ||
+        m.prediction_std_heating == null ||
+        m.prediction_std_heating < MPC_MAX_PREDICTION_STD);
+    const learnDone = mpcActive || (dataDone && accurate);
+    let control: Stage;
+    if (this.managed) {
+      control = {
+        title: "analytics.stage_control",
+        sub: "analytics.stage_control_managed",
+        icon: "mdi:brain",
+        state: "off",
+      };
+    } else if (this.controlMode === "bangbang") {
+      control = {
+        title: "analytics.stage_control",
+        sub: "analytics.stage_control_simple",
+        icon: "mdi:power",
+        state: "off",
+      };
+    } else {
+      control = {
+        title: "analytics.stage_control",
+        sub: "analytics.stage_control_sub",
+        icon: "mdi:brain",
+        state: learnDone ? "current" : "todo",
+        reached: mpcActive,
+      };
+    }
+    const stages: Stage[] = [
+      {
+        title: "analytics.stage_data",
+        sub: "analytics.stage_data_sub",
+        icon: "mdi:database-outline",
+        state: dataDone ? "done" : "current",
+      },
+      {
+        title: "analytics.stage_learn",
+        sub: "analytics.stage_learn_sub",
+        icon: "mdi:school-outline",
+        state: learnDone ? "done" : dataDone ? "current" : "todo",
+      },
+      control,
+    ];
+    return stages;
+  }
+
+  private _renderStages() {
+    const l = this.language;
+    const stages = this._stages();
+    return html`<ol class="steps">
+      ${stages.map(
+        (s, i) =>
+          html`<li
+            class="step ${s.state} ${s.reached ? "reached" : ""}"
+            aria-current=${s.state === "current" ? "step" : "false"}
+          >
+            <span class="dot" aria-hidden="true">
+              ${
+                s.state === "done"
+                  ? html`<ha-icon icon="mdi:check"></ha-icon>`
+                  : s.state === "current"
+                    ? html`<ha-icon .icon=${s.icon}></ha-icon>`
+                    : s.state === "off"
+                      ? html`<ha-icon icon="mdi:minus"></ha-icon>`
+                      : formatNumber(i + 1, this.hass)
+              }
+            </span>
+            <div class="step-text">
+              <span class="step-title">${localize(s.title, l)}</span>
+              <span class="sr-only">${localize(STAGE_STATE_KEY[s.state], l)}</span>
+              <small>${localize(s.sub, l)}</small>
+            </div>
+          </li>`,
+      )}
+    </ol>`;
+  }
+
+  private _tiles(): Tile[] {
+    const l = this.language;
+    const m = this.data?.model;
+    const model = m?.model;
+    const heating = m?.n_heating ?? 0;
+    const cooling = m?.n_cooling ?? 0;
+    const modes = new Set(m?.applicable_modes ?? []);
+    const canHeat = modes.has("heating");
+    const canCool = modes.has("cooling");
+    const hasHeated = heating >= MIN_TILE_SAMPLES;
+    const hasCooled = cooling >= MIN_TILE_SAMPLES;
+    const hasIdle = (m?.n_samples ?? 0) - heating - cooling >= MIN_TILE_SAMPLES;
+    const unit = tempUnit(this.hass);
+    const delta = (k: number, decimals: number) =>
+      formatNumber(toDisplayDelta(k, this.hass), this.hass, decimals);
+    const rate = (k: number) => `${delta(k, 1)} ${unit}/h`;
+    const tiles: Tile[] = [
+      {
+        id: "time_constant",
+        icon: "mdi:timer-sand",
+        value:
+          hasIdle && model && model.U > 0 ? `${formatNumber(1 / model.U, this.hass, 1)} h` : null,
+      },
+      {
+        id: "heat_loss",
+        icon: "mdi:home-thermometer-outline",
+        value:
+          hasIdle && model && model.U > 0
+            ? `${delta(model.U * HEAT_LOSS_REFERENCE_K, 2)} ${unit}/h`
+            : null,
+        detail: localize("analytics.heat_loss_sub", l, {
+          delta: `${formatNumber(toDisplayDelta(HEAT_LOSS_REFERENCE_K, this.hass), this.hass)} ${unit}`,
+        }),
+      },
+    ];
+    if (canHeat) {
+      tiles.push({
+        id: "heating_rate",
+        icon: "mdi:fire",
+        tone: "heat",
+        value: hasHeated && model ? rate(model.Q_heat) : null,
+      });
+    }
+    if (canHeat && hasHeated && m?.afterglow_k != null) {
+      tiles.push({
+        id: "afterglow",
+        icon: "mdi:radiator",
+        value: m.afterglow_learned ? this._afterglowValue(m.afterglow_k) : null,
+        detail: m.afterglow_learned
+          ? localize("analytics.afterglow_sub", l, {
+              min: formatNumber(m.afterglow_minutes ?? 0, this.hass),
+            })
+          : localize("analytics.afterglow_unmeasured", l),
+      });
+    }
+    if (canCool) {
+      tiles.push({
+        id: "cooling_rate",
+        icon: "mdi:snowflake",
+        tone: "cool",
+        value: hasCooled && model ? rate(model.Q_cool) : null,
+      });
+    }
+    if (model && model.Q_solar > 0.1) {
+      tiles.push({
+        id: "solar_gain",
+        icon: "mdi:white-balance-sunny",
+        value: rate(model.Q_solar),
+        detail:
+          m?.solar_gain_now != null && m.solar_gain_today_max != null
+            ? localize("analytics.solar_gain_sub", l, {
+                now: rate(m.solar_gain_now),
+                today: rate(m.solar_gain_today_max),
+              })
+            : undefined,
+      });
+    }
+    if (model && m?.has_occupancy_sensors) {
+      tiles.push({
+        id: "occupancy_gain",
+        icon: "mdi:account-group-outline",
+        value: rate(model.Q_occupancy),
+      });
+    }
+    tiles.push({
+      id: "accuracy_idle",
+      icon: "mdi:bullseye-arrow",
+      value:
+        hasIdle && m?.prediction_std_idle != null
+          ? `±${delta(m.prediction_std_idle, 2)} ${unit}`
+          : null,
+    });
+    if (canHeat) {
+      tiles.push({
+        id: "accuracy_heating",
+        icon: "mdi:bullseye",
+        value:
+          hasHeated && m?.prediction_std_heating != null
+            ? `±${delta(m.prediction_std_heating, 2)} ${unit}`
+            : null,
+      });
+    }
+    return tiles;
+  }
+
+  private _renderTile(t: Tile) {
+    const l = this.language;
+    return html`<rs-stat-tile
+      .icon=${t.icon}
+      .tone=${t.tone ?? "default"}
+      .label=${localize(`analytics.${t.id}` as TranslationKey, l)}
+      .value=${t.value ?? PENDING}
+      ?pending=${t.value == null}
+      .info=${localize(`analytics.info.${t.id}` as TranslationKey, l)}
+    >
+      ${t.detail ? html`<span slot="info">${t.detail}</span>` : nothing}
+    </rs-stat-tile>`;
   }
 
   private _afterglowValue(kelvin: number): string {
     const value = toDisplayDelta(kelvin, this.hass);
     const unit = tempUnit(this.hass);
     // Rounded to "+0.0" it read like a broken value: light radiators store almost nothing
-    return value < 0.05 ? `< 0.1${unit}` : `+${value.toFixed(1)}${unit}`;
-  }
-
-  private _afterglowSub(m: AnalyticsData["model"]): string {
-    if (!m.afterglow_learned) return localize("analytics.afterglow_unmeasured", this.language);
-    return localize("analytics.afterglow_sub", this.language).replace(
-      "{min}",
-      String(m.afterglow_minutes ?? 0),
-    );
-  }
-
-  private _toggleStat(id: string) {
-    this._expandedStat = this._expandedStat === id ? null : id;
+    return value < 0.05
+      ? `< ${formatNumber(0.1, this.hass, 1)} ${unit}`
+      : `+${formatNumber(value, this.hass, 1)} ${unit}`;
   }
 
   static styles = [
-    infoIconStyles,
+    tokens,
+    srOnly,
     css`
       :host {
         display: block;
+        margin-bottom: var(--rs-space-4);
       }
 
-      ha-card {
-        margin-bottom: 16px;
+      .wrap {
+        container-type: inline-size;
+        padding: var(--rs-space-2) var(--rs-space-4) var(--rs-space-2);
       }
 
-      .card-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 16px 16px 0;
-        font-size: 16px;
-        font-weight: 500;
+      .top {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: var(--rs-space-5);
+        margin-bottom: var(--rs-space-4);
       }
 
-      .card-content {
-        padding: 16px;
+      @container (min-width: 760px) {
+        .top {
+          grid-template-columns: minmax(240px, 290px) minmax(0, 1fr);
+          gap: var(--rs-space-6);
+          align-items: start;
+        }
       }
 
-      .confidence-hero {
-        margin-bottom: 16px;
-      }
-
-      .confidence-top {
-        display: flex;
-        justify-content: space-between;
-        align-items: flex-end;
-        margin-bottom: 8px;
-      }
-
-      .confidence-main {
+      .confidence {
         display: flex;
         align-items: baseline;
-        gap: 8px;
+        gap: var(--rs-space-2);
+        flex-wrap: wrap;
       }
 
       .confidence-value {
-        font-size: 28px;
-        font-weight: 600;
-        color: var(--primary-text-color);
+        font-size: 44px;
+        font-weight: 300;
+        line-height: 1;
+        font-variant-numeric: tabular-nums;
       }
 
-      .confidence-label {
-        font-size: 13px;
-        color: var(--secondary-text-color);
-      }
-
-      .confidence-meta {
-        display: flex;
-        align-items: baseline;
-        gap: 6px;
-      }
-
-      .meta-value {
-        font-size: 16px;
-        font-weight: 500;
-        color: var(--primary-text-color);
-      }
-
-      .meta-label {
-        font-size: 12px;
-        color: var(--secondary-text-color);
-      }
-
-      .control-mode-badge {
+      .confidence-label,
+      .points {
         display: inline-flex;
         align-items: center;
-        gap: 6px;
-        margin-top: 8px;
-        padding: 4px 12px;
-        border-radius: 12px;
-        font-size: 12px;
-        font-weight: 500;
-        --mdc-icon-size: 14px;
-      }
-
-      .control-mode-badge.mpc {
-        background: rgba(76, 175, 80, 0.12);
-        color: var(--success-color, #4caf50);
-      }
-
-      .control-mode-badge.bangbang {
-        background: rgba(158, 158, 158, 0.12);
+        gap: 2px;
+        font-size: var(--rs-font-md);
         color: var(--secondary-text-color);
       }
 
-      .confidence-bar {
-        height: 4px;
-        border-radius: 2px;
-        background: var(--divider-color);
-        overflow: hidden;
+      .points {
+        margin-top: 6px;
+        font-size: var(--rs-font-sm);
+        font-variant-numeric: tabular-nums;
       }
 
-      .confidence-fill {
-        height: 100%;
-        border-radius: 2px;
-        background: var(--primary-color);
-        transition: width 0.6s ease;
+      .steps {
+        list-style: none;
+        margin: var(--rs-space-4) 0 0;
+        padding: 0;
       }
 
-      .model-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-        gap: 12px;
-      }
-
-      /* Everything from the top: centred, a tile with a second line shifted its value up */
-      .model-stat {
+      .step {
+        position: relative;
         display: flex;
+        gap: var(--rs-space-3);
         align-items: flex-start;
-        justify-content: space-between;
-        gap: 4px;
-        padding: 10px 12px;
-        border-radius: 8px;
-        border: 1px solid var(--divider-color);
-        cursor: pointer;
-        transition: border-color 0.2s;
+        padding-bottom: 14px;
+        font-size: 13px;
       }
 
-      .model-stat.active {
-        border-color: var(--primary-color);
+      .step:last-child {
+        padding-bottom: 0;
       }
 
-      .stat-content {
+      .step:not(:last-child)::before {
+        content: "";
+        position: absolute;
+        left: 11px;
+        top: 26px;
+        bottom: 2px;
+        width: 2px;
+        background: var(--rs-border);
+      }
+
+      .step.done:not(:last-child)::before {
+        background: color-mix(in srgb, var(--rs-ok) 50%, transparent);
+      }
+
+      .dot {
+        width: 24px;
+        height: 24px;
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        flex: none;
+        background: var(--rs-fill);
+        color: var(--secondary-text-color);
+        font-size: var(--rs-font-sm);
+        font-variant-numeric: tabular-nums;
+        --mdc-icon-size: 15px;
+      }
+
+      .step.done .dot {
+        background: color-mix(in srgb, var(--rs-ok) 18%, transparent);
+        color: var(--rs-ok);
+      }
+
+      .step.current .dot {
+        background: var(--primary-color);
+        color: var(--text-primary-color);
+      }
+
+      .step.current.reached .dot {
+        background: var(--rs-ok);
+      }
+
+      .step-text {
         display: flex;
         flex-direction: column;
-        gap: 2px;
         min-width: 0;
+        padding-top: 3px;
       }
 
-      .model-value {
-        font-size: 18px;
-        line-height: 24px;
-        font-weight: 500;
-        font-variant-numeric: tabular-nums;
-        white-space: nowrap;
-        color: var(--primary-text-color);
-      }
-
-      .model-value.pending {
-        opacity: 0.2;
-      }
-
-      .model-label {
-        font-size: 12px;
+      .step.todo .step-title,
+      .step.off .step-title {
         color: var(--secondary-text-color);
       }
 
-      .stat-detail {
-        margin-top: 6px;
+      .step small {
+        font-size: var(--rs-font-sm);
+        line-height: 1.4;
+        color: var(--secondary-text-color);
       }
 
-      .info-panel.stat-info-panel {
-        margin-top: 12px;
+      .tiles {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
       }
 
-      @media (max-width: 600px) {
-        .model-grid {
-          grid-template-columns: repeat(2, 1fr);
-          gap: 8px;
+      @container (min-width: 560px) {
+        .tiles {
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+      }
+
+      @container (min-width: 900px) {
+        .tiles {
+          grid-template-columns: repeat(4, minmax(0, 1fr));
         }
       }
     `,
