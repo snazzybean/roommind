@@ -6,6 +6,7 @@ import { RsSettingsBase } from "./rs-settings-base";
 import { customElement, property } from "lit/decorators.js";
 import type { HomeAssistant } from "../../types";
 import { localize } from "../../utils/localize";
+import { hasFloors } from "../../utils/dashboard";
 
 @customElement("rs-settings-general")
 export class RsSettingsGeneral extends RsSettingsBase {
@@ -15,8 +16,6 @@ export class RsSettingsGeneral extends RsSettingsBase {
 
   render() {
     const l = this.hass.language;
-    const hasFloors = !!this.hass.floors && Object.keys(this.hass.floors).length > 0;
-
     return html`
       <div class="settings-section first">
         <rs-list-row
@@ -30,7 +29,7 @@ export class RsSettingsGeneral extends RsSettingsBase {
         ></rs-list-row>
       </div>
       ${
-        hasFloors
+        hasFloors(this.hass)
           ? html`<div class="settings-section">
               <rs-list-row
                 switch

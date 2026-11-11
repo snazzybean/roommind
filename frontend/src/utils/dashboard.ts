@@ -58,14 +58,19 @@ export function computeAreaInfos(
   return infos;
 }
 
+/** Whether HA has any floor; grouping by floor is only offered (and applied) then. */
+export function hasFloors(hass: Pick<HomeAssistant, "floors">): boolean {
+  return !!hass.floors && Object.keys(hass.floors).length > 0;
+}
+
 /** One group without floors; else floors by level (highest first), then name, no floor last. */
 export function floorGroups(
   infos: AreaInfo[],
   hass: HomeAssistant,
   groupByFloor: boolean,
 ): FloorGroup[] {
-  if (!groupByFloor || !hass.floors) return [{ key: "", name: "", items: infos }];
-  const floors = hass.floors;
+  if (!groupByFloor || !hasFloors(hass)) return [{ key: "", name: "", items: infos }];
+  const floors = hass.floors!;
   const l = hass.language;
   const groups = new Map<string | null, AreaInfo[]>();
   for (const info of infos) {

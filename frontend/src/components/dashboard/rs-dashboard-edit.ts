@@ -2,7 +2,13 @@ import { LitElement, html, css, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { repeat } from "lit/directives/repeat.js";
 import type { HomeAssistant } from "../../types";
-import { floorGroups, orderWithGroup, type AreaInfo, type FloorGroup } from "../../utils/dashboard";
+import {
+  floorGroups,
+  hasFloors,
+  orderWithGroup,
+  type AreaInfo,
+  type FloorGroup,
+} from "../../utils/dashboard";
 import { DragReorderController } from "../../utils/drag-reorder";
 import { localize } from "../../utils/localize";
 import { roomKind, roomStateInfo } from "../../utils/room-state";
@@ -377,12 +383,16 @@ export class RsDashboardEdit extends LitElement {
           ${localize(this._narrow ? "panel.edit.intro_narrow" : "panel.edit.intro_wide", l)}
           ${hiddenCount ? localize("panel.edit.hidden_count", l, { count: hiddenCount }) : nothing}
         </div>
-        <rs-toggle-row
-          .label=${localize("settings.group_by_floor", l)}
-          .checked=${this.groupByFloor}
-          @toggle-changed=${(e: CustomEvent<boolean>) =>
-            this._fire("group-by-floor-changed", { value: e.detail })}
-        ></rs-toggle-row>
+        ${
+          hasFloors(this.hass)
+            ? html`<rs-toggle-row
+                .label=${localize("settings.group_by_floor", l)}
+                .checked=${this.groupByFloor}
+                @toggle-changed=${(e: CustomEvent<boolean>) =>
+                  this._fire("group-by-floor-changed", { value: e.detail })}
+              ></rs-toggle-row>`
+            : nothing
+        }
       </ha-card>
       ${this._groups.map((g) => {
         const group = groupAttr(g.key);
