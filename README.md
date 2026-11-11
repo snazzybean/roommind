@@ -17,7 +17,7 @@
 | custom\_components/roommind/control/residual\_heat.py              |       48 |        0 |    100% |           |
 | custom\_components/roommind/control/solar.py                       |       81 |        1 |     99% |        72 |
 | custom\_components/roommind/control/thermal\_model.py              |      543 |       17 |     97% |454, 517, 1032-1040, 1298, 1324-1328 |
-| custom\_components/roommind/coordinator.py                         |     1350 |       42 |     97% |510-511, 1365-1366, 1376, 1378, 1942, 1993, 2021-2022, 2073, 2282, 2488-2491, 2767, 2776, 2798, 2803, 2805, 2808, 2811, 2855, 2860-2865, 2869, 2909, 2911, 2914, 2917, 2943-2944, 3060, 3080-3088, 3106-3107, 3122-3127, 3144-3145 |
+| custom\_components/roommind/coordinator.py                         |     1350 |       42 |     97% |510-511, 1367-1368, 1378, 1380, 1944, 1995, 2023-2024, 2075, 2284, 2490-2493, 2769, 2778, 2800, 2805, 2807, 2810, 2813, 2857, 2862-2867, 2871, 2911, 2913, 2916, 2919, 2945-2946, 3062, 3082-3090, 3108-3109, 3124-3129, 3146-3147 |
 | custom\_components/roommind/deprecation.py                         |       56 |        0 |    100% |           |
 | custom\_components/roommind/diagnostics.py                         |      238 |        0 |    100% |           |
 | custom\_components/roommind/managers/\_\_init\_\_.py               |        0 |        0 |    100% |           |
