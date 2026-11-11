@@ -1,11 +1,15 @@
-import { LitElement, html, css, nothing } from "lit";
+import { LitElement, html, css, nothing, type PropertyValues } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
+import { localize, uiLanguage } from "../../utils/localize";
+import { deepActiveElement, tabbables } from "../../utils/focus";
+import type { RsIconButton } from "./rs-icon-button";
+import "./rs-icon-button";
 
-const CLOSE_PATH =
-  "M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z";
-const INFO_PATH =
-  "M11,9H13V7H11M12,20C7.59,20 4,16.41 4,12C4,7.59 7.59,4 12,4C16.41,4 20,7.59 20,12C20,16.41 16.41,20 12,20M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M11,17H13V11H11V17Z";
-
+/**
+ * The panel's modal dialog. Takes the focus on open (close button), keeps Tab inside and gives
+ * the focus back to the opener when it closes or is removed. Not a native `<dialog>`: a modal one
+ * makes everything outside inert, and HA picker overlays can render outside the dialog.
+ */
 @customElement("rs-edit-dialog")
 export class RsEditDialog extends LitElement {
   @property({ type: Boolean, reflect: true }) public open = false;
@@ -14,6 +18,8 @@ export class RsEditDialog extends LitElement {
   @property({ type: Boolean }) public hasInfo = false;
 
   @state() private _infoExpanded = false;
+
+  private _opener: HTMLElement | null = null;
 
   private _onKeyDown = (e: KeyboardEvent) => {
     if (e.key === "Escape" && this.open) {
@@ -30,6 +36,41 @@ export class RsEditDialog extends LitElement {
   disconnectedCallback(): void {
     super.disconnectedCallback();
     window.removeEventListener("keydown", this._onKeyDown);
+    // Callers remove the dialog on close instead of clearing `open`
+    this._restoreFocus();
+  }
+
+  protected willUpdate(changed: PropertyValues<this>): void {
+    if (changed.has("open") && this.open && !this._opener) this._opener = deepActiveElement();
+  }
+
+  protected updated(changed: PropertyValues<this>): void {
+    if (!changed.has("open")) return;
+    if (this.open) void this._focusClose();
+    else this._restoreFocus();
+  }
+
+  private async _focusClose() {
+    const btn = this.renderRoot.querySelector<RsIconButton>(".close-btn");
+    if (!btn) return;
+    await btn.updateComplete;
+    btn.focusQuietly();
+  }
+
+  private _restoreFocus() {
+    const opener = this._opener;
+    this._opener = null;
+    if (opener?.isConnected) opener.focus();
+  }
+
+  /** Focus left the dialog through one of the guards around it: wrap to the other end. */
+  private _wrap(toStart: boolean) {
+    const dialog = this.renderRoot.querySelector(".dialog");
+    if (!dialog) return;
+    const stops = tabbables(dialog);
+    const target = toStart ? stops[0] : stops[stops.length - 1];
+    if (target) target.focus();
+    else void this._focusClose();
   }
 
   static styles = css`
@@ -112,26 +153,26 @@ export class RsEditDialog extends LitElement {
       white-space: nowrap;
     }
 
-    .info-btn {
-      --mdc-icon-button-size: 36px;
-      --mdc-icon-size: 20px;
-      color: var(--secondary-text-color);
-      transition:
-        color 0.15s,
-        background 0.15s;
-      border-radius: 50%;
+    .info-btn,
+    .close-btn {
+      --rs-icon-button-color: var(--secondary-text-color);
     }
 
     .info-btn.active {
-      color: var(--primary-color);
-      background: rgba(3, 169, 244, 0.12);
+      --rs-icon-button-color: var(--primary-color);
+      --rs-icon-button-background: color-mix(in srgb, var(--primary-color) 12%, transparent);
     }
 
     .close-btn {
-      --mdc-icon-button-size: 36px;
-      --mdc-icon-size: 20px;
-      color: var(--secondary-text-color);
-      margin: -6px -10px -6px 0;
+      margin: -8px -12px -8px 0;
+    }
+
+    .guard {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      opacity: 0;
     }
 
     .dialog-body {
@@ -194,26 +235,39 @@ export class RsEditDialog extends LitElement {
 
   render() {
     if (!this.open) return nothing;
+    const l = uiLanguage();
     return html`
-      <div class="backdrop" @click=${this._onBackdropClick} role="dialog" aria-modal="true">
-        <div class="dialog" @click=${(e: Event) => e.stopPropagation()}>
+      <div class="backdrop" @click=${this._onBackdropClick}>
+        <span class="guard" tabindex="0" @focus=${() => this._wrap(false)}></span>
+        <div
+          class="dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="title"
+          @click=${(e: Event) => e.stopPropagation()}
+        >
           <div class="dialog-header">
             ${this.icon ? html`<ha-icon class="dialog-icon" icon=${this.icon}></ha-icon>` : nothing}
-            <h3 class="dialog-title">${this.heading}</h3>
+            <h3 class="dialog-title" id="title">${this.heading}</h3>
             ${
               this.hasInfo
-                ? html`<ha-icon-button
+                ? html`<rs-icon-button
                     class="info-btn ${this._infoExpanded ? "active" : ""}"
-                    .path=${INFO_PATH}
+                    size="sm"
+                    icon="mdi:information-outline"
+                    .label=${localize("common.help", l)}
+                    .pressed=${this._infoExpanded}
                     @click=${this._toggleInfo}
-                  ></ha-icon-button>`
+                  ></rs-icon-button>`
                 : nothing
             }
-            <ha-icon-button
+            <rs-icon-button
               class="close-btn"
-              .path=${CLOSE_PATH}
+              size="sm"
+              icon="mdi:close"
+              .label=${localize("common.close", l)}
               @click=${this._close}
-            ></ha-icon-button>
+            ></rs-icon-button>
           </div>
           <div class="dialog-body">
             ${
@@ -224,6 +278,7 @@ export class RsEditDialog extends LitElement {
             <slot></slot>
           </div>
         </div>
+        <span class="guard" tabindex="0" @focus=${() => this._wrap(true)}></span>
       </div>
     `;
   }
