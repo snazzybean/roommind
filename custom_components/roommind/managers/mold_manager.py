@@ -131,10 +131,10 @@ class MoldManager:
                         targets,
                         message=(
                             f"Mold risk in {area_name}: "
-                            f"{current_humidity:.0f}% humidity, "
-                            f"estimated surface RH {surface_rh:.0f}%"
+                            f"{current_humidity:.0f}% humidity in the room, "
+                            f"about {surface_rh:.0f}% at the coldest spot of the wall"
                         ),
-                        title="RoomMind: Mold Risk Warning",
+                        title="RoomMind: mold risk",
                         tag_suffix="risk",
                     )
                     self._throttler.record_sent(f"detect_{area_id}")
@@ -214,11 +214,11 @@ class MoldManager:
                 area_name,
                 settings.get("mold_prevention_notify_targets", []),
                 message=(
-                    f"Mold prevention active in {area_name}: "
-                    f"temperature raised by "
+                    f"Mold prevention in {area_name}: "
+                    f"heating target raised by "
                     f"{celsius_delta_to_ha_fn(result.prevention_delta):.0f}{ha_temp_unit_str_fn()}"
                 ),
-                title="RoomMind: Mold Prevention",
+                title="RoomMind: mold prevention",
                 tag_suffix="prevention",
             )
             self._throttler.record_sent(f"prevent_{area_id}")

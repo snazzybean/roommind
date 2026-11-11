@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "RoomMind",
-        "description": "Configurer RoomMind pour gérer le climat des pièces. Les pièces se configurent ensuite dans le panneau RoomMind."
+        "description": "Configurer RoomMind pour la régulation du climat des pièces. Les pièces se configurent ensuite dans le panneau RoomMind de la barre latérale."
       }
     },
     "abort": {
@@ -17,7 +17,7 @@
         "step": {
           "confirm_restart": {
             "title": "Redémarrer Home Assistant ?",
-            "description": "RoomMind {version} est installé, mais Home Assistant utilise encore une version plus ancienne. Redémarrez pour terminer la mise à jour."
+            "description": "RoomMind {version} est installé, mais Home Assistant tourne encore avec l'ancienne version. La mise à jour est terminée après un redémarrage."
           }
         }
       }

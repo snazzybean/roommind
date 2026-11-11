@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "RoomMind",
-        "description": "Configura RoomMind per gestire la climatizzazione delle stanze. Le stanze si configurano nel pannello RoomMind al termine dell'installazione."
+        "description": "Configura RoomMind per il controllo del clima delle stanze. Le stanze si configurano poi nel pannello RoomMind della barra laterale."
       }
     },
     "abort": {
@@ -17,7 +17,7 @@
         "step": {
           "confirm_restart": {
             "title": "Riavviare Home Assistant?",
-            "description": "RoomMind {version} è stato installato ma Home Assistant sta ancora eseguendo una versione precedente. Riavvia per completare l'aggiornamento."
+            "description": "RoomMind {version} è installato, ma Home Assistant usa ancora la versione precedente. L'aggiornamento è completo dopo un riavvio."
           }
         }
       }

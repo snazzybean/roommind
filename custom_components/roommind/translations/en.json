@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "RoomMind",
-        "description": "Set up RoomMind to manage room climate. Rooms are configured in the RoomMind panel after setup."
+        "description": "Set up RoomMind for room climate control. You set up the rooms afterwards in the RoomMind panel in the sidebar."
       }
     },
     "abort": {
@@ -17,7 +17,7 @@
         "step": {
           "confirm_restart": {
             "title": "Restart Home Assistant?",
-            "description": "RoomMind {version} has been installed but Home Assistant is still running an older version. Restart to complete the update."
+            "description": "RoomMind {version} is installed, but Home Assistant is still running the old version. The update is done after a restart."
           }
         }
       }

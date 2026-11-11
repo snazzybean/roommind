@@ -649,12 +649,12 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         sensor_id = settings.get("outdoor_temp_sensor") or "(not configured)"
         weather_eid = settings.get("weather_entity") or "(not configured)"
         message = (
-            "RoomMind cannot read an outdoor temperature. Thermal model "
-            "learning is paused for all rooms until a valid source returns.\n\n"
+            "RoomMind gets no outdoor temperature, so learning is paused in every "
+            "room until one arrives again.\n\n"
             f"• Outdoor sensor: `{sensor_id}`\n"
             f"• Weather entity: `{weather_eid}`\n\n"
-            "Check that the sensor is online or configure a weather entity in "
-            "Settings → Outdoor."
+            "Check that the sensor reports values, or set a weather forecast in "
+            "RoomMind under Settings › Sensors & data sources."
         )
         _LOGGER.warning(
             "Outdoor temperature unavailable for %d cycles — EKF learning paused",
@@ -663,7 +663,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         async_create_notification(
             self.hass,
             message,
-            title="RoomMind: outdoor temperature unavailable",
+            title="RoomMind: no outdoor temperature",
             notification_id=OUTDOOR_UNAVAILABLE_NOTIFICATION_ID,
         )
         self._outdoor_warning_sent = True
