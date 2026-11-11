@@ -8,7 +8,7 @@ import random
 
 import pytest
 
-from custom_components.roommind.control.thermal_model import ThermalEKF
+from custom_components.roommind.control.thermal_model import RoomModelManager, ThermalEKF
 
 ALPHA = 0.015  # 1/h, ~67 h time constant like the sim's radiator rooms
 T_OUT = 2.0
@@ -90,3 +90,19 @@ def test_boost_follows_a_bigger_radiator_at_least_as_fast(settled):
     _run(ekf, 6, 1.6, rng_b, T)
     assert abs(ekf._x[2] - 1.6) <= abs(plain._x[2] - 1.6)
     assert ekf._x[2] == pytest.approx(1.6, rel=0.3)
+
+
+def test_manager_boost_without_a_model_returns_none_and_creates_none():
+    mgr = RoomModelManager()
+    assert mgr.boost_learning("kitchen") is None
+    assert "kitchen" not in mgr._estimators
+
+
+def test_manager_boost_widens_the_rooms_estimator_and_returns_its_update_count(settled):
+    ekf, _ = settled
+    mgr = RoomModelManager()
+    mgr._estimators["kitchen"] = ekf
+    before = copy.deepcopy(ekf._P)
+    assert mgr.boost_learning("kitchen") == ekf._n_updates
+    assert ekf._n_updates > 0
+    assert ekf._P[1][1] == pytest.approx(before[1][1] * 2.5)
