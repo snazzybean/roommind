@@ -187,7 +187,7 @@ export class RsScheduleSettings extends RsScheduleBase {
               icon-label=${localize("detail.more_info", l)}
               .heading=${this._getFriendlyName(this.scheduleSelectorEntity)}
               .secondary=${localize("schedule.view_selector_prefix", l).replace(/:\s*$/, "")}
-              .value=${this._getSelectorValueText(l)}
+              .value=${this.selectorStateText()}
               @row-click=${open("schedule")}
               @icon-click=${() => this._openEntityInfo(this.scheduleSelectorEntity)}
             ></rs-list-row>`
@@ -282,7 +282,7 @@ export class RsScheduleSettings extends RsScheduleBase {
       ${this._renderSelectorSection(
         this.schedules.length,
         localize("schedule.selector_label", l),
-        this.scheduleSelectorEntity ? this._getSelectorValueText(l) : "",
+        "",
         localize("schedule.selector_warning", l),
         (value) => this._onSelectorEntityChange(value),
       )}
@@ -495,21 +495,6 @@ export class RsScheduleSettings extends RsScheduleBase {
       when = `${weekday} ${when}`;
     }
     return `${w.value} (${when})`;
-  }
-
-  // ─── Selector value text ───────────────────────────────────────
-
-  private _getSelectorValueText(l: string): string {
-    const selectorState = this.hass?.states?.[this.scheduleSelectorEntity];
-    if (!selectorState) return "";
-    if (this.scheduleSelectorEntity.startsWith("input_boolean.")) {
-      return localize("schedule.selector_value_boolean", l, {
-        value: selectorState.state === "on" ? "On" : "Off",
-      });
-    }
-    return localize("schedule.selector_value_number", l, {
-      value: selectorState.state,
-    });
   }
 
   // ─── Status text (temperature-specific) ────────────────────────

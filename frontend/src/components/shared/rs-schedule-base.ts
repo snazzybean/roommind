@@ -312,20 +312,18 @@ export abstract class RsScheduleBase extends LitElement {
           this.selectorEntity && selectorState
             ? html`
                 <div class="selector-value">
-                  ${
+                  ${localize(
                     this.selectorEntity.startsWith("input_boolean.")
-                      ? localize("schedule.selector_value_boolean", this.hass.language, {
-                          value: selectorState.state === "on" ? "On" : "Off",
-                        })
-                      : localize("schedule.selector_value_number", this.hass.language, {
-                          value: selectorState.state,
-                        })
-                  }
+                      ? "schedule.selector_value_boolean"
+                      : "schedule.selector_value_number",
+                    this.hass.language,
+                    { value: this.selectorStateText() },
+                  )}
                 </div>
               `
             : nothing
         }
-        <div class="section-hint" style="margin-top:4px">${selectorHint}</div>
+        ${selectorHint ? html`<div class="section-hint" style="margin-top:4px">${selectorHint}</div>` : nothing}
         ${
           count > 1 && !this.selectorEntity
             ? html`
@@ -338,6 +336,18 @@ export abstract class RsScheduleBase extends LitElement {
         }
       </div>
     `;
+  }
+
+  /** The selector's state as the user reads it: "An"/"Aus", or the number. */
+  protected selectorStateText(): string {
+    const st = this.selectorEntity ? this.hass?.states?.[this.selectorEntity] : undefined;
+    if (!st) return "";
+    if (this.selectorEntity.startsWith("input_boolean.")) {
+      const l = this.hass.language;
+      if (st.state === "on") return localize("detail.on", l);
+      if (st.state === "off") return localize("detail.off", l);
+    }
+    return this.hass.formatEntityState?.(st) ?? st.state;
   }
 
   protected _renderScheduleControls(
