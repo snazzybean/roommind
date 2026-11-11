@@ -3,6 +3,7 @@ import { customElement, property, query, state } from "lit/decorators.js";
 import type { ClimateMode, HomeAssistant, RoomConfig } from "../../types";
 import { localize } from "../../utils/localize";
 import { errorText } from "../../utils/errors";
+import { showToast } from "../../utils/toast";
 import { tokens } from "../../styles/tokens";
 import { floatingStyles } from "../../styles/floating-styles";
 import { inputStyles } from "../../styles/input-styles";
@@ -54,7 +55,6 @@ import "../shared/rs-edit-dialog";
 
 /** Debounce of the auto-save; a drag or a few stepper taps end up in one update. */
 const SAVE_DELAY_MS = 800;
-const TOAST_MS = 8000;
 const MOBILE_MAX = 600;
 
 interface UsingRoom {
@@ -415,6 +415,13 @@ export class RsScheduleEditor extends LitElement {
         font: inherit;
         font-size: var(--rs-font-md);
         cursor: pointer;
+      }
+
+      @media (pointer: coarse) {
+        .presets button {
+          min-height: var(--rs-touch);
+          border-radius: calc(var(--rs-touch) / 2);
+        }
       }
 
       .presets button:hover {
@@ -1314,18 +1321,7 @@ export class RsScheduleEditor extends LitElement {
   }
 
   private _toast(message: string, undo?: () => void) {
-    const l = this.hass.language;
-    this.dispatchEvent(
-      new CustomEvent("hass-notification", {
-        detail: {
-          message,
-          duration: TOAST_MS,
-          ...(undo ? { action: { text: localize("schedule_editor.undo", l), action: undo } } : {}),
-        },
-        bubbles: true,
-        composed: true,
-      }),
-    );
+    showToast(this, message, this.hass.language, undo);
   }
 
   // ─── Dialogs ────────────────────────────────────────────────────────

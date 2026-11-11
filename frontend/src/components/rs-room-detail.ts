@@ -38,6 +38,7 @@ import {
 } from "./room-detail/edit-dialog-help";
 import { localize, type TranslationKey } from "../utils/localize";
 import { errorText } from "../utils/errors";
+import { showToast } from "../utils/toast";
 import { fireSaveStatus } from "../utils/events";
 import { resolveHeatingSystemType } from "../utils/device-utils";
 import { DEFAULT_OCCUPANCY_ECO_DELAY } from "../utils/constants";
@@ -942,8 +943,22 @@ export class RsRoomDetail extends LitElement {
   }
 
   private _onSchedulesChanged(e: CustomEvent<{ value: ScheduleEntry[] }>) {
-    this._schedules = e.detail.value;
+    const before = this._schedules;
+    const next = e.detail.value;
+    this._schedules = next;
     this._autoSave();
+    // Removing is easily undone, so it asks nothing and offers Undo instead
+    const removed = before.find((s) => !next.some((n) => n.entity_id === s.entity_id));
+    if (removed && next.length < before.length) {
+      const l = this.hass.language;
+      const name =
+        (this.hass.states[removed.entity_id]?.attributes?.friendly_name as string) ||
+        removed.entity_id;
+      showToast(this, localize("schedule.removed", l, { name }), l, () => {
+        this._schedules = before;
+        this._autoSave();
+      });
+    }
   }
 
   private _onScheduleSelectorChanged(e: CustomEvent<{ value: string }>) {

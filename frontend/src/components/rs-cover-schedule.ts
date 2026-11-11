@@ -132,6 +132,7 @@ export class RsCoverSchedule extends RsScheduleBase {
                         count,
                         (i, dir) => this._moveSchedule(i, dir),
                         (i) => this._removeSchedule(i),
+                        this._getFriendlyName(entry.entity_id),
                       )}
                     </div>
                     <div class="mode-row">

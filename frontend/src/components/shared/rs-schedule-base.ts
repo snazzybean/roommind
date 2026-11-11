@@ -7,6 +7,7 @@ import { property } from "lit/decorators.js";
 import type { HomeAssistant } from "../../types";
 import { localize } from "../../utils/localize";
 import { getSelectValue, openEntityInfo } from "../../utils/events";
+import "./rs-icon-button";
 
 export abstract class RsScheduleBase extends LitElement {
   @property({ attribute: false }) public hass!: HomeAssistant;
@@ -129,10 +130,6 @@ export abstract class RsScheduleBase extends LitElement {
       gap: 2px;
       flex-shrink: 0;
     }
-    .schedule-controls ha-icon-button {
-      --mdc-icon-button-size: 28px;
-      --mdc-icon-size: 16px;
-    }
 
     .add-schedule-row {
       margin-top: 4px;
@@ -208,12 +205,6 @@ export abstract class RsScheduleBase extends LitElement {
   `;
 
   // SVG paths for icon buttons
-  protected static readonly ICON_CLOSE =
-    "M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z";
-  protected static readonly ICON_UP =
-    "M7.41,15.41L12,10.83L16.59,15.41L18,14L12,8L6,14L7.41,15.41Z";
-  protected static readonly ICON_DOWN =
-    "M7.41,8.58L12,13.17L16.59,8.58L18,10L12,16L6,10L7.41,8.58Z";
 
   // ─── State computation ───────────────────────────────────────────
 
@@ -354,34 +345,38 @@ export abstract class RsScheduleBase extends LitElement {
     count: number,
     onMove: (index: number, dir: -1 | 1) => void,
     onRemove: (index: number) => void,
+    name = "",
   ): TemplateResult {
+    const l = this.hass.language;
     const hasMultiple = count >= 2;
     return html`
       <span class="schedule-controls">
         ${
           hasMultiple && index > 0
-            ? html`
-                <ha-icon-button
-                  .path=${RsScheduleBase.ICON_UP}
-                  @click=${() => onMove(index, -1)}
-                ></ha-icon-button>
-              `
+            ? html`<rs-icon-button
+                size="sm"
+                icon="mdi:arrow-up"
+                .label=${localize("common.move_up_named", l, { name })}
+                @click=${() => onMove(index, -1)}
+              ></rs-icon-button>`
             : nothing
         }
         ${
           hasMultiple && index < count - 1
-            ? html`
-                <ha-icon-button
-                  .path=${RsScheduleBase.ICON_DOWN}
-                  @click=${() => onMove(index, 1)}
-                ></ha-icon-button>
-              `
+            ? html`<rs-icon-button
+                size="sm"
+                icon="mdi:arrow-down"
+                .label=${localize("common.move_down_named", l, { name })}
+                @click=${() => onMove(index, 1)}
+              ></rs-icon-button>`
             : nothing
         }
-        <ha-icon-button
-          .path=${RsScheduleBase.ICON_CLOSE}
+        <rs-icon-button
+          size="sm"
+          icon="mdi:close"
+          .label=${localize("common.remove_named", l, { name })}
           @click=${() => onRemove(index)}
-        ></ha-icon-button>
+        ></rs-icon-button>
       </span>
     `;
   }

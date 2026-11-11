@@ -445,6 +445,7 @@ export class RsScheduleSettings extends RsScheduleBase {
                 count,
                 (i, dir) => this._moveSchedule(i, dir),
                 (i) => this._removeSchedule(i),
+                this._getFriendlyName(schedule.entity_id),
               )}
             </div>
             ${this._renderRejectedTempWarning(state)}
