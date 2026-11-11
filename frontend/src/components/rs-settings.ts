@@ -292,7 +292,8 @@ export class RsSettings extends LitElement {
   private _renderPage(id: SettingsCategoryId) {
     const l = this.hass.language;
     const category = getSettingsCategory(id)!;
-    return html`<ha-card class="page">
+    // As its own page the toolbar already shows the title; the heading stays for screen readers
+    return html`<ha-card class="page ${this.wide ? "" : "subpage"}">
       <section aria-labelledby="page-title">
         <header class="page-head">
           <span class="page-icon ${id === "orphans" ? "attention" : ""}" aria-hidden="true">
@@ -895,6 +896,23 @@ export class RsSettings extends LitElement {
 
       h2:focus {
         outline: none;
+      }
+
+      .subpage .page-icon {
+        display: none;
+      }
+
+      .subpage h2 {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip-path: inset(50%);
+        white-space: nowrap;
+      }
+
+      .subpage .page-text p {
+        margin-top: 0;
       }
 
       .page-text p {

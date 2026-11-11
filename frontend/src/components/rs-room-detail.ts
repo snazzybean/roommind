@@ -499,7 +499,9 @@ export class RsRoomDetail extends LitElement {
         value: "cool_only",
         key: "mode.cool_only",
         icon: "mdi:snowflake",
-        desc: "mode.cool_only_desc",
+        desc: this._devices.some((d) => d.type === "trv")
+          ? "mode.cool_only_desc"
+          : "mode.cool_only_desc_plain",
         fits: modeFits("cool_only", this._devices, ability),
       },
     ];
@@ -1001,10 +1003,12 @@ export class RsRoomDetail extends LitElement {
       const name =
         (this.hass.states[removed.entity_id]?.attributes?.friendly_name as string) ||
         removed.entity_id;
-      showToast(this, localize("schedule.removed", l, { name }), l, () => {
-        this._schedules = before;
-        this._autoSave();
-      });
+      showToast(
+        this,
+        localize("schedule.removed", l, { name }),
+        l,
+        this._undoAction({ schedules: before }, () => (this._schedules = before)),
+      );
     }
   }
 
@@ -1031,10 +1035,34 @@ export class RsRoomDetail extends LitElement {
     this._autoSave();
   }
 
-  /** Presence detection switches this room: on globally, someone to watch, not ignored. */
+  /**
+   * Undo for a toast, which outlives the room page. While the page still shows this room the
+   * undo goes through the auto-save; a detached page, or one reused for another room, would
+   * save its own state, so then only the changed field goes to the store.
+   */
+  private _undoAction(changes: Record<string, unknown>, restore: () => void): () => void {
+    const areaId = this.area.area_id;
+    return () => {
+      if (this.isConnected && this.area.area_id === areaId) {
+        restore();
+        this._autoSave();
+        return;
+      }
+      this.hass
+        .callWS({ type: "roommind/rooms/save", area_id: areaId, ...changes })
+        .catch((err: unknown) => {
+          // eslint-disable-next-line no-console
+          console.error("Undo failed:", err);
+        });
+    };
+  }
+
+  /**
+   * Presence detection switches this room: on globally, someone in the global list (the
+   * presence section says the same), not ignored.
+   */
   private _presenceActive(): boolean {
-    if (!this.presenceEnabled || this._ignorePresence) return false;
-    return (this._selectedPresencePersons.length || this.presencePersons.length) > 0;
+    return this.presenceEnabled && !this._ignorePresence && this.presencePersons.length > 0;
   }
 
   /**
@@ -1182,10 +1210,12 @@ export class RsRoomDetail extends LitElement {
     const name =
       (this.hass.states[removed.entity_id]?.attributes?.friendly_name as string) ||
       removed.entity_id;
-    showToast(this, localize("covers.schedule_removed", l, { name }), l, () => {
-      this._coverSchedules = before;
-      this._autoSave();
-    });
+    showToast(
+      this,
+      localize("covers.schedule_removed", l, { name }),
+      l,
+      this._undoAction({ cover_schedules: before }, () => (this._coverSchedules = before)),
+    );
   }
 
   private _onCoverSettingChanged(e: CustomEvent<{ key: string; value: unknown }>) {

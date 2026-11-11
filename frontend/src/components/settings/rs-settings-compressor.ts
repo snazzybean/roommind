@@ -94,8 +94,10 @@ export class RsSettingsCompressor extends LitElement {
         margin-top: 12px;
         margin-bottom: 4px;
       }
-      .add-button {
-        margin: 12px 0 var(--rs-space-4, 16px);
+      /* runs to the card edge like the settings pages' other rows */
+      .add-row {
+        margin: 0 calc(-1 * var(--rs-settings-inline, 0px)) var(--rs-space-2);
+        --rs-list-row-padding: var(--rs-settings-inline, 16px);
       }
       .delete-row {
         margin-top: 16px;
@@ -107,11 +109,6 @@ export class RsSettingsCompressor extends LitElement {
         font-size: var(--rs-font-sm);
         line-height: 1.4;
         color: var(--secondary-text-color);
-      }
-      .no-groups {
-        color: var(--secondary-text-color);
-        font-size: 14px;
-        padding: 8px 0;
       }
       ha-textfield {
         width: 100%;
@@ -136,15 +133,17 @@ export class RsSettingsCompressor extends LitElement {
   render() {
     const l = this.hass.language;
     return html`
-      ${
-        this.compressorGroups.length === 0
-          ? html`<div class="no-groups">${localize("compressor.no_groups", l)}</div>`
-          : this.compressorGroups.map((group, idx) => this._renderGroup(group, idx))
-      }
-      <ha-button class="add-button" @click=${this._addGroup}>
-        <ha-icon icon="mdi:plus" slot="icon"></ha-icon>
-        ${localize("compressor.add_group", l)}
-      </ha-button>
+      ${this.compressorGroups.map((group, idx) => this._renderGroup(group, idx))}
+      <rs-list-row
+        class="add-row"
+        clickable
+        plain-icon
+        variant="primary"
+        icon="mdi:plus"
+        .heading=${localize("compressor.add_group", l)}
+        .secondary=${this.compressorGroups.length ? "" : localize("compressor.no_groups", l)}
+        @row-click=${this._addGroup}
+      ></rs-list-row>
     `;
   }
 
