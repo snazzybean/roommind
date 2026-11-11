@@ -6,6 +6,7 @@ import "./rs-tooltip";
 /**
  * Status hint: icon plus text, or icon only with the text as tooltip and accessible name.
  * `variant` colours warnings (`warn`) and dangers (`error`); everything else stays neutral.
+ * `info`: an explanation the text chip shows as tooltip (hover, focus, tap).
  */
 @customElement("rs-hint-chip")
 export class RsHintChip extends LitElement {
@@ -16,6 +17,7 @@ export class RsHintChip extends LitElement {
   @property({ type: Boolean, reflect: true, attribute: "icon-only" }) public iconOnly = false;
   /** Icon-only chips: a short text (e.g. "+2") in place of the icon. */
   @property({ type: String }) public short = "";
+  @property({ type: String }) public info = "";
 
   static styles = [
     tokens,
@@ -89,7 +91,18 @@ export class RsHintChip extends LitElement {
         font-variant-numeric: tabular-nums;
       }
 
-      button.chip {
+      button.chip.info {
+        cursor: pointer;
+        padding: 0 8px 0 7px;
+      }
+
+      .info-mark {
+        --mdc-icon-size: 13px;
+        color: var(--secondary-text-color);
+        opacity: 0.8;
+      }
+
+      button.chip:not(.info) {
         min-width: 26px;
         padding: 0;
         justify-content: center;
@@ -118,6 +131,14 @@ export class RsHintChip extends LitElement {
       return html`<rs-tooltip .text=${this.text}>
         <button type="button" class="chip" aria-label=${this.text}>
           ${this.short ? html`<span class="short">${this.short}</span>` : html`<ha-icon .icon=${this.icon}></ha-icon>`}
+        </button>
+      </rs-tooltip>`;
+    }
+    if (this.info) {
+      return html`<rs-tooltip .text=${this.info}>
+        <button type="button" class="chip info" aria-label=${`${this.text}. ${this.info}`}>
+          <ha-icon .icon=${this.icon}></ha-icon><span class="text">${this.text}</span
+          ><ha-icon class="info-mark" icon="mdi:information-outline"></ha-icon>
         </button>
       </rs-tooltip>`;
     }

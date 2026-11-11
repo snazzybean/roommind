@@ -1,9 +1,10 @@
 /**
  * rs-badge – Small pill badge (e.g. "Beta") for section headers.
- * Reused in rs-section-card and rs-settings-panel.
+ * Used in list card headers and rs-settings-panel; the hint shows in the shared tooltip.
  */
 import { LitElement, html, css } from "lit";
 import { customElement, property } from "lit/decorators.js";
+import "./rs-tooltip";
 
 @customElement("rs-badge")
 export class RsBadge extends LitElement {
@@ -26,10 +27,27 @@ export class RsBadge extends LitElement {
       text-transform: uppercase;
       cursor: default;
     }
+
+    button.badge {
+      border: none;
+      font-family: inherit;
+      line-height: inherit;
+      cursor: help;
+    }
+
+    button.badge:focus-visible {
+      outline: 2px solid var(--primary-color);
+      outline-offset: 1px;
+    }
   `;
 
   render() {
-    return html`<span class="badge" title=${this.hint}>${this.label}</span>`;
+    if (!this.hint) return html`<span class="badge">${this.label}</span>`;
+    return html`<rs-tooltip .text=${this.hint}>
+      <button type="button" class="badge" aria-label=${`${this.label}: ${this.hint}`}>
+        ${this.label}
+      </button>
+    </rs-tooltip>`;
   }
 }
 

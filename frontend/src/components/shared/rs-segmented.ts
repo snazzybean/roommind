@@ -13,6 +13,7 @@ export interface RsSegmentOption {
  * Segmented choice (radio group). Arrow keys move the focus; Space/Enter (or a click) picks.
  * Manual activation on purpose: options often trigger a request, an arrow key must not send
  * one per step. `value` may be null (nothing picked). Fires `value-changed` with `{ value }`.
+ * `wrap`: options flow onto a second line when they do not fit (many or long labels).
  */
 @customElement("rs-segmented")
 export class RsSegmented extends LitElement {
@@ -22,6 +23,7 @@ export class RsSegmented extends LitElement {
   @property({ type: String }) public label = "";
   @property({ type: String, reflect: true }) public size: "sm" | "md" = "md";
   @property({ type: Boolean, reflect: true }) public disabled = false;
+  @property({ type: Boolean, reflect: true }) public wrap = false;
 
   static styles = [
     tokens,
@@ -31,12 +33,25 @@ export class RsSegmented extends LitElement {
         min-width: 0;
       }
 
+      /* labels win over icons when space runs out (see _fit) */
+      :host([compact]) ha-icon {
+        display: none;
+      }
+
       .seg {
         display: flex;
         gap: 3px;
         padding: 3px;
         border-radius: 10px;
         background: var(--rs-fill);
+      }
+
+      :host([wrap]) .seg {
+        flex-wrap: wrap;
+      }
+
+      :host([wrap]) button {
+        flex: 1 0 auto;
       }
 
       button {
@@ -73,6 +88,12 @@ export class RsSegmented extends LitElement {
         height: 28px;
         padding: 0 10px;
         font-size: 12px;
+      }
+
+      @media (pointer: coarse) {
+        :host([size="sm"]) button {
+          height: 36px;
+        }
       }
 
       button span {
@@ -112,6 +133,33 @@ export class RsSegmented extends LitElement {
       }
     `,
   ];
+
+  private _resize?: ResizeObserver;
+
+  connectedCallback(): void {
+    super.connectedCallback();
+    this._resize = new ResizeObserver(() => this._fit());
+    this._resize.observe(this);
+  }
+
+  disconnectedCallback(): void {
+    super.disconnectedCallback();
+    this._resize?.disconnect();
+  }
+
+  protected updated(): void {
+    this._fit();
+  }
+
+  /** Drops the icons while a label would be cut off with them. */
+  private _fit(): void {
+    if (!this.options.some((o) => o.icon)) return;
+    this.removeAttribute("compact");
+    const cut = [...this.renderRoot.querySelectorAll<HTMLElement>("button span")].some(
+      (el) => el.scrollWidth > el.clientWidth + 1,
+    );
+    this.toggleAttribute("compact", cut);
+  }
 
   render() {
     const enabled = this.options.filter((o) => !o.disabled && !this.disabled);
