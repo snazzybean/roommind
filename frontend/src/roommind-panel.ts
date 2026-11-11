@@ -1,12 +1,16 @@
 import { LitElement, html, css, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
-import type { HomeAssistant, HassArea, PriceStatus, RoomConfig, RoomWithoutArea } from "./types";
-import { getEntitiesForArea } from "./utils/room-state";
+import type { HomeAssistant, PriceStatus, RoomConfig, RoomWithoutArea } from "./types";
 import { loadHaElements } from "./load-ha-elements";
 import { localize } from "./utils/localize";
-import { mdiEyeOff } from "./utils/icons";
+import { fireSaveStatus } from "./utils/events";
+import { computeAreaInfos, type AreaInfo } from "./utils/dashboard";
+import type { HouseSummary } from "./components/dashboard/rs-dashboard";
 import "./components/rs-settings";
 import "./components/rs-analytics";
+import "./components/dashboard/rs-dashboard";
+import "./components/dashboard/rs-dashboard-edit";
+import "./components/shared/rs-icon-button";
 
 const BACK_PATH = "M20,11V13H8L13.5,18.5L12.08,19.92L4.16,12L12.08,4.08L13.5,5.5L8,11H20Z";
 
@@ -20,13 +24,6 @@ const THERMOMETER_PATH =
   "M15 13V5A3 3 0 0 0 9 5V13A5 5 0 1 0 15 13M12 4A1 1 0 0 1 13 5V8H11V5A1 1 0 0 1 12 4Z";
 
 type TabId = "areas" | "analytics" | "settings";
-
-interface AreaInfo {
-  area: HassArea;
-  config: RoomConfig | null;
-  climateEntityCount: number;
-  tempSensorCount: number;
-}
 
 @customElement("roommind-panel")
 export class RoomMindPanel extends LitElement {
@@ -45,7 +42,7 @@ export class RoomMindPanel extends LitElement {
   @state() private _vacationTemp: number | null = null;
   @state() private _vacationUntil: number | null = null;
   @state() private _hiddenRooms: string[] = [];
-  @state() private _showHiddenRooms = false;
+  @state() private _outdoorTemp: number | null = null;
   @state() private _controlMode: "mpc" | "bangbang" = "mpc";
   @state() private _climateControlActive = true;
   @state() private _presenceEnabled = false;
@@ -62,7 +59,7 @@ export class RoomMindPanel extends LitElement {
   @state() private _saveStatus: "idle" | "saving" | "saved" | "error" = "idle";
   @state() private _roomOrder: string[] = [];
   @state() private _groupByFloor = false;
-  @state() private _reorderMode = false;
+  @state() private _editing = false;
   @state() private _elementsLoaded = false;
 
   private _refreshInterval?: ReturnType<typeof setInterval>;
@@ -71,6 +68,9 @@ export class RoomMindPanel extends LitElement {
   private _areaInfosCache: AreaInfo[] = [];
   private _boundVisibilityHandler?: () => void;
   private _boundConnectionReady?: () => void;
+  /** Bumped on every dashboard settings save; polls started before it keep their old layout. */
+  private _layoutEpoch = 0;
+  private _layoutSaves = 0;
 
   static styles = css`
     :host {
@@ -194,32 +194,6 @@ export class RoomMindPanel extends LitElement {
       }
     }
 
-    .placeholder {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      padding: 80px 16px;
-      text-align: center;
-      color: var(--secondary-text-color);
-    }
-
-    .placeholder ha-icon {
-      margin-bottom: 16px;
-    }
-
-    .placeholder p {
-      font-size: 15px;
-      max-width: 400px;
-      line-height: 1.5;
-    }
-
-    .area-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(min(360px, 100%), 1fr));
-      gap: 16px;
-    }
-
     .loading {
       display: flex;
       align-items: center;
@@ -229,107 +203,16 @@ export class RoomMindPanel extends LitElement {
       font-size: 14px;
     }
 
-    .stats-separator {
-      width: 1px;
-      height: 28px;
-      background: var(--divider-color, #444);
-      margin: 0 4px;
-      flex-shrink: 0;
+    .toolbar.editing {
+      background-color: var(--secondary-background-color, var(--app-header-background-color));
     }
 
-    .stats-bar {
-      display: flex;
-      align-items: center;
-      flex-wrap: wrap;
-      gap: 12px 24px;
-      margin-bottom: 20px;
-      padding: 12px 16px;
+    .toolbar rs-icon-button {
+      color: var(--app-header-text-color, var(--primary-text-color));
     }
 
-    .stats-actions {
-      display: flex;
-      align-items: center;
-      margin-left: auto;
-      gap: 0;
-    }
-
-    .hidden-rooms-toggle {
-      --mdc-icon-button-size: 36px;
-      --mdc-icon-size: 20px;
-      color: var(--secondary-text-color);
-    }
-
-    .hidden-rooms-panel {
-      margin-bottom: 20px;
-      padding: 12px 16px;
-    }
-
-    .hidden-rooms-header {
-      font-size: 13px;
-      font-weight: 500;
-      color: var(--secondary-text-color);
-      margin-bottom: 8px;
-    }
-
-    .hidden-room-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 6px 0;
-    }
-
-    .hidden-room-name {
-      font-size: 14px;
-      color: var(--primary-text-color);
-    }
-
-    .stat {
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
-    }
-
-    .stat-value {
-      font-size: 20px;
-      font-weight: 500;
-      color: var(--primary-text-color);
-      --mdc-icon-size: 22px;
-      line-height: 1;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      min-height: 24px;
-    }
-
-    .stat-label {
-      font-size: 12px;
-      color: var(--secondary-text-color);
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-
-    .floor-heading {
-      font-size: 14px;
-      font-weight: 500;
-      color: var(--secondary-text-color);
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      margin: 20px 0 8px 0;
-    }
-
-    .floor-heading:first-of-type {
-      margin-top: 0;
-    }
-
-    .reorder-btn {
-      --mdc-icon-button-size: 36px;
-      --mdc-icon-size: 20px;
-      color: var(--secondary-text-color);
-    }
-
-    .reorder-done {
-      font-size: 14px;
-      margin-left: auto;
+    .toolbar .done {
+      margin-right: 4px;
     }
   `;
 
@@ -371,6 +254,7 @@ export class RoomMindPanel extends LitElement {
     }
     if (this._saveStatusTimeout) clearTimeout(this._saveStatusTimeout);
     this.removeEventListener("save-status", this._onSaveStatus as EventListener);
+    window.removeEventListener("keydown", this._onEditKey);
     // NOTE: _boundVisibilityHandler intentionally NOT removed here.
     // It must survive disconnect to detect when tab becomes visible again
     // and trigger re-navigation if HA removed our element during idle.
@@ -393,12 +277,31 @@ export class RoomMindPanel extends LitElement {
       settings: localize("panel.tab.settings", l),
     };
 
+    if (this._isEditing()) {
+      return html`
+        <div class="toolbar editing">
+          <rs-icon-button
+            icon="mdi:close"
+            .label=${localize("panel.edit.close", l)}
+            @click=${this._stopEditing}
+          ></rs-icon-button>
+          <div class="title">${localize("panel.edit_rooms", l)}</div>
+          ${this._renderSaveIndicator()}
+          <ha-button class="done" @click=${this._stopEditing}
+            >${localize("panel.edit.done", l)}</ha-button
+          >
+        </div>
+        <div class="content">${this._renderTab()}</div>
+      `;
+    }
+
     return html`
       <div class="toolbar">
         ${
           inDetail
             ? html`<ha-icon-button
                 .path=${BACK_PATH}
+                .label=${localize("room.back", l)}
                 @click=${this._onBackFromDetail}
               ></ha-icon-button>`
             : html`<ha-menu-button .hass=${this.hass} .narrow=${this.narrow}></ha-menu-button>`
@@ -411,6 +314,15 @@ export class RoomMindPanel extends LitElement {
           }
         </div>
         ${this._renderSaveIndicator()}
+        ${
+          !inDetail && this._activeTab === "areas" && this._roomsLoaded
+            ? html`<rs-icon-button
+                icon="mdi:pencil"
+                .label=${localize("panel.edit_rooms", l)}
+                @click=${this._startEditing}
+              ></rs-icon-button>`
+            : nothing
+        }
         ${
           inDetail && this._rooms[this._selectedAreaId!]
             ? html`<ha-icon-button
@@ -508,180 +420,49 @@ export class RoomMindPanel extends LitElement {
       this._selectedAreaId = null;
     }
 
-    const allAreaInfos = this._areaInfosCache;
-    const areaInfos = allAreaInfos.filter((i) => !this._hiddenRooms.includes(i.area.area_id));
-    const hiddenAreaInfos = allAreaInfos.filter((i) => this._hiddenRooms.includes(i.area.area_id));
-
-    if (allAreaInfos.length === 0) {
-      return html`
-        <div class="placeholder">
-          <ha-icon icon="mdi:home" style="--mdc-icon-size: 56px; opacity: 0.4"></ha-icon>
-          <p>
-            ${localize("panel.no_areas", this.hass.language)}<br />${localize(
-              "panel.no_areas_hint",
-              this.hass.language,
-            )}
-          </p>
-        </div>
-      `;
+    const common = {
+      hass: this.hass,
+      infos: this._areaInfosCache,
+      hiddenRooms: this._hiddenRooms,
+      groupByFloor: this._groupByFloor,
+      controlMode: this._controlMode,
+      climateControlActive: this._climateControlActive,
+    };
+    if (this._isEditing()) {
+      return html`<rs-dashboard-edit
+        .hass=${common.hass}
+        .infos=${common.infos}
+        .hiddenRooms=${common.hiddenRooms}
+        .groupByFloor=${common.groupByFloor}
+        .controlMode=${common.controlMode}
+        .climateControlActive=${common.climateControlActive}
+        @room-order-changed=${this._onRoomOrderChanged}
+        @room-hidden-changed=${this._onRoomHiddenChanged}
+        @group-by-floor-changed=${this._onGroupByFloorChanged}
+        @area-selected=${this._onAreaSelected}
+      ></rs-dashboard-edit>`;
     }
-
-    const configuredCount = areaInfos.filter((i) => i.config).length;
-    const heatingCount = areaInfos.filter((i) => i.config?.live?.mode === "heating").length;
-    const coolingCount = areaInfos.filter((i) => i.config?.live?.mode === "cooling").length;
-    const moldCount = areaInfos.filter(
-      (i) =>
-        i.config?.live?.mold_risk_level === "warning" ||
-        i.config?.live?.mold_risk_level === "critical",
-    ).length;
-    const hasConditionalStats =
-      this._vacationActive || (this._presenceEnabled && !this._anyoneHome) || moldCount > 0;
-    const l = this.hass.language;
-
-    return html`
-      ${
-        configuredCount > 0 || hiddenAreaInfos.length > 0
-          ? html`
-              <ha-card class="stats-bar">
-                ${
-                  configuredCount > 0
-                    ? html`
-                        <div class="stat">
-                          <span class="stat-value">${configuredCount}</span>
-                          <span class="stat-label">${localize("panel.stat.rooms", l)}</span>
-                        </div>
-                        <div class="stat">
-                          <span class="stat-value" style="color: var(--warning-color, #ff9800)"
-                            >${heatingCount}</span
-                          >
-                          <span class="stat-label">${localize("panel.stat.heating", l)}</span>
-                        </div>
-                        <div class="stat">
-                          <span class="stat-value" style="color: var(--info-color, #2196f3)"
-                            >${coolingCount}</span
-                          >
-                          <span class="stat-label">${localize("panel.stat.cooling", l)}</span>
-                        </div>
-                      `
-                    : nothing
-                }
-                ${hasConditionalStats ? html`<div class="stats-separator"></div>` : nothing}
-                ${
-                  this._vacationActive
-                    ? html`
-                        <div class="stat">
-                          <span class="stat-value" style="color: var(--success-color, #4caf50)">
-                            <ha-icon icon="mdi:airplane"></ha-icon>
-                          </span>
-                          <span class="stat-label">${localize("panel.stat.vacation", l)}</span>
-                        </div>
-                      `
-                    : nothing
-                }
-                ${
-                  this._presenceEnabled && !this._anyoneHome
-                    ? html`
-                        <div class="stat">
-                          <span class="stat-value" style="color: var(--secondary-text-color)">
-                            <ha-icon icon="mdi:power"></ha-icon>
-                          </span>
-                          <span class="stat-label">${localize("panel.stat.away", l)}</span>
-                        </div>
-                      `
-                    : nothing
-                }
-                ${
-                  moldCount > 0
-                    ? html`
-                        <div class="stat">
-                          <span class="stat-value" style="color: var(--error-color, #f44336)"
-                            >${moldCount}</span
-                          >
-                          <span class="stat-label">${localize("panel.stat.mold", l)}</span>
-                        </div>
-                      `
-                    : nothing
-                }
-                <span class="stats-actions">
-                  ${
-                    hiddenAreaInfos.length > 0
-                      ? html`<ha-icon-button
-                          class="hidden-rooms-toggle"
-                          .path=${mdiEyeOff}
-                          @click=${() => {
-                            this._showHiddenRooms = !this._showHiddenRooms;
-                          }}
-                        ></ha-icon-button>`
-                      : nothing
-                  }
-                  ${
-                    this._reorderMode
-                      ? html`<ha-button class="reorder-done" @click=${this._onReorderDone}>
-                          ${localize("panel.reorder_done", l)}
-                        </ha-button>`
-                      : html`<ha-icon-button
-                          class="reorder-btn"
-                          .path=${"M9,3L5,7H8V14H10V7H13M16,17V10H14V17H11L15,21L19,17H16Z"}
-                          @click=${() => {
-                            this._reorderMode = true;
-                          }}
-                          title=${localize("panel.reorder", l)}
-                        ></ha-icon-button>`
-                  }
-                </span>
-              </ha-card>
-            `
-          : nothing
-      }
-      ${
-        this._showHiddenRooms && hiddenAreaInfos.length > 0
-          ? html`
-              <ha-card class="hidden-rooms-panel">
-                <div class="hidden-rooms-header">
-                  <span>${localize("panel.hidden_rooms", l)} (${hiddenAreaInfos.length})</span>
-                </div>
-                ${hiddenAreaInfos.map(
-                  (info) => html`
-                    <div class="hidden-room-row">
-                      <span class="hidden-room-name">${info.area.name}</span>
-                      <ha-button @click=${() => this._unhideRoom(info.area.area_id)}>
-                        ${localize("panel.unhide", l)}
-                      </ha-button>
-                    </div>
-                  `,
-                )}
-              </ha-card>
-            `
-          : nothing
-      }
-      ${this._getFloorGroups(areaInfos).map(
-        (group) => html`
-          ${group.name ? html`<h4 class="floor-heading">${group.name}</h4>` : nothing}
-          <div class="area-grid">
-            ${group.items.map(
-              (info, idx) => html`
-                <rs-area-card
-                  .area=${info.area}
-                  .config=${info.config}
-                  .climateEntityCount=${info.climateEntityCount}
-                  .tempSensorCount=${info.tempSensorCount}
-                  .hass=${this.hass}
-                  .controlMode=${this._controlMode}
-                  .climateControlActive=${this._climateControlActive}
-                  .reordering=${this._reorderMode}
-                  .canMoveUp=${idx > 0}
-                  .canMoveDown=${idx < group.items.length - 1}
-                  @area-selected=${this._onAreaSelected}
-                  @hide-room=${this._onHideRoom}
-                  @move-room-up=${this._onMoveRoomUp}
-                  @move-room-down=${this._onMoveRoomDown}
-                ></rs-area-card>
-              `,
-            )}
-          </div>
-        `,
-      )}
-    `;
+    const summary: HouseSummary = {
+      vacationActive: this._vacationActive,
+      vacationUntil: this._vacationUntil,
+      presenceEnabled: this._presenceEnabled,
+      anyoneHome: this._anyoneHome,
+      outdoorTemp: this._outdoorTemp,
+      priceEntity: this._priceEntity,
+      priceStatus: this._priceStatus,
+    };
+    return html`<rs-dashboard
+      .hass=${common.hass}
+      .infos=${common.infos}
+      .hiddenRooms=${common.hiddenRooms}
+      .groupByFloor=${common.groupByFloor}
+      .controlMode=${common.controlMode}
+      .climateControlActive=${common.climateControlActive}
+      .summary=${summary}
+      @area-selected=${this._onAreaSelected}
+      @room-updated=${this._onRoomUpdated}
+      @edit-requested=${this._startEditing}
+    ></rs-dashboard>`;
   }
 
   private _renderSettings() {
@@ -694,103 +475,14 @@ export class RoomMindPanel extends LitElement {
     ></rs-settings>`;
   }
 
-  private _computeAreaInfos(): AreaInfo[] {
-    if (!this.hass?.areas) return [];
-
-    const areas = Object.values(this.hass.areas);
-
-    const infos: AreaInfo[] = areas.map((area) => {
-      const areaEntities = getEntitiesForArea(
-        area.area_id,
-        this.hass.entities,
-        this.hass.devices,
-      ).filter((e) => {
-        const idAfterDot = e.entity_id.substring(e.entity_id.indexOf(".") + 1);
-        return !idAfterDot.startsWith("roommind_");
-      });
-
-      const climateEntityCount = areaEntities.filter((e) =>
-        e.entity_id.startsWith("climate."),
-      ).length;
-
-      const tempSensorCount = areaEntities.filter(
-        (e) =>
-          e.entity_id.startsWith("sensor.") &&
-          this.hass.states[e.entity_id]?.attributes?.device_class === "temperature",
-      ).length;
-
-      return {
-        area,
-        config: this._rooms[area.area_id] ?? null,
-        climateEntityCount,
-        tempSensorCount,
-      };
-    });
-
-    // Apply custom room_order, then default sort for unordered rooms
-    const orderIndex = new Map(this._roomOrder.map((id, i) => [id, i]));
-    infos.sort((a, b) => {
-      const aIdx = orderIndex.get(a.area.area_id);
-      const bIdx = orderIndex.get(b.area.area_id);
-      // Both in custom order: use that order
-      if (aIdx !== undefined && bIdx !== undefined) return aIdx - bIdx;
-      // Only one in custom order: it comes first
-      if (aIdx !== undefined) return -1;
-      if (bIdx !== undefined) return 1;
-      // Neither in custom order: configured first, then alphabetical
-      const aScore = a.config ? 2 : a.climateEntityCount > 0 ? 1 : 0;
-      const bScore = b.config ? 2 : b.climateEntityCount > 0 ? 1 : 0;
-      if (aScore !== bScore) return bScore - aScore;
-      return a.area.name.localeCompare(b.area.name);
-    });
-
-    return infos;
-  }
-
-  private _getFloorGroups(areaInfos: AreaInfo[]): { name: string; items: AreaInfo[] }[] {
-    if (!this._groupByFloor || !this.hass.floors) return [{ name: "", items: areaInfos }];
-
-    const floors = this.hass.floors;
-    const l = this.hass.language;
-    const groups = new Map<string | null, AreaInfo[]>();
-    const floorOrder: (string | null)[] = [];
-
-    for (const info of areaInfos) {
-      const fid = info.area.floor_id ?? null;
-      if (!groups.has(fid)) {
-        groups.set(fid, []);
-        floorOrder.push(fid);
-      }
-      groups.get(fid)!.push(info);
-    }
-
-    // Sort floor keys: by level (if available), then by name, null last
-    floorOrder.sort((a, b) => {
-      if (a === null) return 1;
-      if (b === null) return -1;
-      const fa = floors[a];
-      const fb = floors[b];
-      if (fa?.level != null && fb?.level != null) return fb.level - fa.level;
-      if (fa?.level != null) return -1;
-      if (fb?.level != null) return 1;
-      return (fa?.name ?? "").localeCompare(fb?.name ?? "");
-    });
-
-    return floorOrder.map((fid) => ({
-      name:
-        fid === null
-          ? localize("panel.floor_other", l)
-          : (floors[fid]?.name ?? localize("panel.floor_other", l)),
-      items: groups.get(fid)!,
-    }));
-  }
-
   private async _loadRooms() {
     if (!this.hass) return;
+    const epoch = this._layoutEpoch;
     try {
       const result = await this.hass.callWS<{
         rooms: Record<string, RoomConfig>;
         rooms_without_area?: RoomWithoutArea[];
+        outdoor_temp?: number | null;
         vacation_active: boolean;
         vacation_temp: number | null;
         vacation_until: number | null;
@@ -819,9 +511,13 @@ export class RoomMindPanel extends LitElement {
       this._vacationActive = result.vacation_active ?? false;
       this._vacationTemp = result.vacation_temp ?? null;
       this._vacationUntil = result.vacation_until ?? null;
-      this._hiddenRooms = result.hidden_rooms ?? [];
-      this._roomOrder = result.room_order ?? [];
-      this._groupByFloor = result.group_by_floor ?? false;
+      // A layout save started or finished meanwhile: this answer may predate it.
+      if (epoch === this._layoutEpoch && this._layoutSaves === 0) {
+        this._hiddenRooms = result.hidden_rooms ?? [];
+        this._roomOrder = result.room_order ?? [];
+        this._groupByFloor = result.group_by_floor ?? false;
+      }
+      this._outdoorTemp = result.outdoor_temp ?? null;
       this._controlMode = result.control_mode ?? "mpc";
       this._climateControlActive = result.climate_control_active ?? true;
       this._presenceEnabled = result.presence_enabled ?? false;
@@ -872,6 +568,7 @@ export class RoomMindPanel extends LitElement {
   }
 
   private _onTabClicked(tab: TabId) {
+    this._stopEditing();
     this._activeTab = tab;
     this._selectedAreaId = null;
     if (tab === "areas") {
@@ -882,31 +579,9 @@ export class RoomMindPanel extends LitElement {
   }
 
   private _onAreaSelected(e: CustomEvent<{ areaId: string }>) {
+    this._stopEditing();
     this._selectedAreaId = e.detail.areaId;
     this._navigate(`/room/${e.detail.areaId}`);
-  }
-
-  private async _onHideRoom(e: CustomEvent<{ areaId: string }>) {
-    const newHidden = [...new Set([...this._hiddenRooms, e.detail.areaId])];
-    this._hiddenRooms = newHidden;
-    try {
-      await this.hass.callWS({ type: "roommind/settings/save", hidden_rooms: newHidden });
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.debug("[RoomMind] hideRoom:", err);
-    }
-  }
-
-  private async _unhideRoom(areaId: string) {
-    const newHidden = this._hiddenRooms.filter((id) => id !== areaId);
-    this._hiddenRooms = newHidden;
-    if (newHidden.length === 0) this._showHiddenRooms = false;
-    try {
-      await this.hass.callWS({ type: "roommind/settings/save", hidden_rooms: newHidden });
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.debug("[RoomMind] unhideRoom:", err);
-    }
   }
 
   private _onGoToAnalytics() {
@@ -929,59 +604,75 @@ export class RoomMindPanel extends LitElement {
     this._navigate(`/analytics/${e.detail.areaId}`);
   }
 
-  private async _onMoveRoomUp(e: CustomEvent<{ areaId: string }>) {
-    this._moveRoom(e.detail.areaId, -1);
+  private _isEditing(): boolean {
+    return this._editing && this._activeTab === "areas" && !this._selectedAreaId;
   }
 
-  private async _onMoveRoomDown(e: CustomEvent<{ areaId: string }>) {
-    this._moveRoom(e.detail.areaId, 1);
+  private _startEditing = () => {
+    this._editing = true;
+    window.addEventListener("keydown", this._onEditKey);
+  };
+
+  private _stopEditing = () => {
+    this._editing = false;
+    window.removeEventListener("keydown", this._onEditKey);
+  };
+
+  private _onEditKey = (e: KeyboardEvent) => {
+    // Tooltips, menus and a running drag catch their own Esc first (capture phase).
+    if (e.key === "Escape" && this._isEditing() && !e.defaultPrevented) this._stopEditing();
+  };
+
+  private _onRoomOrderChanged(e: CustomEvent<{ order: string[] }>) {
+    const previous = this._roomOrder;
+    this._roomOrder = e.detail.order;
+    this._areaInfosCache = computeAreaInfos(this.hass, this._rooms, this._roomOrder);
+    this._saveLayout({ room_order: e.detail.order }, () => {
+      this._roomOrder = previous;
+    });
   }
 
-  private async _moveRoom(areaId: string, direction: -1 | 1) {
-    // Build full order from current visible (non-hidden) areaInfos
-    const visible = this._areaInfosCache.filter((i) => !this._hiddenRooms.includes(i.area.area_id));
-
-    // If grouping by floor, we only reorder within the same floor group
-    if (this._groupByFloor && this.hass.floors) {
-      const groups = this._getFloorGroups(visible);
-      for (const group of groups) {
-        const ids = group.items.map((i) => i.area.area_id);
-        const idx = ids.indexOf(areaId);
-        if (idx === -1) continue;
-        const targetIdx = idx + direction;
-        if (targetIdx < 0 || targetIdx >= ids.length) return;
-        [ids[idx], ids[targetIdx]] = [ids[targetIdx], ids[idx]];
-        // Rebuild full order from all groups
-        const newOrder = groups.flatMap((g) =>
-          g === group ? ids : g.items.map((i) => i.area.area_id),
-        );
-        await this._saveRoomOrder(newOrder);
-        return;
-      }
-    } else {
-      const ids = visible.map((i) => i.area.area_id);
-      const idx = ids.indexOf(areaId);
-      if (idx === -1) return;
-      const targetIdx = idx + direction;
-      if (targetIdx < 0 || targetIdx >= ids.length) return;
-      [ids[idx], ids[targetIdx]] = [ids[targetIdx], ids[idx]];
-      await this._saveRoomOrder(ids);
-    }
+  private _onRoomHiddenChanged(e: CustomEvent<{ areaId: string; hidden: boolean }>) {
+    const previous = this._hiddenRooms;
+    const { areaId, hidden } = e.detail;
+    this._hiddenRooms = hidden
+      ? [...new Set([...this._hiddenRooms, areaId])]
+      : this._hiddenRooms.filter((id) => id !== areaId);
+    this._saveLayout({ hidden_rooms: this._hiddenRooms }, () => {
+      this._hiddenRooms = previous;
+    });
   }
 
-  private async _saveRoomOrder(order: string[]) {
-    this._roomOrder = order;
-    this._areaInfosCache = this._computeAreaInfos();
+  private _onGroupByFloorChanged(e: CustomEvent<{ value: boolean }>) {
+    const previous = this._groupByFloor;
+    this._groupByFloor = e.detail.value;
+    this._saveLayout({ group_by_floor: e.detail.value }, () => {
+      this._groupByFloor = previous;
+    });
+  }
+
+  /**
+   * Dashboard layout (order, hidden rooms, floors) through the settings merge, with the
+   * toolbar's save status; rolls back on error. Polls already on the way don't overwrite it.
+   */
+  private async _saveLayout(changes: Record<string, unknown>, rollback: () => void) {
+    this._layoutEpoch++;
+    this._layoutSaves++;
+    fireSaveStatus(this, "saving");
     try {
-      await this.hass.callWS({ type: "roommind/settings/save", room_order: order });
+      await this.hass.callWS({ type: "roommind/settings/save", ...changes });
+      fireSaveStatus(this, "saved");
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.debug("[RoomMind] saveRoomOrder:", err);
+      console.debug("[RoomMind] save dashboard layout:", err);
+      rollback();
+      this._areaInfosCache = computeAreaInfos(this.hass, this._rooms, this._roomOrder);
+      fireSaveStatus(this, "error");
+    } finally {
+      this._layoutSaves--;
+      this._layoutEpoch++;
+      this._loadRooms();
     }
-  }
-
-  private _onReorderDone() {
-    this._reorderMode = false;
   }
 
   private _onRoomUpdated() {
@@ -1026,8 +717,8 @@ export class RoomMindPanel extends LitElement {
     if (changedProps.has("route") && this._routeApplied) {
       this._applyRoute();
     }
-    if (changedProps.has("_rooms") || changedProps.has("hass")) {
-      this._areaInfosCache = this._computeAreaInfos();
+    if (changedProps.has("_rooms") || changedProps.has("hass") || changedProps.has("_roomOrder")) {
+      this._areaInfosCache = computeAreaInfos(this.hass, this._rooms, this._roomOrder);
     }
   }
 
@@ -1050,6 +741,7 @@ export class RoomMindPanel extends LitElement {
   }
 
   private _applyRoute() {
+    this._stopEditing();
     const path = this.route?.path ?? "";
     if (path.startsWith("/room/")) {
       this._activeTab = "areas";

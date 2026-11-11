@@ -69,6 +69,8 @@ export interface RoomLiveData {
   coil_dry_until: number | null;
   coil_dry_entities: string[];
   schedule_temp_warnings: ScheduleTempWarning[];
+  /** Last 6 h of room temperature, `[unix_ts, temp, target]`, oldest first (dashboard cards). */
+  recent_temps?: [number, number | null, number | null][];
 }
 
 /** A schedule block temperature the backend discarded as implausible (#395). */
@@ -266,6 +268,7 @@ export interface HassArea {
   name: string;
   picture: string | null;
   floor_id: string | null;
+  icon?: string | null;
 }
 
 export interface HassFloor {

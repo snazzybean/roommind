@@ -7,6 +7,9 @@ import type { ClimateMode, OverrideType } from "../types";
 
 export const OVERRIDE_DURATIONS_H = [1, 2, 4];
 
+/** Fallback duration of a dashboard quick override in a room without schedule (h). */
+export const QUICK_OVERRIDE_FALLBACK_H = 4;
+
 export interface RoomTemps {
   comfortHeat: number;
   comfortCool: number;
@@ -42,13 +45,18 @@ export function isInvalidBand(heat: number | null, cool: number | null): boolean
   return heat != null && cool != null && cool < heat;
 }
 
-/** WS message for `roommind/override/set`; presets take their targets from the room. */
+/**
+ * WS message for `roommind/override/set`; presets take their targets from the room.
+ * `untilScheduleChange`: hold until the next schedule change, `hours` is the fallback for
+ * rooms without a schedule.
+ */
 export function overrideSetMessage(
   areaId: string,
   type: OverrideType,
   hours: number,
   climateMode: ClimateMode,
   custom: { heat: number; cool: number },
+  untilScheduleChange = false,
 ): Record<string, unknown> {
   const msg: Record<string, unknown> = {
     type: "roommind/override/set",
@@ -56,6 +64,7 @@ export function overrideSetMessage(
     override_type: type,
     duration: hours,
   };
+  if (untilScheduleChange) msg.until_schedule_change = true;
   if (type === "custom") {
     if (climateMode !== "cool_only") msg.heat = custom.heat;
     if (climateMode !== "heat_only") msg.cool = custom.cool;

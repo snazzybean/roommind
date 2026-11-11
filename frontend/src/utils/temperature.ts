@@ -1,3 +1,4 @@
+import { formatNumber } from "./format";
 import { HomeAssistant } from "../types";
 
 export function usesFahrenheit(hass: HomeAssistant): boolean {
@@ -58,4 +59,14 @@ export function isPlausibleTargetTemp(displayValue: unknown, hass: HomeAssistant
   if (!Number.isFinite(num)) return false;
   const celsius = toCelsius(num, hass);
   return celsius >= MIN_TARGET_TEMP_C && celsius <= MAX_TARGET_TEMP_C;
+}
+
+/** °C value converted to the display unit and formatted in the user's language. */
+export function formatTempLocale(
+  celsius: number,
+  hass: HomeAssistant,
+  minDecimals = 1,
+  maxDecimals = minDecimals,
+): string {
+  return formatNumber(toDisplay(celsius, hass), hass, minDecimals, maxDecimals);
 }
