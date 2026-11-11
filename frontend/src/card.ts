@@ -5,6 +5,7 @@
  * dashboard. It must not import panel components: both bundles would define the
  * same custom elements and the second one would fail to load.
  */
+import "./card/roommind-room-card";
 import { localize, uiLanguage } from "./utils/localize";
 
 interface CustomCardEntry {
