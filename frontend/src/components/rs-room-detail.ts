@@ -205,7 +205,14 @@ export class RsRoomDetail extends LitElement {
 
   disconnectedCallback() {
     super.disconnectedCallback();
-    if (this._saveDebounce) clearTimeout(this._saveDebounce);
+    // Leaving the room within the debounce: send the change instead of dropping it
+    this._flushSave();
+  }
+
+  willUpdate() {
+    const currentAreaId = this.config?.area_id ?? this.area?.area_id ?? null;
+    // The same element shows another room: the old room's pending edits go to the old room
+    if (this._prevAreaId && currentAreaId !== this._prevAreaId) this._flushSave(this._prevAreaId);
   }
 
   updated(changedProps: Map<string, unknown>) {
@@ -1119,17 +1126,27 @@ export class RsRoomDetail extends LitElement {
   private _autoSave() {
     this._dirty = true;
     if (this._saveDebounce) clearTimeout(this._saveDebounce);
-    this._saveDebounce = setTimeout(() => this._doSave(), 500);
+    this._saveDebounce = setTimeout(() => {
+      this._saveDebounce = undefined;
+      void this._doSave();
+    }, 500);
   }
 
-  private async _doSave() {
+  private _flushSave(areaId?: string) {
+    if (!this._saveDebounce) return;
+    clearTimeout(this._saveDebounce);
+    this._saveDebounce = undefined;
+    void this._doSave(areaId);
+  }
+
+  private async _doSave(areaId: string = this.area.area_id) {
     fireSaveStatus(this, "saving");
     this._error = "";
 
     try {
       await this.hass.callWS({
         type: "roommind/rooms/save",
-        area_id: this.area.area_id,
+        area_id: areaId,
         devices: this._devices,
         temperature_sensor: this._selectedTempSensor,
         humidity_sensor: this._selectedHumiditySensor,
