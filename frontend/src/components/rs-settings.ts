@@ -303,7 +303,6 @@ export class RsSettings extends LitElement {
               ${
                 id === "notifications"
                   ? html`<rs-badge
-                      tooltip
                       .label=${localize("badge.beta", l)}
                       .hint=${localize("badge.beta_hint", l)}
                     ></rs-badge>`

@@ -442,7 +442,6 @@ export class RoomMindRoomCard extends LitElement {
                 }"
                 aria-pressed=${active === p.type || (!active && this._pending === p.type)}
                 aria-label=${localize(p.key, l)}
-                title=${localize(p.key, l)}
                 ?disabled=${active !== null && active !== p.type}
                 @click=${() => this._onPreset(room, p.type, active)}
               >
@@ -519,7 +518,6 @@ export class RoomMindRoomCard extends LitElement {
               role="switch"
               aria-checked=${enabled ? "true" : "false"}
               aria-label=${localize("room.climate_control_toggle", l)}
-              title=${localize("room.climate_control_toggle", l)}
               @click=${() => this._saveRoom({ climate_control_enabled: !enabled }, "control")}
             >
               <ha-icon class="switch-icon" icon="mdi:power" aria-hidden="true"></ha-icon>
@@ -537,7 +535,6 @@ export class RoomMindRoomCard extends LitElement {
                 class="segment ${current === m.value ? "active" : ""}"
                 aria-pressed=${current === m.value}
                 aria-label=${localize(m.key, l)}
-                title=${localize(m.key, l)}
                 @click=${() =>
                   current !== m.value && this._saveRoom({ climate_mode: m.value }, "mode")}
               >
