@@ -862,6 +862,7 @@
   "sensors.use_instead": "Utiliser à la place",
   "sensors.choose_other": "Choisir une autre entité",
   "sensors.choose": "Choisir une entité",
+  "sensors.help": "RoomMind propose les capteurs de la zone de la pièce. La recherche sous chaque groupe permet aussi de prendre un capteur d'une autre zone. Ce que fait un capteur est expliqué à l'icône d'information du groupe.",
   "common.decrease": "Diminuer",
   "common.increase": "Augmenter",
   "schedule_editor.add_block": "Ajouter un créneau",

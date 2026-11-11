@@ -862,6 +862,7 @@
   "sensors.use_instead": "Stattdessen verwenden",
   "sensors.choose_other": "Andere Entität wählen",
   "sensors.choose": "Entität wählen",
+  "sensors.help": "RoomMind schlägt die Sensoren aus dem Bereich des Raums vor. Über die Suche unter jeder Gruppe lässt sich auch ein Sensor aus einem anderen Bereich nehmen. Was ein Sensor bewirkt, steht am Info-Symbol der Gruppe.",
   "common.decrease": "Weniger",
   "common.increase": "Mehr",
   "schedule_editor.add_block": "Block hinzufügen",

@@ -117,6 +117,17 @@ export function devicesHelp(lang: string) {
   </div>`;
 }
 
+const MODES_DOCS_URL = "https://github.com/snazzybean/roommind#full-control-vs-managed-mode";
+
+export function sensorsHelp(lang: string) {
+  return html`<div slot="info">
+    <p>${localize("sensors.help", lang)}</p>
+    <a class="helper-link" href=${MODES_DOCS_URL} target="_blank" rel="noreferrer">
+      ${localize("common.learn_more", lang)}
+    </a>
+  </div>`;
+}
+
 export function presenceHelp(lang: string) {
   return html`<div slot="info">
     <b>${localize("presence.room_help_header", lang)}</b><br />

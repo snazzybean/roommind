@@ -862,6 +862,7 @@
   "sensors.use_instead": "Use instead",
   "sensors.choose_other": "Choose another entity",
   "sensors.choose": "Choose an entity",
+  "sensors.help": "RoomMind suggests the sensors of the room's area. The search under each group also takes a sensor from another area. What a sensor does is explained at the group's info icon.",
   "common.decrease": "Decrease",
   "common.increase": "Increase",
   "schedule_editor.add_block": "Add block",

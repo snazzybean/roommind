@@ -862,6 +862,7 @@
   "sensors.use_instead": "Usa invece",
   "sensors.choose_other": "Scegli un'altra entità",
   "sensors.choose": "Scegli un'entità",
+  "sensors.help": "RoomMind propone i sensori dell'area della stanza. Con la ricerca sotto ogni gruppo puoi scegliere anche un sensore di un'altra area. Cosa fa un sensore lo spiega l'icona informazioni del gruppo.",
   "common.decrease": "Diminuisci",
   "common.increase": "Aumenta",
   "schedule_editor.add_block": "Aggiungi fascia",

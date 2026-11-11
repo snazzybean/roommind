@@ -35,6 +35,7 @@ import {
   heatSourceHelp,
   priceHelp,
   scheduleHelp,
+  sensorsHelp,
   temperaturesHelp,
 } from "./room-detail/edit-dialog-help";
 import { localize, type TranslationKey } from "../utils/localize";
@@ -848,9 +849,11 @@ export class RsRoomDetail extends LitElement {
           open
           icon="mdi:thermometer"
           .heading=${localize("room.section.sensors", lang)}
+          hasInfo
           .error=${this._error}
           @rs-dialog-closed=${this._closeEdit}
         >
+          ${sensorsHelp(lang)}
           <rs-sensor-section
             .hass=${this.hass}
             .area=${this.area}
