@@ -166,6 +166,7 @@ export type RoomHintId =
   | "presence_away"
   | "room_vacant"
   | "mold_prevention"
+  | "price_shift"
   | "learning_paused"
   | "mpc_learning";
 
@@ -207,7 +208,7 @@ export function formatClock(unixS: number, language: string, now = Date.now()): 
 /**
  * Everything worth a hint for a room, most important first: mold risk, window open, not
  * controlled, override (with end), compressor protection, away / room empty, mold
- * prevention, learning. Rooms without control only get the mold risk.
+ * prevention, price shift, learning. Rooms without control only get the mold risk.
  */
 export function roomHints(
   config: RoomConfig | null,
@@ -316,6 +317,18 @@ export function roomHints(
       },
     });
   }
+  const price = priceShiftInfo(config);
+  if (price) {
+    hints.push({
+      id: "price_shift",
+      icon: "mdi:cash-clock",
+      severity: "info",
+      key: price.charging ? "card.hint.price_cheap" : "card.hint.price_expensive",
+      params: {
+        delta: `${new Intl.NumberFormat(ctx.language, { signDisplay: "always", maximumFractionDigits: 1 }).format(ctx.displayDelta(price.delta))} ${ctx.unit}`,
+      },
+    });
+  }
   if (live.learning_paused_reason) {
     hints.push({
       id: "learning_paused",
@@ -332,6 +345,36 @@ export function roomHints(
     });
   }
   return hints;
+}
+
+/* ---------- Electricity price shift ---------- */
+
+export interface PriceShiftInfo {
+  /** The side of the band the shift moves in this room now. */
+  side: "heat" | "cool";
+  /** Signed change of that side in K (°C). */
+  delta: number;
+  /** Cheap power used to heat or cool ahead; false = expensive, the room coasts. */
+  charging: boolean;
+}
+
+/**
+ * How the price moves the room's target, for the side in force: cool_only rooms and auto rooms
+ * while cooling show the cool side, all others the heat side. Null without a shift.
+ */
+export function priceShiftInfo(config: RoomConfig | null): PriceShiftInfo | null {
+  const live = config?.live;
+  if (!live) return null;
+  const heat = live.price_shift_heat ?? 0;
+  const cool = live.price_shift_cool ?? 0;
+  const mode = config?.climate_mode ?? "auto";
+  let side: "heat" | "cool" =
+    mode === "cool_only" || (mode === "auto" && live.mode === "cooling") ? "cool" : "heat";
+  if ((side === "heat" ? heat : cool) === 0 && mode === "auto")
+    side = side === "heat" ? "cool" : "heat";
+  const delta = side === "heat" ? heat : cool;
+  if (!delta) return null;
+  return { side, delta, charging: side === "heat" ? delta > 0 : delta < 0 };
 }
 
 export function hintText(hint: RoomHint, language: string): string {

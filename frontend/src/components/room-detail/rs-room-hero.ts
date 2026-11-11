@@ -10,6 +10,7 @@ import {
   roomStateInfo,
   targetReason,
   type RoomHint,
+  priceShiftInfo,
 } from "../../utils/room-state";
 import { localize } from "../../utils/localize";
 import { formatTempLocale, tempUnit, toDisplayDelta } from "../../utils/temperature";
@@ -705,17 +706,18 @@ export class RsRoomHero extends LitElement {
       vacationUntil: this.vacationUntil,
     });
     const adjustments: string[] = [];
-    const shift = live.price_shift_heat || -(live.price_shift_cool ?? 0);
-    if (shift) {
+    const price = priceShiftInfo(this.config);
+    if (price) {
       const shiftValue = `${new Intl.NumberFormat(l, {
         signDisplay: "always",
         maximumFractionDigits: 1,
-      }).format(toDisplayDelta(shift, this.hass))} ${unit}`;
-      adjustments.push(
-        localize(shift > 0 ? "hero.price_charging" : "hero.price_coasting", l, {
-          value: shiftValue,
-        }),
-      );
+      }).format(toDisplayDelta(price.delta, this.hass))} ${unit}`;
+      const key = !price.charging
+        ? "hero.price_coasting"
+        : price.side === "cool"
+          ? "hero.price_precooling"
+          : "hero.price_charging";
+      adjustments.push(localize(key, l, { value: shiftValue }));
     }
     if (live.mold_prevention_active) {
       adjustments.push(
