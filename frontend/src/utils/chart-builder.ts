@@ -3,7 +3,9 @@
  */
 import type { AnalyticsDataPoint } from "../types";
 import { localize, type TranslationKey } from "./localize";
-import { formatTemp, tempUnit, toDisplay, toDisplayDelta } from "./temperature";
+import { tempUnit, toDisplay, toDisplayDelta } from "./temperature";
+import { formatNumber, formatPercent } from "./format";
+import { formatClock, formatDayTime, haTimeZone, sameDayInZone } from "./analytics-time";
 import type { HomeAssistant } from "../types";
 import { HUMIDITY_LEVELS, humidityAxis, humidityLevel } from "./humidity";
 import { REASON_LABELS, TARGET_REASON_GROUPS, targetReasons } from "./target-reason";
@@ -40,6 +42,31 @@ const BAND_OPEN_K = 100;
 const PANEL_LEFT = 56;
 // Visible on light and dark cards alike
 const NOW_MARKER_COLOR = "rgba(128, 128, 128, 0.6)";
+// Heating and cooling runs as a strip along the bottom of the temperature plot: a full-height
+// tint mixed with the target band into grey and pink
+const EVENT_STRIP_SHARE = 0.06;
+
+/**
+ * Colours resolved from the design tokens (ECharts draws on a canvas and cannot read CSS
+ * variables or color-mix); transparency comes from the series' opacity.
+ */
+export interface ChartColors {
+  temp: string;
+  prediction: string;
+  target: string;
+  heat: string;
+  cool: string;
+  neutral: string;
+}
+
+const FALLBACK_COLORS: ChartColors = {
+  temp: "#212121",
+  prediction: "#727272",
+  target: "#4caf50",
+  heat: "#ff8100",
+  cool: "#2b9af9",
+  neutral: "#727272",
+};
 
 export interface ChartBuildContext {
   hass: HomeAssistant;
@@ -59,6 +86,11 @@ export interface ChartBuildContext {
   targetBand?: "both" | "heat" | "cool" | null;
   /** Unit of the price source (ct/kWh, EUR/kWh, ...), empty when unknown or a switch. */
   priceUnit?: string;
+  colors?: ChartColors;
+  /** Legend entries switched off: their rows stay out of the tooltip. */
+  hidden?: ReadonlySet<string>;
+  /** The room follows the price: draw the price panel. */
+  showPrice?: boolean;
   /** Touch screen: pinch zooms, one finger pans only once zoomed so the page still scrolls. */
   touch?: boolean;
   zoomed?: boolean;
@@ -250,6 +282,7 @@ export function buildChartSeries(
   ctx: ChartBuildContext,
 ): Array<Record<string, unknown>> {
   const { hass, language: l, chartAnchor, forecast, isOutdoor, targetBand } = ctx;
+  const colors = ctx.colors ?? FALLBACK_COLORS;
   const d = (c: number) => toDisplay(c, hass);
 
   const roomData: Array<[number, number]> = [];
@@ -309,7 +342,7 @@ export function buildChartSeries(
       id: "room_temp",
       type: "line",
       name: localize("analytics.temperature", l),
-      color: "rgb(255, 152, 0)",
+      color: colors.temp,
       data: roomData,
       showSymbol: false,
       smooth: true,
@@ -323,7 +356,7 @@ export function buildChartSeries(
       id: "target_temp",
       type: "line",
       name: localize("analytics.target", l),
-      color: "rgb(76, 175, 80)",
+      color: colors.target,
       data: targetData,
       showSymbol: false,
       smooth: false,
@@ -356,21 +389,21 @@ export function buildChartSeries(
     series.push(
       ...bandPair("target_band", bandBaseData, bandData, {
         name: localize("analytics.target_band", l),
-        color: "rgb(76, 175, 80)",
-        areaStyle: { color: "rgba(76, 175, 80, 0.1)" },
+        color: colors.target,
+        areaStyle: { color: colors.target, opacity: 0.1 },
       }),
     );
   }
 
   for (const [side, base, data, color] of [
-    ["cold", coldBaseData, coldData, "rgba(33, 150, 243, 0.08)"],
-    ["warm", warmBaseData, warmData, "rgba(244, 67, 54, 0.06)"],
+    ["cold", coldBaseData, coldData, colors.cool],
+    ["warm", warmBaseData, warmData, colors.heat],
   ] as const) {
     if (!hasValue(data)) continue;
     series.push(
       ...bandPair(`target_band_${side}`, base, data, {
         name: "",
-        areaStyle: { color },
+        areaStyle: { color, opacity: 0.07 },
       }),
     );
   }
@@ -380,7 +413,7 @@ export function buildChartSeries(
       id: "predicted_temp",
       type: "line",
       name: localize("analytics.prediction", l),
-      color: "rgb(33, 150, 243)",
+      color: colors.prediction,
       data: predictedData,
       showSymbol: false,
       smooth: true,
@@ -393,7 +426,7 @@ export function buildChartSeries(
     series.push({
       id: "device_target",
       type: "line",
-      name: "TRV / AC",
+      name: localize("analytics.device_setpoint", l),
       color: "rgb(156, 39, 176)",
       data: deviceTargetData,
       showSymbol: false,
@@ -409,7 +442,7 @@ export function buildChartSeries(
       id: "outdoor_temp",
       type: "line",
       name: localize("analytics.outdoor", l),
-      color: "rgb(158, 158, 158)",
+      color: colors.neutral,
       data: outdoorData,
       showSymbol: false,
       smooth: true,
@@ -432,11 +465,11 @@ export function buildChartSeries(
       id: "heating_events",
       type: "line",
       name: localize("analytics.heating_period", l),
-      color: "rgb(244, 67, 54)",
+      color: colors.heat,
       data: heatingBandData,
       showSymbol: false,
       lineStyle: { width: 0 },
-      areaStyle: { color: "rgba(244, 67, 54, 0.08)", origin: "start" },
+      areaStyle: { color: colors.heat, opacity: 0.55, origin: "start" },
       tooltip: { show: false },
       yAxisIndex: 0,
       z: -1,
@@ -449,11 +482,11 @@ export function buildChartSeries(
       id: "cooling_events",
       type: "line",
       name: localize("analytics.cooling_period", l),
-      color: "rgb(63, 81, 181)",
+      color: colors.cool,
       data: coolingBandData,
       showSymbol: false,
       lineStyle: { width: 0 },
-      areaStyle: { color: "rgba(63, 81, 181, 0.08)", origin: "start" },
+      areaStyle: { color: colors.cool, opacity: 0.55, origin: "start" },
       tooltip: { show: false },
       yAxisIndex: 0,
       z: -1,
@@ -466,11 +499,11 @@ export function buildChartSeries(
       id: "window_events",
       type: "line",
       name: localize("analytics.window_open_period", l),
-      color: "rgb(0, 150, 136)",
+      color: colors.neutral,
       data: windowBandData,
       showSymbol: false,
       lineStyle: { width: 0 },
-      areaStyle: { color: "rgba(0, 150, 136, 0.1)", origin: "start" },
+      areaStyle: { color: colors.neutral, opacity: 0.12, origin: "start" },
       tooltip: { show: false },
       yAxisIndex: 0,
       z: -1,
@@ -555,7 +588,7 @@ export function buildChartSeries(
   const priceData = points.flatMap((p): Array<[number, number]> =>
     p.price != null ? [[p.ts * 1000, p.price]] : [],
   );
-  if (priceData.length > 0) {
+  if (priceData.length > 0 && ctx.showPrice !== false && !isOutdoor) {
     series.push({
       id: "price",
       type: "line",
@@ -600,6 +633,26 @@ export function buildChartSeries(
   series.push({ ...nowMarker, id: "now_marker", yAxisIndex: 0 });
 
   return series;
+}
+
+/** Heating and cooling runs as a strip along the bottom of the temperature plot, once its bounds are known. */
+export function placeEventStrips(
+  series: Array<Record<string, unknown>>,
+  yMin: number,
+  yMax: number,
+): Array<Record<string, unknown>> {
+  const top = yMin + (yMax - yMin) * EVENT_STRIP_SHARE;
+  return series.map((s) =>
+    s.id === "heating_events" || s.id === "cooling_events"
+      ? {
+          ...s,
+          data: (s.data as Array<[number, number | null]>).map(([t, v]) => [
+            t,
+            v == null ? null : top,
+          ]),
+        }
+      : s,
+  );
 }
 
 export function buildChartOptions(
@@ -677,7 +730,8 @@ export function buildChartOptions(
     tooltip: {
       trigger: "axis",
       axisPointer: { snap: false },
-      valueFormatter: (v: number | null) => (v == null ? "" : v.toFixed(1) + "\u00A0" + unit),
+      valueFormatter: (v: number | null) =>
+        v == null ? "" : `${formatNumber(v, hass, 1)}\u00A0${unit}`,
       formatter: (
         params: Array<{
           seriesName: string;
@@ -687,8 +741,14 @@ export function buildChartOptions(
         }>,
       ) => {
         if (!Array.isArray(params) || params.length === 0) return "";
-        const date = new Date(params[0].value[0]);
-        const time = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+        const zone = haTimeZone(hass);
+        // Over more than one day the time alone is ambiguous
+        const time = (sameDayInZone(rangeStart, rangeEnd, zone) ? formatClock : formatDayTime)(
+          params[0].value[0],
+          l,
+          zone,
+        );
+        const hidden = ctx.hidden ?? new Set<string>();
         let markup = `<div style="font-weight:500;margin-bottom:4px">${time}</div>`;
         // Rows per panel, each panel under its own heading, so a value reads with its plot
         const groups = new Map<SubPanel | "main", string[]>();
@@ -713,13 +773,14 @@ export function buildChartOptions(
             sid.startsWith("target_band") ||
             sid.startsWith("target_reason_") ||
             sid.startsWith("humidity_band") ||
-            sid === "humidity_limits"
+            sid === "humidity_limits" ||
+            hidden.has(sid)
           ) {
             continue;
           }
           const v = p.value?.[1];
           if (v == null) continue;
-          let value = `${v.toFixed(1)}\u00A0${unit}`;
+          let value = `${formatNumber(v, hass, 1)}\u00A0${unit}`;
           if (sid === "humidity") {
             const level = humidityLevel(v);
             value = `${Math.round(v)}\u00A0%`;
@@ -750,7 +811,7 @@ export function buildChartOptions(
         if (roomVal !== null && predVal !== null) {
           const delta = roomVal - predVal;
           const sign = delta >= 0 ? "+" : "";
-          markup += `<div style="border-top:1px solid rgba(128,128,128,0.3);margin-top:4px;padding-top:4px">${localize("analytics.prediction_delta", l)}: ${sign}${delta.toFixed(2)}\u00A0${unit}</div>`;
+          markup += `<div style="border-top:1px solid rgba(128,128,128,0.3);margin-top:4px;padding-top:4px">${localize("analytics.prediction_delta", l)}: ${sign}${formatNumber(delta, hass, 2)}\u00A0${unit}</div>`;
         }
         for (const panel of SUB_PANEL_ORDER) {
           const rows = groups.get(panel);
@@ -759,28 +820,24 @@ export function buildChartOptions(
         }
         if (closest) {
           const parts: string[] = [];
+          // The device setpoint has its own row (legend entry "device setpoint")
           if (closest.mode === "heating") {
             const hp = closest.heating_power;
             if (hp != null && hp > 0 && hp < 100) {
-              parts.push(`${localize("analytics.heating_period", l)} ${hp}%`);
+              parts.push(`${localize("analytics.heating_period", l)} ${formatPercent(hp, hass)}`);
             } else {
               parts.push(localize("analytics.heating_period", l));
             }
-            if (closest.device_setpoint != null) {
-              parts.push(`TRV ${formatTemp(closest.device_setpoint, hass)}\u00A0${unit}`);
-            }
           } else if (closest.mode === "cooling") {
             parts.push(localize("analytics.cooling_period", l));
-            if (closest.device_setpoint != null) {
-              parts.push(`AC ${formatTemp(closest.device_setpoint, hass)}\u00A0${unit}`);
-            }
           }
           if (closest.window_open) parts.push(localize("analytics.window_open_period", l));
           if (parts.length > 0) {
             markup += `<div style="border-top:1px solid rgba(128,128,128,0.3);margin-top:4px;padding-top:4px;opacity:0.75">${parts.join(" \u00B7 ")}</div>`;
           }
           if (closest.blind_position != null) {
-            markup += `<div style="opacity:0.75">${localize("analytics.blind_position", l)} ${100 - closest.blind_position}%</div>`;
+            // Home Assistant's position (100 = open), as on the room page
+            markup += `<div style="opacity:0.75">${localize("analytics.blind_position", l)} ${formatPercent(closest.blind_position, hass)}</div>`;
           }
         }
         // HA 2026.6's ha-chart-base pipes the tooltip formatter result through

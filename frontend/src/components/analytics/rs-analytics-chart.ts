@@ -12,15 +12,18 @@ import {
   buildChartSeries,
   buildChartOptions,
   chartHeight,
+  placeEventStrips,
   placeOnPanels,
   visiblePanels,
   type ChartBuildContext,
+  type ChartColors,
   panelTitle,
   panelTops,
   priceVisualMap,
 } from "../../utils/chart-builder";
 import { humidityVisualMap, type HumidityColors } from "../../utils/humidity";
-import { tempUnit } from "../../utils/temperature";
+import { tempUnit, toDisplayDelta } from "../../utils/temperature";
+import { formatNumber } from "../../utils/format";
 
 // Series drawn for another legend entry: hiding that entry hides them too
 const LEGEND_OWNER: Record<string, string> = {
@@ -57,6 +60,8 @@ export class RsAnalyticsChart extends LitElement {
   @property({ type: Boolean }) public isOutdoor = false;
   /** Sides the room is judged on (auto both, heat only, cool only): shades that range. */
   @property({ attribute: false }) public targetBand: "both" | "heat" | "cool" | null = null;
+  /** The room follows the price: draw the price panel. */
+  @property({ type: Boolean }) public showPrice = false;
 
   @state() private _hiddenSeries = new Set(["device_target"]);
   @state() private _chartInfoExpanded = false;
@@ -121,6 +126,9 @@ export class RsAnalyticsChart extends LitElement {
       priceUnit: this.data?.price_unit ?? "",
       touch: this._touch,
       zoomed: this._zoomed,
+      colors: this._chartColors(),
+      hidden: this._hiddenSeries,
+      showPrice: this.showPrice,
     };
     const allSeries = points.length > 0 ? buildChartSeries(points, chartCtx) : [];
     const panels = visiblePanels(allSeries, this._hiddenSeries);
@@ -158,6 +166,14 @@ export class RsAnalyticsChart extends LitElement {
     });
 
     const options = buildChartOptions(visibleY, allPoints, chartCtx);
+    const mainAxis = (Array.isArray(options.yAxis) ? options.yAxis[0] : options.yAxis) as {
+      min?: number;
+      max?: number;
+    };
+    const plotted =
+      mainAxis.min != null && mainAxis.max != null
+        ? placeEventStrips(displaySeries, mainAxis.min, mainAxis.max)
+        : displaySeries;
     const visualMaps: Array<Record<string, unknown>> = [];
     const humidity = displaySeries.find((s) => s.id === "humidity");
     if (humidity) {
@@ -187,7 +203,11 @@ export class RsAnalyticsChart extends LitElement {
         ${
           this._chartInfoExpanded
             ? html`<div class="chart-info-panel">
-                ${this._renderMarkdown(localize("analytics.chart_info_body", l))}
+                ${this._renderMarkdown(
+                  localize("analytics.chart_info_body", l, {
+                    tolerance: `${formatNumber(toDisplayDelta(0.5, this.hass), this.hass, 1)} ${tempUnit(this.hass)}`,
+                  }),
+                )}
               </div>`
             : nothing
         }
@@ -197,7 +217,7 @@ export class RsAnalyticsChart extends LitElement {
                 <div class="chart-wrap">
                   <ha-chart-base
                     .hass=${this.hass}
-                    .data=${displaySeries}
+                    .data=${plotted}
                     .options=${options}
                     .height=${`${chartHeight(panels)}px`}
                     style="height: ${chartHeight(panels)}px; --chart-max-height: ${chartHeight(panels)}px"
@@ -255,6 +275,21 @@ export class RsAnalyticsChart extends LitElement {
         })}
       </div>
     `;
+  }
+
+  /** Token colours for the canvas: heat and cool as everywhere on the page, the room line neutral. */
+  private _chartColors(): ChartColors {
+    const style = getComputedStyle(this);
+    const token = (name: string, fallback: string) =>
+      style.getPropertyValue(name).trim() || fallback;
+    return {
+      temp: token("--primary-text-color", "#212121"),
+      prediction: token("--secondary-text-color", "#727272"),
+      target: token("--success-color", "#4caf50"),
+      heat: token("--rs-heat", "#ff8100"),
+      cool: token("--rs-cool", "#2b9af9"),
+      neutral: token("--secondary-text-color", "#727272"),
+    };
   }
 
   private _priceColors() {
