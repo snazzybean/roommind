@@ -28,6 +28,7 @@ from ..control.mpc_controller import (
 )
 from ..control.residual_heat import afterglow_rise_k, get_min_run_blocks, residual_tau
 from ..control.solar import compute_q_solar_norm
+from ..control.thermal_model import ThermalEKF
 from ..utils.price_utils import PriceSignal
 from .analytics_stats import compute_period_stats, compute_rhythm, rhythm_window
 
@@ -64,6 +65,25 @@ def _afterglow_figures(room_config: dict, est: Any, q_heat: float, acs_can_heat:
         "afterglow_minutes": round(residual_tau(HEATING_SYSTEM_RADIATOR, est.residual_tau)),
         "afterglow_learned": est.residual_scale_n > 0,
     }
+
+
+# EKF states of the solar and occupancy gains (thermal_model.ThermalEKF)
+_SOLAR_STATE = 4
+_OCCUPANCY_STATE = 5
+# A gain counts as learned once its variance fell below this share of its start value
+LEARNED_VARIANCE_SHARE = 0.25
+
+
+def _observed(est: Any, state: int) -> bool:
+    """Whether the estimator has seen this gain in its data, not just its start value.
+
+    With gain gating a state that was never excited (no sun, no occupancy) gets no Kalman gain
+    and no drift noise, so its variance stays exactly at the start value until it is observed.
+    """
+    P = est._P
+    if len(P) <= state:
+        return False
+    return bool(P[state][state] < LEARNED_VARIANCE_SHARE * ThermalEKF._p_init_diag()[state])
 
 
 def _safe_float(value: str) -> float | None:
@@ -337,6 +357,8 @@ async def build_analytics_data(
                 "prediction_std_idle": round(pred_std_idle, 4),
                 "prediction_std_heating": round(pred_std_heat, 4),
                 "has_occupancy_sensors": has_occupancy_sensors,
+                "solar_learned": _observed(est, _SOLAR_STATE),
+                "occupancy_learned": _observed(est, _OCCUPANCY_STATE),
                 # Q_solar is the gain at full sun (1000 W/m²); these are what it means now and today
                 "solar_gain_now": round(
                     rc.Q_solar

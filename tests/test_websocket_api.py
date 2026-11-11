@@ -3529,3 +3529,26 @@ async def test_list_rooms_passes_price_shift_to_the_hero(ws_hass, store, connect
     assert live["price_level"] == "cheap"
     assert live["price_shift_heat"] == 1.0
     assert live["price_shift_cool"] == 0.0
+
+
+@pytest.mark.asyncio
+async def test_analytics_model_reports_which_gains_were_observed(ws_hass, store, connection):
+    """A gain still at its start variance was never seen in the data: the tile must not show it as learned."""
+    from custom_components.roommind.control.thermal_model import ThermalEKF
+
+    await store.async_load()
+    await store.async_save_room("room_a", {"thermostats": ["climate.trv1"]})
+    P = [[0.0] * 6 for _ in range(6)]
+    init = ThermalEKF._p_init_diag()
+    for i in range(6):
+        P[i][i] = init[i]
+    P[4][4] = 2.0  # sun seen
+    est = _make_mock_estimator(model_dict={"Q_heat": 3.0, "Q_solar": 0.5, "Q_occupancy": 0.3}, P=P)
+    coordinator = _make_analytics_coordinator(history_rows=[], estimator=est)
+    ws_hass.data[DOMAIN]["coordinator"] = coordinator
+
+    await _get_analytics(ws_hass, connection, {"id": 63, "type": "roommind/analytics/get", "area_id": "room_a"})
+
+    model = connection.send_result.call_args[0][1]["model"]
+    assert model["solar_learned"] is True
+    assert model["occupancy_learned"] is False
