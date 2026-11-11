@@ -23,7 +23,6 @@ import "./shared/rs-edit-dialog";
 import "./shared/rs-list-card";
 import "./shared/rs-list-row";
 import "./shared/rs-segmented";
-import "./shared/rs-badge";
 import {
   coversHelp,
   devicesHelp,
@@ -600,12 +599,6 @@ export class RsRoomDetail extends LitElement {
         .heading=${localize("room.section.covers", l)}
         @edit-click=${this._openEdit("covers")}
       >
-        <rs-badge
-          slot="header-extras"
-          tooltip
-          .label=${localize("badge.beta", l)}
-          .hint=${localize("badge.beta_hint", l)}
-        ></rs-badge>
         <rs-covers-section
           .hass=${this.hass}
           .area=${this.area}
