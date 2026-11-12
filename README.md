@@ -40,13 +40,13 @@
 | custom\_components/roommind/sensor.py                              |       55 |        0 |    100% |           |
 | custom\_components/roommind/services/\_\_init\_\_.py               |        0 |        0 |    100% |           |
 | custom\_components/roommind/services/analytics\_service.py         |      209 |        0 |    100% |           |
-| custom\_components/roommind/services/analytics\_stats.py           |      193 |        4 |     98% |80, 103, 110, 138 |
+| custom\_components/roommind/services/analytics\_stats.py           |      205 |        4 |     98% |80, 109, 117, 159 |
 | custom\_components/roommind/store.py                               |      184 |        0 |    100% |           |
 | custom\_components/roommind/switch.py                              |      114 |        0 |    100% |           |
 | custom\_components/roommind/utils/\_\_init\_\_.py                  |        0 |        0 |    100% |           |
 | custom\_components/roommind/utils/area\_utils.py                   |       18 |        0 |    100% |           |
 | custom\_components/roommind/utils/device\_utils.py                 |      201 |        0 |    100% |           |
-| custom\_components/roommind/utils/history\_store.py                |      168 |        2 |     99% |     78-79 |
+| custom\_components/roommind/utils/history\_store.py                |      172 |        2 |     99% |     81-82 |
 | custom\_components/roommind/utils/mold\_utils.py                   |       31 |        0 |    100% |           |
 | custom\_components/roommind/utils/notification\_utils.py           |       50 |        0 |    100% |           |
 | custom\_components/roommind/utils/presence\_utils.py               |       49 |        0 |    100% |           |
@@ -55,7 +55,7 @@
 | custom\_components/roommind/utils/sensor\_utils.py                 |       29 |        1 |     97% |        25 |
 | custom\_components/roommind/utils/temp\_utils.py                   |       26 |        0 |    100% |           |
 | custom\_components/roommind/websocket\_api.py                      |      365 |        3 |     99% |651, 890-895 |
-| **TOTAL**                                                          | **9468** |  **202** | **98%** |           |
+| **TOTAL**                                                          | **9484** |  **202** | **98%** |           |
 
 
 ## Setup coverage badge
