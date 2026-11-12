@@ -33,9 +33,6 @@ from ..utils.price_utils import LEVEL_CHEAP, LEVEL_EXPENSIVE
 _LOGGER = logging.getLogger(__name__)
 
 
-_RUNNING_SOURCES = ("primary", "secondary", "both")
-
-
 @dataclass
 class DeviceCommand:
     """Command for a single climate device within a heat source plan."""
@@ -123,42 +120,6 @@ def evaluate_heat_sources(
     primary_devices: list[tuple[str, str]] = [(eid, "thermostat") for eid in thermostats]
     secondary_devices: list[tuple[str, str]] = [(eid, "ac") for eid in acs]
 
-    # Early exit: at or above target, no heating needed. A run in progress keeps its
-    # sources instead: the controller deliberately heats at the target (min-run
-    # continuation, holding power), and parking everything there switched the
-    # devices on and off every cycle around the target.
-    if delta_t <= 0 and previous_active_sources not in _RUNNING_SOURCES:
-        idle_cmds: list[DeviceCommand] = []
-        for eid, device_type in primary_devices:
-            idle_cmds.append(
-                DeviceCommand(
-                    entity_id=eid,
-                    role="primary",
-                    device_type=device_type,
-                    active=False,
-                    power_fraction=0.0,
-                    reason="not selected",
-                )
-            )
-        for eid, device_type in secondary_devices:
-            idle_cmds.append(
-                DeviceCommand(
-                    entity_id=eid,
-                    role="secondary",
-                    device_type=device_type,
-                    active=False,
-                    power_fraction=0.0,
-                    reason="not selected",
-                )
-            )
-        _LOGGER.debug(
-            "Room '%s': heat source orchestration → none (delta_t=%.1f, outdoor=%s)",
-            room_config.get("area_id", "?"),
-            delta_t,
-            outdoor_temp,
-        )
-        return HeatSourcePlan(commands=idle_cmds, active_sources="none", reason="delta_t <= 0")
-
     # Hardware protection: disable AC heating in extreme cold
     ac_disabled = outdoor_temp is not None and outdoor_temp < ac_min_outdoor
     if ac_disabled:
@@ -195,8 +156,17 @@ def evaluate_heat_sources(
     elif price_level == LEVEL_CHEAP:
         prefer_ac = True
 
+    # At or above the target the controller heats only by its run rules: min-run
+    # continuation and holding power keep a run's single source (parking it switched the
+    # AC every cycle around the target), and a run starting there (UFH drift bypass on a
+    # predicted dip) gets the preferred source, whose rules the controller applied
+    # (MPCController._resolve_run_system); `none` showed heating while nothing ran.
+    if delta_t <= 0 and previous_active_sources in ("primary", "secondary"):
+        active = previous_active_sources
+    elif delta_t <= 0 and previous_active_sources != "both":
+        active = "secondary" if prefer_ac else "primary"
     # "both" when gap is large, or hysteresis holds "both" state
-    if delta_t >= large_gap_threshold + HEAT_SOURCE_HYSTERESIS:
+    elif delta_t >= large_gap_threshold + HEAT_SOURCE_HYSTERESIS:
         active = "both"
     elif previous_active_sources == "both" and delta_t > primary_delta - HEAT_SOURCE_HYSTERESIS:
         active = "both"

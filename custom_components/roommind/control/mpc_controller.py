@@ -1599,8 +1599,9 @@ class MPCController:
         Heat source orchestration closes a small gap with the AC alone; the UFH rules of
         the room would then hold that AC for 30 min and let it pre-heat on a predicted
         drift. Asks the orchestrator which sources a heating run would use now (with its
-        hysteresis on the sources of the running run) and falls back to the running
-        sources when it has no answer (room at the target).
+        hysteresis on the sources of the running run; from idle at the target the
+        preferred one, so a mild day gets no drift pre-heat the AC would have to carry)
+        and falls back to the running sources when it has no answer.
         """
         system = self._heating_system_type
         if (

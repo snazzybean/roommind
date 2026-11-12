@@ -344,6 +344,19 @@ def test_ac_heating_alone_does_not_preheat_on_drift(monkeypatch):
     assert ufh._evaluate_mpc(21.0, TargetTemps(heat=21.0, cool=None)) == (MODE_HEATING, 0.8)
 
 
+def test_a_run_from_idle_at_the_target_follows_the_source_that_would_heat(monkeypatch):
+    """From idle at the target the source the orchestrator prefers sets the rules: on a mild
+    day the AC would carry the run, so no drift pre-heat (it started the screed for one
+    cycle, then the first 0.1 K dip handed the run to the AC); on a cold day the screed."""
+    _fake_plan(monkeypatch, MODE_HEATING, pf=0.8, lookahead_blocks=24)
+    mild = _orchestrated(10.0, previous_heat_sources="none")
+    monkeypatch.setattr(mild, "_predict_idle_drift", lambda *_: 20.0)
+    assert mild._evaluate_mpc(21.0, TargetTemps(heat=21.0, cool=None)) == (MODE_IDLE, 0.0)
+    cold = _orchestrated(0.0, previous_heat_sources="none")
+    monkeypatch.setattr(cold, "_predict_idle_drift", lambda *_: 20.0)
+    assert cold._evaluate_mpc(21.0, TargetTemps(heat=21.0, cool=None)) == (MODE_HEATING, 0.8)
+
+
 def test_ac_heating_alone_in_the_bang_bang_fallback():
     after_ac_min_run = {"previous_mode": MODE_HEATING, "mode_on_since": time.time() - 15 * 60}
     ctrl = _orchestrated(10.0, previous_heat_sources="secondary", **after_ac_min_run)
@@ -378,8 +391,9 @@ def _eco_then_comfort():
 @pytest.mark.parametrize(
     ("outdoor", "expected_mode", "expected_systems"),
     [
-        # mild: the AC alone would run the pre-heat, so the AC's rules decide (not yet)
-        (10.0, MODE_IDLE, ["underfloor", ""]),
+        # mild: the AC alone would run the pre-heat, so the AC's rules decide (not yet),
+        # from the first pass on (above the target in force the preferred source counts)
+        (10.0, MODE_IDLE, [""]),
         # cold: the floor runs it, its rules stand
         (0.0, MODE_HEATING, ["underfloor"]),
     ],

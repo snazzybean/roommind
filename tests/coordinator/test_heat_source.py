@@ -573,7 +573,7 @@ class TestOrchestratedPreheat:
     @pytest.mark.asyncio
     @pytest.mark.parametrize("lead_heat", [21.0, None])
     async def test_sources_follow_the_target_the_run_heats_for(self, hass, mock_config_entry, lead_heat):
-        """Room at 19 °C above eco 17 °C: only the lead target to 21 °C gives the run a source."""
+        """Room at 19 °C above eco 17 °C: the lead target to 21 °C sets what the run heats for."""
         from custom_components.roommind.control.mpc_controller import MPCController
 
         room = TestHeatSourceOrchestration.ROOM_WITH_BOTH
@@ -601,11 +601,10 @@ class TestOrchestratedPreheat:
         setpoints = [
             c[0][2]["temperature"] for c in hass.services.async_call.call_args_list if c[0][1] == "set_temperature"
         ]
-        if lead_heat is None:
-            assert sources == "none"
-            assert all(t <= 17.0 for t in setpoints)
-        else:
-            assert sources != "none"
+        # Without the lead the run heats above its target too; it still gets a source
+        # instead of showing heating while nothing runs.
+        assert sources != "none"
+        if lead_heat is not None:
             assert any(t > 21.0 for t in setpoints)
 
 

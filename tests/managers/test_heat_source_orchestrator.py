@@ -211,14 +211,33 @@ class TestEvaluateHeatSources:
         # AC can't heat, falls back to primary only
         assert result.active_sources == "primary"
 
-    def test_delta_at_zero_returns_none_active(self):
-        """When already at or above target, active_sources should be 'none'."""
+    def test_a_run_starting_at_the_target_goes_to_the_preferred_source(self):
+        """The controller heats from idle at or above the target only by the room's own run
+        rules (UFH drift bypass on a predicted dip): parking every device showed heating
+        while nothing ran. The outdoor rule picks the source (as the controller's run rules
+        do), and the run keeps it at the target."""
         hass = _make_hass(["heat", "cool"])
         room = _make_room()
-        result = evaluate_heat_sources(room, MODE_HEATING, 0.6, 21.0, 21.0, 10.0, "none", hass)
+        for outdoor, expected in ((0.0, "primary"), (10.0, "secondary"), (None, "primary")):
+            previous = "none"
+            for temp in (21.0, 21.2, 21.1, 21.0):
+                result = evaluate_heat_sources(room, MODE_HEATING, 0.6, temp, 21.0, outdoor, previous, hass)
+                assert isinstance(result, HeatSourcePlan)
+                assert result.active_sources == expected, (outdoor, temp)
+                previous = result.active_sources
+        cold = evaluate_heat_sources(room, MODE_HEATING, 0.6, 20.9, 21.0, 0.0, "primary", hass)
+        assert [c.entity_id for c in cold.commands if c.active] == ["climate.trv_1"]
 
-        assert isinstance(result, HeatSourcePlan)
-        assert result.active_sources == "none"
+    def test_a_run_starting_at_the_target_takes_the_ac_when_the_primary_is_unavailable(self):
+        hass = MagicMock()
+        ac_state = MagicMock()
+        ac_state.state = "heat"
+        ac_state.attributes = {"hvac_modes": ["heat", "cool"]}
+        trv_state = MagicMock()
+        trv_state.state = "unavailable"
+        hass.states.get = MagicMock(side_effect=lambda eid: trv_state if eid == "climate.trv_1" else ac_state)
+        result = evaluate_heat_sources(_make_room(), MODE_HEATING, 0.6, 21.0, 21.0, 0.0, "none", hass)
+        assert result.active_sources == "secondary"
 
     def test_running_sources_stay_on_at_the_target(self):
         """The controller keeps a run going at the target (min run, holding power); the
@@ -230,8 +249,11 @@ class TestEvaluateHeatSources:
             result = evaluate_heat_sources(room, MODE_HEATING, 0.3, temp, 21.0, 10.0, previous, hass)
             assert result.active_sources == "secondary", temp
             previous = result.active_sources
-        primary = evaluate_heat_sources(room, MODE_HEATING, 0.3, 21.1, 21.0, 0.0, "primary", hass)
-        assert primary.active_sources == "primary"
+        for outdoor in (0.0, 10.0):
+            primary = evaluate_heat_sources(room, MODE_HEATING, 0.3, 21.1, 21.0, outdoor, "primary", hass)
+            assert primary.active_sources == "primary", outdoor
+        cold = evaluate_heat_sources(room, MODE_HEATING, 0.3, 21.1, 21.0, 0.0, "secondary", hass)
+        assert cold.active_sources == "secondary"
 
     def test_both_falls_back_to_the_preferred_source_at_the_target(self):
         hass = _make_hass(["heat", "cool"])

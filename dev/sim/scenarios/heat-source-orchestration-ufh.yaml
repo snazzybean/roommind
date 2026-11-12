@@ -35,4 +35,6 @@ expect:
   - {metric: comfort.undershoot_kh, room: wohnzimmer, max: 17}
   # the MPC idled 2-3 K below target for hours once the shared heating rate was learned from the split
   - {metric: comfort.idle_below_target_max_h, room: wohnzimmer, max: 1.0}
-  - {metric: room.heating_without_source_h, room: wohnzimmer, max: 0.25, known_failure: 'RoomMind, also on v1.7.9: starting from idle at or above every heat target of the next 3 h, the UFH run rules decide heating (drift bypass on a predicted dip), the orchestrator sees no gap and picks no source, so nothing runs while the room shows heating 100 %. The pre-heat part is fixed (seeds 1-3: v1.7.9 17-26 h, now 12-21 h)'}
+  # before 2026-11-12 (also v1.7.9): from idle at the target the UFH drift bypass decided heating, the
+  # orchestrator saw no gap and picked no source: 11-20 h of heating 100 % with nothing on
+  - {metric: room.heating_without_source_h, room: wohnzimmer, max: 0.25}
