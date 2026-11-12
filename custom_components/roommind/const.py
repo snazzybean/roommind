@@ -268,6 +268,7 @@ COVER_MIN_IDLE_FOR_LEARNED: int = 30  # Min idle observations before trusting EK
 COVER_POS_DEADBAND: int = 20  # min position change (%) to trigger motor movement
 COVER_REOPEN_STEP: int = 40  # min partial reopening (%) within a shading episode
 COVER_REOPEN_HOLD_SECONDS: int = 3600  # min time since the last move before a partial reopening
+COVER_REOPEN_SNAP_PCT: int = 5  # a reopening ending this close to open (or the baseline) goes all the way
 COVER_DAILY_LOOKAHEAD_H: float = 8.0  # hours ahead to search for daily solar peak (Tier 2)
 COVER_SMOOTHING_MINUTES: float = 30.0  # EMA time constant for room temp and shading excess (AC cycles)
 COVER_SMOOTHING_RISE_MINUTES: float = 10.0  # faster EMA while the shading excess climbs

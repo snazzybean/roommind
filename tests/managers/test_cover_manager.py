@@ -1966,3 +1966,50 @@ def test_hold_restores_the_snapshot():
     assert state.baseline_position is None
     assert state.last_commanded_position is None
     assert state.last_change_ts == 0.0
+
+
+@patch("custom_components.roommind.managers.cover_manager.time")
+def test_reopening_close_to_open_goes_all_the_way(mock_t):
+    """98 % shades next to nothing and would cost a second move to 100 at the episode's end."""
+    mgr = CoverManager()
+    mock_t.time.return_value = 1000.0
+    mgr.update_position("lr", 100)
+    d = mgr.evaluate("lr", predicted_peak_temp=24.0, target_temp=21.0, shade_by_need=True, **_BASE_KWARGS)
+    assert d.target_position == 42
+    mgr.update_position("lr", 42)
+    mock_t.time.return_value = 1000.0 + COVER_REOPEN_HOLD_SECONDS + 1
+    # excess 1.53 maps to 98 %
+    d = mgr.evaluate("lr", predicted_peak_temp=22.53, target_temp=21.0, shade_by_need=True, **_BASE_KWARGS)
+    assert d.changed is True
+    assert d.target_position == 100
+    mgr.update_position("lr", 100)
+    mock_t.time.return_value += COVER_REOPEN_HOLD_SECONDS
+    d = mgr.evaluate("lr", predicted_peak_temp=21.0, target_temp=21.0, shade_by_need=True, **_BASE_KWARGS)
+    assert d.changed is False
+
+
+@patch("custom_components.roommind.managers.cover_manager.time")
+def test_reopening_close_to_the_user_baseline_goes_back_to_it(mock_t):
+    mgr = CoverManager()
+    mock_t.time.return_value = 1000.0
+    mgr.update_position("lr", 80)
+    d = mgr.evaluate("lr", predicted_peak_temp=30.0, target_temp=21.0, shade_by_need=True, **_BASE_KWARGS)
+    assert d.target_position == 2
+    mgr.update_position("lr", 2)
+    mock_t.time.return_value = 1000.0 + COVER_REOPEN_HOLD_SECONDS + 1
+    # excess 1.855 maps to 78 %, two short of where the user had it
+    d = mgr.evaluate("lr", predicted_peak_temp=22.855, target_temp=21.0, shade_by_need=True, **_BASE_KWARGS)
+    assert d.changed is True
+    assert d.target_position == 80
+
+
+@patch("custom_components.roommind.managers.cover_manager.time")
+def test_reopening_to_a_real_shade_position_stays_there(mock_t):
+    mgr = CoverManager()
+    mock_t.time.return_value = 1000.0
+    mgr.update_position("lr", 100)
+    mgr.evaluate("lr", predicted_peak_temp=30.0, target_temp=21.0, shade_by_need=True, **_BASE_KWARGS)
+    mgr.update_position("lr", 2)
+    mock_t.time.return_value = 1000.0 + COVER_REOPEN_HOLD_SECONDS + 1
+    d = mgr.evaluate("lr", predicted_peak_temp=22.855, target_temp=21.0, shade_by_need=True, **_BASE_KWARGS)
+    assert d.target_position == 78

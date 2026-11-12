@@ -15,6 +15,7 @@ from ..const import (
     COVER_POS_DEADBAND,
     COVER_POS_SCALE,
     COVER_REOPEN_HOLD_SECONDS,
+    COVER_REOPEN_SNAP_PCT,
     COVER_REOPEN_STEP,
     COVER_SOLAR_MIN,
     COVER_TRANSITION_SETTLE_S,
@@ -282,6 +283,9 @@ class CoverManager:
         # cover would retract at the threshold instead of below the hysteresis
         # band. The retract below the band (deadband path above) is not affected.
         reopen_ceiling = state.baseline_position if state.baseline_position is not None else 100
+        # Stopping a few % short of open shades next to nothing; the episode's end would move the rest
+        if current < desired_pos < reopen_ceiling and reopen_ceiling - desired_pos <= COVER_REOPEN_SNAP_PCT:
+            desired_pos = reopen_ceiling
         if (
             not was_forced
             and current < desired_pos <= reopen_ceiling
