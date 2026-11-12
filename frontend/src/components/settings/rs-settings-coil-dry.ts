@@ -166,7 +166,7 @@ export class RsSettingsCoilDry extends RsSettingsBase {
     RsSettingsBase.settingsBaseStyles,
     css`
       .field-hint.warning {
-        color: var(--warning-color);
+        color: var(--rs-warn-text);
       }
     `,
   ];

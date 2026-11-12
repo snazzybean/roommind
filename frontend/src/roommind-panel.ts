@@ -169,11 +169,11 @@ export class RoomMindPanel extends LitElement {
       }
 
       .save-indicator.saved {
-        color: var(--rs-ok);
+        color: var(--rs-ok-text);
       }
 
       .save-indicator.error {
-        color: var(--rs-err);
+        color: var(--rs-err-text);
       }
 
       .tabs {

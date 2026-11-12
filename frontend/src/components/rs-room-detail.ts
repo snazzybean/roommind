@@ -357,7 +357,7 @@ export class RsRoomDetail extends LitElement {
       }
 
       .error {
-        color: var(--rs-err);
+        color: var(--rs-err-text);
         font-size: 13px;
       }
     `,

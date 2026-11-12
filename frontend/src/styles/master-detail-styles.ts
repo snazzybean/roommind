@@ -110,8 +110,8 @@ export const masterDetailStyles = css`
     gap: 4px;
     font-size: 10px;
     font-weight: 500;
-    color: var(--warning-color);
-    background: color-mix(in srgb, var(--warning-color) 10%, transparent);
+    color: var(--rs-warn-text);
+    background: color-mix(in srgb, var(--rs-warn) 10%, transparent);
     padding: 2px 8px;
     border-radius: 10px;
     letter-spacing: 0.3px;

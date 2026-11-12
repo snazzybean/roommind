@@ -214,11 +214,11 @@ export class RsRoomHero extends LitElement {
       }
 
       .state .heat {
-        color: var(--rs-heat);
+        color: var(--rs-heat-text);
       }
 
       .state .cool {
-        color: var(--rs-cool);
+        color: var(--rs-cool-text);
       }
 
       .now {
@@ -261,11 +261,11 @@ export class RsRoomHero extends LitElement {
       }
 
       .facts .warn {
-        color: var(--rs-warn);
+        color: var(--rs-warn-text);
       }
 
       .facts .error {
-        color: var(--rs-err);
+        color: var(--rs-err-text);
       }
 
       .chips {

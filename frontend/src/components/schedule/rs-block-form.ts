@@ -116,7 +116,7 @@ export class RsBlockForm extends LitElement {
         margin-top: var(--rs-space-2);
         font-size: var(--rs-font-sm);
         line-height: 1.4;
-        color: var(--rs-err);
+        color: var(--rs-err-text);
       }
 
       .section {

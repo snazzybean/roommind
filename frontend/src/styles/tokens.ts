@@ -16,6 +16,13 @@ export const tokens = css`
     --rs-ok: var(--success-color);
     --rs-warn: var(--warning-color);
     --rs-err: var(--error-color);
+    /* Status colours as text: half mixed with the text colour reaches 4.5:1 on their own
+       12-16 % tint in HA's light and dark theme (orange alone: 1.8:1). Icons keep the plain colour. */
+    --rs-heat-text: color-mix(in srgb, var(--rs-heat) 50%, var(--primary-text-color));
+    --rs-cool-text: color-mix(in srgb, var(--rs-cool) 50%, var(--primary-text-color));
+    --rs-ok-text: color-mix(in srgb, var(--rs-ok) 50%, var(--primary-text-color));
+    --rs-warn-text: color-mix(in srgb, var(--rs-warn) 50%, var(--primary-text-color));
+    --rs-err-text: color-mix(in srgb, var(--rs-err) 50%, var(--primary-text-color));
     --rs-border: var(--divider-color);
     --rs-border-strong: color-mix(in srgb, var(--primary-text-color) 22%, transparent);
     --rs-surface: var(--card-background-color, var(--ha-card-background));
@@ -59,7 +66,7 @@ export const alertStyles = css`
     padding: var(--rs-space-2) var(--rs-space-3);
     border-radius: var(--rs-radius-sm);
     background: color-mix(in srgb, var(--rs-err) 12%, transparent);
-    color: var(--rs-err);
+    color: var(--rs-err-text);
     font-size: var(--rs-font-md);
     line-height: 1.4;
   }

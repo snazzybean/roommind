@@ -78,7 +78,7 @@ export class RsSettingsPrice extends RsSettingsBase {
       }
 
       .price-status.warning {
-        color: var(--error-color);
+        color: var(--rs-err-text);
       }
     `,
   ];

@@ -1027,17 +1027,17 @@ export class RoomMindRoomCard extends LitElement {
       }
 
       .override-status.boost {
-        color: var(--warning-color);
-        background: color-mix(in srgb, var(--warning-color) 12%, transparent);
+        color: var(--rs-warn-text);
+        background: color-mix(in srgb, var(--rs-warn) 12%, transparent);
       }
 
       .override-status.eco {
-        color: var(--success-color);
-        background: color-mix(in srgb, var(--success-color) 12%, transparent);
+        color: var(--rs-ok-text);
+        background: color-mix(in srgb, var(--rs-ok) 12%, transparent);
       }
 
       .override-status.custom {
-        color: var(--rs-cool);
+        color: var(--rs-cool-text);
         background: color-mix(in srgb, var(--rs-cool) 12%, transparent);
       }
 
@@ -1049,7 +1049,7 @@ export class RoomMindRoomCard extends LitElement {
 
       .hint.error,
       .error {
-        color: var(--error-color);
+        color: var(--rs-err-text);
         font-size: 13px;
       }
 

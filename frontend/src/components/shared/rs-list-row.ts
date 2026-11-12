@@ -180,7 +180,7 @@ export class RsListRow extends LitElement {
       }
 
       :host([variant="danger"]) .heading {
-        color: var(--rs-err);
+        color: var(--rs-err-text);
       }
 
       :host([variant="primary"]) .heading {

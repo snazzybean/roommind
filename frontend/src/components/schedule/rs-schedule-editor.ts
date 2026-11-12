@@ -196,7 +196,7 @@ export class RsScheduleEditor extends LitElement {
       .name-error {
         margin-top: var(--rs-space-1);
         font-size: var(--rs-font-sm);
-        color: var(--rs-err);
+        color: var(--rs-err-text);
       }
 
       .name-text {
@@ -361,7 +361,7 @@ export class RsScheduleEditor extends LitElement {
       }
 
       .confirm .error {
-        color: var(--rs-err);
+        color: var(--rs-err-text);
       }
 
       .actions {

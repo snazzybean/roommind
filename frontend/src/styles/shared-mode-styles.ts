@@ -22,7 +22,7 @@ export const modeStyles = css`
   }
 
   .mode-heating {
-    color: var(--rs-heat);
+    color: var(--rs-heat-text);
     background: color-mix(in srgb, var(--rs-heat) 12%, transparent);
   }
   .mode-heating .mode-dot {
@@ -30,7 +30,7 @@ export const modeStyles = css`
   }
 
   .mode-cooling {
-    color: var(--rs-cool);
+    color: var(--rs-cool-text);
     background: color-mix(in srgb, var(--rs-cool) 12%, transparent);
   }
   .mode-cooling .mode-dot {

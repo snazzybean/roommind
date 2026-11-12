@@ -59,7 +59,7 @@ export class RsConfirmButton extends LitElement {
 
       .confirm-btn.destructive {
         border-color: var(--rs-err);
-        color: var(--rs-err);
+        color: var(--rs-err-text);
       }
 
       .confirm-btn.destructive:hover:not([disabled]) {

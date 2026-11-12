@@ -124,7 +124,7 @@ export class RsScheduleSettings extends RsScheduleBase {
       }
 
       .create-error {
-        color: var(--error-color);
+        color: var(--rs-err-text);
         font-size: 13px;
       }
 

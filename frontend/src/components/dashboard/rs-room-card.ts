@@ -161,11 +161,11 @@ export class RsRoomCard extends LitElement {
       }
 
       .state.heat {
-        color: var(--rs-heat);
+        color: var(--rs-heat-text);
       }
 
       .state.cool {
-        color: var(--rs-cool);
+        color: var(--rs-cool-text);
       }
 
       .temps {
