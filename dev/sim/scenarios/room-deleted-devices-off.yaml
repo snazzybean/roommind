@@ -1,0 +1,54 @@
+name: room-deleted-devices-off
+description: >
+  A room is deleted in the panel in the middle of a heating run. Its thermostats are switched
+  off in the next cycle, as for a room whose area was deleted (#494): "off" goes off, idle
+  action "low" goes to min_temp. Before the fix the delete sent nothing and both kept the
+  proportional boost, so the radiators heated on by themselves. The other room carries on.
+refs: [494]
+tags: [lifecycle, trv]
+start: 2026-01-12T00:00
+duration: 8h
+location: {latitude: 52.5, longitude: 13.4, time_zone: Europe/Berlin}
+weather: {profile: temperate}
+house:
+  building: bestand_teilsaniert
+  outdoor: {sensors: {temperature: sensor.aussen_temp}}
+  rooms:
+    wohnzimmer:
+      floor_area_m2: 22
+      initial: {temperature: 19.0}
+      devices: [{entity_id: climate.wz_trv, profile: generic_trv}]
+      sensors: {temperature: {entity_id: sensor.wz_temp}}
+    gaestezimmer:
+      floor_area_m2: 16
+      initial: {temperature: 17.0}
+      devices:
+        - {entity_id: climate.gz_trv, profile: generic_trv}
+        - {entity_id: climate.gz_trv_2, profile: generic_trv}
+      sensors: {temperature: {entity_id: sensor.gz_temp}}
+roommind:
+  settings:
+    outdoor_temp_sensor: sensor.aussen_temp
+  rooms:
+    wohnzimmer:
+      devices: [{entity_id: climate.wz_trv, type: trv, heating_system_type: radiator}]
+      temperature_sensor: sensor.wz_temp
+      climate_mode: heat_only
+      comfort_temp: 21.0
+    gaestezimmer:
+      devices:
+        - {entity_id: climate.gz_trv, type: trv, heating_system_type: radiator}
+        - {entity_id: climate.gz_trv_2, type: trv, heating_system_type: radiator, idle_action: low}
+      temperature_sensor: sensor.gz_temp
+      climate_mode: heat_only
+      comfort_temp: 21.0
+timeline:
+  - {at: "+30m", do: roommind.ws, type: roommind/rooms/delete, area_id: gaestezimmer}
+expect:
+  - {check: "dev('climate.gz_trv').active and dev('climate.gz_trv_2').active", at: "+25m", label: both thermostats heat before the delete}
+  - {check: "room.gaestezimmer == null", at: "+35m", label: the room is gone}
+  - {check: "dev('climate.gz_trv').mode == 'off'", at: "+35m", label: "idle action off: switched off instead of left at the boost"}
+  - {check: "dev('climate.gz_trv_2').target < 10 and not dev('climate.gz_trv_2').active", at: "+35m", label: "idle action low: min_temp instead of the boost"}
+  - {check: "dev('climate.gz_trv').mode == 'off' and dev('climate.gz_trv_2').target < 10", at: "+7h", label: nothing drives them again later}
+  - {check: "room.wohnzimmer != null", at: "+7h", label: the other room keeps running}
+  - {invariant: no_rejected_commands}

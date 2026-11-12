@@ -123,3 +123,53 @@ async def test_deleting_a_resting_room_drops_its_learned_model(rm_hass, store, c
     assert store.get_rooms() == {}
     assert set(store.get_thermal_data()) == {"kitchen"}
     coordinator.async_room_removed.assert_awaited_once_with("old_room")
+
+
+@pytest.mark.asyncio
+async def test_deleting_a_room_queues_its_devices_and_forgets_it_in_the_room_lists(rm_hass, store, coordinator):
+    await store.async_load()
+    await store.async_save_room("old_room", {"devices": [{"entity_id": "climate.old_trv", "type": "trv"}]})
+    await store.async_save_settings(
+        {
+            "hidden_rooms": ["old_room", "kitchen"],
+            "room_order": ["kitchen", "old_room"],
+            "learning_disabled_rooms": ["old_room"],
+        }
+    )
+    coordinator.note_room_deleted = MagicMock(return_value=True)
+
+    assert await async_remove_room(rm_hass, "old_room")
+
+    area_id, room = coordinator.note_room_deleted.call_args[0]
+    assert area_id == "old_room"
+    assert [d["entity_id"] for d in room["devices"]] == ["climate.old_trv"]
+    settings = store.get_settings()
+    assert settings["hidden_rooms"] == ["kitchen"]
+    assert settings["room_order"] == ["kitchen"]
+    assert settings["learning_disabled_rooms"] == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("queued", [True, False])
+async def test_a_deleted_room_hands_its_valves_back_only_when_its_devices_stay_on(rm_hass, store, coordinator, queued):
+    """Switched off next cycle: the room target as setpoint would let the TRV heat on by itself."""
+    await store.async_load()
+    await store.async_save_room(
+        "old_room",
+        {
+            "devices": [
+                {
+                    "entity_id": "climate.old_trv",
+                    "type": "trv",
+                    "valve_opening_entity": "number.old_trv_opening",
+                    "valve_closing_entity": "number.old_trv_closing",
+                }
+            ]
+        },
+    )
+    coordinator.note_room_deleted = MagicMock(return_value=queued)
+
+    with patch("custom_components.roommind.websocket_api.async_release_valve", AsyncMock()) as release:
+        assert await async_remove_room(rm_hass, "old_room")
+
+    assert release.await_args.kwargs["hand_back"] is not queued

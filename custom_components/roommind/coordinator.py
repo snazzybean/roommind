@@ -294,6 +294,8 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         self._override_seeded_at: dict[str, float] = {}
         # Rooms whose devices the next cycle switches off (room climate entity set to off)
         self._rooms_to_switch_off: set[str] = set()
+        # Rooms deleted in the panel: devices and last targets, switched off by the next cycle
+        self._deleted_rooms_to_switch_off: dict[str, tuple[list[dict], TargetTemps]] = {}
         # Rooms off through their climate entity: their valves go back without the room target (#413)
         self._rooms_switched_off: set[str] = set()
         self._switch_entity_areas: set[str] = set()
@@ -382,9 +384,10 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         )
 
         await self._async_switch_resting_rooms_off(stored_rooms, rooms, settings)
+        await self._async_switch_deleted_rooms_off(settings)
         for area_id, room in rooms.items():
-            # Live, not this cycle's snapshot: an area deleted while the cycle awaited another room
-            if not rooms_with_area(self.hass, {area_id: room}):
+            # Live, not this cycle's snapshot: an area or room deleted while the cycle awaited another room
+            if not rooms_with_area(self.hass, {area_id: room}) or store.get_room(area_id) is None:
                 continue
             try:
                 room_state = await self._async_process_room(room, settings, outdoor_forecast)
@@ -2665,6 +2668,42 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             await self._async_switch_devices_off(area_id, devices, targets)
             await self._async_release_valves(area_id, devices, hand_back=False)
             await self._async_mark_rest_switched_off(area_id, True)
+
+    def note_room_deleted(self, area_id: str, room: dict) -> bool:
+        """Remember a room deleted in the panel, so the next cycle switches its devices off.
+
+        Returns False when RoomMind did not drive them (resting room already off, control off,
+        outdoor area), then nothing is sent. Not now: a cycle running at the same time could
+        still send the room's last command after it.
+        """
+        if room.get(REST_SWITCHED_OFF) or room.get("is_outdoor") or not room.get("climate_control_enabled", True):
+            return False
+        live = (self.rooms or {}).get(area_id, {})
+        targets = TargetTemps(heat=live.get("heat_target"), cool=live.get("cool_target"))
+        self._deleted_rooms_to_switch_off[area_id] = (room.get("devices", []), targets)
+        return True
+
+    async def _async_switch_deleted_rooms_off(self, settings: dict) -> None:
+        """Switch the devices of rooms deleted since the last cycle off, as resting does (#494).
+
+        Global climate control off drops them unsent (#36): turning it on later must not reach
+        devices no room is configured for anymore. A room created again meanwhile keeps its devices.
+        Against the live store, not the cycle's snapshot: a delete while the cycle awaited the
+        forecast would still find the room there and skip it.
+        """
+        if not self._deleted_rooms_to_switch_off:
+            return
+        pending, self._deleted_rooms_to_switch_off = self._deleted_rooms_to_switch_off, {}
+        if not settings.get("climate_control_active", True):
+            return
+        running = rooms_with_area(self.hass, self.hass.data[DOMAIN]["store"].get_rooms())
+        driven = {eid for other in running.values() for eid in get_all_entity_ids(other.get("devices", []))}
+        for area_id, (devices, targets) in pending.items():
+            if area_id in running:
+                continue
+            own = [d for d in devices if d.get("entity_id") not in driven]
+            await self._async_switch_devices_off(area_id, own, targets)
+            await self._async_release_valves(area_id, own, hand_back=False)
 
     async def _async_mark_rest_switched_off(self, area_id: str, value: bool) -> None:
         try:

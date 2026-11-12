@@ -536,6 +536,8 @@ async def _async_release_dropped_valves(
     area_id: str,
     old: dict[str, ValveEntities],
     new: dict[str, ValveEntities],
+    *,
+    hand_back: bool = True,
 ) -> None:
     """Hand valves RoomMind no longer controls back to their TRVs (#413).
 
@@ -555,7 +557,7 @@ async def _async_release_dropped_valves(
                 valve.opening,
                 valve.closing,
                 area_id=area_id,
-                hand_back=True,
+                hand_back=hand_back,
                 idle_opening=valve.idle_opening,
             )
         except Exception:  # noqa: BLE001
@@ -597,18 +599,34 @@ async def _async_drop_boost_anchors(store: RoomMindStore, area_ids: list[str] | 
         await store.async_save_settings({"boost_applied_at": kept})
 
 
+async def _async_forget_in_room_lists(store: RoomMindStore, area_id: str) -> None:
+    """Drop a deleted room from the settings lists, else a new room in the same area inherits them."""
+    settings = store.get_settings()
+    changes = {
+        key: [a for a in settings[key] if a != area_id]
+        for key in ("hidden_rooms", "room_order", "learning_disabled_rooms")
+        if area_id in (settings.get(key) or [])
+    }
+    if changes:
+        await store.async_save_settings(changes)
+
+
 async def async_remove_room(hass: HomeAssistant, area_id: str) -> bool:
     """Delete a room with its entities, valves, model and history; False if it is not stored."""
     store = hass.data[DOMAIN]["store"]
-    old_valves = get_valve_entities((store.get_room(area_id) or {}).get("devices", []))
-    try:
-        await store.async_delete_room(area_id)
-    except KeyError:
+    room = store.get_room(area_id)
+    if room is None:
         return False
-
-    await _async_release_dropped_valves(hass, area_id, old_valves, {})
-
     coordinator = _get_coordinator(hass)
+    switched_off = bool(coordinator and coordinator.note_room_deleted(area_id, room))
+    await store.async_delete_room(area_id)
+
+    # The room target as setpoint would let a TRV that is switched off next cycle heat on by itself
+    await _async_release_dropped_valves(
+        hass, area_id, get_valve_entities(room.get("devices", [])), {}, hand_back=not switched_off
+    )
+    await _async_forget_in_room_lists(store, area_id)
+
     if coordinator:
         await coordinator.async_room_removed(area_id)
     # Stored right away, after the in-memory model is gone: else it only went with the next thermal save

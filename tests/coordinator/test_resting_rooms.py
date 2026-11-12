@@ -142,3 +142,98 @@ async def test_a_room_deleted_while_switching_off_does_not_break_the_cycle(hass,
         data = await coordinator._async_update_data()
 
     assert set(data["rooms"]) == {"living_room"}
+
+
+# A room deleted in the panel lets go of its devices like a resting room
+
+
+def _deleted_room(**extra) -> dict:
+    return _resting_room(area_id="old_room", **extra)
+
+
+@pytest.mark.asyncio
+async def test_a_deleted_room_switches_its_own_devices_off_in_the_next_cycle(hass, mock_config_entry):
+    coordinator, _ = _coordinator(hass, mock_config_entry, {"living_room": SAMPLE_ROOM})
+    coordinator.rooms = {"old_room": {"heat_target": 21.0, "cool_target": 24.0}}
+
+    assert coordinator.note_room_deleted("old_room", _deleted_room())
+    with patch(AREA_REGISTRY, return_value=_registry("living_room", "old_room")):
+        await coordinator._async_update_data()
+        await coordinator._async_update_data()
+
+    own = [{"entity_id": "climate.old_trv", "type": "trv", "role": "auto", "heating_system_type": ""}]
+    coordinator._async_switch_devices_off.assert_awaited_once_with("old_room", own, TargetTemps(heat=21.0, cool=24.0))
+    coordinator._async_release_valves.assert_awaited_once_with("old_room", own, hand_back=False)
+
+
+@pytest.mark.parametrize(
+    "room",
+    [
+        _deleted_room(**{REST_SWITCHED_OFF: True}),
+        _deleted_room(climate_control_enabled=False),
+        _deleted_room(is_outdoor=True),
+    ],
+    ids=["already-resting", "room-control-off", "outdoor"],
+)
+def test_a_deleted_room_whose_devices_were_not_driven_sends_nothing(hass, mock_config_entry, room):
+    coordinator, _ = _coordinator(hass, mock_config_entry, {})
+
+    assert not coordinator.note_room_deleted("old_room", room)
+
+
+@pytest.mark.asyncio
+async def test_climate_control_off_sends_nothing_to_a_deleted_room(hass, mock_config_entry):
+    coordinator, store = _coordinator(hass, mock_config_entry, {"living_room": SAMPLE_ROOM})
+    store.get_settings.return_value = {"climate_control_active": False}
+
+    coordinator.note_room_deleted("old_room", _deleted_room())
+    with patch(AREA_REGISTRY, return_value=_registry("living_room")):
+        await coordinator._async_update_data()
+
+    coordinator._async_switch_devices_off.assert_not_awaited()
+    # Dropped, not held: switching control on later must not reach devices nobody configured anymore
+    assert coordinator._deleted_rooms_to_switch_off == {}
+
+
+@pytest.mark.asyncio
+async def test_a_room_created_again_before_the_cycle_keeps_its_devices(hass, mock_config_entry):
+    coordinator, _ = _coordinator(hass, mock_config_entry, {"old_room": _deleted_room()})
+
+    coordinator.note_room_deleted("old_room", _deleted_room())
+    with patch(AREA_REGISTRY, return_value=_registry("old_room")):
+        await coordinator._async_update_data()
+
+    coordinator._async_switch_devices_off.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_a_room_deleted_during_the_cycle_is_skipped(hass, mock_config_entry):
+    """The snapshot still has the room; the store no longer does."""
+    coordinator, store = _coordinator(hass, mock_config_entry, {"living_room": SAMPLE_ROOM})
+    store.get_room.return_value = None
+    coordinator._async_process_room = AsyncMock()
+
+    with patch(AREA_REGISTRY, return_value=_registry("living_room")):
+        await coordinator._async_update_data()
+
+    coordinator._async_process_room.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_a_room_deleted_after_the_cycle_took_its_snapshot_is_still_switched_off(hass, mock_config_entry):
+    """The delete lands while the cycle awaits the forecast: the snapshot still has the room."""
+    coordinator, store = _coordinator(
+        hass, mock_config_entry, {"living_room": SAMPLE_ROOM, "old_room": _deleted_room()}
+    )
+    coordinator._async_process_room = AsyncMock(return_value={})
+
+    async def delete_meanwhile(_settings):
+        coordinator.note_room_deleted("old_room", _deleted_room())
+        store.get_rooms.return_value = {"living_room": SAMPLE_ROOM}
+
+    coordinator._weather_manager.async_read_forecast = AsyncMock(side_effect=delete_meanwhile)
+    with patch(AREA_REGISTRY, return_value=_registry("living_room", "old_room")):
+        await coordinator._async_update_data()
+
+    own = [{"entity_id": "climate.old_trv", "type": "trv", "role": "auto", "heating_system_type": ""}]
+    coordinator._async_switch_devices_off.assert_awaited_once_with("old_room", own, TargetTemps(heat=None, cool=None))
