@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "lint": "eslint src/",
     "format": "prettier --write src/",
-    "format:check": "prettier --check src/"
+    "format:check": "prettier --check src/",
+    "test": "vitest run"
   },
   "dependencies": {
     "home-assistant-js-websocket": "^9.8.1",
@@ -22,6 +23,7 @@
     "eslint-plugin-lit": "^2.3.1",
     "prettier": "^3.9.10",
     "typescript": "^6.0.3",
-    "vite": "^8.3.5"
+    "vite": "^8.3.5",
+    "vitest": "^5.1.0"
   }
 }

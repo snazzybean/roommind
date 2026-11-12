@@ -40,7 +40,7 @@ for arg in "$@"; do
   esac
 done
 
-for tool in "$PY_BIN/pytest" "$PY_BIN/ruff" "$PY_BIN/mypy" "$NODE_BIN/tsc" "$NODE_BIN/eslint" "$NODE_BIN/prettier"; do
+for tool in "$PY_BIN/pytest" "$PY_BIN/ruff" "$PY_BIN/mypy" "$NODE_BIN/tsc" "$NODE_BIN/eslint" "$NODE_BIN/prettier" "$NODE_BIN/vitest"; do
   if [[ ! -x "$tool" ]]; then
     echo "dev/check: missing $tool (pip install -r requirements-dev.txt ruff mypy / npm ci in frontend)" >&2
     exit 2
@@ -78,6 +78,7 @@ step "pytest + coverage >= 95 %" "$PY_BIN/pytest" tests/ -q -p no:sugar \
 step "tsc" in_frontend "$NODE_BIN/tsc" --noEmit
 step "eslint" in_frontend "$NODE_BIN/eslint" src/
 step "prettier" in_frontend "$NODE_BIN/prettier" --check src/
+step "vitest" in_frontend "$NODE_BIN/vitest" run
 step "vite build" in_frontend npm run build --silent
 
 if [[ $quick -eq 0 ]]; then
