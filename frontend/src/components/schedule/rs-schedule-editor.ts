@@ -789,7 +789,7 @@ export class RsScheduleEditor extends LitElement {
           : this._renderWeekCard(look, modeRooms, editable)
       }
       ${editable ? this._renderDeleteRow(users) : nothing} ${this._renderBlockEditor(modeRooms)}
-      ${this._renderDialog(users)}
+      ${this._renderDialog(users, look)}
     `;
   }
 
@@ -1421,15 +1421,18 @@ export class RsScheduleEditor extends LitElement {
 
   // ─── Dialogs ────────────────────────────────────────────────────────
 
-  private _renderDialog(users: UsingRoom[]) {
+  private _renderDialog(users: UsingRoom[], look: (b: ScheduleBlock, d: number) => BlockLook) {
     const dialog = this._dialog;
     if (!dialog) return nothing;
     return dialog.kind === "copy"
-      ? this._renderCopyDialog(dialog)
+      ? this._renderCopyDialog(dialog, look)
       : this._renderDeleteDialog(users);
   }
 
-  private _renderCopyDialog(dialog: { kind: "copy"; day: number; targets: number[] }) {
+  private _renderCopyDialog(
+    dialog: { kind: "copy"; day: number; targets: number[] },
+    look: (b: ScheduleBlock, d: number) => BlockLook,
+  ) {
     const l = this.hass.language;
     const names = this._dayNames("long");
     const setTargets = (targets: readonly number[]) => {
@@ -1463,7 +1466,9 @@ export class RsScheduleEditor extends LitElement {
             return html`<div class="day-check source">
               <ha-icon icon="mdi:content-copy" aria-hidden="true"></ha-icon>
               <span>${name}<small>${localize("schedule_editor.copy_source", l)}</small></span>
-              <span class="strip" aria-hidden="true">${this._stripBlocks(blocks)}</span>
+              <span class="strip" aria-hidden="true"
+                >${this._stripBlocks(blocks, -1, (b) => look(b, d))}</span
+              >
             </div>`;
           }
           return html`<label class="day-check">
@@ -1487,7 +1492,9 @@ export class RsScheduleEditor extends LitElement {
                 }</small
               ></span
             >
-            <span class="strip" aria-hidden="true">${this._stripBlocks(blocks)}</span>
+            <span class="strip" aria-hidden="true"
+              >${this._stripBlocks(blocks, -1, (b) => look(b, d))}</span
+            >
           </label>`;
         })}
         <div class="actions">
