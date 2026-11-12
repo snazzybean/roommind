@@ -246,13 +246,24 @@ def test_end_of_an_expensive_stretch_is_no_preheat_target():
 
 
 def test_schedule_rise_after_an_expensive_stretch_still_preheats():
-    # Eco 17 (coasting to 16) until the comfort block 21 (cheap, charged to 22): the schedule
-    # rises, so the room is pre-heated in time even though the hours before are expensive
-    heat = [16.0] * 36 + [22.0] * 36
+    # Eco 17 (coasting to 16) until the comfort block 21: the schedule rises, so the room is
+    # pre-heated in time even though the hours before are expensive
+    heat = [16.0] * 36 + [21.0] * 36
     schedule = [17.0] * 36 + [21.0] * 36
     plan = _price_plan(SLOW, 18.0, heat, schedule)
     assert plan.preheat_blocks == 36
     assert plan.actions[0] == MODE_HEATING
+
+
+def test_preheat_aims_at_the_schedule_not_the_charge_on_top():
+    # Comfort 21 from block 36 on, charged to 22 there (cheap, expensive hours follow): the
+    # pre-heat in the hours before aims at 21 and starts no earlier than for 21 alone
+    room = 20.2
+    charged = _price_plan(SLOW, room, [17.0] * 36 + [22.0] * 36, [17.0] * 36 + [21.0] * 36)
+    plain = _price_plan(SLOW, room, [17.0] * 36 + [21.0] * 36, [17.0] * 36 + [21.0] * 36)
+    assert charged.actions[0] == plain.actions[0] == MODE_IDLE
+    # Without the price information the 22 pulls the start earlier (the old behaviour)
+    assert _price_plan(SLOW, room, [17.0] * 36 + [22.0] * 36, None).actions[0] == MODE_HEATING
 
 
 def test_start_of_a_charging_stretch_is_no_preheat_target():
@@ -318,3 +329,12 @@ def test_prediction_unshifts_the_forecast_for_the_deadline(monkeypatch):
     seen.clear()
     _simulate_mpc(SLOW, [plain] * 6, [0.0] * 6, 18.5, make_room(climate_mode="heat_only"), {})
     assert seen[0] is None
+
+
+def test_unshifted_forecast_has_no_float_noise():
+    from custom_components.roommind.control.analytics_simulator import _schedule_heat_series
+
+    # A 60 °F block (15.6 °C) charged by 0.5: 16.1 - 0.5 must not read as a rise over 15.6
+    charged = {"target_temp": 16.1, "heat_target": 16.1, "cool_target": None, "price_shift_heat": 0.5}
+    plain = {"target_temp": 15.6, "heat_target": 15.6, "cool_target": None, "price_shift_heat": 0.0}
+    assert _schedule_heat_series([plain, charged], 15.0) == [15.6, 15.6]

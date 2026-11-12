@@ -310,7 +310,8 @@ def _schedule_heat_series(window: list[dict], T: float) -> list[float] | None:
         return None
 
     def unshifted(value: float | None, shift: float | None) -> float | None:
-        return value - (shift or 0.0) if value is not None else None
+        # Rounded: the forecast's targets are, and float noise would read as a schedule rise
+        return round(value - (shift or 0.0), 3) if value is not None else None
 
     return [
         fill_missing_targets(

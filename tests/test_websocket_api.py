@@ -1407,7 +1407,7 @@ async def test_save_settings_mold_fields(ws_hass, store, connection):
 
 @pytest.mark.asyncio
 async def test_save_settings_mold_f_rsi_range(ws_hass, store, connection):
-    """mold_f_rsi is stored and limited to the realistic 0.6-0.95 (below, the surface drops under 5 °C and reads ok)."""
+    """mold_f_rsi is stored and limited to the realistic 0.6-0.95."""
     import voluptuous as vol
 
     await store.async_load()

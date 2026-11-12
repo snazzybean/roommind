@@ -488,21 +488,25 @@ class MPCOptimizer:
         the target was forced on, and the run overshot by the heat it left behind.
 
         Only a rise of the schedule counts (``schedule_heat_series``, the target without
-        the price shift): the end of an expensive stretch or the start of a cheap one
-        moves the target too, but pre-heating for it in the hours before heated in the
-        expensive hours the shift was meant to skip, or charged outside the cheap ones.
+        the price shift), and only up to the schedule: the end of an expensive stretch or
+        the start of a cheap one moves the target too, but pre-heating for it in the hours
+        before heated in the expensive hours the shift was meant to skip, or charged
+        outside the cheap ones.
         """
         n = len(heat_target_series)
         now = heat_target_series[i]
         if self.preheat_max_blocks is not None:
             n = min(n, i + self.preheat_max_blocks + 1)
         schedule = schedule_heat_series if schedule_heat_series is not None else heat_target_series
-        n = min(n, len(schedule))
+        # Pre-heat for the schedule, not the charge on top of it: charging belongs to the cheap
+        # hours themselves (the greedy plan does it there), a coasting target stays lowered
+        goal = [min(h, sch) for h, sch in zip(heat_target_series, schedule, strict=False)]
+        n = min(n, len(goal))
 
         def rises(j: int) -> bool:
-            return heat_target_series[j] > now and schedule[j] > schedule[i]
+            return goal[j] > now and schedule[j] > schedule[i]
 
-        rise = next((j for j in range(i + 1, n) if rises(j) and heat_target_series[j] > T_room), None)
+        rise = next((j for j in range(i + 1, n) if rises(j) and goal[j] > T_room), None)
         if rise is None:
             return 0
         residual = q_residual or []
@@ -515,7 +519,7 @@ class MPCOptimizer:
             # while a min run started next block still makes it; start now when only one
             # started now does; when neither does, fall back to heating through below.
             # Only the coming block counts: one pre-heat run is not meant to hold a later one.
-            block_end = next((j for j in range(rise, n) if heat_target_series[j] <= now), n)
+            block_end = next((j for j in range(rise, n) if goal[j] <= now), n)
             if self._short_run_reaches(
                 1,
                 i,
@@ -523,7 +527,7 @@ class MPCOptimizer:
                 now,
                 T_room,
                 T_outdoor_series,
-                heat_target_series,
+                goal,
                 dt_minutes,
                 q_solar,
                 q_occupancy,
@@ -539,7 +543,7 @@ class MPCOptimizer:
                 now,
                 T_room,
                 T_outdoor_series,
-                heat_target_series,
+                goal,
                 dt_minutes,
                 q_solar,
                 q_occupancy,
@@ -568,7 +572,7 @@ class MPCOptimizer:
                 q_occupancy=q_occupancy[j] if j < len(q_occupancy) else 0.0,
                 q_residual=qr,
             )
-            target = heat_target_series[j + 1]
+            target = goal[j + 1]
             if rises(j + 1) and T < target - PREHEAT_DEADLINE_MARGIN:
                 return j + 1 - i
         return 0
