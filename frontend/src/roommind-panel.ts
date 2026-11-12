@@ -604,7 +604,10 @@ export class RoomMindPanel extends LitElement {
 
   private _onSettingsCategoryChanged(e: CustomEvent<{ category: string }>) {
     this._settingsCategory = e.detail.category;
-    this._navigate(this._settingsCategory ? `/settings/${this._settingsCategory}` : "/settings");
+    // Wide: a selection in the master-detail view; narrow: the category opens as its own page
+    this._navigate(this._settingsCategory ? `/settings/${this._settingsCategory}` : "/settings", {
+      replace: this._wide,
+    });
   }
 
   /** A room dialog links to a settings category (e.g. presence while it is off). */
@@ -617,7 +620,7 @@ export class RoomMindPanel extends LitElement {
 
   private _onBackFromSettingsPage = () => {
     this._settingsCategory = "";
-    this._navigate("/settings");
+    this._navigateBack("/settings");
   };
 
   private _onSettingsKey = (e: KeyboardEvent) => {
@@ -739,9 +742,9 @@ export class RoomMindPanel extends LitElement {
     this._scheduleRoom = "";
     if (room && this.hass?.areas?.[room]) {
       this._selectedAreaId = room;
-      this._navigate(`/room/${room}`);
+      this._navigateBack(`/room/${room}`);
     } else {
-      this._navigate("");
+      this._navigateBack("");
     }
   };
 
@@ -752,16 +755,16 @@ export class RoomMindPanel extends LitElement {
       this._roomFromAnalytics = false;
       this._analyticsRoom = room;
       this._activeTab = "analytics";
-      this._navigate(`/analytics/${room}`);
+      this._navigateBack(`/analytics/${room}`);
       return;
     }
-    this._navigate("");
+    this._navigateBack("");
   }
 
   /** The room page removed the room after its own confirmation. */
   private _onRoomDeleted() {
     this._selectedAreaId = null;
-    this._navigate("");
+    this._navigateBack("");
     this._loadRooms();
   }
 
@@ -804,7 +807,7 @@ export class RoomMindPanel extends LitElement {
 
   private _onAnalyticsRoomSelected(e: CustomEvent<{ areaId: string }>) {
     this._analyticsRoom = e.detail.areaId;
-    this._navigate(`/analytics/${e.detail.areaId}`);
+    this._navigate(`/analytics/${e.detail.areaId}`, { replace: true });
   }
 
   private _isEditing(): boolean {
@@ -940,9 +943,25 @@ export class RoomMindPanel extends LitElement {
     }
   }
 
-  private _navigate(path: string) {
-    history.replaceState(null, "", `/roommind${path}`);
+  /** A new page gets its own history entry, so the browser's back returns to the one before. */
+  private _navigate(path: string, { replace = false } = {}) {
+    const url = `/roommind${path}`;
+    if (replace || url === location.pathname + location.search)
+      history.replaceState(history.state, "", url);
+    else history.pushState({ roommindFrom: location.pathname + location.search }, "", url);
     window.dispatchEvent(new Event("location-changed"));
+  }
+
+  /**
+   * The toolbar's back: the browser's back when the page was opened from `path`, else `path`
+   * in place of the current entry (a link opened straight into a room must not pile up pages).
+   */
+  private _navigateBack(path: string) {
+    if ((history.state as { roommindFrom?: string } | null)?.roommindFrom === `/roommind${path}`) {
+      history.back();
+      return;
+    }
+    this._navigate(path, { replace: true });
   }
 
   private _applyRoute() {
