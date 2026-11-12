@@ -297,6 +297,47 @@ def test_overshoot_ignores_open_windows_and_counts_cooling_downwards():
     assert compute_period_stats(cooling, "auto")["cool_overshoot"]["max"] == pytest.approx(0.4)
 
 
+def _bucket(i: int, mode: str, temp: float, low: float, high: float, **kw) -> dict:
+    """A compacted 5-min history row: first mode, mean temperature, extremes and run starts."""
+    starts = {"heat_starts": 0, "cool_starts": 0, **kw.pop("starts", {})}
+    return {
+        **_point(0, mode=mode, room_temp=temp, room_temp_min=low, room_temp_max=high, **starts, **kw),
+        "ts": T0 + i * 300,
+    }
+
+
+def test_compacted_overshoot_sees_a_run_inside_a_bucket_that_starts_idle():
+    points = [
+        _bucket(0, "idle", 20.8, 20.7, 20.9),
+        # Heats for two minutes after the bucket started idle, the room peaks at 21.6 after it
+        _bucket(1, "idle", 21.0, 20.8, 21.3, starts={"heat_starts": 1}),
+        _bucket(2, "idle", 21.4, 21.3, 21.6),
+        _bucket(3, "idle", 21.2, 21.1, 21.3),
+    ]
+    over = compute_period_stats(points, "auto")["heat_overshoot"]
+    assert over == {"runs": 1, "mean": pytest.approx(0.6), "max": pytest.approx(0.6)}
+
+
+def test_compacted_overshoot_takes_the_extreme_of_the_bucket_on_the_run_side():
+    heating = [_bucket(0, "heating", 20.8, 20.6, 21.0, starts={"heat_starts": 1}), _bucket(1, "idle", 21.3, 21.1, 21.7)]
+    assert compute_period_stats(heating, "auto")["heat_overshoot"]["max"] == pytest.approx(0.7)
+    cooling = [_bucket(0, "cooling", 24.2, 24.0, 24.5, starts={"cool_starts": 1}), _bucket(1, "idle", 23.8, 23.5, 24.0)]
+    assert compute_period_stats(cooling, "auto")["cool_overshoot"]["max"] == pytest.approx(0.5)
+
+
+def test_compacted_overshoot_splits_runs_that_meet_inside_a_bucket():
+    points = [
+        _bucket(0, "heating", 20.8, 20.6, 21.0, starts={"heat_starts": 1}),
+        # The first run ended and the next one started inside this bucket; like a detail row of
+        # the next run, the bucket no longer counts for the first one
+        _bucket(1, "heating", 21.1, 20.9, 21.4, starts={"heat_starts": 1}),
+        _bucket(2, "idle", 21.5, 21.4, 21.9),
+        _bucket(3, "idle", 21.2, 21.0, 21.4),
+    ]
+    over = compute_period_stats(points, "auto")["heat_overshoot"]
+    assert over == {"runs": 2, "mean": pytest.approx(0.45), "max": pytest.approx(0.9)}
+
+
 def test_overshoot_only_for_the_controlled_side():
     points = _run([(21.0, "heating"), (21.5, "idle")])
     assert compute_period_stats(points, "cool_only")["heat_overshoot"] is None

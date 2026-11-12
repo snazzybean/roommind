@@ -37,6 +37,9 @@ DETAIL_FIELDS = [
     # mode, its transitions lose the short runs
     "heat_starts",
     "cool_starts",
+    # Extremes of a history bucket: a short run peaks inside it, the bucket mean hides the peak
+    "room_temp_max",
+    "room_temp_min",
 ]
 START_FIELDS = {MODE_HEATING: "heat_starts", MODE_COOLING: "cool_starts"}
 DETAIL_MAX_AGE = 48 * 3600  # 48 hours
@@ -255,18 +258,23 @@ class HistoryStore:
                 "price",
                 "price_shift",
             ):
-                vals = []
-                for r in bucket:
-                    v = r.get(field, "")
-                    if v != "":
-                        try:
-                            vals.append(float(v))
-                        except (ValueError, TypeError):
-                            pass
+                vals = [v for r in bucket if (v := self._float(r.get(field, ""))) is not None]
                 avg_row[field] = round(sum(vals) / len(vals), 2) if vals else ""
+            temps = [t for r in bucket if (t := self._float(r.get("room_temp", ""))) is not None]
+            avg_row["room_temp_max"] = max(temps) if temps else ""
+            avg_row["room_temp_min"] = min(temps) if temps else ""
             avg_row.update(starts[bucket_key])
             result.append(avg_row)
         return result
+
+    @staticmethod
+    def _float(value: str) -> float | None:
+        if value == "":
+            return None
+        try:
+            return float(value)
+        except (ValueError, TypeError):
+            return None
 
     @staticmethod
     def _row_starts(row: dict, previous: dict | None, run: str, key: str) -> int:

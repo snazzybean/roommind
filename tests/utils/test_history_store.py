@@ -675,6 +675,24 @@ def test_downsample_sums_the_starts_a_bucket_keeps_only_the_first_mode_of(histor
     assert [(b["heat_starts"], b["cool_starts"]) for b in buckets] == [(1, 0), (0, 1)]
 
 
+def test_downsample_keeps_the_extremes_of_the_room_temperature(history_dir):
+    store = HistoryStore(history_dir)
+    # A short run peaks inside the bucket, its mean hides the peak
+    for i, temp in enumerate([21.0, 21.8, 21.3, 20.6, 20.9]):
+        store.record("room_a", {"mode": "idle", "room_temp": temp}, 600 + i * 60)
+    rows = store.read_detail("room_a")
+    assert rows[0]["room_temp_max"] == ""
+    (bucket,) = store._downsample(rows, bucket_seconds=300)
+    assert bucket["room_temp"] == 21.12
+    assert (bucket["room_temp_max"], bucket["room_temp_min"]) == (21.8, 20.6)
+
+
+def test_downsample_without_room_temperature_has_no_extremes(history_dir):
+    store = HistoryStore(history_dir)
+    (bucket,) = store._downsample([{"timestamp": "600", "mode": "idle", "room_temp": ""}], bucket_seconds=300)
+    assert (bucket["room_temp_max"], bucket["room_temp_min"]) == ("", "")
+
+
 def test_downsample_counts_rows_from_before_the_columns_against_the_row_before(history_dir):
     store = HistoryStore(history_dir)
     rows = [

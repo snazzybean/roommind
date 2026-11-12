@@ -82,6 +82,12 @@ def _run_target(point: dict, target_key: str, sign: int) -> float | None:
     return float(max(target, schedule) if sign > 0 else min(target, schedule))
 
 
+def _extreme(point: dict, sign: int) -> float | None:
+    """The room temperature of ``point`` on the ``sign`` side: a compacted bucket's max (+1) or min (-1)."""
+    value = point.get("room_temp_max" if sign > 0 else "room_temp_min")
+    return point.get("room_temp") if value is None else value
+
+
 def _reference_target(points: list[dict], run_start: int, end: int, target_key: str, sign: int) -> float | None:
     """The target a run of ``points[run_start..end]`` worked towards.
 
@@ -102,7 +108,8 @@ def _reference_target(points: list[dict], run_start: int, end: int, target_key: 
     if not targets:
         return None
     reference = strictest(targets)
-    first = points[run_start].get("room_temp")
+    # The room before the run warmed it: a compacted bucket's other extreme
+    first = _extreme(points[run_start], -sign)
     if first is None or sign * (first - reference) < 0:
         return reference
     for p in points[end:]:
@@ -122,25 +129,40 @@ def _run_overshoot(points: list[dict], mode: str, target_key: str, sign: int) ->
     target the run worked towards (``_reference_target``), not the one in force at its end:
     pre-heat runs end under eco, runs end because the target dropped and the price lowers it.
     ``sign`` is +1 for heating (above the heat target), -1 for cooling (below the cool target).
+
+    A compacted 5-min bucket keeps only its first mode: a run starting in it (``*_starts``)
+    makes it part of the run, and its extreme stands for the peak inside it.
     """
     strictest = max if sign > 0 else min
+    start_key = "heat_starts" if sign > 0 else "cool_starts"
+
+    def begins(i: int) -> bool:
+        counted = points[i].get(start_key)
+        if counted is not None:
+            return bool(counted > 0)
+        return points[i].get("mode") == mode and (i == 0 or points[i - 1].get("mode") != mode)
+
+    def in_run(i: int) -> bool:
+        return points[i].get("mode") == mode or bool(points[i].get(start_key))
+
     overshoots: list[float] = []
     run_start = 0
     for i, point in enumerate(points[:-1]):
-        if point.get("mode") != mode:
+        if not in_run(i):
             continue
-        if i == 0 or points[i - 1].get("mode") != mode:
+        if i == 0 or begins(i) or not in_run(i - 1):
             run_start = i
-        if points[i + 1].get("mode") == mode:
+        if in_run(i + 1) and not begins(i + 1):
             continue
         reference = _reference_target(points, run_start, i, target_key, sign)
         if reference is None:
             continue
         peak: float | None = None
-        for later in points[i:]:
-            if later["ts"] - point["ts"] > OVERSHOOT_WINDOW_S or (later is not point and later.get("mode") == mode):
+        for j in range(i, len(points)):
+            later = points[j]
+            if later["ts"] - point["ts"] > OVERSHOOT_WINDOW_S or (j > i and begins(j)):
                 break
-            temp = later.get("room_temp")
+            temp = _extreme(later, sign)
             if temp is None or later.get("window_open"):
                 continue
             peak = temp if peak is None else strictest(peak, temp)
