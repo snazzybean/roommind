@@ -17,7 +17,7 @@
 | custom\_components/roommind/control/residual\_heat.py              |       48 |        0 |    100% |           |
 | custom\_components/roommind/control/solar.py                       |       81 |        1 |     99% |        72 |
 | custom\_components/roommind/control/thermal\_model.py              |      569 |        2 |     99% | 529, 1339 |
-| custom\_components/roommind/coordinator.py                         |     1352 |       42 |     97% |511-512, 1384-1385, 1395, 1397, 1965, 2016, 2044-2045, 2096, 2305, 2511-2514, 2792, 2801, 2823, 2828, 2830, 2833, 2836, 2880, 2885-2890, 2894, 2934, 2936, 2939, 2942, 2968-2969, 3085, 3105-3113, 3131-3132, 3147-3152, 3169-3170 |
+| custom\_components/roommind/coordinator.py                         |     1375 |       42 |     97% |514-515, 1387-1388, 1398, 1400, 1968, 2019, 2047-2048, 2099, 2308, 2514-2517, 2831, 2840, 2862, 2867, 2869, 2872, 2875, 2919, 2924-2929, 2933, 2973, 2975, 2978, 2981, 3007-3008, 3124, 3144-3152, 3170-3171, 3186-3191, 3208-3209 |
 | custom\_components/roommind/deprecation.py                         |       56 |        0 |    100% |           |
 | custom\_components/roommind/diagnostics.py                         |      238 |        0 |    100% |           |
 | custom\_components/roommind/managers/\_\_init\_\_.py               |        0 |        0 |    100% |           |
@@ -54,8 +54,8 @@
 | custom\_components/roommind/utils/schedule\_utils.py               |      263 |        0 |    100% |           |
 | custom\_components/roommind/utils/sensor\_utils.py                 |       29 |        1 |     97% |        25 |
 | custom\_components/roommind/utils/temp\_utils.py                   |       26 |        0 |    100% |           |
-| custom\_components/roommind/websocket\_api.py                      |      359 |        3 |     99% |631, 870-875 |
-| **TOTAL**                                                          | **9413** |  **204** | **98%** |           |
+| custom\_components/roommind/websocket\_api.py                      |      365 |        3 |     99% |651, 890-895 |
+| **TOTAL**                                                          | **9442** |  **204** | **98%** |           |
 
 
 ## Setup coverage badge
