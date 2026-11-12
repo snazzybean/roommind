@@ -2586,6 +2586,24 @@ async def test_wake_fallback_leaves_a_room_alone_that_receives_no_commands(hass,
 
 
 @pytest.mark.asyncio
+async def test_wake_fallback_leaves_the_zone_of_a_resting_room_alone(hass, mock_config_entry):
+    """A room whose area was deleted (#494) has no cycle that would switch its zone off again."""
+    demanding = _room_with_device("room_a", "climate.zone_a")
+    resting = _room_with_device("room_b", "climate.zone_b")
+    states = {
+        "climate.zone_a": _make_ac_zone_state("off", hvac_modes=["off", "heat"]),  # no fan_only
+        "climate.zone_b": _make_ac_zone_state("off"),
+    }
+    # Stored, but not among the rooms the cycle runs
+    coordinator, group = _wake_coordinator(hass, mock_config_entry, {"room_a": demanding, "room_b": resting}, states)
+    room_states = {"room_a": {"mode": "heating", "commanded_mode": "heating"}}
+
+    await coordinator._async_wake_member_zone(group, room_states, {"room_a": demanding})
+
+    assert _fan_only_wakes(hass) == []
+
+
+@pytest.mark.asyncio
 async def test_wake_fallback_still_wakes_an_idle_room_under_control(hass, mock_config_entry):
     demanding = _room_with_device("room_a", "climate.zone_a")
     idle = _room_with_device("room_b", "climate.zone_b")

@@ -237,3 +237,59 @@ async def test_a_room_deleted_after_the_cycle_took_its_snapshot_is_still_switche
 
     own = [{"entity_id": "climate.old_trv", "type": "trv", "role": "auto", "heating_system_type": ""}]
     coordinator._async_switch_devices_off.assert_awaited_once_with("old_room", own, TargetTemps(heat=None, cool=None))
+
+
+@pytest.mark.asyncio
+async def test_an_area_deleted_while_its_room_is_processed_leaves_no_run_state(hass, mock_config_entry):
+    """The pause drops the run state while the room awaits a device; the rest of its processing must not bring it back."""
+    coordinator, _ = _coordinator(hass, mock_config_entry, {"living_room": {**SAMPLE_ROOM, "area_id": "living_room"}})
+    areas = {"living_room"}
+
+    async def area_deleted_meanwhile(room, _settings, _forecast):
+        await coordinator.async_room_paused(room["area_id"])
+        areas.clear()
+        coordinator._previous_modes[room["area_id"]] = "heating"
+        coordinator._ekf_training._synced.add(room["area_id"])
+        coordinator._model_manager.get_estimator(room["area_id"])
+        return {"mode": "heating"}
+
+    coordinator._async_process_room = AsyncMock(side_effect=area_deleted_meanwhile)
+    registry = MagicMock()
+    registry.async_list_areas.side_effect = lambda: [SimpleNamespace(id=a) for a in areas]
+    with (
+        patch(AREA_REGISTRY, return_value=registry),
+        patch("homeassistant.helpers.entity_registry.async_get", return_value=MagicMock(entities={})),
+    ):
+        data = await coordinator._async_update_data()
+
+    assert "living_room" not in data["rooms"]
+    assert "living_room" not in coordinator._previous_modes
+    # Back with its area, the model first resyncs to the room instead of learning the pause
+    assert "living_room" not in coordinator._ekf_training._synced
+    # Resting keeps what the room learned
+    assert "living_room" in coordinator._model_manager._estimators
+
+
+@pytest.mark.asyncio
+async def test_a_room_deleted_while_it_is_processed_leaves_no_model(hass, mock_config_entry):
+    """The delete removed the model; a training step of the same cycle must not create it again."""
+    coordinator, store = _coordinator(
+        hass, mock_config_entry, {"living_room": {**SAMPLE_ROOM, "area_id": "living_room"}}
+    )
+
+    async def deleted_meanwhile(room, _settings, _forecast):
+        store.get_room.return_value = None
+        coordinator._previous_modes[room["area_id"]] = "heating"
+        coordinator._model_manager.get_estimator(room["area_id"])
+        return {"mode": "heating"}
+
+    coordinator._async_process_room = AsyncMock(side_effect=deleted_meanwhile)
+    with (
+        patch(AREA_REGISTRY, return_value=_registry("living_room")),
+        patch("homeassistant.helpers.entity_registry.async_get", return_value=MagicMock(entities={})),
+    ):
+        data = await coordinator._async_update_data()
+
+    assert "living_room" not in data["rooms"]
+    assert "living_room" not in coordinator._previous_modes
+    assert "living_room" not in coordinator._model_manager._estimators

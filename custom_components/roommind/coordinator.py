@@ -391,9 +391,12 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 continue
             try:
                 room_state = await self._async_process_room(room, settings, outdoor_forecast)
-                room_states[area_id] = room_state
             except Exception:  # noqa: BLE001
                 _LOGGER.exception("Room '%s': processing failed, skipping", area_id)
+                continue
+            if not self._room_still_runs(area_id):
+                continue
+            room_states[area_id] = room_state
 
         # Control master devices based on aggregate room demand
         await self._async_control_master_devices(room_states, rooms, settings)
@@ -2642,6 +2645,22 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         entities before HA has taken them down.
         """
         self._forget_room(area_id)
+
+    def _room_still_runs(self, area_id: str) -> bool:
+        """Whether a room just processed still has its area and its stored config.
+
+        A pause or delete while the room awaited a device already dropped its run state; what
+        the rest of its processing wrote back goes again, a deleted room's model with it.
+        """
+        store = self.hass.data[DOMAIN]["store"]
+        if store.get_room(area_id) is None:
+            self._forget_room(area_id)
+            self._model_manager.remove_room(area_id)
+            return False
+        if not rooms_with_area(self.hass, {area_id: {}}):
+            self._forget_room(area_id)
+            return False
+        return True
 
     async def _async_switch_resting_rooms_off(
         self, stored_rooms: dict[str, dict], running: dict[str, dict], settings: dict

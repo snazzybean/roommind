@@ -193,6 +193,22 @@ async def test_unload_releases_every_configured_valve(hass):
 
 
 @pytest.mark.asyncio
+async def test_unload_leaves_the_valves_of_a_resting_room_alone(hass):
+    """Resting (#494) already handed them back; the user may have set them by hand since."""
+    from types import SimpleNamespace
+
+    from custom_components.roommind import _async_release_all_valves
+
+    _setup(hass, VALVE_ROOM, {})
+    registry = MagicMock()
+    registry.async_list_areas.return_value = [SimpleNamespace(id="other_area")]
+    with patch("custom_components.roommind.utils.area_utils.ar.async_get", return_value=registry):
+        await _async_release_all_valves(hass)
+
+    assert _number_calls(hass) == []
+
+
+@pytest.mark.asyncio
 async def test_a_held_valve_trains_as_heating_although_its_trv_reports_idle(hass, mock_config_entry):
     """The TRVZB reports idle once its own sensor is warm; the pinned valve still heats."""
     from custom_components.roommind.const import MODE_HEATING
