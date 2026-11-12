@@ -4,7 +4,8 @@ description: >
   Same group, but the bedroom zone belongs to no RoomMind room. The fallback still wakes
   it for the master (#135), but it must not count as a running member: no room cycle
   reports it stopped again, and a phantom member cancelled the living room zone's min run
-  on every later start.
+  on every later start. RoomMind switches the zone it woke off again with the master;
+  before, it ran fan_only all day (0.57 kWh, 1 command; after 0.24 kWh, 98 commands).
 refs: [135]
 roommind:
   rooms:
@@ -12,3 +13,4 @@ roommind:
 expect:
   - {invariant: min_run_commanded, label: the woken zone of no room does not cancel the group's min run}
   - {metric: comfort.in_band_pct, room: wohnzimmer, min: 80, label: living room still heats with its master}
+  - {metric: device.electric_kwh, entity_id: climate.sz_zone, max: 0.35, label: the woken zone goes off with the master}

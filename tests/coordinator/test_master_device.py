@@ -2671,3 +2671,161 @@ async def test_a_woken_zone_of_no_room_does_not_count_as_running(hass, mock_conf
 
     assert _fan_only_wakes(hass) == ["climate.zone_b"]
     assert not coordinator._compressor_manager.is_compressor_running("g1")
+
+
+def _woken_zone_setup(hass, mock_config_entry, master_mode="heat"):
+    """Room A (no fan_only) heats, zone B belongs to no room and was woken for the master."""
+    rooms = {"room_a": _room_with_device("room_a", "climate.zone_a")}
+    states = {
+        "climate.zone_a": _make_ac_zone_state("off", hvac_modes=["off", "heat"]),
+        "climate.zone_b": _make_ac_zone_state("off"),
+        "climate.outdoor": _make_master_state(master_mode),
+    }
+    coordinator, group = _wake_coordinator(hass, mock_config_entry, rooms, states)
+    coordinator._had_valid_temp.update({"room_a", "room_b"})
+    return coordinator, group, rooms, states
+
+
+def _zone_offs(hass, eid="climate.zone_b"):
+    return [
+        c
+        for c in hass.services.async_call.call_args_list
+        if c.args[1] == "set_hvac_mode" and c.args[2] == {"entity_id": eid, "hvac_mode": "off"}
+    ]
+
+
+async def _wake_then_idle(coordinator, group, rooms, states, hass):
+    await coordinator._async_wake_member_zone(group, {"room_a": {"commanded_mode": "heating"}}, rooms)
+    states["climate.zone_b"] = _make_ac_zone_state("fan_only")
+    hass.services.async_call.reset_mock()
+    await coordinator._async_control_master_devices(
+        {"room_a": {"mode": "idle", "commanded_mode": "idle"}}, rooms, {"climate_control_active": True}
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_woken_zone_of_no_room_goes_off_with_the_master(hass, mock_config_entry):
+    """No room cycle sends that zone anything, so it ran fan_only for good (#135)."""
+    coordinator, group, rooms, states = _woken_zone_setup(hass, mock_config_entry)
+
+    await _wake_then_idle(coordinator, group, rooms, states, hass)
+
+    calls = [c.args[2] for c in hass.services.async_call.call_args_list if c.args[1] == "set_hvac_mode"]
+    assert calls == [
+        {"entity_id": "climate.outdoor", "hvac_mode": "off"},
+        {"entity_id": "climate.zone_b", "hvac_mode": "off"},
+    ]
+    assert coordinator._woken_zones == {}
+
+
+@pytest.mark.asyncio
+async def test_a_woken_zone_goes_off_when_the_master_is_already_off(hass, mock_config_entry):
+    coordinator, group, rooms, states = _woken_zone_setup(hass, mock_config_entry, master_mode="off")
+
+    await _wake_then_idle(coordinator, group, rooms, states, hass)
+
+    assert len(_zone_offs(hass)) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_woken_zone_stays_while_the_master_runs(hass, mock_config_entry):
+    coordinator, group, rooms, states = _woken_zone_setup(hass, mock_config_entry)
+    await coordinator._async_wake_member_zone(group, {"room_a": {"commanded_mode": "heating"}}, rooms)
+    states["climate.zone_b"] = _make_ac_zone_state("fan_only")
+    hass.services.async_call.reset_mock()
+
+    await coordinator._async_control_master_devices(
+        {"room_a": {"mode": "heating", "commanded_mode": "heating"}}, rooms, {"climate_control_active": True}
+    )
+
+    assert _zone_offs(hass) == []
+    assert coordinator._woken_zones == {"g1": "climate.zone_b"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("zone_mode", ["cool", "off"])
+async def test_a_woken_zone_someone_switched_is_left_alone(hass, mock_config_entry, zone_mode):
+    coordinator, group, rooms, states = _woken_zone_setup(hass, mock_config_entry)
+    await coordinator._async_wake_member_zone(group, {"room_a": {"commanded_mode": "heating"}}, rooms)
+    states["climate.zone_b"] = _make_ac_zone_state(zone_mode)
+    hass.services.async_call.reset_mock()
+
+    await coordinator._async_control_master_devices(
+        {"room_a": {"mode": "idle", "commanded_mode": "idle"}}, rooms, {"climate_control_active": True}
+    )
+
+    assert _zone_offs(hass) == []
+    assert coordinator._woken_zones == {}
+
+
+@pytest.mark.asyncio
+async def test_a_woken_zone_a_room_took_over_is_left_to_that_room(hass, mock_config_entry):
+    coordinator, group, rooms, states = _woken_zone_setup(hass, mock_config_entry)
+    await coordinator._async_wake_member_zone(group, {"room_a": {"commanded_mode": "heating"}}, rooms)
+    states["climate.zone_b"] = _make_ac_zone_state("fan_only")
+    rooms["room_b"] = _room_with_device("room_b", "climate.zone_b")
+    hass.services.async_call.reset_mock()
+
+    await coordinator._async_control_master_devices(
+        {"room_a": {"mode": "idle", "commanded_mode": "idle"}, "room_b": {"mode": "idle", "commanded_mode": "idle"}},
+        rooms,
+        {"climate_control_active": True},
+    )
+
+    assert _zone_offs(hass) == []
+
+
+@pytest.mark.asyncio
+async def test_a_woken_zone_gets_nothing_while_climate_control_is_off(hass, mock_config_entry):
+    """#36: with climate control off RoomMind sends nothing, the zone keeps its mark."""
+    coordinator, group, rooms, states = _woken_zone_setup(hass, mock_config_entry)
+    await coordinator._async_wake_member_zone(group, {"room_a": {"commanded_mode": "heating"}}, rooms)
+    states["climate.zone_b"] = _make_ac_zone_state("fan_only")
+    hass.services.async_call.reset_mock()
+
+    await coordinator._async_control_master_devices(
+        {"room_a": {"mode": "idle", "commanded_mode": "idle"}}, rooms, {"climate_control_active": False}
+    )
+
+    assert hass.services.async_call.call_args_list == []
+    assert coordinator._woken_zones == {"g1": "climate.zone_b"}
+
+
+@pytest.mark.asyncio
+async def test_a_failed_switch_off_of_the_woken_zone_is_retried(hass, mock_config_entry):
+    coordinator, group, rooms, states = _woken_zone_setup(hass, mock_config_entry, master_mode="off")
+    await coordinator._async_wake_member_zone(group, {"room_a": {"commanded_mode": "heating"}}, rooms)
+    states["climate.zone_b"] = _make_ac_zone_state("fan_only")
+
+    async def fail_zone(domain, service, data, **kwargs):
+        if data.get("entity_id") == "climate.zone_b":
+            raise RuntimeError("zone unreachable")
+
+    hass.services.async_call = AsyncMock(side_effect=fail_zone)
+    idle = {"room_a": {"mode": "idle", "commanded_mode": "idle"}}
+    await coordinator._async_control_master_devices(idle, rooms, {"climate_control_active": True})
+    assert coordinator._woken_zones == {"g1": "climate.zone_b"}
+
+    hass.services.async_call = AsyncMock()
+    await coordinator._async_control_master_devices(idle, rooms, {"climate_control_active": True})
+    assert len(_zone_offs(hass)) == 1
+    assert coordinator._woken_zones == {}
+
+
+@pytest.mark.asyncio
+async def test_a_woken_zone_of_a_room_is_not_marked(hass, mock_config_entry):
+    """A zone a room drives is switched off by that room's own cycle."""
+    rooms = {
+        "room_a": _room_with_device("room_a", "climate.zone_a"),
+        "room_b": _room_with_device("room_b", "climate.zone_b"),
+    }
+    states = {
+        "climate.zone_a": _make_ac_zone_state("off", hvac_modes=["off", "heat"]),
+        "climate.zone_b": _make_ac_zone_state("off"),
+    }
+    coordinator, group = _wake_coordinator(hass, mock_config_entry, rooms, states)
+
+    await coordinator._async_wake_member_zone(group, {"room_a": {"commanded_mode": "heating"}}, rooms)
+
+    assert _fan_only_wakes(hass) == ["climate.zone_b"]
+    assert coordinator._woken_zones == {}

@@ -298,6 +298,8 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         self._deleted_rooms_to_switch_off: dict[str, tuple[list[dict], TargetTemps]] = {}
         # Rooms off through their climate entity: their valves go back without the room target (#413)
         self._rooms_switched_off: set[str] = set()
+        # Zone of no room woken for a group's master (#135), per group; switched off with the master
+        self._woken_zones: dict[str, str] = {}
         self._switch_entity_areas: set[str] = set()
         self._climate_control_switch_areas: set[str] = set()
         self._binary_sensor_entity_areas: set[str] = set()
@@ -3057,6 +3059,8 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             # would stay a running member for good and cancel the group's min run
             if any(wake_eid in get_all_entity_ids(r.get("devices", [])) for r in rooms_config.values()):
                 self._compressor_manager.update_member(wake_eid, True)
+            else:
+                self._woken_zones[group.id] = wake_eid
             _LOGGER.debug(
                 "Master '%s' (group '%s'): pre-activated zone '%s' (fan_only)",
                 group.master_entity,
@@ -3071,6 +3075,30 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 wake_eid,
                 exc_info=True,
             )
+
+    async def _async_release_woken_zone(self, gid: str, rooms_config: dict[str, dict]) -> None:
+        """Switch a zone of no room off again that was woken for the master, once the master is idle.
+
+        No room cycle ever sends that zone anything, so without this it ran fan_only for good.
+        Left alone when a room took the zone over or someone switched it to another mode.
+        """
+        eid = self._woken_zones.pop(gid, None)
+        if eid is None or any(eid in get_all_entity_ids(r.get("devices", [])) for r in rooms_config.values()):
+            return
+        state = self.hass.states.get(eid)
+        if state is None or state.state != "fan_only":
+            return
+        try:
+            await self.hass.services.async_call(
+                "climate",
+                "set_hvac_mode",
+                {"entity_id": eid, "hvac_mode": "off"},
+                blocking=True,
+                context=make_roommind_context(),
+            )
+        except Exception:  # noqa: BLE001
+            self._woken_zones.setdefault(gid, eid)
+            _LOGGER.warning("Group '%s': failed to switch woken zone '%s' off", gid, eid, exc_info=True)
 
     async def _async_control_master_devices(
         self,
@@ -3153,6 +3181,8 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                     # Redundancy check — compare resolved mode with actual entity state
                     if master_state is not None and master_state.state == resolved_mode:
                         self._compressor_manager.set_master_action(gid, new_action)
+                        if new_action == "idle":
+                            await self._async_release_woken_zone(gid, rooms_config)
                         # Still call script if action changed
                         if new_action != prev_action and group.action_script:
                             await self._call_action_script(group, state, new_action)
@@ -3184,6 +3214,8 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                             exc_info=True,
                         )
                         continue  # don't update state on failed command
+                    if new_action == "idle":
+                        await self._async_release_woken_zone(gid, rooms_config)
 
                 # 6. Call action script on transition
                 if new_action != prev_action and group.action_script:
