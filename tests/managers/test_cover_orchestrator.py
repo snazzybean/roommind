@@ -1297,8 +1297,9 @@ class TestOutdoorMinTempGate:
         assert call_kwargs["predicted_peak_temp"] == 26.0
 
     @pytest.mark.asyncio
-    async def test_outdoor_min_temp_none_disables_gate(self):
-        """covers_outdoor_min_temp=None means the gate is disabled."""
+    @pytest.mark.parametrize(("outdoor", "gated"), [(5.0, True), (12.0, False)])
+    async def test_outdoor_min_temp_none_uses_the_default(self, outdoor, gated):
+        """None (rooms stored up to 1.8.2) gates at the 10 °C the room page shows."""
         cm = _make_cover_manager()
         cm.evaluate.return_value = CoverDecision(target_position=100, changed=False, reason="test")
         orch = CoverOrchestrator(_make_hass(), cm, _make_model_manager())
@@ -1311,14 +1312,15 @@ class TestOutdoorMinTempGate:
                 targets=TargetTemps(heat=21.0, cool=24.0),
                 mode=MODE_HEATING,
                 current_temp=22.0,  # above heat target: no heating gate
-                outdoor_temp=5.0,
+                outdoor_temp=outdoor,
                 q_solar=0.8,
                 predicted_peak_temp=None,
                 has_override=False,
             )
 
         call_kwargs = cm.evaluate.call_args[1]
-        assert call_kwargs["predicted_peak_temp"] == 26.0
+        expected = call_kwargs["target_temp"] if gated else 26.0
+        assert call_kwargs["predicted_peak_temp"] == expected
 
 
 # ── Night close elevation + offset tests ─────────────────────────────

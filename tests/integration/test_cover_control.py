@@ -411,8 +411,8 @@ class TestCoverIntegration:
     @pytest.mark.asyncio
     @patch(_BUILD_SOLAR_SERIES, return_value=[0.9])
     async def test_solar_overheating_deploys_in_cold_weather(self, _mock_solar, coordinator, real_store):
-        """Covers deploy when solar overheats room, even if outdoor temp is 5C (cold-weather gate removed)."""
-        await setup_room(real_store, ROOM_WITH_COVERS_AUTO)
+        """Covers deploy when solar overheats the room at 5 °C outdoors once the outdoor gate is set to 0."""
+        await setup_room(real_store, {**ROOM_WITH_COVERS_AUTO, "covers_outdoor_min_temp": 0})
         coordinator.hass.states.get = MagicMock(
             side_effect=make_hass_states(
                 temp="25.0",
@@ -434,7 +434,6 @@ class TestCoverIntegration:
         # excess = 27.7 - 24.0 (comfort_cool, #418) = 3.7 → full close.
         # Room temp raised from 23: against comfort_cool the old 23 only yields a
         # ~9% move, which COVER_POS_DEADBAND suppresses — that would test nothing.
-        # Old behavior would have blocked this (outdoor 5 < gate 10)
         cover_calls = [c for c in coordinator.hass.services.async_call.call_args_list if c[0][0] == "cover"]
         assert len(cover_calls) > 0, "Covers should deploy despite cold outdoor temp when solar causes overheating"
 

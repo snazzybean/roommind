@@ -24,6 +24,7 @@ from ..const import (
     COVER_SMOOTHING_RISE_MINUTES,
     COVER_SOLAR_MIN,
     DEFAULT_COMFORT_COOL,
+    DEFAULT_COVERS_OUTDOOR_MIN_TEMP,
     MODE_COOLING,
     TargetTemps,
 )
@@ -303,8 +304,11 @@ class CoverOrchestrator:
         if _oriented_q_solar < COVER_SOLAR_MIN and _surface_azimuths:
             _cover_predicted_peak = cover_target
 
+        # None (store default up to 1.8.2) means the default the room page shows.
         _outdoor_min = room.get("covers_outdoor_min_temp")
-        if _outdoor_min is not None and outdoor_temp is not None and outdoor_temp < _outdoor_min:
+        if _outdoor_min is None:
+            _outdoor_min = DEFAULT_COVERS_OUTDOOR_MIN_TEMP
+        if outdoor_temp is not None and outdoor_temp < _outdoor_min:
             _cover_predicted_peak = cover_target
 
         # Block E: Evaluate + apply

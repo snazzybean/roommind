@@ -11,6 +11,7 @@ from homeassistant.helpers.storage import Store
 from .const import (
     DEFAULT_COMFORT_COOL,
     DEFAULT_COMFORT_HEAT,
+    DEFAULT_COVERS_OUTDOOR_MIN_TEMP,
     DEFAULT_ECO_COOL,
     DEFAULT_ECO_HEAT,
     DEFAULT_HEAT_SOURCE_AC_MIN_OUTDOOR,
@@ -273,7 +274,7 @@ class RoomMindStore:
             "covers_auto_enabled": config.get("covers_auto_enabled", False),
             "covers_deploy_threshold": config.get("covers_deploy_threshold", 1.5),
             "covers_min_position": config.get("covers_min_position", 0),
-            "covers_outdoor_min_temp": config.get("covers_outdoor_min_temp", None),
+            "covers_outdoor_min_temp": config.get("covers_outdoor_min_temp", DEFAULT_COVERS_OUTDOOR_MIN_TEMP),
             "covers_override_minutes": config.get("covers_override_minutes", 60),
             "cover_schedules": config.get("cover_schedules", []),
             "cover_schedule_selector_entity": config.get("cover_schedule_selector_entity", ""),

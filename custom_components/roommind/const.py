@@ -248,6 +248,7 @@ AC_REBOUND_CUTOFF = 0.01  # below this the rebound charge is treated as zero
 
 # Blind/cover control
 COVER_SOLAR_MIN: float = 0.15
+DEFAULT_COVERS_OUTDOOR_MIN_TEMP: float = 10.0  # °C outdoor below which the sun is not shaded (None = this)
 COVER_HYSTERESIS: float = 1.0
 COVER_MIN_HOLD_SECONDS: int = 900
 COVER_POS_SCALE: float = 50.0
