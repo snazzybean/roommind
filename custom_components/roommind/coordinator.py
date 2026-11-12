@@ -2875,24 +2875,24 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 continue
             commanded = rs.get("commanded_mode", rs.get("mode", MODE_IDLE))
 
-            # Orchestration filter (heating only): skip this room when its
-            # active heat sources don't include this group's device types.
-            if commanded == MODE_HEATING and ac_heating_excluded(room):
-                if not room_contributes_to_group(room.get("devices", []), member_set, "primary"):
-                    continue
-            elif (
-                commanded == MODE_HEATING
-                and room.get("heat_source_orchestration", False)
-                and not room_contributes_to_group(
-                    room.get("devices", []),
-                    member_set,
-                    rs.get("active_heat_sources"),
-                )
+            # Heating only: skip this room when its active heat sources don't
+            # include this group's device types.
+            if commanded == MODE_HEATING and not room_contributes_to_group(
+                room.get("devices", []), member_set, self._heating_sources(room, rs)
             ):
                 continue
 
             modes.append(commanded)
         return modes
+
+    @staticmethod
+    def _heating_sources(room: dict, room_state: dict) -> str | None:
+        """Which of a heating room's devices run, as `room_contributes_to_group` reads it."""
+        if ac_heating_excluded(room):
+            return "primary"
+        if room.get("heat_source_orchestration", False):
+            return room_state.get("active_heat_sources")
+        return None
 
     def _waiting_for_first_reading(self, area_id: str) -> bool:
         """True while a room has had no valid reading since startup, within the grace period."""
@@ -2979,9 +2979,11 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             commanded = rs.get("commanded_mode", rs.get("mode", MODE_IDLE))
             if commanded == MODE_IDLE:
                 continue
-            for dev in room.get("devices", []):
+            devices = room.get("devices", [])
+            sources = self._heating_sources(room, rs) if commanded == MODE_HEATING else None
+            for dev in devices:
                 eid = dev.get("entity_id", "")
-                if eid not in member_set or eid in sitting_out:
+                if eid not in member_set or not room_contributes_to_group(devices, {eid}, sources):
                     continue
                 zone_state = self.hass.states.get(eid)
                 if zone_state and "fan_only" in (zone_state.attributes.get("hvac_modes") or []):
@@ -2991,16 +2993,23 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 break
 
         if not wake_eid:
-            # A resting room's device would be woken with no cycle to switch it off again (#494)
+            # A device of a resting room (#494) or of a room without control (#36)
+            # would be woken with no cycle to switch it off again
             stored = self.hass.data[DOMAIN]["store"].get_rooms()
-            resting = {
+            known = {
                 eid
-                for area_id, room in stored.items()
-                if area_id not in rooms_config
+                for room in (*stored.values(), *rooms_config.values())
                 for eid in get_all_entity_ids(room.get("devices", []))
-            } - {eid for room in rooms_config.values() for eid in get_all_entity_ids(room.get("devices", []))}
+            }
+            controlled = {
+                eid
+                for room in rooms_config.values()
+                if room.get("climate_control_enabled", True) and not room.get("is_outdoor", False)
+                for eid in get_all_entity_ids(room.get("devices", []))
+            }
+            unruled = known - controlled
             for eid in group.members:
-                if eid in sitting_out or eid in resting:
+                if eid in sitting_out or eid in unruled:
                     continue
                 zone_state = self.hass.states.get(eid)
                 if zone_state and "fan_only" in (zone_state.attributes.get("hvac_modes") or []):

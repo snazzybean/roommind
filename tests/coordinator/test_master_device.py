@@ -2538,3 +2538,99 @@ async def test_wake_fallback_skips_the_ac_sitting_out_of_heat_only(hass, mock_co
         if c.args[1] == "set_hvac_mode" and c.args[2].get("hvac_mode") == "fan_only"
     ]
     assert woken == []
+
+
+def _fan_only_wakes(hass):
+    return [
+        c.args[2]["entity_id"]
+        for c in hass.services.async_call.call_args_list
+        if c.args[1] == "set_hvac_mode" and c.args[2].get("hvac_mode") == "fan_only"
+    ]
+
+
+def _wake_coordinator(hass, mock_config_entry, rooms, states):
+    hass.states.get = MagicMock(side_effect=states.get)
+    hass.services.async_call = AsyncMock()
+    hass.data = {"roommind": {"store": _make_store_mock(rooms)}}
+    coordinator = _create_coordinator(hass, mock_config_entry)
+    coordinator._compressor_manager.load_groups(
+        [
+            {
+                "id": "g1",
+                "name": "G1",
+                "members": ["climate.zone_a", "climate.zone_b"],
+                "master_entity": "climate.outdoor",
+            }
+        ]
+    )
+    return coordinator, coordinator._compressor_manager.get_groups()["g1"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("unruled", [{"climate_control_enabled": False}, {"is_outdoor": True}])
+async def test_wake_fallback_leaves_a_room_alone_that_receives_no_commands(hass, mock_config_entry, unruled):
+    """No cycle would switch a zone of a room without control off again (#36), so it is never woken."""
+    demanding = _room_with_device("room_a", "climate.zone_a")
+    unruled_room = {**_room_with_device("room_b", "climate.zone_b"), **unruled}
+    rooms = {"room_a": demanding, "room_b": unruled_room}
+    states = {
+        "climate.zone_a": _make_ac_zone_state("off", hvac_modes=["off", "heat"]),  # no fan_only
+        "climate.zone_b": _make_ac_zone_state("off"),
+    }
+    coordinator, group = _wake_coordinator(hass, mock_config_entry, rooms, states)
+    room_states = {"room_a": {"mode": "heating", "commanded_mode": "heating"}}
+
+    await coordinator._async_wake_member_zone(group, room_states, rooms)
+
+    assert _fan_only_wakes(hass) == []
+
+
+@pytest.mark.asyncio
+async def test_wake_fallback_still_wakes_an_idle_room_under_control(hass, mock_config_entry):
+    demanding = _room_with_device("room_a", "climate.zone_a")
+    idle = _room_with_device("room_b", "climate.zone_b")
+    rooms = {"room_a": demanding, "room_b": idle}
+    states = {
+        "climate.zone_a": _make_ac_zone_state("off", hvac_modes=["off", "heat"]),
+        "climate.zone_b": _make_ac_zone_state("off"),
+    }
+    coordinator, group = _wake_coordinator(hass, mock_config_entry, rooms, states)
+    room_states = {
+        "room_a": {"mode": "heating", "commanded_mode": "heating"},
+        "room_b": {"mode": "idle", "commanded_mode": "idle"},
+    }
+
+    await coordinator._async_wake_member_zone(group, room_states, rooms)
+
+    assert _fan_only_wakes(hass) == ["climate.zone_b"]
+
+
+@pytest.mark.asyncio
+async def test_wake_skips_the_ac_the_orchestration_parks(hass, mock_config_entry):
+    """A room heating through its TRV alone does not hand its parked AC to the master (#168)."""
+    orchestrated = _room_with_trv_and_ac("room_a", "climate.trv_a", "climate.zone_a")
+    neighbour = _room_with_device("room_b", "climate.zone_b")
+    rooms = {"room_a": orchestrated, "room_b": neighbour}
+    states = {"climate.zone_a": _make_ac_zone_state("off"), "climate.zone_b": _make_ac_zone_state("off")}
+    coordinator, group = _wake_coordinator(hass, mock_config_entry, rooms, states)
+    room_states = {
+        "room_a": {"mode": "heating", "commanded_mode": "heating", "active_heat_sources": "primary"},
+        "room_b": {"mode": "heating", "commanded_mode": "heating"},
+    }
+
+    await coordinator._async_wake_member_zone(group, room_states, rooms)
+
+    assert _fan_only_wakes(hass) == ["climate.zone_b"]
+
+
+@pytest.mark.asyncio
+async def test_wake_takes_the_ac_the_orchestration_runs(hass, mock_config_entry):
+    orchestrated = _room_with_trv_and_ac("room_a", "climate.trv_a", "climate.zone_a")
+    rooms = {"room_a": orchestrated}
+    states = {"climate.zone_a": _make_ac_zone_state("off"), "climate.zone_b": _make_ac_zone_state("off")}
+    coordinator, group = _wake_coordinator(hass, mock_config_entry, rooms, states)
+    room_states = {"room_a": {"mode": "heating", "commanded_mode": "heating", "active_heat_sources": "secondary"}}
+
+    await coordinator._async_wake_member_zone(group, room_states, rooms)
+
+    assert _fan_only_wakes(hass) == ["climate.zone_a"]

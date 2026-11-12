@@ -1,0 +1,71 @@
+name: compressor-zone-wake-room-off
+description: >
+  Ducted-style group with an outdoor unit as master (#135 zone wake). The living room
+  zone has no fan_only and reports its state 45 s late, so every master start finds all
+  zones off and falls back to waking any zone. The bedroom has climate control off:
+  RoomMind sends its zone nothing (#36). Before the fix the fallback woke the bedroom
+  zone to fan_only on every master start and nothing switched it off again.
+refs: [135, 36]
+tags: [compressor, ac]
+start: 2026-01-12T00:00
+duration: 1d
+location: {latitude: 52.5, longitude: 13.4, time_zone: Europe/Berlin}
+weather: {profile: temperate}
+house:
+  building: bestand_teilsaniert
+  outdoor: {sensors: {temperature: sensor.aussen_temp}}
+  rooms:
+    wohnzimmer:
+      floor_area_m2: 25
+      initial: {temperature: 18.5}
+      windows: [{orientation: S, area_m2: 3}]
+      devices:
+        - entity_id: climate.wz_zone
+          profile: daikin_ac
+          capabilities: {hvac_modes: ["off", "heat", "cool"]}
+      sensors: {temperature: {entity_id: sensor.wz_temp}}
+    schlafzimmer:
+      floor_area_m2: 14
+      initial: {temperature: 18.0}
+      windows: [{orientation: N, area_m2: 1.5}]
+      devices: [{entity_id: climate.sz_zone, profile: generic_split_ac}]
+      sensors: {temperature: {entity_id: sensor.sz_temp}}
+    technik:
+      floor_area_m2: 4
+      initial: {temperature: 15.0}
+      devices: [{entity_id: climate.aussengeraet, profile: generic_split_ac}]
+helpers:
+  schedule:
+    tag: {daily: ["06:30-22:30"]}
+roommind:
+  settings:
+    outdoor_temp_sensor: sensor.aussen_temp
+    weather_entity: weather.simhome
+    control_mode: mpc
+    compressor_groups:
+      - id: aussen
+        name: Aussengeraet
+        members: [climate.wz_zone, climate.sz_zone]
+        master_entity: climate.aussengeraet
+        min_run_minutes: 10
+        min_off_minutes: 5
+  rooms:
+    wohnzimmer:
+      devices: [{entity_id: climate.wz_zone, type: ac}]
+      temperature_sensor: sensor.wz_temp
+      climate_mode: heat_only
+      schedules: [{entity_id: schedule.tag}]
+      comfort_temp: 21.0
+      eco_temp: 18.0
+    schlafzimmer:
+      devices: [{entity_id: climate.sz_zone, type: ac}]
+      temperature_sensor: sensor.sz_temp
+      climate_mode: heat_only
+      climate_control_enabled: false
+      schedules: [{entity_id: schedule.tag}]
+      comfort_temp: 19.0
+      eco_temp: 17.0
+expect:
+  - {invariant: no_commands_when_climate_off, label: bedroom zone (climate control off) never woken for the master}
+  - {invariant: min_run_commanded}
+  - {metric: comfort.in_band_pct, room: wohnzimmer, min: 80, label: living room still heats with its master}
