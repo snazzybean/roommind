@@ -387,6 +387,7 @@
   "settings.reset_room_hint": "Löscht Modell und Verlauf eines Raums.",
   "settings.reset_room_confirm": "Modell und Verlauf dieses Raums löschen? Er lernt danach von vorn.",
   "settings.reset_room_confirm_history": "Den Verlauf dieses Außenbereichs löschen?",
+  "settings.reset_room_confirm_no_model": "Den Verlauf dieses Raums löschen? Ohne Temperatursensor und ohne Gerät lernt er kein Modell.",
   "settings.reset_room_select": "Raum auswählen",
   "settings.reset_btn": "Zurücksetzen",
   "settings.reset_no_rooms": "Noch keine Räume.",

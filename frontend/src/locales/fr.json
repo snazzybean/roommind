@@ -387,6 +387,7 @@
   "settings.reset_room_hint": "Supprime le modèle et l'historique d'une pièce.",
   "settings.reset_room_confirm": "Supprimer le modèle et l'historique de cette pièce ? Elle réapprend ensuite de zéro.",
   "settings.reset_room_confirm_history": "Supprimer l'historique de cet espace extérieur ?",
+  "settings.reset_room_confirm_no_model": "Supprimer l'historique de cette pièce ? Sans capteur de température ni appareil, elle n'apprend aucun modèle.",
   "settings.reset_room_select": "Sélectionner une pièce",
   "settings.reset_btn": "Réinitialiser",
   "settings.reset_no_rooms": "Aucune pièce pour l'instant.",

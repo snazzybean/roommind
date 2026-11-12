@@ -387,6 +387,7 @@
   "settings.reset_room_hint": "Cancella modello e cronologia di una stanza.",
   "settings.reset_room_confirm": "Cancellare modello e cronologia di questa stanza? Poi impara da capo.",
   "settings.reset_room_confirm_history": "Cancellare la cronologia di quest'area esterna?",
+  "settings.reset_room_confirm_no_model": "Cancellare la cronologia di questa stanza? Senza sensore di temperatura né dispositivo non impara alcun modello.",
   "settings.reset_room_select": "Seleziona stanza",
   "settings.reset_btn": "Azzera",
   "settings.reset_no_rooms": "Ancora nessuna stanza.",

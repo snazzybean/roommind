@@ -89,12 +89,7 @@ export class RsSettingsReset extends RsSettingsBase {
                     destructive
                     icon="mdi:restart"
                     .label=${localize("settings.reset_btn", l)}
-                    .confirmMessage=${localize(
-                      this._historyOnly(this._resetSelectedRoom)
-                        ? "settings.reset_room_confirm_history"
-                        : "settings.reset_room_confirm",
-                      l,
-                    )}
+                    .confirmMessage=${localize(this._confirmKey(this._resetSelectedRoom), l)}
                     .disabled=${!this._resetSelectedRoom}
                     @confirmed=${() =>
                       this._resetSelectedRoom && this._resetRoomModel(this._resetSelectedRoom)}
@@ -107,9 +102,21 @@ export class RsSettingsReset extends RsSettingsBase {
     `;
   }
 
-  /** Outdoor areas learn nothing; a reset only deletes their history. */
+  /**
+   * Outdoor areas and rooms without any temperature source (no sensor, no device) learn no
+   * model; a reset only deletes their history. A room with only a sensor does learn one.
+   */
   private _historyOnly(areaId: string): boolean {
-    return !!this.rooms[areaId]?.is_outdoor;
+    const room = this.rooms[areaId];
+    if (!room) return false;
+    return !!room.is_outdoor || (!room.temperature_sensor && !room.devices?.length);
+  }
+
+  private _confirmKey(areaId: string) {
+    if (!this._historyOnly(areaId)) return "settings.reset_room_confirm";
+    return this.rooms[areaId]?.is_outdoor
+      ? "settings.reset_room_confirm_history"
+      : "settings.reset_room_confirm_no_model";
   }
 
   private _roomName(areaId: string): string {

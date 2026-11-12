@@ -387,6 +387,7 @@
   "settings.reset_room_hint": "Deletes the model and history of one room.",
   "settings.reset_room_confirm": "Delete this room's model and history? It then learns from scratch.",
   "settings.reset_room_confirm_history": "Delete the history of this outdoor area?",
+  "settings.reset_room_confirm_no_model": "Delete this room's history? Without a temperature sensor or device it learns no model.",
   "settings.reset_room_select": "Select room",
   "settings.reset_btn": "Reset",
   "settings.reset_no_rooms": "No rooms yet.",
