@@ -1,5 +1,6 @@
 import type { HomeAssistant } from "../types";
 import { localize } from "./localize";
+import { serverNow } from "./server-clock";
 
 /** Number in the user's language (decimal comma in German). */
 export function formatNumber(
@@ -56,7 +57,7 @@ export function formatHours(hours: number, language: string): string {
 }
 
 /** Time left until `until` (Unix seconds), rounded up to whole minutes; "" once it passed. */
-export function formatRemaining(until: number, language: string, now = Date.now() / 1000): string {
+export function formatRemaining(until: number, language: string, now = serverNow() / 1000): string {
   const left = until - now;
   return left > 0 ? formatMinutes(Math.ceil(left / 60), language) : "";
 }

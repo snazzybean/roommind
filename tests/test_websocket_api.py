@@ -67,13 +67,15 @@ async def test_list_rooms_empty(ws_hass, store, connection):
     await store.async_load()
 
     msg = {"id": 1, "type": "roommind/rooms/list"}
-    await _list_rooms(ws_hass, connection, msg)
+    with patch("custom_components.roommind.websocket_api.time.time", return_value=1_700_000_000.0):
+        await _list_rooms(ws_hass, connection, msg)
 
     connection.send_result.assert_called_once_with(
         1,
         {
             "rooms": {},
             "rooms_without_area": [],
+            "server_time": 1_700_000_000.0,
             "outdoor_temp": None,
             "outdoor_humidity": None,
             "vacation_active": False,

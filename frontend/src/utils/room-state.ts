@@ -13,6 +13,7 @@ import { localize, type TranslationKey } from "./localize";
 import type { EffectiveOverride } from "./override";
 import { formatMinutes, formatNumber, formatRemaining } from "./format";
 import { VACATION_SENTINEL } from "./constants";
+import { serverNow } from "./server-clock";
 
 /**
  * Resolve the effective area_id for an entity.
@@ -74,7 +75,7 @@ export function formatMode(mode: RoomMode, language: string): string {
 /** Whole minutes until a Unix timestamp, floored at 1 so a badge never reads "0 min". */
 export function minutesLeft(until: number | null): number {
   if (until == null) return 1;
-  return Math.max(1, Math.ceil((until * 1000 - Date.now()) / 60000));
+  return Math.max(1, Math.ceil((until * 1000 - serverNow()) / 60000));
 }
 
 /* ---------- Room kind, state and hints (dashboard card, later the room hero) ---------- */
@@ -431,7 +432,7 @@ export function targetReason(
 ): TargetReason {
   const l = ctx.language;
   const live = config.live;
-  const nowMs = ctx.now ?? Date.now();
+  const nowMs = ctx.now ?? serverNow();
   const suppressed = !!live?.override_suppressed && !!live?.override_active;
   if (override.active && override.type && !suppressed) {
     const until = override.until;

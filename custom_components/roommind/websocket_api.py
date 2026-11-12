@@ -354,6 +354,8 @@ async def websocket_list_rooms(
                 {"area_id": area_id, "display_name": room.get("display_name", "")}
                 for area_id, room in rooms_without_area(hass, stored).items()
             ],
+            # Countdowns in the browser compare against this, not against the device's own clock
+            "server_time": time.time(),
             "outdoor_temp": coordinator.outdoor_temp_effective if coordinator else None,
             "outdoor_humidity": coordinator.outdoor_humidity if coordinator else None,
             "vacation_active": vacation_active,

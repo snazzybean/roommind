@@ -3,10 +3,12 @@
  * the page is hidden and stopped when no card is shown.
  */
 import type { HomeAssistant, RoomConfig } from "../types";
+import { noteServerTime } from "../utils/server-clock";
 
 export interface RoomsFeed {
   rooms: Record<string, RoomConfig>;
   climate_control_active: boolean;
+  server_time?: number;
 }
 
 type Listener = (feed: RoomsFeed | null, error: string) => void;
@@ -47,6 +49,7 @@ export function refreshRooms(fresh = false): Promise<void> {
   inflight = conn
     .callWS<RoomsFeed>({ type: "roommind/rooms/list" })
     .then((result) => {
+      noteServerTime(result.server_time);
       last = {
         rooms: result.rooms ?? {},
         climate_control_active: result.climate_control_active ?? true,

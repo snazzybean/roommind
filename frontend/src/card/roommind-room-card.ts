@@ -16,6 +16,7 @@ import {
   usesFahrenheit,
 } from "../utils/temperature";
 import { MAX_TARGET_TEMP_C, MIN_TARGET_TEMP_C } from "../utils/temperature";
+import { serverNow } from "../utils/server-clock";
 import {
   OVERRIDE_DURATIONS_H,
   QUICK_OVERRIDE_FALLBACK_H,
@@ -71,7 +72,7 @@ export class RoomMindRoomCard extends LitElement {
   @state() private _config?: RoomCardConfig;
   @state() private _feed: RoomsFeed | null = null;
   @state() private _feedError = "";
-  @state() private _now = Date.now() / 1000;
+  @state() private _now = serverNow() / 1000;
   @state() private _pending: OverrideType | null = null;
   @state() private _customHeat = 21;
   @state() private _customCool = 24;
@@ -149,7 +150,7 @@ export class RoomMindRoomCard extends LitElement {
       this._feed = feed;
       this._feedError = error;
     });
-    this._clock = setInterval(() => (this._now = Date.now() / 1000), 30_000);
+    this._clock = setInterval(() => (this._now = serverNow() / 1000), 30_000);
   }
 
   disconnectedCallback(): void {
@@ -747,7 +748,7 @@ export class RoomMindRoomCard extends LitElement {
   }
 
   private async _quick(room: RoomConfig, value: QuickValue): Promise<void> {
-    const now = Date.now() / 1000;
+    const now = serverNow() / 1000;
     const next = scheduleNextChange(room, this.hass.states);
     this._optimisticOverride =
       value === "schedule"
@@ -785,7 +786,7 @@ export class RoomMindRoomCard extends LitElement {
     }
     this._pending = null;
     this._error = "";
-    this._optimisticOverride = { type, until: Date.now() / 1000 + hours * 3600 };
+    this._optimisticOverride = { type, until: serverNow() / 1000 + hours * 3600 };
     void this._refocusPreset(type);
     try {
       // Comfort/eco take the stored targets on the server: a stepper edit still waiting

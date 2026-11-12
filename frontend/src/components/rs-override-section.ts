@@ -19,6 +19,7 @@ import {
 } from "../utils/override";
 import { formatClock, scheduleNextChange } from "../utils/room-state";
 import { formatHours } from "../utils/format";
+import { serverNow } from "../utils/server-clock";
 import type { RsSegmentOption } from "./shared/rs-segmented";
 import "./shared/rs-segmented";
 
@@ -218,7 +219,7 @@ export class RsOverrideSection extends LitElement {
   /** Next change of the active schedule, if the room has one and it lies ahead. */
   private _nextChange(): number | null {
     const next = scheduleNextChange(this.config, this.hass?.states);
-    return next != null && next > Date.now() / 1000 ? next : null;
+    return next != null && next > serverNow() / 1000 ? next : null;
   }
 
   private _onChoice(e: CustomEvent<{ value: Choice }>): void {
@@ -273,7 +274,7 @@ export class RsOverrideSection extends LitElement {
       this._overrideError = localize("override.invalid_band", this.language);
       return;
     }
-    const nowS = Date.now() / 1000;
+    const nowS = serverNow() / 1000;
     const next = untilScheduleChange ? this._nextChange() : null;
     const until = next ?? (hours > 0 ? nowS + hours * 3600 : null);
     const previous = this._optimisticOverride;
