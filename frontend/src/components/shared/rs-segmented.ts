@@ -110,7 +110,7 @@ export class RsSegmented extends LitElement {
         text-overflow: ellipsis;
       }
 
-      button:hover:not(:disabled):not([aria-checked="true"]) {
+      button:hover:not(:disabled):not([aria-disabled="true"]):not([aria-checked="true"]) {
         color: var(--primary-text-color);
         background: var(--rs-fill);
       }
@@ -129,7 +129,8 @@ export class RsSegmented extends LitElement {
         outline-offset: 1px;
       }
 
-      button:disabled {
+      button:disabled,
+      button[aria-disabled="true"] {
         opacity: 0.4;
         cursor: default;
       }
@@ -173,9 +174,14 @@ export class RsSegmented extends LitElement {
     this.toggleAttribute("compact", cut);
   }
 
+  /**
+   * A locked option is only aria-disabled: a really disabled button would drop the focus of a
+   * user who just picked it (e.g. "schedule" locks itself once the override is gone). The
+   * picked option keeps the tab stop even when locked, so the group stays reachable.
+   */
   render() {
     const enabled = this.options.filter((o) => !o.disabled && !this.disabled);
-    const focusValue = enabled.some((o) => o.value === this.value)
+    const focusValue = this.options.some((o) => o.value === this.value)
       ? this.value
       : (enabled[0]?.value ?? null);
     return html`
@@ -188,7 +194,8 @@ export class RsSegmented extends LitElement {
             data-value=${o.value}
             aria-checked=${checked ? "true" : "false"}
             tabindex=${o.value === focusValue ? "0" : "-1"}
-            ?disabled=${this.disabled || o.disabled}
+            aria-disabled=${o.disabled ? "true" : "false"}
+            ?disabled=${this.disabled}
             @click=${() => this._pick(o)}
           >
             ${o.icon ? html`<ha-icon .icon=${o.icon}></ha-icon>` : nothing}
@@ -214,7 +221,9 @@ export class RsSegmented extends LitElement {
     const keys = ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"];
     if (!keys.includes(e.key)) return;
     const buttons = [
-      ...this.renderRoot.querySelectorAll<HTMLButtonElement>("button:not(:disabled)"),
+      ...this.renderRoot.querySelectorAll<HTMLButtonElement>(
+        'button:not(:disabled):not([aria-disabled="true"])',
+      ),
     ];
     if (!buttons.length) return;
     e.preventDefault();
@@ -228,9 +237,13 @@ export class RsSegmented extends LitElement {
       if (e.key === "ArrowDown") forward = true;
       else if (e.key === "ArrowUp") forward = false;
       else forward = (e.key === "ArrowRight") !== rtl;
-      next = (idx + (forward ? 1 : -1) + buttons.length) % buttons.length;
+      // from a locked option (not in the list) the first step lands on the first/last one
+      if (idx < 0) next = forward ? 0 : buttons.length - 1;
+      else next = (idx + (forward ? 1 : -1) + buttons.length) % buttons.length;
     }
-    buttons.forEach((b, i) => (b.tabIndex = i === next ? 0 : -1));
+    this.renderRoot
+      .querySelectorAll<HTMLButtonElement>("button")
+      .forEach((b) => (b.tabIndex = b === buttons[next] ? 0 : -1));
     buttons[next].focus();
   }
 }
