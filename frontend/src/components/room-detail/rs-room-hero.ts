@@ -523,7 +523,7 @@ export class RsRoomHero extends LitElement {
           ><ha-icon icon="mdi:thermometer-lines" aria-hidden="true"></ha-icon>${localize(
             "detail.hero.outdoor",
             l,
-            { value: `${formatTempLocale(this.outdoorTemp, this.hass)} ${unit}` },
+            { value: `${formatTempLocale(this.outdoorTemp, this.hass)} ${unit}` },
           )}</span
         >`,
       );
@@ -537,7 +537,7 @@ export class RsRoomHero extends LitElement {
               aria-hidden="true"
             ></ha-icon
             >${localize("detail.hero.device_setpoint", l, {
-              value: `${formatTempLocale(live.device_setpoint, this.hass)} ${unit}`,
+              value: `${formatTempLocale(live.device_setpoint, this.hass)} ${unit}`,
             })}</span
           >`,
         );
@@ -572,7 +572,7 @@ export class RsRoomHero extends LitElement {
             )}${
               live.mold_surface_temp != null
                 ? ` · ${localize("room.mold_surface_temp", l, {
-                    value: `${formatTempLocale(live.mold_surface_temp, this.hass)} ${unit}`,
+                    value: `${formatTempLocale(live.mold_surface_temp, this.hass)} ${unit}`,
                   })}`
                 : ""
             }</span
@@ -705,7 +705,7 @@ export class RsRoomHero extends LitElement {
     const unit = tempUnit(this.hass);
     let value: string;
     if (mode === "auto" && heat != null && cool != null && heat !== cool) {
-      value = `${fmt(heat)}–${fmt(cool)} ${unit}`;
+      value = `${fmt(heat)}–${fmt(cool)} ${unit}`;
     } else {
       const single = useOv
         ? (heat ?? cool ?? live.target_temp)
@@ -714,7 +714,7 @@ export class RsRoomHero extends LitElement {
           : (live.target_temp ?? heat);
       const devicesOff = live.heat_target === null && live.cool_target === null;
       value =
-        single != null ? `${fmt(single)} ${unit}` : devicesOff ? localize("detail.off", l) : "--";
+        single != null ? `${fmt(single)} ${unit}` : devicesOff ? localize("detail.off", l) : "--";
     }
     // Climate control off: RoomMind sends nothing, so the target is not in force
     const inactive = !this.climateControlActive;
@@ -736,7 +736,7 @@ export class RsRoomHero extends LitElement {
       const shiftValue = `${new Intl.NumberFormat(l, {
         signDisplay: "always",
         maximumFractionDigits: 1,
-      }).format(toDisplayDelta(price.delta, this.hass))} ${unit}`;
+      }).format(toDisplayDelta(price.delta, this.hass))} ${unit}`;
       const key = !price.charging
         ? "hero.price_coasting"
         : price.side === "cool"
@@ -747,7 +747,7 @@ export class RsRoomHero extends LitElement {
     if (live.mold_prevention_active && !inactive) {
       adjustments.push(
         localize("card.mold_prevention", l, {
-          delta: `${formatNumber(toDisplayDelta(live.mold_prevention_delta, this.hass), this.hass)} ${unit}`,
+          delta: `${formatNumber(toDisplayDelta(live.mold_prevention_delta, this.hass), this.hass)} ${unit}`,
         }),
       );
     }
