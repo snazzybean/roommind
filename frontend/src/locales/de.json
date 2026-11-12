@@ -311,6 +311,8 @@
   "vacation.title": "Urlaubsmodus",
   "vacation.hint": "Endet am Enddatum von selbst, ohne Enddatum erst beim Ausschalten.",
   "vacation.end_date": "Enddatum & Uhrzeit",
+  "vacation.end_day": "Enddatum",
+  "vacation.end_time": "Uhrzeit",
   "vacation.setback_temp": "Absenktemperatur",
   "tabs.analytics": "Analyse",
   "analytics.select_room": "Raum auswählen",

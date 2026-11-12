@@ -311,6 +311,8 @@
   "vacation.title": "Modalità vacanza",
   "vacation.hint": "Finisce da solo alla data di fine, senza data solo quando lo spegni.",
   "vacation.end_date": "Data e ora di fine",
+  "vacation.end_day": "Data di fine",
+  "vacation.end_time": "Ora",
   "vacation.setback_temp": "Temperatura ridotta",
   "tabs.analytics": "Analisi",
   "analytics.select_room": "Seleziona stanza",

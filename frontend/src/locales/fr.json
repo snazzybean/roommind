@@ -311,6 +311,8 @@
   "vacation.title": "Mode vacances",
   "vacation.hint": "Se termine seul à la date de fin, sans date de fin seulement quand vous le désactivez.",
   "vacation.end_date": "Date et heure de fin",
+  "vacation.end_day": "Date de fin",
+  "vacation.end_time": "Heure",
   "vacation.setback_temp": "Température de réduction",
   "tabs.analytics": "Analyse",
   "analytics.select_room": "Sélectionner une pièce",

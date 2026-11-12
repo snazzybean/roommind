@@ -311,6 +311,8 @@
   "vacation.title": "Vacation mode",
   "vacation.hint": "Ends by itself on the end date, without one only when you switch it off.",
   "vacation.end_date": "End date & time",
+  "vacation.end_day": "End date",
+  "vacation.end_time": "Time",
   "vacation.setback_temp": "Setback temperature",
   "tabs.analytics": "Analytics",
   "analytics.select_room": "Select room",
