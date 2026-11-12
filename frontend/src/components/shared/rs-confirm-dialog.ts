@@ -54,6 +54,13 @@ export class RsConfirmDialog extends LitElement {
       .grow {
         flex: 1;
       }
+
+      /* Cancel and confirm wrap as one pair, never split across two lines. */
+      .buttons {
+        display: flex;
+        gap: var(--rs-space-2);
+        margin-left: auto;
+      }
     `,
   ];
 
@@ -74,15 +81,17 @@ export class RsConfirmDialog extends LitElement {
       <div class="actions">
         <slot name="extra"></slot>
         <span class="grow"></span>
-        <ha-button appearance="plain" ?disabled=${this.busy} @click=${this._cancel}
-          >${localize("detail.cancel", l)}</ha-button
-        >
-        <ha-button
-          variant=${this.destructive ? "danger" : "brand"}
-          .loading=${this.busy}
-          @click=${this._confirm}
-          >${this.confirmLabel}</ha-button
-        >
+        <span class="buttons">
+          <ha-button appearance="plain" ?disabled=${this.busy} @click=${this._cancel}
+            >${localize("detail.cancel", l)}</ha-button
+          >
+          <ha-button
+            variant=${this.destructive ? "danger" : "brand"}
+            .loading=${this.busy}
+            @click=${this._confirm}
+            >${this.confirmLabel}</ha-button
+          >
+        </span>
       </div>
     </rs-edit-dialog>`;
   }

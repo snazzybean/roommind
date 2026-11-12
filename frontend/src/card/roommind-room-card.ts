@@ -1456,13 +1456,15 @@ export class RoomMindRoomCard extends LitElement {
         margin: 0;
       }
 
+      /* wraps: four quick options do not fit a 6-column card in one row */
       .compact .segments {
-        grid-auto-columns: 44px;
-        justify-content: start;
+        display: flex;
+        flex-wrap: wrap;
         gap: 6px;
       }
 
       .compact .segment {
+        flex: 0 0 44px;
         min-height: 44px;
         padding: 0;
       }
