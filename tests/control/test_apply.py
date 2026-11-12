@@ -1653,6 +1653,38 @@ async def test_call_dual_setpoint_cool_intent():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("intent", "temp", "expected"),
+    [("heat", 26.0, (26.0, 26.0)), ("cool", 17.0, (17.0, 17.0)), ("heat", 20.0, (20.0, 22.0))],
+)
+async def test_call_dual_setpoint_narrows_the_band_to_the_sent_side(intent, temp, expected):
+    """A single setpoint past the other side of a reported band narrows it to low == high.
+
+    HA rejects only low > high (climate/services.py), so the collapsed band goes out;
+    its other side only acts once the room reaches the sent setpoint, which the
+    controller stops before. Pinned here, no device with a minimum deadband reported.
+    """
+    hass = build_hass()
+    state = MagicMock()
+    state.state = "heat_cool"
+    state.attributes = {
+        "hvac_modes": ["heat_cool", "off"],
+        "target_temp_low": 18.0,
+        "target_temp_high": 22.0,
+        "min_temp": 5.0,
+        "max_temp": 30.0,
+    }
+    hass.states.get = MagicMock(return_value=state)
+    ctrl = MPCController(hass, make_room(), model_manager=RoomModelManager(), outdoor_temp=5.0, settings={})
+
+    await ctrl._call("set_temperature", {"entity_id": "climate.trv", "temperature": temp}, temp_intent=intent)
+
+    data = hass.services.async_call.call_args_list[-1][0][2]
+    assert "temperature" not in data
+    assert (data["target_temp_low"], data["target_temp_high"]) == expected
+
+
+@pytest.mark.asyncio
 async def test_call_single_setpoint_unchanged():
     """Device WITHOUT target_temp_low uses 'temperature' key (backward compat)."""
     hass = build_hass()
