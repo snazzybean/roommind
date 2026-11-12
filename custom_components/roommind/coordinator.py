@@ -3031,7 +3031,10 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 blocking=True,
                 context=make_roommind_context(),
             )
-            self._compressor_manager.update_member(wake_eid, True)
+            # Only a room's own cycle reports the zone stopped again; a zone of no room
+            # would stay a running member for good and cancel the group's min run
+            if any(wake_eid in get_all_entity_ids(r.get("devices", [])) for r in rooms_config.values()):
+                self._compressor_manager.update_member(wake_eid, True)
             _LOGGER.debug(
                 "Master '%s' (group '%s'): pre-activated zone '%s' (fan_only)",
                 group.master_entity,

@@ -2634,3 +2634,22 @@ async def test_wake_takes_the_ac_the_orchestration_runs(hass, mock_config_entry)
     await coordinator._async_wake_member_zone(group, room_states, rooms)
 
     assert _fan_only_wakes(hass) == ["climate.zone_a"]
+
+
+@pytest.mark.asyncio
+async def test_a_woken_zone_of_no_room_does_not_count_as_running(hass, mock_config_entry):
+    """No room cycle reports a zone outside every room as stopped, so marking it running
+    would leave a phantom member that cancels the group's min run for good."""
+    demanding = _room_with_device("room_a", "climate.zone_a")
+    rooms = {"room_a": demanding}
+    states = {
+        "climate.zone_a": _make_ac_zone_state("off", hvac_modes=["off", "heat"]),
+        "climate.zone_b": _make_ac_zone_state("off"),
+    }
+    coordinator, group = _wake_coordinator(hass, mock_config_entry, rooms, states)
+    room_states = {"room_a": {"mode": "heating", "commanded_mode": "heating"}}
+
+    await coordinator._async_wake_member_zone(group, room_states, rooms)
+
+    assert _fan_only_wakes(hass) == ["climate.zone_b"]
+    assert not coordinator._compressor_manager.is_compressor_running("g1")

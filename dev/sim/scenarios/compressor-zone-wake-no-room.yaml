@@ -1,0 +1,14 @@
+name: compressor-zone-wake-no-room
+extends: compressor-zone-wake-room-off
+description: >
+  Same group, but the bedroom zone belongs to no RoomMind room. The fallback still wakes
+  it for the master (#135), but it must not count as a running member: no room cycle
+  reports it stopped again, and a phantom member cancelled the living room zone's min run
+  on every later start.
+refs: [135]
+roommind:
+  rooms:
+    schlafzimmer-: null
+expect:
+  - {invariant: min_run_commanded, label: the woken zone of no room does not cancel the group's min run}
+  - {metric: comfort.in_band_pct, room: wohnzimmer, min: 80, label: living room still heats with its master}
