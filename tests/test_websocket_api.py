@@ -1527,6 +1527,9 @@ def test_csv_to_points_normal():
     assert p["predicted_temp"] == 21.3
     assert p["window_open"] is False
     assert p["heating_power"] == 75.0
+    # Rows from before the start columns have none, a counted zero stays zero
+    assert p["heat_starts"] is None
+    assert _csv_to_points([{**rows[0], "heat_starts": "0", "cool_starts": "2"}])[0]["cool_starts"] == 2
 
 
 def test_csv_to_points_window_open_true():
@@ -1677,6 +1680,8 @@ async def test_analytics_with_range_key(ws_hass, store, connection):
     assert result["detail"][0]["ts"] == 1000.0
     assert "stats" in result
     assert "rhythm" in result
+    # The run starts feed the figures only, the chart points do not carry them
+    assert "heat_starts" not in result["detail"][0]
     # read_detail was called with max_age=86400
     coordinator._history_store.read_detail.assert_any_call("room_a", 86400)
 

@@ -63,6 +63,30 @@ def test_a_run_already_going_at_the_start_of_the_range_is_no_start():
     assert stats["cooling_starts"] == 1
 
 
+def test_starts_counted_when_recorded_replace_the_transitions():
+    # A compacted bucket: its mode is the first one, the runs inside are in the counts
+    points = [
+        _point(0, mode="idle", heat_starts=2, cool_starts=0),
+        _point(1, mode="heating", heat_starts=0, cool_starts=0),
+        _point(2, mode="idle", heat_starts=0, cool_starts=1),
+    ]
+    stats = compute_period_stats(points, "auto")
+    assert stats["heating_starts"] == 2
+    assert stats["cooling_starts"] == 1
+
+
+def test_points_without_counts_fall_back_to_transitions_without_counting_twice():
+    points = [
+        _point(0, mode="idle"),
+        _point(1, mode="heating"),
+        _point(2, mode="idle"),
+        # First row with counts: its own start is in the column, not the transition
+        _point(3, mode="heating", heat_starts=1, cool_starts=0),
+        _point(4, mode="heating", heat_starts=0, cool_starts=0),
+    ]
+    assert compute_period_stats(points, "auto")["heating_starts"] == 2
+
+
 def test_comfort_splits_into_cold_within_warm():
     points = [
         _point(0, room_temp=20.0),

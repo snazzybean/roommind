@@ -638,3 +638,68 @@ def test_price_columns_are_recorded_and_downsampled(history_dir):
     assert bucket["price"] == 25.0
     assert bucket["price_level"] == "expensive"
     assert bucket["price_shift"] == -0.5
+
+
+def test_record_marks_the_rows_where_a_run_starts(history_dir):
+    store = HistoryStore(history_dir)
+    for i, mode in enumerate(["heating", "heating", "idle", "heating", "cooling", "cooling"]):
+        store.record("room_a", {"mode": mode}, 1000 + i * 180)
+    rows = store.read_detail("room_a")
+    # The first row has nothing to compare with, like the transitions on the analytics page
+    assert [r["heat_starts"] for r in rows] == ["0", "0", "0", "1", "0", "0"]
+    assert [r["cool_starts"] for r in rows] == ["0", "0", "0", "0", "1", "0"]
+
+
+def test_record_after_a_restart_compares_with_the_last_row_on_disk(history_dir):
+    HistoryStore(history_dir).record("room_a", {"mode": "idle"}, 1000)
+    restarted = HistoryStore(history_dir)
+    restarted.record("room_a", {"mode": "heating"}, 1180)
+    assert restarted.read_detail("room_a")[-1]["heat_starts"] == "1"
+
+
+def test_remove_room_forgets_the_last_mode(history_dir):
+    store = HistoryStore(history_dir)
+    store.record("room_a", {"mode": "idle"}, 1000)
+    store.remove_room("room_a")
+    store.record("room_a", {"mode": "heating"}, 1180)
+    assert store.read_detail("room_a")[-1]["heat_starts"] == "0"
+
+
+def test_downsample_sums_the_starts_a_bucket_keeps_only_the_first_mode_of(history_dir):
+    store = HistoryStore(history_dir)
+    # Two short runs inside 5-min buckets that start idle: the bucket mode hides both
+    for i, mode in enumerate(["idle", "heating", "idle", "idle", "cooling", "idle"]):
+        store.record("room_a", {"mode": mode}, 600 + i * 100)
+    buckets = store._downsample(store.read_detail("room_a"), bucket_seconds=300)
+    assert [b["mode"] for b in buckets] == ["idle", "idle"]
+    assert [(b["heat_starts"], b["cool_starts"]) for b in buckets] == [(1, 0), (0, 1)]
+
+
+def test_downsample_counts_rows_from_before_the_columns_against_the_row_before(history_dir):
+    store = HistoryStore(history_dir)
+    rows = [
+        {"timestamp": str(600 + i * 100), "mode": mode, "heat_starts": "", "cool_starts": ""}
+        for i, mode in enumerate(["heating", "idle", "heating", "idle", "cooling"])
+    ]
+    rows.append({"timestamp": "1100", "mode": "heating", "heat_starts": "1", "cool_starts": "0"})
+    buckets = store._downsample(rows, bucket_seconds=300)
+    # The first row has no row before it in the batch: no start
+    assert [(b["heat_starts"], b["cool_starts"]) for b in buckets] == [(1, 0), (1, 1)]
+
+
+def test_rotate_keeps_the_starts_in_an_old_history_file(history_dir):
+    store = HistoryStore(history_dir)
+    os.makedirs(history_dir, exist_ok=True)
+    old_fields = DETAIL_FIELDS[: DETAIL_FIELDS.index("heat_starts")]
+    now = time.time()
+    with open(os.path.join(history_dir, "room_a_history.csv"), "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=old_fields)
+        writer.writeheader()
+        writer.writerow({"timestamp": now - 5 * 86400, "mode": "heating"})
+    base = (now - 3 * 86400) // 300 * 300
+    for i, mode in enumerate(["idle", "heating", "idle", "heating"]):
+        store.record("room_a", {"mode": mode}, base + i * 100)
+    store.rotate("room_a")
+    rows = store.read_history("room_a")
+    assert rows[0]["heat_starts"] == ""
+    assert sum(int(r["heat_starts"]) for r in rows[1:]) == 2

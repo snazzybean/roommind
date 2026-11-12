@@ -138,6 +138,8 @@ def _csv_to_points(rows: list[dict]) -> list[dict]:
                 "price": _safe_float(row.get("price", "")),
                 "price_level": row.get("price_level", ""),
                 "price_shift": _safe_float(row.get("price_shift", "")),
+                "heat_starts": _safe_int(row.get("heat_starts", "")),
+                "cool_starts": _safe_int(row.get("cool_starts", "")),
             }
         )
     return result
@@ -297,6 +299,9 @@ async def build_analytics_data(
     room_config = store.get_room(area_id) or {}
     climate_mode = room_config.get("climate_mode", "auto")
     stats = compute_period_stats(sorted(history + detail, key=lambda p: p["ts"]), climate_mode)
+    # Only the figures need the run starts; 90 days of points would carry them to the chart
+    for point in history + detail:
+        del point["heat_starts"], point["cool_starts"]
 
     rhythm: dict | None = None
     if history_store:

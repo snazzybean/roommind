@@ -159,6 +159,7 @@ def compute_period_stats(points: list[dict], climate_mode: str) -> dict:
     """Sum up a time-sorted list of history points."""
     seconds = {"total": 0.0, "heating": 0.0, "cooling": 0.0, "window": 0.0}
     starts = {MODE_HEATING: 0, MODE_COOLING: 0}
+    start_keys = {MODE_HEATING: "heat_starts", MODE_COOLING: "cool_starts"}
     comfort = {"below": 0.0, "within": 0.0, "above": 0.0}
     by_price: dict[str, dict[str, float]] = {MODE_HEATING: {}, MODE_COOLING: {}}
     priced = shifted = 0.0
@@ -170,8 +171,12 @@ def compute_period_stats(points: list[dict], climate_mode: str) -> dict:
         seconds["total"] += weight
         if mode in starts:
             seconds[mode] += weight
-            if previous_mode is not None and previous_mode != mode:
-                starts[mode] += 1
+        if any(point.get(key) is not None for key in start_keys.values()):
+            # Counted when recorded: a compacted 5-min bucket keeps only its first mode
+            for run, key in start_keys.items():
+                starts[run] += point.get(key) or 0
+        elif mode in starts and previous_mode is not None and previous_mode != mode:
+            starts[mode] += 1
         previous_mode = mode
         if point.get("window_open"):
             seconds["window"] += weight
