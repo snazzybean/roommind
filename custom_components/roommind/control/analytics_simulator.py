@@ -301,6 +301,27 @@ def _continuation_power(
     )
 
 
+def _schedule_heat_series(window: list[dict], T: float) -> list[float] | None:
+    """Heat targets of the window without the price shift, None when nothing is shifted.
+
+    Same series the controller hands the pre-heat deadline (``schedule_target_resolver``).
+    """
+    if not any(tf.get("price_shift_heat") or tf.get("price_shift_cool") for tf in window):
+        return None
+
+    def unshifted(value: float | None, shift: float | None) -> float | None:
+        return value - (shift or 0.0) if value is not None else None
+
+    return [
+        fill_missing_targets(
+            unshifted(tf.get("heat_target", tf["target_temp"]), tf.get("price_shift_heat")),
+            unshifted(tf.get("cool_target", tf["target_temp"]), tf.get("price_shift_cool")),
+            T,
+        )[0]
+        for tf in window
+    ]
+
+
 def _simulate_mpc(
     model: RCModel,
     target_forecast: list[dict],
@@ -407,6 +428,7 @@ def _simulate_mpc(
             ]
             heat_series = [h for h, _ in filled]
             cool_series = [c for _, c in filled]
+            schedule_series = _schedule_heat_series(window, T)
             remaining_outdoor = outdoor_series[i : i + len(window)]
             remaining_solar = solar_series[i : i + len(window)] if solar_series else None
             # Build residual series for remaining blocks
@@ -459,6 +481,7 @@ def _simulate_mpc(
                     if rules == HEATING_SYSTEM_RADIATOR and prev_action == MODE_HEATING and run_seconds is not None
                     else None
                 ),
+                schedule_heat_series=schedule_series,
             )
             in_run = run_seconds is not None
             action, pf = decide_mpc_action(

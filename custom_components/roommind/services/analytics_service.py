@@ -213,7 +213,7 @@ async def _compute_target_forecast(
             presence_clears_override=bool(settings.get("presence_clears_override", False)),
             room_vacant=room_vacant,
         )
-        targets, _ = price_shifted(
+        targets, (shift_heat, shift_cool) = price_shifted(
             targets, ts, room, settings, price_signal, presence_away=presence_away, room_vacant=room_vacant
         )
         heat_target = targets.heat
@@ -241,6 +241,9 @@ async def _compute_target_forecast(
                 "target_temp": target,
                 "heat_target": heat_target,
                 "cool_target": cool_target,
+                # For the prediction's pre-heat deadline, which ignores the price shift
+                "price_shift_heat": shift_heat,
+                "price_shift_cool": shift_cool,
             }
         )
         ts += interval_minutes * 60

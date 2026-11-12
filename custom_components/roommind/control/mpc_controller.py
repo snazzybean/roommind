@@ -1351,6 +1351,7 @@ class MPCController:
         previous_mode: str = MODE_IDLE,
         has_external_sensor: bool = True,
         target_resolver: Callable[[float], TargetTemps | float] | None = None,
+        schedule_target_resolver: Callable[[float], TargetTemps] | None = None,
         q_solar: float = 0.0,
         latitude: float = 0.0,
         longitude: float = 0.0,
@@ -1389,6 +1390,8 @@ class MPCController:
         self._model_manager = model_manager
         self._area_id = room_config.get("area_id", "unknown")
         self._target_resolver = target_resolver
+        # Targets without the electricity price shift (only for rooms following the price)
+        self._schedule_target_resolver = schedule_target_resolver
         self.last_plan: MPCPlan | None = None
         self._peak_temps_unoccupied: list[float] | None = None
         self.q_solar = q_solar
@@ -1679,6 +1682,7 @@ class MPCController:
         # becomes the room temperature a "no target" block was filled with.
         raw_heat: list[float | None] = []
         raw_cool: list[float | None] = []
+        schedule_heat_series: list[float] | None = None
         if self._target_resolver is not None:
             now = time.time()
             dt_seconds = PLAN_DT_MINUTES * 60
@@ -1691,6 +1695,11 @@ class MPCController:
                 filled = [fill_missing_targets(t.heat, t.cool, current_temp) for t in pairs]
                 heat_target_series = [h for h, _ in filled]
                 cool_target_series = [c for _, c in filled]
+                if self._schedule_target_resolver is not None:
+                    schedule_heat_series = [
+                        fill_missing_targets(t.heat, t.cool, current_temp)[0]
+                        for t in (self._schedule_target_resolver(now + i * dt_seconds) for i in range(horizon_blocks))
+                    ]
             else:
                 # Legacy resolver returning float|None
                 float_targets = cast(list[float | None], raw_targets)
@@ -1749,6 +1758,7 @@ class MPCController:
                 initial_mode=self.previous_mode,
                 rebound_charge=self.q_rebound,
                 heat_run=self._heat_run,
+                schedule_heat_series=schedule_heat_series,
             )
             self.last_plan = plan
             # Shading can attenuate solar gain, never the body heat of whoever just

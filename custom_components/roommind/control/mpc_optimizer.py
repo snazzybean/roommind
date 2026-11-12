@@ -154,6 +154,7 @@ class MPCOptimizer:
         initial_mode: str = MODE_IDLE,
         rebound_charge: float | None = None,
         heat_run: tuple[float, float] | None = None,
+        schedule_heat_series: list[float] | None = None,
     ) -> MPCPlan:
         """Find optimal action sequence over the planning horizon.
 
@@ -178,6 +179,9 @@ class MPCOptimizer:
         to the target on it stops early instead of overshooting. The plan tracks
         its own runs the same way: idle blocks after a planned run see that run's
         afterglow instead of ``residual_series`` (the real room's).
+
+        ``schedule_heat_series`` is the heat target without the electricity price shift
+        (None: the room does not follow the price). Only the pre-heat deadline reads it.
         """
         self._glow_cache.clear()  # scale and decay may have changed since the last plan
         if cool_target_series is None:
@@ -304,6 +308,7 @@ class MPCOptimizer:
                     T_outdoor_series,
                     heat_target_series,
                     dt_minutes,
+                    schedule_heat_series=schedule_heat_series,
                     q_solar=q_solar,
                     q_occupancy=q_occupancy,
                     continuing=continuing,
@@ -462,6 +467,7 @@ class MPCOptimizer:
         q_residual: list[float] | None = None,
         glow: tuple[float, float] | None = None,
         glow_elapsed: float = 0.0,
+        schedule_heat_series: list[float] | None = None,
     ) -> int:
         """Blocks from *i* to the rising heat target that waiting would miss.
 
@@ -480,12 +486,23 @@ class MPCOptimizer:
         ``glow_elapsed`` minutes ago, else ``q_residual`` (from block *i* on) is the
         room's own. Without it a radiator that stores enough heat to carry the room to
         the target was forced on, and the run overshot by the heat it left behind.
+
+        Only a rise of the schedule counts (``schedule_heat_series``, the target without
+        the price shift): the end of an expensive stretch or the start of a cheap one
+        moves the target too, but pre-heating for it in the hours before heated in the
+        expensive hours the shift was meant to skip, or charged outside the cheap ones.
         """
         n = len(heat_target_series)
         now = heat_target_series[i]
         if self.preheat_max_blocks is not None:
             n = min(n, i + self.preheat_max_blocks + 1)
-        rise = next((j for j in range(i + 1, n) if heat_target_series[j] > max(now, T_room)), None)
+        schedule = schedule_heat_series if schedule_heat_series is not None else heat_target_series
+        n = min(n, len(schedule))
+
+        def rises(j: int) -> bool:
+            return heat_target_series[j] > now and schedule[j] > schedule[i]
+
+        rise = next((j for j in range(i + 1, n) if rises(j) and heat_target_series[j] > T_room), None)
         if rise is None:
             return 0
         residual = q_residual or []
@@ -552,7 +569,7 @@ class MPCOptimizer:
                 q_residual=qr,
             )
             target = heat_target_series[j + 1]
-            if target > now and T < target - PREHEAT_DEADLINE_MARGIN:
+            if rises(j + 1) and T < target - PREHEAT_DEADLINE_MARGIN:
                 return j + 1 - i
         return 0
 

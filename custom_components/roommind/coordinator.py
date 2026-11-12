@@ -950,6 +950,21 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             room_vacant=occupancy_vacant,
             price_signal=self._price_manager.signal,
         )
+        # The pre-heat deadline only pre-heats for a rise of the schedule, not for the
+        # target moving with the price (feature-details "Electricity Price")
+        schedule_target_resolver = (
+            make_target_resolver(
+                schedule_blocks,
+                room,
+                settings,
+                hass=self.hass,
+                presence_away=presence_away,
+                mold_prevention_delta=mold_prevention_temp_delta,
+                room_vacant=occupancy_vacant,
+            )
+            if self._price_manager.signal is not None and float(room.get("price_shift") or 0.0) > 0
+            else None
+        )
 
         # After a reload or restart the previous mode is unknown; seed it from what the
         # devices are doing until a cycle has actually controlled the room. The run's
@@ -1023,6 +1038,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             idle_since=self._idle_since.get(area_id),
             has_external_sensor=has_external_sensor,
             target_resolver=target_resolver,
+            schedule_target_resolver=schedule_target_resolver,
             q_solar=self._current_q_solar,
             latitude=self.hass.config.latitude,
             longitude=self.hass.config.longitude,

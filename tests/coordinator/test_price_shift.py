@@ -134,3 +134,28 @@ def test_band_in_force_takes_the_price_shift_off_again():
         "mold_prevention_delta": 2.0,
     }
     assert band_in_force({}, live) == (21.0, 24.0)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("shift", "expect_schedule"), [(1.0, True), (0.0, False)])
+async def test_controller_gets_the_unshifted_schedule_only_for_price_rooms(
+    hass, mock_config_entry, monkeypatch, shift, expect_schedule
+):
+    from custom_components.roommind.control import mpc_controller
+
+    seen: list = []
+    real_init = mpc_controller.MPCController.__init__
+
+    def spy(self, *args, **kwargs):
+        seen.append(kwargs.get("schedule_target_resolver"))
+        real_init(self, *args, **kwargs)
+
+    monkeypatch.setattr(mpc_controller.MPCController, "__init__", spy)
+    await _cycle(hass, mock_config_entry, {**SAMPLE_ROOM, "price_shift": shift}, ("on", None))
+    assert seen
+    resolver = seen[0]
+    if not expect_schedule:
+        assert resolver is None
+        return
+    # Cheap switch: the room's target is charged to 22, the schedule stays at 21
+    assert resolver(time.time()).heat == 21.0

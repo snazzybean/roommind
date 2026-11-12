@@ -51,7 +51,10 @@ expect:
   # 2026-11-09, 4 d: with the option 6.3 h of heating in expensive hours, 25.4 h in cheap ones;
   # without it 11.5 / 8.9 h. Heat +2 %, commands 3.2 instead of 7.3 per hour (fewer, longer runs),
   # in band 90 % instead of 99.5 % (the room coasts 1 K below the schedule while expensive)
-  - {metric: room.heating_h_expensive, room: schlafzimmer, max: 8.5, label: less heating while expensive}
+  # 2026-11-12: the pre-heat deadline took the end of an expensive stretch for a rise and heated
+  # the room back to 19 in the expensive hours (6.3 h); it only counts schedule rises now:
+  # 3.44 h, same as with pre-heating off, in band 86.6 % (under 15.6 instead of 13.2 Kh)
+  - {metric: room.heating_h_expensive, room: schlafzimmer, max: 4.5, label: less heating while expensive}
   - {metric: room.heating_h_cheap, room: schlafzimmer, min: 18, label: heating moved to cheap hours}
   - {metric: device.commands_per_hour, entity_id: climate.schlafzimmer_trv, max: 5}
   # Living room (radiators + AC, orchestration with heat_source_price_aware), 4 d against the same
