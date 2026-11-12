@@ -9,6 +9,7 @@ import { localize } from "../../utils/localize";
 import { getSelectValue, openEntityInfo } from "../../utils/events";
 import "./rs-icon-button";
 import "./rs-field";
+import "./rs-list-row";
 
 export abstract class RsScheduleBase extends LitElement {
   @property({ attribute: false }) public hass!: HomeAssistant;
@@ -140,15 +141,10 @@ export abstract class RsScheduleBase extends LitElement {
       width: 100%;
     }
 
+    /* rows reach the dialog edge so their text lines up with the fields */
     .helper-link {
-      display: inline-block;
-      margin-top: 4px;
-      font-size: 12px;
-      color: var(--primary-color);
-      text-decoration: none;
-    }
-    .helper-link:hover {
-      text-decoration: underline;
+      margin: var(--rs-space-1) calc(-1 * var(--rs-form-inline, 16px)) 0;
+      --rs-list-row-padding: var(--rs-form-inline, 16px);
     }
 
     .no-schedules {
@@ -262,7 +258,14 @@ export abstract class RsScheduleBase extends LitElement {
         </ha-select>
         ${
           createLabel
-            ? html`<a href="/config/helpers" target="_top" class="helper-link"> ${createLabel} </a>`
+            ? html`<rs-list-row
+                class="helper-link"
+                href="/config/helpers/add?domain=schedule"
+                plain-icon
+                variant="primary"
+                icon="mdi:plus"
+                .heading=${createLabel}
+              ></rs-list-row>`
             : nothing
         }
       </div>

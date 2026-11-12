@@ -214,7 +214,7 @@
   "covers.schedule_state_inactive": "Inactive",
   "covers.schedule_state_unreachable": "Unreachable",
   "covers.schedule_active": "Schedule active",
-  "covers.schedule_create_link": "Create schedule helper",
+  "covers.schedule_create_link": "Create a schedule in Home Assistant",
   "covers.schedule_removed": "Schedule “{name}” removed from the covers",
   "covers.night_position": "Night position",
   "covers.night_position_hint": "How far the covers close at night. 0 % = fully closed. A cover's \"Fully closed at\" applies here too.",

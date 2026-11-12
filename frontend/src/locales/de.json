@@ -214,7 +214,7 @@
   "covers.schedule_state_inactive": "Inaktiv",
   "covers.schedule_state_unreachable": "Nicht erreichbar",
   "covers.schedule_active": "Zeitplan aktiv",
-  "covers.schedule_create_link": "Zeitplan-Helfer erstellen",
+  "covers.schedule_create_link": "Zeitplan in Home Assistant anlegen",
   "covers.schedule_removed": "Zeitplan „{name}“ von den Rollos entfernt",
   "covers.night_position": "Nachtposition",
   "covers.night_position_hint": "So weit gehen die Rollos nachts zu. 0 % = ganz zu. „Ganz zu bei“ eines Rollos gilt auch hier.",

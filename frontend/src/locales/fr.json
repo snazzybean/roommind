@@ -214,7 +214,7 @@
   "covers.schedule_state_inactive": "Inactif",
   "covers.schedule_state_unreachable": "Inaccessible",
   "covers.schedule_active": "Horaire actif",
-  "covers.schedule_create_link": "Créer un assistant de planification",
+  "covers.schedule_create_link": "Créer une planification dans Home Assistant",
   "covers.schedule_removed": "Planification « {name} » retirée des stores",
   "covers.night_position": "Position nocturne",
   "covers.night_position_hint": "Jusqu'où les stores se ferment la nuit. 0 % = entièrement fermé. Le réglage « Fermé à » d'un store s'applique aussi.",

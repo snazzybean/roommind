@@ -214,7 +214,7 @@
   "covers.schedule_state_inactive": "Non attivo",
   "covers.schedule_state_unreachable": "Non raggiungibile",
   "covers.schedule_active": "Programma attivo",
-  "covers.schedule_create_link": "Crea helper programma",
+  "covers.schedule_create_link": "Crea un programma in Home Assistant",
   "covers.schedule_removed": "Programma “{name}” rimosso dalle tapparelle",
   "covers.night_position": "Posizione notturna",
   "covers.night_position_hint": "Quanto si chiudono le tapparelle di notte. 0 % = del tutto chiuse. Anche qui vale «Chiusa a» di una tapparella.",
