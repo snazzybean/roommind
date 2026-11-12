@@ -184,7 +184,7 @@ export class RsSettingsNotifications extends RsSettingsBase {
     return html`<div class="mold-off">
       <p class="hint">
         ${localize(
-          this.moldPreventionEnabled
+          this.moldPreventionEnabled && this.moldPreventionNotify
             ? "notifications.mold_off_prevention"
             : "notifications.mold_off",
           l,
