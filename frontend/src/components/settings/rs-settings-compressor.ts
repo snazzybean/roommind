@@ -1,7 +1,7 @@
 /**
  * rs-settings-compressor – Compressor protection group management.
  */
-import { LitElement, html, css, nothing } from "lit";
+import { html, css, nothing } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import type { HomeAssistant, CompressorGroup, ConflictResolution } from "../../types";
 import { localize, type TranslationKey } from "../../utils/localize";
@@ -11,7 +11,8 @@ import "../shared/rs-icon-button";
 import "../shared/rs-number-field";
 import "../shared/rs-list-row";
 import { inputStyles } from "../../styles/input-styles";
-import { alertStyles, tokens } from "../../styles/tokens";
+import { alertStyles } from "../../styles/tokens";
+import { RsSettingsBase } from "./rs-settings-base";
 
 /**
  * Why a group cannot be saved yet, mirroring the backend checks of settings/save: a group needs a
@@ -36,121 +37,75 @@ export function compressorGroupProblem(
 }
 
 @customElement("rs-settings-compressor")
-export class RsSettingsCompressor extends LitElement {
+export class RsSettingsCompressor extends RsSettingsBase {
   @property({ attribute: false }) public hass!: HomeAssistant;
   @property({ type: Array }) public compressorGroups: CompressorGroup[] = [];
 
   static styles = [
-    tokens,
+    ...RsSettingsBase.settingsBaseStyles,
     alertStyles,
     inputStyles,
     css`
-      :host {
-        display: block;
-      }
-      .group-card {
-        border: 1px solid var(--divider-color);
-        border-radius: 8px;
-        padding: 16px;
-        margin-bottom: 16px;
-      }
-      .member-list {
+      .group {
         display: flex;
         flex-direction: column;
-        gap: 4px;
-        margin: 8px 0;
+        gap: var(--rs-space-3);
       }
-      .member-row {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 4px 8px;
-        background: var(--card-background-color);
-        border-radius: 4px;
-      }
-      .member-name {
-        font-size: 14px;
-        flex: 1;
-      }
-      .member-area {
-        font-size: 12px;
-        color: var(--secondary-text-color);
-        margin-left: 4px;
-      }
-      .member-missing {
-        color: var(--error-color);
-      }
-      .field-row {
-        margin-top: 12px;
-      }
-      .field-hint {
-        font-size: 12px;
-        color: var(--secondary-text-color);
-        margin-top: 4px;
-      }
-      .section-label {
-        font-size: 14px;
+      .group .field-label {
+        margin: var(--rs-space-2) 0 0;
         font-weight: 500;
-        margin-top: 12px;
-        margin-bottom: 4px;
       }
-      /* runs to the card edge like the settings pages' other rows */
-      .add-row {
-        margin: 0 calc(-1 * var(--rs-settings-inline, 0px)) var(--rs-space-2);
-        --rs-list-row-padding: var(--rs-settings-inline, 16px);
+      .members {
+        display: flex;
+        flex-direction: column;
+      }
+      .group .field-hint {
+        margin-top: calc(-1 * var(--rs-space-2));
       }
       .delete-row {
-        margin-top: 16px;
         display: flex;
         justify-content: flex-end;
       }
       .draft-note {
-        margin: 0 0 var(--rs-space-3);
+        margin: 0;
         font-size: var(--rs-font-sm);
         line-height: 1.4;
         color: var(--secondary-text-color);
       }
-      ha-textfield {
+      .group .rs-alert {
+        margin: 0;
+      }
+      ha-textfield,
+      ha-select {
         width: 100%;
-      }
-      ha-entity-picker {
-        width: 100%;
-      }
-      .number-fields {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 12px;
-        margin-top: 12px;
-      }
-      @media (max-width: 500px) {
-        .number-fields {
-          grid-template-columns: 1fr;
-        }
       }
     `,
   ];
 
   render() {
     const l = this.hass.language;
+    const groups = this.compressorGroups;
     return html`
-      ${this.compressorGroups.map((group, idx) => this._renderGroup(group, idx))}
-      <rs-list-row
-        class="add-row"
-        clickable
-        plain-icon
-        variant="primary"
-        icon="mdi:plus"
-        .heading=${localize("compressor.add_group", l)}
-        .secondary=${this.compressorGroups.length ? "" : localize("compressor.no_groups", l)}
-        @row-click=${this._addGroup}
-      ></rs-list-row>
+      ${groups.map((group, idx) => this._renderGroup(group, idx))}
+      <div class="settings-section ${groups.length ? "" : "first"}">
+        <rs-list-row
+          clickable
+          plain-icon
+          variant="primary"
+          icon="mdi:plus"
+          .heading=${localize("compressor.add_group", l)}
+          .secondary=${groups.length ? "" : localize("compressor.no_groups", l)}
+          @row-click=${this._addGroup}
+        ></rs-list-row>
+      </div>
     `;
   }
 
   private _renderGroup(group: CompressorGroup, idx: number) {
     const l = this.hass.language;
+    const label = group.name || `#${idx + 1}`;
     return html`
-      <div class="group-card">
+      <section class="settings-section group ${idx === 0 ? "first" : ""}" aria-label=${label}>
         ${this._renderProblem(group)}
         <ha-textfield
           .value=${group.name}
@@ -161,14 +116,12 @@ export class RsSettingsCompressor extends LitElement {
           }}
         ></ha-textfield>
 
-        <div class="section-label">${localize("compressor.members", l)}</div>
+        <span class="field-label">${localize("compressor.members", l)}</span>
         ${
           group.members.length > 0
-            ? html`
-                <div class="member-list">
-                  ${group.members.map((eid) => this._renderMember(eid, idx))}
-                </div>
-              `
+            ? html`<div class="members">
+                ${group.members.map((eid) => this._renderMember(eid, idx))}
+              </div>`
             : nothing
         }
         <ha-entity-picker
@@ -181,14 +134,14 @@ export class RsSettingsCompressor extends LitElement {
             if (!v) return;
             const updated = [...this.compressorGroups];
             updated[idx] = { ...updated[idx], members: [...updated[idx].members, v] };
-            this._fire(updated);
+            this._fireGroups(updated);
             const picker = e.target as HTMLElement & { value?: string };
             if (picker) picker.value = "";
           }}
         ></ha-entity-picker>
-        <div class="field-hint">${localize("compressor.members_hint", l)}</div>
+        <span class="field-hint">${localize("compressor.members_hint", l)}</span>
 
-        <div class="number-fields">
+        <div class="threshold-grid">
           <rs-number-field
             .label=${localize("compressor.min_run", l)}
             .suffix=${localize("compressor.min_run_suffix", l)}
@@ -211,7 +164,7 @@ export class RsSettingsCompressor extends LitElement {
           ></rs-number-field>
         </div>
 
-        <div class="section-label">${localize("compressor.master_entity", l)}</div>
+        <span class="field-label">${localize("compressor.master_entity", l)}</span>
         <ha-entity-picker
           .hass=${this.hass}
           .value=${group.master_entity || ""}
@@ -221,117 +174,111 @@ export class RsSettingsCompressor extends LitElement {
             this._updateGroup(idx, "master_entity", (e.detail?.value as string) ?? "");
           }}
         ></ha-entity-picker>
-        <div class="field-hint">${localize("compressor.master_entity_hint", l)}</div>
+        <span class="field-hint">${localize("compressor.master_entity_hint", l)}</span>
 
-        <div class="field-row">
-          <rs-list-row
-            switch
-            wrap
-            .heading=${localize("compressor.enforce_uniform_mode", l)}
-            .secondary=${localize("compressor.enforce_uniform_mode_hint", l)}
-            .checked=${group.enforce_uniform_mode || false}
-            @toggle-changed=${(e: CustomEvent<boolean>) => {
-              this._updateGroup(idx, "enforce_uniform_mode", e.detail);
-            }}
-          ></rs-list-row>
-        </div>
+        <rs-list-row
+          switch
+          wrap
+          .heading=${localize("compressor.enforce_uniform_mode", l)}
+          .secondary=${localize("compressor.enforce_uniform_mode_hint", l)}
+          .checked=${group.enforce_uniform_mode || false}
+          @toggle-changed=${(e: CustomEvent<boolean>) => {
+            this._updateGroup(idx, "enforce_uniform_mode", e.detail);
+          }}
+        ></rs-list-row>
 
         ${
           group.master_entity || group.enforce_uniform_mode
             ? html`
-                <div class="field-row">
-                  <ha-select
-                    .label=${localize("compressor.conflict_resolution", l)}
-                    .value=${group.conflict_resolution || "heating_priority"}
-                    .options=${[
-                      {
-                        value: "heating_priority",
-                        label: localize("compressor.conflict_heating_priority", l),
-                      },
-                      {
-                        value: "cooling_priority",
-                        label: localize("compressor.conflict_cooling_priority", l),
-                      },
-                      {
-                        value: "majority",
-                        label: localize("compressor.conflict_majority", l),
-                      },
-                      {
-                        value: "outdoor_temp",
-                        label: localize("compressor.conflict_outdoor_temp", l),
-                      },
-                    ]}
-                    @selected=${(e: Event) => {
-                      const v = getSelectValue(e);
-                      if (v) this._updateGroup(idx, "conflict_resolution", v);
-                    }}
-                    @closed=${(e: Event) => e.stopPropagation()}
-                    fixedMenuPosition
-                    style="width: 100%;"
-                  >
-                  </ha-select>
-                  <div class="field-hint">
-                    ${localize("compressor.conflict_resolution_hint", l)}
-                  </div>
-                </div>
+                <ha-select
+                  .label=${localize("compressor.conflict_resolution", l)}
+                  .value=${group.conflict_resolution || "heating_priority"}
+                  .options=${[
+                    {
+                      value: "heating_priority",
+                      label: localize("compressor.conflict_heating_priority", l),
+                    },
+                    {
+                      value: "cooling_priority",
+                      label: localize("compressor.conflict_cooling_priority", l),
+                    },
+                    {
+                      value: "majority",
+                      label: localize("compressor.conflict_majority", l),
+                    },
+                    {
+                      value: "outdoor_temp",
+                      label: localize("compressor.conflict_outdoor_temp", l),
+                    },
+                  ]}
+                  @selected=${(e: Event) => {
+                    const v = getSelectValue(e);
+                    if (v) this._updateGroup(idx, "conflict_resolution", v);
+                  }}
+                  @closed=${(e: Event) => e.stopPropagation()}
+                  fixedMenuPosition
+                >
+                </ha-select>
+                <span class="field-hint">
+                  ${localize("compressor.conflict_resolution_hint", l)}
+                </span>
               `
             : nothing
         }
 
-        <div class="field-row">
-          <ha-entity-picker
-            .hass=${this.hass}
-            .value=${group.action_script || ""}
-            .includeDomains=${["script"]}
-            .label=${localize("compressor.action_script", l)}
-            @value-changed=${(e: CustomEvent) => {
-              this._updateGroup(idx, "action_script", (e.detail?.value as string) ?? "");
-            }}
-          ></ha-entity-picker>
-          <div class="field-hint">${localize("compressor.action_script_hint", l)}</div>
-        </div>
+        <ha-entity-picker
+          .hass=${this.hass}
+          .value=${group.action_script || ""}
+          .includeDomains=${["script"]}
+          .label=${localize("compressor.action_script", l)}
+          @value-changed=${(e: CustomEvent) => {
+            this._updateGroup(idx, "action_script", (e.detail?.value as string) ?? "");
+          }}
+        ></ha-entity-picker>
+        <span class="field-hint">${localize("compressor.action_script_hint", l)}</span>
 
         <div class="delete-row">
           <rs-confirm-button
-            .label=${localize("compressor.delete", l)}
-            .confirmMessage=${localize("compressor.delete_confirm", l).replace(
-              "{name}",
-              group.name || `#${idx + 1}`,
-            )}
             destructive
+            icon="mdi:delete-outline"
+            .label=${localize("compressor.delete", l)}
+            .accessibleLabel=${`${localize("compressor.delete", l)}: ${label}`}
+            .confirmMessage=${localize("compressor.delete_confirm", l).replace("{name}", label)}
             @confirmed=${() => {
-              this._fire(this.compressorGroups.filter((_, i) => i !== idx));
+              this._fireGroups(this.compressorGroups.filter((_, i) => i !== idx));
             }}
           ></rs-confirm-button>
         </div>
-      </div>
+      </section>
     `;
   }
 
   private _renderMember(entityId: string, groupIdx: number) {
+    const l = this.hass.language;
     const state = this.hass.states[entityId];
-    const missing = !state;
     const name = (state?.attributes?.friendly_name as string) || entityId;
     const areaId = this.hass.entities[entityId]?.area_id;
     const areaName = areaId ? this.hass.areas[areaId]?.name : undefined;
     return html`
-      <div class="member-row">
-        <span class="member-name ${missing ? "member-missing" : ""}"
-          >${name}${areaName ? html`<span class="member-area">(${areaName})</span>` : nothing}</span
-        >
+      <rs-list-row
+        icon=${(state?.attributes?.icon as string) || "mdi:air-conditioner"}
+        .heading=${name}
+        .secondary=${state ? (areaName ?? "") : localize("detail.devices.unavailable", l)}
+      >
         <rs-icon-button
+          slot="end"
           icon="mdi:close"
-          .label=${localize("common.remove_named", this.hass.language, { name })}
+          .label=${localize("common.remove_named", l, { name })}
           @click=${() => {
             const updated = [...this.compressorGroups];
             updated[groupIdx] = {
               ...updated[groupIdx],
               members: updated[groupIdx].members.filter((m) => m !== entityId),
             };
-            this._fire(updated);
+            this._fireGroups(updated);
           }}
         ></rs-icon-button>
-      </div>
+      </rs-list-row>
     `;
   }
 
@@ -374,11 +321,11 @@ export class RsSettingsCompressor extends LitElement {
   ) {
     const updated = [...this.compressorGroups];
     updated[idx] = { ...updated[idx], [field]: value };
-    this._fire(updated);
+    this._fireGroups(updated);
   }
 
   private _addGroup() {
-    this._fire([
+    this._fireGroups([
       ...this.compressorGroups,
       {
         id: self.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`,
@@ -394,14 +341,8 @@ export class RsSettingsCompressor extends LitElement {
     ]);
   }
 
-  private _fire(groups: CompressorGroup[]) {
-    this.dispatchEvent(
-      new CustomEvent("setting-changed", {
-        detail: { key: "compressorGroups", value: groups },
-        bubbles: true,
-        composed: true,
-      }),
-    );
+  private _fireGroups(groups: CompressorGroup[]) {
+    this._fire("compressorGroups", groups);
   }
 }
 
