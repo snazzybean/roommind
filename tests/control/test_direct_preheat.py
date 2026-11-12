@@ -286,3 +286,85 @@ async def test_eco_override_is_not_overrun_by_the_comfort_target(monkeypatch, ov
     await ctrl.async_apply(mode, TargetTemps(17.0, None), power_fraction=0.8, current_temp=16.5)
 
     assert _sent(hass) == [expected]
+
+
+# ─── Live display of a pre-heat (hero "heats ahead for X from HH:MM") ─────────────
+
+
+def test_preheat_names_the_upcoming_target_and_its_start(monkeypatch):
+    resolver = _step_resolver(TargetTemps(19.0, None), TargetTemps(21.5, None), 3600)
+    _, ctrl = _controller(_room(), resolver, monkeypatch=monkeypatch)
+    before = time.time()
+
+    mode, _ = ctrl._evaluate_mpc(19.2, TargetTemps(19.0, None))
+
+    assert mode == MODE_HEATING
+    assert ctrl.preheat is not None
+    assert ctrl.preheat["mode"] == MODE_HEATING
+    assert ctrl.preheat["target"] == 21.5
+    # the block start between two plan samples, not the next 5-min sample after it
+    assert before + 3600 <= ctrl.preheat["at"] <= time.time() + 3600 + 10
+
+
+def test_no_preheat_while_the_room_is_below_the_target_in_force(monkeypatch):
+    """Below eco the run heats for the current target anyway; naming the comfort block would be wrong."""
+    resolver = _step_resolver(TargetTemps(19.0, None), TargetTemps(21.5, None), 3600)
+    _, ctrl = _controller(_room(), resolver, monkeypatch=monkeypatch)
+
+    ctrl._evaluate_mpc(18.5, TargetTemps(19.0, None))
+
+    assert ctrl.preheat is None
+
+
+def test_no_preheat_without_a_rise_or_beyond_the_guard_window(monkeypatch):
+    flat = _step_resolver(TargetTemps(19.0, None), TargetTemps(19.0, None), 3600)
+    _, ctrl = _controller(_room(), flat, monkeypatch=monkeypatch)
+    ctrl._evaluate_mpc(19.2, TargetTemps(19.0, None))
+    assert ctrl.preheat is None
+
+    far = _step_resolver(TargetTemps(19.0, None), TargetTemps(21.5, None), 3 * 3600)
+    _, ctrl = _controller(_room(), far, monkeypatch=monkeypatch)
+    ctrl._evaluate_mpc(19.2, TargetTemps(19.0, None))
+    assert ctrl.preheat is None
+
+
+def test_no_preheat_while_idle(monkeypatch):
+    resolver = _step_resolver(TargetTemps(19.0, None), TargetTemps(21.5, None), 3600)
+    _, ctrl = _controller(_room(), resolver, plan_action=MODE_IDLE, monkeypatch=monkeypatch)
+    ctrl.preheat = {"mode": MODE_HEATING, "target": 21.5, "at": 0}  # left over from an earlier cycle
+
+    mode, _ = ctrl._evaluate_mpc(21.8, TargetTemps(19.0, None))
+
+    assert mode == MODE_IDLE
+    assert ctrl.preheat is None
+
+
+def test_precool_is_named_too(monkeypatch):
+    resolver = _step_resolver(TargetTemps(None, 27.0), TargetTemps(None, 24.0), 1800)
+    room = _room(device_type="ac", climate_mode="cool_only", system="")
+    _, ctrl = _controller(room, resolver, system="", plan_action=MODE_COOLING, monkeypatch=monkeypatch)
+
+    mode, _ = ctrl._evaluate_mpc(26.5, TargetTemps(None, 27.0))
+
+    assert mode == MODE_COOLING
+    assert ctrl.preheat is not None
+    assert ctrl.preheat["mode"] == MODE_COOLING
+    assert ctrl.preheat["target"] == 24.0
+
+
+def test_preheat_display_rejects_a_missing_current_target():
+    window = [TargetTemps(None, None), TargetTemps(21.0, None)]
+    resolve = lambda ts: window[0]  # noqa: E731
+    assert MPCController._preheat_display(MODE_HEATING, 19.0, window, 0.0, resolve) is None
+    assert MPCController._preheat_display(MODE_HEATING, 19.0, [], 0.0, resolve) is None
+
+
+def test_a_cheap_hour_is_no_preheat_even_when_the_price_ends(monkeypatch):
+    """Expensive hour lowers the target now, the schedule stays flat: the end of the price stretch is no lead."""
+    resolver = _step_resolver(TargetTemps(20.0, None), TargetTemps(21.0, None), 1800)
+    _, ctrl = _controller(_room(), resolver, monkeypatch=monkeypatch)
+    ctrl._schedule_target_resolver = lambda ts: TargetTemps(21.0, None)
+
+    ctrl._evaluate_mpc(21.1, TargetTemps(20.0, None))
+
+    assert ctrl.preheat is None

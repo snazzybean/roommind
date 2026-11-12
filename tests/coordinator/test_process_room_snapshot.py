@@ -54,6 +54,7 @@ NORMAL_ROOM_KEYS = {
     "active_schedule_index",
     "confidence",
     "mpc_active",
+    "preheat",
     "presence_away",
     "occupancy_vacant",
     "force_off",

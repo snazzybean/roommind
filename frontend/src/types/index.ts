@@ -52,6 +52,8 @@ export interface RoomLiveData {
   price_shift_heat?: number;
   price_shift_cool?: number;
   price_level?: "cheap" | "normal" | "expensive" | null;
+  /** Stricter target a running pre-heat (pre-cool) aims at and when it starts (Unix s). */
+  preheat?: { mode: "heating" | "cooling"; target: number; at: number } | null;
   mold_prevention_delta: number;
   blind_position: number | null;
   cover_auto_paused: boolean;

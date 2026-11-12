@@ -659,6 +659,8 @@
   "card.hint.vacant": "Room empty",
   "card.hint.price_cheap": "Power cheap {delta}",
   "card.hint.price_expensive": "Power expensive {delta}",
+  "card.hint.preheat": "Heating ahead for {temp} from {time}",
+  "card.hint.precool": "Cooling ahead for {temp} from {time}",
   "card.control_off_global": "Climate control is off for all rooms",
   "card.control_off_room": "Climate control is off for this room",
   "card.measure_only": "Measuring only, no control",

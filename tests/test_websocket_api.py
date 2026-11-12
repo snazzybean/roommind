@@ -3544,7 +3544,14 @@ async def test_list_rooms_passes_price_shift_to_the_hero(ws_hass, store, connect
     )
     connection.send_result.reset_mock()
     mock_coordinator = MagicMock()
-    mock_coordinator.rooms = {"kitchen": {"price_level": "cheap", "price_shift_heat": 1.0, "price_shift_cool": 0.0}}
+    mock_coordinator.rooms = {
+        "kitchen": {
+            "price_level": "cheap",
+            "price_shift_heat": 1.0,
+            "price_shift_cool": 0.0,
+            "preheat": {"mode": "heating", "target": 21.0, "at": 5},
+        }
+    }
     mock_coordinator.async_request_refresh = AsyncMock()
     mock_coordinator.recent_temps.get.return_value = []
     ws_hass.data[DOMAIN]["coordinator"] = mock_coordinator
@@ -3555,6 +3562,7 @@ async def test_list_rooms_passes_price_shift_to_the_hero(ws_hass, store, connect
     assert live["price_level"] == "cheap"
     assert live["price_shift_heat"] == 1.0
     assert live["price_shift_cool"] == 0.0
+    assert live["preheat"] == {"mode": "heating", "target": 21.0, "at": 5}
 
 
 @pytest.mark.asyncio

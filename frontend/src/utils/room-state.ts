@@ -168,6 +168,7 @@ export type RoomHintId =
   | "room_vacant"
   | "mold_prevention"
   | "price_shift"
+  | "preheat"
   | "learning_paused"
   | "mpc_learning";
 
@@ -185,6 +186,8 @@ export interface RoomHintContext {
   language: string;
   /** °C delta in the display unit (°F installs). */
   displayDelta: (celsiusDelta: number) => number;
+  /** °C as display text without unit (°F installs). */
+  formatTemp: (celsius: number) => string;
   unit: string;
   now?: number;
 }
@@ -209,7 +212,7 @@ export function formatClock(unixS: number, language: string, now = Date.now()): 
 /**
  * Everything worth a hint for a room, most important first: mold risk, window open, not
  * controlled, override (with end), compressor protection, away / room empty, mold
- * prevention, price shift, learning. Rooms without control only get the mold risk.
+ * prevention, price shift, pre-heat, learning. Rooms without control only get the mold risk.
  */
 export function roomHints(
   config: RoomConfig | null,
@@ -327,6 +330,19 @@ export function roomHints(
       key: price.charging ? "card.hint.price_cheap" : "card.hint.price_expensive",
       params: {
         delta: `${new Intl.NumberFormat(ctx.language, { signDisplay: "always", maximumFractionDigits: 1 }).format(ctx.displayDelta(price.delta))} ${ctx.unit}`,
+      },
+    });
+  }
+  if (live.preheat && live.mode === live.preheat.mode) {
+    const cooling = live.preheat.mode === "cooling";
+    hints.push({
+      id: "preheat",
+      icon: "mdi:clock-start",
+      severity: "info",
+      key: cooling ? "card.hint.precool" : "card.hint.preheat",
+      params: {
+        temp: `${ctx.formatTemp(live.preheat.target)}\u00a0${ctx.unit}`,
+        time: formatClock(live.preheat.at, ctx.language, ctx.now),
       },
     });
   }

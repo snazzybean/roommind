@@ -659,6 +659,8 @@
   "card.hint.vacant": "Pièce vide",
   "card.hint.price_cheap": "Électricité bon marché {delta}",
   "card.hint.price_expensive": "Électricité chère {delta}",
+  "card.hint.preheat": "Préchauffe pour {temp} dès {time}",
+  "card.hint.precool": "Prérefroidit pour {temp} dès {time}",
   "card.control_off_global": "Régulation désactivée pour toutes les pièces",
   "card.control_off_room": "Régulation désactivée pour cette pièce",
   "card.measure_only": "Mesure seule, sans régulation",

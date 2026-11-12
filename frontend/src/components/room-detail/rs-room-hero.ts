@@ -621,6 +621,7 @@ export class RsRoomHero extends LitElement {
       controlMode: this.controlMode,
       language: l,
       displayDelta: (d) => toDisplayDelta(d, this.hass),
+      formatTemp: (c) => formatTempLocale(c, this.hass, 0, 1),
       unit: tempUnit(this.hass),
     }).filter((h) => !(withTarget && inReason.has(h.id)));
     const boostHours = boostHoursLeft(live.boost_applied_at, live.n_observations);

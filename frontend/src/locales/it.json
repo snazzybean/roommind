@@ -659,6 +659,8 @@
   "card.hint.vacant": "Stanza vuota",
   "card.hint.price_cheap": "Elettricità economica {delta}",
   "card.hint.price_expensive": "Elettricità cara {delta}",
+  "card.hint.preheat": "Preriscalda per {temp} dalle {time}",
+  "card.hint.precool": "Preraffredda per {temp} dalle {time}",
   "card.control_off_global": "Controllo clima spento per tutte le stanze",
   "card.control_off_room": "Controllo clima spento per questa stanza",
   "card.measure_only": "Solo misura, nessuna regolazione",

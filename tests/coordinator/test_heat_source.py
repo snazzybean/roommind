@@ -607,3 +607,27 @@ class TestOrchestratedPreheat:
         else:
             assert sources != "none"
             assert any(t > 21.0 for t in setpoints)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("preheat_mode", "shown"), [("heating", True), ("cooling", False)])
+async def test_live_names_the_preheat_of_the_running_mode(hass, mock_config_entry, preheat_mode, shown):
+    """rooms/list gets the controller's pre-heat only while the room runs in that mode."""
+    from custom_components.roommind.control.mpc_controller import MPCController
+
+    preheat = {"mode": preheat_mode, "target": 21.0, "at": 1_800_000_000}
+
+    async def _evaluate(self, current_temp, targets=None, **_kwargs):
+        self.preheat = preheat
+        return "heating", 1.0
+
+    store = _make_store_mock({"living_room": SAMPLE_ROOM})
+    hass.data = {"roommind": {"store": store}}
+    hass.states.get = make_mock_states_get(temp="19.0", schedule_state="off")
+    hass.services.async_call = AsyncMock()
+
+    with patch.object(MPCController, "async_evaluate", _evaluate):
+        coordinator = _create_coordinator(hass, mock_config_entry)
+        await coordinator._async_update_data()
+
+    assert coordinator.rooms["living_room"]["preheat"] == (preheat if shown else None)

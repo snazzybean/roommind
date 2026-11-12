@@ -659,6 +659,8 @@
   "card.hint.vacant": "Raum leer",
   "card.hint.price_cheap": "Strom günstig {delta}",
   "card.hint.price_expensive": "Strom teuer {delta}",
+  "card.hint.preheat": "Heizt vor auf {temp} ab {time}",
+  "card.hint.precool": "Kühlt vor auf {temp} ab {time}",
   "card.control_off_global": "Klimasteuerung für alle Räume aus",
   "card.control_off_room": "Klimasteuerung für diesen Raum aus",
   "card.measure_only": "Nur Messung, keine Regelung",

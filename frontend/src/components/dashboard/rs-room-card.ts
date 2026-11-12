@@ -557,6 +557,7 @@ export class RsRoomCard extends LitElement {
       controlMode: this.controlMode,
       language: this._lang,
       displayDelta: (d) => toDisplayDelta(d, this.hass),
+      formatTemp: (c) => formatTempLocale(c, this.hass, 0, 1),
       unit: tempUnit(this.hass),
     });
     // The bottom row already says the room is not controlled.

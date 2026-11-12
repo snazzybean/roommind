@@ -1423,6 +1423,8 @@ class MPCController:
         # Strictest heat / cool target within the MPC guard window (set by _evaluate_mpc)
         self._lead_heat: float | None = None
         self._lead_cool: float | None = None
+        # What a running pre-heat/pre-cool aims at, for the live display (set by _evaluate_mpc)
+        self.preheat: dict[str, Any] | None = None
         # hvac modes whose setback devices may switch off (set by _evaluate_mpc)
         self._setback_release: frozenset[str] = frozenset()
 
@@ -1471,6 +1473,7 @@ class MPCController:
             targets = TargetTemps(heat=t, cool=t) if t is not None else TargetTemps(heat=None, cool=None)
 
         self._lead_heat = self._lead_cool = None
+        self.preheat = None
         self._setback_release = frozenset()
         if not self.has_external_sensor:
             mode = self._evaluate_managed_mode(targets)
@@ -1682,9 +1685,12 @@ class MPCController:
         # becomes the room temperature a "no target" block was filled with.
         raw_heat: list[float | None] = []
         raw_cool: list[float | None] = []
+        # Targets without the price shift, only for naming a pre-heat (a cheap-hour charge is none)
+        shown_targets: list[TargetTemps] = []
+        shown_resolver: Callable[[float], TargetTemps] | None = None
         schedule_heat_series: list[float] | None = None
+        now = time.time()
         if self._target_resolver is not None:
-            now = time.time()
             dt_seconds = PLAN_DT_MINUTES * 60
             raw_targets = [self._target_resolver(now + i * dt_seconds) for i in range(horizon_blocks)]
             # Extract separate heat and cool series from TargetTemps
@@ -1695,10 +1701,15 @@ class MPCController:
                 filled = [fill_missing_targets(t.heat, t.cool, current_temp) for t in pairs]
                 heat_target_series = [h for h, _ in filled]
                 cool_target_series = [c for _, c in filled]
+                shown_targets = pairs
+                shown_resolver = cast(Callable[[float], TargetTemps], self._target_resolver)
                 if self._schedule_target_resolver is not None:
+                    shown_resolver = self._schedule_target_resolver
+                    shown_targets = [
+                        self._schedule_target_resolver(now + i * dt_seconds) for i in range(horizon_blocks)
+                    ]
                     schedule_heat_series = [
-                        fill_missing_targets(t.heat, t.cool, current_temp)[0]
-                        for t in (self._schedule_target_resolver(now + i * dt_seconds) for i in range(horizon_blocks))
+                        fill_missing_targets(t.heat, t.cool, current_temp)[0] for t in shown_targets
                     ]
             else:
                 # Legacy resolver returning float|None
@@ -1829,12 +1840,58 @@ class MPCController:
             if lead_system == run_system:
                 break
             run_system = lead_system
+        self.preheat = (
+            self._preheat_display(action[0], current_temp, shown_targets[:guard_blocks], now, shown_resolver)
+            if shown_resolver is not None
+            else None
+        )
         if action[0] == MODE_IDLE and self._setback_hold_over() and len(plan.actions) >= SETBACK_RELEASE_BLOCKS:
             ahead = plan.actions[:SETBACK_RELEASE_BLOCKS]
             self._setback_release = frozenset(
                 hvac for hvac, run in (("heat", MODE_HEATING), ("cool", MODE_COOLING)) if run not in ahead
             )
         return action
+
+    @staticmethod
+    def _preheat_display(
+        mode: str,
+        current_temp: float,
+        window: list[TargetTemps],
+        now: float,
+        resolve: Callable[[float], TargetTemps],
+    ) -> dict[str, Any] | None:
+        """The stricter target a run heats (cools) ahead of and when it starts, else None.
+
+        Only while the room already meets the target in force: below it the run would heat
+        anyway and naming a later block would be wrong. *window* is the guard window
+        without the price shift, sampled by *resolve* every plan block; the start is looked
+        up between the two samples, else a 06:00 block read 06:04.
+        """
+        if mode not in (MODE_HEATING, MODE_COOLING) or not window:
+            return None
+        heating = mode == MODE_HEATING
+        values = [t.heat if heating else t.cool for t in window]
+        current = values[0]
+        if current is None:
+            return None
+        if heating and current_temp < current or not heating and current_temp > current:
+            return None
+        known = [v for v in values if v is not None]
+        lead = max(known) if heating else min(known)
+        if abs(lead - current) < 0.05:
+            return None
+        index = values.index(lead)
+        step = PLAN_DT_MINUTES * 60
+        lo, hi = now + (index - 1) * step, now + index * step
+        while hi - lo > 10:
+            mid = (lo + hi) / 2
+            at_mid = resolve(mid)
+            side = at_mid.heat if heating else at_mid.cool
+            if side is not None and abs(side - lead) < 0.05:
+                hi = mid
+            else:
+                lo = mid
+        return {"mode": mode, "target": lead, "at": math.ceil(hi)}
 
     def _gentle_power(
         self, optimizer: MPCOptimizer, current_temp: float, outdoor_temp: float, mode: str, target: float
