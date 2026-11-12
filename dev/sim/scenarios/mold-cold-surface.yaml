@@ -1,0 +1,22 @@
+name: mold-cold-surface
+description: >
+  Unheated, damp hallway in an uninsulated old building during hard frost (mold_f_rsi 0.65,
+  doors closed): its coldest wall spot drops below 5 °C. That wall is where condensate forms
+  first, so the risk must still be reported with the real surface humidity. Before, a surface
+  below 5 °C always read "ok" with surface RH 0 %.
+tags: [mold, humidity]
+extends: mold-prevention-unheated-room
+house:
+  rooms:
+    flur:
+      exterior_wall_m2: 12
+      initial: {temperature: 9.0, humidity: 80}
+      neighbors: {bad: closed_door, wohnzimmer: closed_door}
+roommind:
+  settings:
+    mold_f_rsi: 0.65
+expect:
+  # 2026-11-12: hallway ~9 °C, wall ~1.6-2.4 °C, surface RH 76-100 %, critical most of the time
+  - {check: "room.flur.mold_surface_temp < 5 and room.flur.mold_risk_level == 'critical' and room.flur.mold_surface_rh > 95", at: "+0d08h30m", label: a wall below 5 °C still reports the risk}
+  # The dry night after: ok, but with the real surface humidity (64-66 %), not 0 %
+  - {check: "room.flur.mold_surface_temp < 5 and room.flur.mold_risk_level == 'ok' and room.flur.mold_surface_rh > 50", at: "+1d02h", label: a dry cold wall is ok with its real surface humidity}

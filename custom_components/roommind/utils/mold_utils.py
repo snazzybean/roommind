@@ -15,7 +15,6 @@ import math
 
 from ..const import (
     DEFAULT_MOLD_F_RSI,
-    MIN_MOLD_GROWTH_TEMP,
     MOLD_PREVENTION_DELTAS,
     MOLD_RISK_CRITICAL,
     MOLD_RISK_OK,
@@ -103,12 +102,9 @@ def calculate_mold_risk(
         surface_temp is None when t_outdoor is unavailable.
     """
     if t_outdoor is not None:
+        # No lower temperature cut-off: a wall below 5 °C grows mold slowly, but it is
+        # where condensate forms first, and the mold grows once the wall warms up again
         t_surface = estimate_surface_temp(t_room, t_outdoor, f_rsi=f_rsi)
-
-        # Below MIN_MOLD_GROWTH_TEMP mold growth is negligible
-        if t_surface < MIN_MOLD_GROWTH_TEMP:
-            return MOLD_RISK_OK, 0.0, round(t_surface, 1)
-
         t_dew = dew_point(t_room, rh_room)
         srh = surface_rh(t_dew, t_surface)
     else:

@@ -135,14 +135,6 @@ def test_calculate_mold_risk_no_outdoor_temp():
     assert level3 == "critical"
 
 
-def test_calculate_mold_risk_below_min_growth_temp():
-    """Very cold surface (< 5°C) → ok regardless of humidity."""
-    # Room 10°C, outside -20°C → surface ≈ -20 + 0.7 * 30 = 1°C
-    level, srh, _t = calculate_mold_risk(10.0, 90.0, -20.0)
-    assert level == "ok"
-    assert srh == 0.0
-
-
 def test_calculate_mold_risk_warm_conditions_ok():
     """Warm outside, moderate humidity → always ok."""
     level, srh, _t = calculate_mold_risk(22.0, 55.0, 20.0)
@@ -209,14 +201,20 @@ def test_calculate_mold_risk_returns_surface_temp():
     assert t_surface_none is None
 
 
-def test_calculate_mold_risk_surface_temp_below_min_growth():
-    """When surface drops below MIN_MOLD_GROWTH_TEMP, risk is OK but the
-    surface temp is still returned for UI display.
-    """
-    # Room 10°C, outside -20°C, f_Rsi=0.80 → surface = -20 + 0.80*30 = 4°C (below 5°C)
+def test_calculate_mold_risk_cold_surface_still_reports_the_risk():
+    """A wall below 5 °C is where condensate forms first: no "ok" with surface RH 0."""
+    # Room 10°C, outside -20°C, f_Rsi=0.80 → surface = -20 + 0.80*30 = 4°C, dew point ~8.5°C
     level, srh, t_surface = calculate_mold_risk(10.0, 90.0, -20.0)
+    assert level == "critical"
+    assert srh == 100.0
+    assert t_surface == pytest.approx(4.0, abs=0.1)
+
+
+def test_calculate_mold_risk_cold_dry_surface_is_ok():
+    # Same cold wall, dry air (dew point ~-10°C): no risk, and the real surface RH is reported
+    level, srh, t_surface = calculate_mold_risk(10.0, 25.0, -20.0)
     assert level == "ok"
-    assert srh == 0.0
+    assert 0.0 < srh < 70.0
     assert t_surface == pytest.approx(4.0, abs=0.1)
 
 
