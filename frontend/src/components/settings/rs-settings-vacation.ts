@@ -41,7 +41,7 @@ export class RsSettingsVacation extends RsSettingsBase {
           ? html`
               <div class="settings-section">
                 <div class="threshold-grid" style="align-items: end">
-                  <div class="threshold-field">${this._renderEndDate()}</div>
+                  <div class="threshold-field end">${this._renderEndDate()}</div>
                   <rs-number-field
                     .hass=${this.hass}
                     kind="temperature"
@@ -118,14 +118,18 @@ export class RsSettingsVacation extends RsSettingsBase {
     RsSettingsBase.settingsBaseStyles,
     css`
       /* the time field carries its label above, the date field inside: align their bottoms */
+      /* date and time need the whole row, a 12-hour time field is wide */
+      .threshold-field.end {
+        grid-column: 1 / -1;
+      }
       .end-date {
         display: flex;
         flex-wrap: wrap;
         align-items: flex-end;
-        gap: var(--rs-space-2);
+        gap: var(--rs-space-4) var(--rs-space-2);
       }
       .end-date .date {
-        flex: 1 1 150px;
+        flex: 0 1 240px;
         min-width: 0;
         /* ha-input keeps 8 px for a hint it does not show */
         margin-bottom: -8px;
