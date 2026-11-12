@@ -50,6 +50,164 @@ import { tokens } from "../styles/tokens";
 type EditableSection =
   ScheduleCardPart | "devices" | "sensors" | "presence" | "covers" | "heatSource";
 
+type RoomFields = Record<string, unknown>;
+
+/** One stored room field: the state property it is read into and how it goes out again. */
+interface RoomFieldSync {
+  prop: string;
+  read: (c: RoomConfig | null) => unknown;
+  toState?: (value: unknown) => unknown;
+  toPayload?: (state: unknown) => unknown;
+}
+
+const plain = (prop: string, read: (c: RoomConfig | null) => unknown): RoomFieldSync => ({
+  prop,
+  read,
+});
+const asSet = (prop: string, read: (c: RoomConfig | null) => string[]): RoomFieldSync => ({
+  prop,
+  read,
+  toState: (value) => new Set(value as string[]),
+  toPayload: (state) => [...(state as Set<string>)],
+});
+
+function configDevices(c: RoomConfig): DeviceConfig[] {
+  if (c.devices?.length) return [...c.devices];
+  return [
+    ...(c.thermostats ?? []).map((eid) => ({
+      entity_id: eid,
+      type: "trv" as DeviceType,
+      role: "auto" as DeviceRole,
+      heating_system_type: c.heating_system_type ?? "",
+    })),
+    ...(c.acs ?? []).map((eid) => ({
+      entity_id: eid,
+      type: "ac" as DeviceType,
+      role: "auto" as DeviceRole,
+    })),
+  ];
+}
+
+/**
+ * Every room field the page edits. A poll adopts a field changed elsewhere (dashboard card,
+ * room climate entity, a second tab) unless it was changed here too, and a save sends only the
+ * fields changed here, so neither writes a stale copy back.
+ */
+const ROOM_FIELDS: [string, RoomFieldSync][] = [
+  ["devices", plain("_devices", (c) => (c ? configDevices(c) : []))],
+  ["temperature_sensor", plain("_selectedTempSensor", (c) => c?.temperature_sensor ?? "")],
+  ["humidity_sensor", plain("_selectedHumiditySensor", (c) => c?.humidity_sensor ?? "")],
+  ["occupancy_sensors", asSet("_selectedOccupancySensors", (c) => c?.occupancy_sensors ?? [])],
+  [
+    "occupancy_eco_enabled",
+    plain("_occupancyEcoEnabled", (c) => c?.occupancy_eco_enabled ?? false),
+  ],
+  [
+    "occupancy_eco_delay",
+    plain("_occupancyEcoDelay", (c) => c?.occupancy_eco_delay ?? DEFAULT_OCCUPANCY_ECO_DELAY),
+  ],
+  ["preheat_enabled", plain("_preheatEnabled", (c) => c?.preheat_enabled ?? true)],
+  [
+    "follow_device_setpoint",
+    plain("_followDeviceSetpoint", (c) => c?.follow_device_setpoint ?? false),
+  ],
+  ["price_shift", plain("_priceShift", (c) => c?.price_shift ?? 0)],
+  ["window_sensors", asSet("_selectedWindowSensors", (c) => c?.window_sensors ?? [])],
+  ["window_open_delay", plain("_windowOpenDelay", (c) => c?.window_open_delay ?? 0)],
+  ["window_close_delay", plain("_windowCloseDelay", (c) => c?.window_close_delay ?? 0)],
+  ["climate_mode", plain("_climateMode", (c) => c?.climate_mode ?? "auto")],
+  ["schedules", plain("_schedules", (c) => c?.schedules ?? [])],
+  [
+    "schedule_selector_entity",
+    plain("_scheduleSelectorEntity", (c) => c?.schedule_selector_entity ?? ""),
+  ],
+  ["comfort_heat", plain("_comfortHeat", (c) => c?.comfort_heat ?? c?.comfort_temp ?? 21.0)],
+  ["comfort_cool", plain("_comfortCool", (c) => c?.comfort_cool ?? 24.0)],
+  ["eco_heat", plain("_ecoHeat", (c) => c?.eco_heat ?? c?.eco_temp ?? 17.0)],
+  ["eco_cool", plain("_ecoCool", (c) => c?.eco_cool ?? 27.0)],
+  [
+    "presence_persons",
+    {
+      ...plain("_selectedPresencePersons", (c) => c?.presence_persons ?? []),
+      toPayload: (state) => (state as string[]).filter((p) => p),
+    },
+  ],
+  ["display_name", plain("_displayName", (c) => c?.display_name ?? "")],
+  ["covers", asSet("_selectedCovers", (c) => c?.covers ?? [])],
+  [
+    "climate_control_enabled",
+    plain("_climateControlEnabled", (c) => c?.climate_control_enabled ?? true),
+  ],
+  ["covers_auto_enabled", plain("_coversAutoEnabled", (c) => c?.covers_auto_enabled ?? false)],
+  [
+    "covers_deploy_threshold",
+    plain("_coversDeployThreshold", (c) => c?.covers_deploy_threshold ?? 1.5),
+  ],
+  ["covers_min_position", plain("_coversMinPosition", (c) => c?.covers_min_position ?? 0)],
+  [
+    "covers_override_minutes",
+    plain("_coversOverrideMinutes", (c) => c?.covers_override_minutes ?? 60),
+  ],
+  ["cover_schedules", plain("_coverSchedules", (c) => c?.cover_schedules ?? [])],
+  [
+    "cover_schedule_selector_entity",
+    plain("_coverScheduleSelectorEntity", (c) => c?.cover_schedule_selector_entity ?? ""),
+  ],
+  ["covers_night_close", plain("_coversNightClose", (c) => c?.covers_night_close ?? false)],
+  ["covers_night_position", plain("_coversNightPosition", (c) => c?.covers_night_position ?? 0)],
+  ["covers_snap_deploy", plain("_coversSnapDeploy", (c) => c?.covers_snap_deploy ?? false)],
+  ["covers_window_hold", plain("_coversWindowHold", (c) => c?.covers_window_hold ?? false)],
+  ["cover_orientations", plain("_coverOrientations", (c) => c?.cover_orientations ?? {})],
+  [
+    "covers_night_close_elevation",
+    plain("_coversNightCloseElevation", (c) => c?.covers_night_close_elevation ?? 0),
+  ],
+  [
+    "covers_night_close_offset_minutes",
+    plain("_coversNightCloseOffsetMinutes", (c) => c?.covers_night_close_offset_minutes ?? 0),
+  ],
+  [
+    "covers_outdoor_min_temp",
+    plain("_coversOutdoorMinTemp", (c) => c?.covers_outdoor_min_temp ?? 10),
+  ],
+  ["cover_min_positions", plain("_coverMinPositions", (c) => c?.cover_min_positions ?? {})],
+  ["ignore_presence", plain("_ignorePresence", (c) => c?.ignore_presence ?? false)],
+  ["is_outdoor", plain("_isOutdoor", (c) => c?.is_outdoor ?? false)],
+  [
+    "valve_protection_exclude",
+    asSet("_valveProtectionExclude", (c) => c?.valve_protection_exclude ?? []),
+  ],
+  [
+    "heat_source_orchestration",
+    plain("_heatSourceOrchestration", (c) => c?.heat_source_orchestration ?? false),
+  ],
+  [
+    "heat_source_primary_delta",
+    plain("_heatSourcePrimaryDelta", (c) => c?.heat_source_primary_delta ?? 1.5),
+  ],
+  [
+    "heat_source_outdoor_threshold",
+    plain("_heatSourceOutdoorThreshold", (c) => c?.heat_source_outdoor_threshold ?? 5.0),
+  ],
+  [
+    "heat_source_ac_min_outdoor",
+    plain("_heatSourceAcMinOutdoor", (c) => c?.heat_source_ac_min_outdoor ?? -15.0),
+  ],
+  [
+    "heat_source_price_aware",
+    plain("_heatSourcePriceAware", (c) => c?.heat_source_price_aware ?? false),
+  ],
+];
+
+const sameValue = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+
+/**
+ * How long a field saved here ignores polls that still show the old value. Covers a poll read
+ * before the save; the backend may also store a value differently (devices get defaults), which
+ * is taken over after this time.
+ */
+const UNCONFIRMED_MS = 15_000;
+
 @customElement("rs-room-detail")
 export class RsRoomDetail extends LitElement {
   @property({ attribute: false }) public area!: HassArea;
@@ -133,6 +291,12 @@ export class RsRoomDetail extends LitElement {
   @state() private _deleteError = "";
 
   private _prevAreaId: string | null = null;
+  /** Room fields as last read from the config (null before the room is stored). */
+  private _stored: RoomFields | null = null;
+  /** Room the `_stored` fields belong to: a save that ends after a room switch must not touch them. */
+  private _storedArea: string | null = null;
+  /** Fields saved here that no poll has shown yet: an answer read before the save is ignored for them. */
+  private _unconfirmed = new Map<string, { value: unknown; at: number }>();
   private _saveDebounce?: ReturnType<typeof setTimeout>;
 
   static styles = [
@@ -223,11 +387,9 @@ export class RsRoomDetail extends LitElement {
     if (areaChanged) {
       this._initFromConfig();
       this._prevAreaId = currentAreaId;
-    } else if (changedProps.has("config") && !this._dirty) {
-      const prevConfig = changedProps.get("config") as RoomConfig | null | undefined;
-      if (prevConfig === null || prevConfig === undefined) {
-        this._initFromConfig();
-      }
+    } else if (changedProps.has("config") && this.config) {
+      if (this._stored === null && !this._dirty) this._initFromConfig();
+      else this._adoptFromConfig();
     }
 
     if (
@@ -240,123 +402,59 @@ export class RsRoomDetail extends LitElement {
   }
 
   private _initFromConfig() {
-    if (this.config) {
-      if (this.config.devices?.length) {
-        this._devices = [...this.config.devices];
-      } else {
-        this._devices = [
-          ...(this.config.thermostats ?? []).map((eid) => ({
-            entity_id: eid,
-            type: "trv" as DeviceType,
-            role: "auto" as DeviceRole,
-            heating_system_type: this.config!.heating_system_type ?? "",
-          })),
-          ...(this.config.acs ?? []).map((eid) => ({
-            entity_id: eid,
-            type: "ac" as DeviceType,
-            role: "auto" as DeviceRole,
-          })),
-        ];
-      }
-      this._selectedTempSensor = this.config.temperature_sensor;
-      this._selectedHumiditySensor = this.config.humidity_sensor ?? "";
-      this._selectedOccupancySensors = new Set(this.config.occupancy_sensors ?? []);
-      this._occupancyEcoEnabled = this.config.occupancy_eco_enabled ?? false;
-      this._preheatEnabled = this.config.preheat_enabled ?? true;
-      this._followDeviceSetpoint = this.config.follow_device_setpoint ?? false;
-      this._priceShift = this.config.price_shift ?? 0;
-      this._heatSourcePriceAware = this.config.heat_source_price_aware ?? false;
-      this._occupancyEcoDelay = this.config.occupancy_eco_delay ?? DEFAULT_OCCUPANCY_ECO_DELAY;
-      this._selectedWindowSensors = new Set(this.config.window_sensors ?? []);
-      this._windowOpenDelay = this.config.window_open_delay ?? 0;
-      this._windowCloseDelay = this.config.window_close_delay ?? 0;
-      this._climateMode = this.config.climate_mode;
-      this._schedules = this.config.schedules ?? [];
-      this._scheduleSelectorEntity = this.config.schedule_selector_entity ?? "";
-      this._comfortHeat = this.config.comfort_heat ?? this.config.comfort_temp ?? 21.0;
-      this._comfortCool = this.config.comfort_cool ?? 24.0;
-      this._ecoHeat = this.config.eco_heat ?? this.config.eco_temp ?? 17.0;
-      this._ecoCool = this.config.eco_cool ?? 27.0;
-      this._selectedPresencePersons = this.config.presence_persons ?? [];
-      this._displayName = this.config.display_name ?? "";
-      this._selectedCovers = new Set(this.config.covers ?? []);
-      this._coversAutoEnabled = this.config.covers_auto_enabled ?? false;
-      this._coversDeployThreshold = this.config.covers_deploy_threshold ?? 1.5;
-      this._coversMinPosition = this.config.covers_min_position ?? 0;
-      this._coversOverrideMinutes = this.config.covers_override_minutes ?? 60;
-      this._coverSchedules = this.config.cover_schedules ?? [];
-      this._coverScheduleSelectorEntity = this.config.cover_schedule_selector_entity ?? "";
-      this._coversNightClose = this.config.covers_night_close ?? false;
-      this._coversNightPosition = this.config.covers_night_position ?? 0;
-      this._coversSnapDeploy = this.config.covers_snap_deploy ?? false;
-      this._coversWindowHold = this.config.covers_window_hold ?? false;
-      this._coverOrientations = this.config.cover_orientations ?? {};
-      this._coversNightCloseElevation = this.config.covers_night_close_elevation ?? 0;
-      this._coversNightCloseOffsetMinutes = this.config.covers_night_close_offset_minutes ?? 0;
-      this._coversOutdoorMinTemp = this.config.covers_outdoor_min_temp ?? 10;
-      this._coverMinPositions = this.config.cover_min_positions ?? {};
-      this._ignorePresence = this.config.ignore_presence ?? false;
-      this._isOutdoor = this.config.is_outdoor ?? false;
-      this._valveProtectionExclude = new Set(this.config.valve_protection_exclude ?? []);
-      this._climateControlEnabled = this.config.climate_control_enabled ?? true;
-      this._heatSourceOrchestration = this.config.heat_source_orchestration ?? false;
-      this._heatSourcePrimaryDelta = this.config.heat_source_primary_delta ?? 1.5;
-      this._heatSourceOutdoorThreshold = this.config.heat_source_outdoor_threshold ?? 5.0;
-      this._heatSourceAcMinOutdoor = this.config.heat_source_ac_min_outdoor ?? -15.0;
-    } else {
-      this._devices = [];
-      this._selectedTempSensor = "";
-      this._selectedHumiditySensor = "";
-      this._selectedOccupancySensors = new Set();
-      this._occupancyEcoEnabled = false;
-      this._preheatEnabled = true;
-      this._followDeviceSetpoint = false;
-      this._priceShift = 0;
-      this._heatSourcePriceAware = false;
-      this._occupancyEcoDelay = DEFAULT_OCCUPANCY_ECO_DELAY;
-      this._selectedWindowSensors = new Set();
-      this._windowOpenDelay = 0;
-      this._windowCloseDelay = 0;
-      this._climateMode = "auto";
-      this._schedules = [];
-      this._scheduleSelectorEntity = "";
-      this._comfortHeat = 21.0;
-      this._comfortCool = 24.0;
-      this._ecoHeat = 17.0;
-      this._ecoCool = 27.0;
-      this._selectedPresencePersons = [];
-      this._displayName = "";
-      this._selectedCovers = new Set();
-      this._coversAutoEnabled = false;
-      this._coversDeployThreshold = 1.5;
-      this._coversMinPosition = 0;
-      this._coversOverrideMinutes = 60;
-      this._coverSchedules = [];
-      this._coverScheduleSelectorEntity = "";
-      this._coversNightClose = false;
-      this._coversNightPosition = 0;
-      this._coversSnapDeploy = false;
-      this._coversWindowHold = false;
-      this._coverOrientations = {};
-      this._coversNightCloseElevation = 0;
-      this._coversNightCloseOffsetMinutes = 0;
-      this._coversOutdoorMinTemp = 10;
-      this._coverMinPositions = {};
-      this._ignorePresence = false;
-      this._isOutdoor = false;
-      this._valveProtectionExclude = new Set();
-      this._climateControlEnabled = true;
-      this._heatSourceOrchestration = false;
-      this._heatSourcePrimaryDelta = 1.5;
-      this._heatSourceOutdoorThreshold = 5.0;
-      this._heatSourceAcMinOutdoor = -15.0;
-    }
+    const fields = Object.fromEntries(
+      ROOM_FIELDS.map(([key, sync]) => [key, sync.read(this.config)]),
+    );
+    this._applyFields(fields);
+    this._stored = this.config ? fields : null;
+    this._storedArea = this.config?.area_id ?? this.area?.area_id ?? null;
+    this._unconfirmed = new Map();
     this._dirty = false;
 
     // Unconfigured rooms open the device-edit dialog automatically; outdoor areas need none.
     if (this._devices.length === 0 && !this._isOutdoor && this._editing === null) {
       this._editing = "devices";
     }
+  }
+
+  /** Fields changed elsewhere since the last poll and not here are taken over (see ROOM_FIELDS). */
+  private _adoptFromConfig() {
+    const incoming = Object.fromEntries(
+      ROOM_FIELDS.map(([key, sync]) => [key, sync.read(this.config)]),
+    );
+    const stored: RoomFields = { ...(this._stored ?? {}) };
+    const local = this._localFields();
+    const adopt: RoomFields = {};
+    const now = Date.now();
+    for (const [key, value] of Object.entries(incoming)) {
+      const sent = this._unconfirmed.get(key);
+      if (sent) {
+        if (!sameValue(value, sent.value) && now - sent.at < UNCONFIRMED_MS) continue;
+        this._unconfirmed.delete(key);
+      }
+      if (!sameValue(value, stored[key]) && sameValue(local[key], stored[key])) adopt[key] = value;
+      stored[key] = value;
+    }
+    this._applyFields(adopt);
+    this._stored = stored;
+  }
+
+  private _applyFields(fields: RoomFields) {
+    const self = this as unknown as Record<string, unknown>;
+    for (const [key, sync] of ROOM_FIELDS) {
+      if (!(key in fields)) continue;
+      self[sync.prop] = sync.toState ? sync.toState(fields[key]) : fields[key];
+    }
+  }
+
+  private _localFields(): RoomFields {
+    const self = this as unknown as Record<string, unknown>;
+    return Object.fromEntries(
+      ROOM_FIELDS.map(([key, sync]) => {
+        const state = self[sync.prop];
+        return [key, sync.toPayload ? sync.toPayload(state) : state];
+      }),
+    );
   }
 
   private _openEdit = (section: EditableSection) => (e?: Event) => {
@@ -1315,56 +1413,22 @@ export class RsRoomDetail extends LitElement {
     this._error = "";
 
     try {
-      await this.hass.callWS({
-        type: "roommind/rooms/save",
-        area_id: areaId,
-        devices: this._devices,
-        temperature_sensor: this._selectedTempSensor,
-        humidity_sensor: this._selectedHumiditySensor,
-        occupancy_sensors: [...this._selectedOccupancySensors],
-        occupancy_eco_enabled: this._occupancyEcoEnabled,
-        occupancy_eco_delay: this._occupancyEcoDelay,
-        preheat_enabled: this._preheatEnabled,
-        follow_device_setpoint: this._followDeviceSetpoint,
-        price_shift: this._priceShift,
-        window_sensors: [...this._selectedWindowSensors],
-        window_open_delay: this._windowOpenDelay,
-        window_close_delay: this._windowCloseDelay,
-        climate_mode: this._climateMode,
-        schedules: this._schedules,
-        schedule_selector_entity: this._scheduleSelectorEntity,
-        comfort_heat: this._comfortHeat,
-        comfort_cool: this._comfortCool,
-        eco_heat: this._ecoHeat,
-        eco_cool: this._ecoCool,
-        presence_persons: this._selectedPresencePersons.filter((p) => p),
-        display_name: this._displayName,
-        covers: [...this._selectedCovers],
-        climate_control_enabled: this._climateControlEnabled,
-        covers_auto_enabled: this._coversAutoEnabled,
-        covers_deploy_threshold: this._coversDeployThreshold,
-        covers_min_position: this._coversMinPosition,
-        covers_override_minutes: this._coversOverrideMinutes,
-        cover_schedules: this._coverSchedules,
-        cover_schedule_selector_entity: this._coverScheduleSelectorEntity,
-        covers_night_close: this._coversNightClose,
-        covers_night_position: this._coversNightPosition,
-        covers_snap_deploy: this._coversSnapDeploy,
-        covers_window_hold: this._coversWindowHold,
-        cover_orientations: this._coverOrientations,
-        covers_night_close_elevation: this._coversNightCloseElevation,
-        covers_night_close_offset_minutes: this._coversNightCloseOffsetMinutes,
-        covers_outdoor_min_temp: this._coversOutdoorMinTemp,
-        cover_min_positions: this._coverMinPositions,
-        ignore_presence: this._ignorePresence,
-        is_outdoor: this._isOutdoor,
-        valve_protection_exclude: [...this._valveProtectionExclude],
-        heat_source_orchestration: this._heatSourceOrchestration,
-        heat_source_primary_delta: this._heatSourcePrimaryDelta,
-        heat_source_outdoor_threshold: this._heatSourceOutdoorThreshold,
-        heat_source_ac_min_outdoor: this._heatSourceAcMinOutdoor,
-        heat_source_price_aware: this._heatSourcePriceAware,
-      });
+      const local = this._localFields();
+      const stored = this._stored;
+      // Only what changed here: a field changed elsewhere since the last poll stays as it is
+      const changes = stored
+        ? Object.fromEntries(
+            Object.entries(local).filter(([key, value]) => !sameValue(value, stored[key])),
+          )
+        : local;
+      await this.hass.callWS({ type: "roommind/rooms/save", area_id: areaId, ...changes });
+      // Stored now: changing a field straight back must go out again, even before the next poll
+      if (this._storedArea === areaId) {
+        this._stored = { ...(this._stored ?? {}), ...changes };
+        const at = Date.now();
+        for (const [key, value] of Object.entries(changes))
+          this._unconfirmed.set(key, { value, at });
+      }
 
       this._dirty = false;
       fireSaveStatus(this, "saved");

@@ -89,6 +89,8 @@ export class RoomMindPanel extends LitElement {
   @state() private _wide = window.innerWidth >= SETTINGS_WIDE_MIN;
 
   private _refreshInterval?: ReturnType<typeof setInterval>;
+  private _roomsFetchId = 0;
+  private _roomsAppliedId = 0;
   private _routeApplied = false;
   private _saveStatusTimeout?: ReturnType<typeof setTimeout>;
   private _areaInfosCache: AreaInfo[] = [];
@@ -634,6 +636,8 @@ export class RoomMindPanel extends LitElement {
   private async _loadRooms() {
     if (!this.hass) return;
     const epoch = this._layoutEpoch;
+    // The interval and the refresh after a save overlap: an older answer must not undo a newer one
+    const fetchId = ++this._roomsFetchId;
     try {
       const result = await this.hass.callWS<{
         rooms: Record<string, RoomConfig>;
@@ -662,6 +666,8 @@ export class RoomMindPanel extends LitElement {
       }>({
         type: "roommind/rooms/list",
       });
+      if (fetchId < this._roomsAppliedId) return;
+      this._roomsAppliedId = fetchId;
       this._rooms = result.rooms;
       this._roomsWithoutArea = result.rooms_without_area ?? [];
       this._vacationActive = result.vacation_active ?? false;
