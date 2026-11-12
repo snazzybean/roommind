@@ -12,13 +12,14 @@ from zoneinfo import ZoneInfo
 import pytest
 from homeassistant.util import dt as dt_util
 
-from custom_components.roommind.const import TargetTemps
+from custom_components.roommind.const import SCHEDULE_UNREADABLE_HOLD_HOURS, TargetTemps
 from custom_components.roommind.utils.schedule_utils import (
     band_in_force,
     find_active_block,
     get_active_schedule_entity,
     make_target_resolver,
     mask_override_band,
+    override_hold_until,
     override_preset_band,
     read_schedule_blocks,
     resolve_schedule_index,
@@ -1919,3 +1920,55 @@ def test_set_band_sides_ignores_the_unused_side():
     assert set_band_sides((21.0, 24.0), 21.5, None, "heat_only") == (21.5, None)
     assert set_band_sides((None, 24.0), 22.0, None, "cool_only") is None
     assert set_band_sides((21.0, None), None, 22.0, "heat_only") is None
+
+
+# ---------------------------------------------------------------------------
+# override_hold_until
+# ---------------------------------------------------------------------------
+
+_HOLD_ROOM = {"schedules": [{"entity_id": "schedule.living"}]}
+
+
+def _hold_hass(state: str | None, next_event=None):
+    hass = MagicMock()
+    if state is None:
+        hass.states.get.return_value = None
+    else:
+        hass.states.get.return_value = MagicMock(state=state, attributes={"next_event": next_event})
+    return hass
+
+
+def test_hold_ends_at_the_next_schedule_change():
+    nxt = datetime.fromtimestamp(time.time() + 1800, UTC)
+    assert override_hold_until(_hold_hass("on", nxt), _HOLD_ROOM) == nxt.timestamp()
+
+
+def test_hold_reads_an_iso_next_event():
+    nxt = datetime.fromtimestamp(time.time() + 1800, UTC)
+    assert override_hold_until(_hold_hass("on", nxt.isoformat()), _HOLD_ROOM) == nxt.timestamp()
+
+
+def test_hold_without_schedule_has_no_end():
+    assert override_hold_until(_hold_hass(None), {"schedules": []}) is None
+
+
+def test_hold_under_a_schedule_without_blocks_has_no_end():
+    """An empty helper never changes, so there is nothing to wait for."""
+    assert override_hold_until(_hold_hass("off", None), _HOLD_ROOM) is None
+
+
+@pytest.mark.parametrize(
+    "hass",
+    [
+        _hold_hass(None),
+        _hold_hass("unavailable"),
+        _hold_hass("unknown"),
+        _hold_hass("on", datetime.fromtimestamp(time.time() - 60, UTC)),
+    ],
+    ids=["missing", "unavailable", "unknown", "stale"],
+)
+def test_hold_under_an_unreadable_schedule_ends_after_the_fallback(hass):
+    """Without a readable next change the hold must not run forever."""
+    now = time.time()
+    until = override_hold_until(hass, _HOLD_ROOM, now=now)
+    assert until == now + SCHEDULE_UNREADABLE_HOLD_HOURS * 3600

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
@@ -23,6 +24,7 @@ from ..const import (
     MIN_TARGET_TEMP,
     OVERRIDE_BOOST,
     OVERRIDE_ECO,
+    SCHEDULE_UNREADABLE_HOLD_HOURS,
     TargetTemps,
     is_override_active,
 )
@@ -416,12 +418,37 @@ def next_schedule_change(hass: HomeAssistant, room: dict) -> float | None:
     """Return the timestamp of the active schedule's next block boundary, or None without one."""
     entity_id = get_active_schedule_entity(hass, room)
     state = hass.states.get(entity_id) if entity_id else None
+    return _next_event(state)
+
+
+def _next_event(state: Any) -> float | None:
     raw = state.attributes.get("next_event") if state else None
     if isinstance(raw, str):
         raw = dt_util.parse_datetime(raw)
     if not isinstance(raw, datetime):
         return None
     return raw.timestamp()
+
+
+def override_hold_until(hass: HomeAssistant, room: dict, now: float | None = None) -> float | None:
+    """End of an override held until the schedule changes; None holds until changed.
+
+    None without a schedule and under a schedule without blocks (it never changes).
+    A schedule that cannot be read (missing, unavailable, a past `next_event`) ends
+    the hold after `SCHEDULE_UNREADABLE_HOLD_HOURS`, else it would never end.
+    """
+    entity_id = get_active_schedule_entity(hass, room)
+    if not entity_id:
+        return None
+    now = time.time() if now is None else now
+    state = hass.states.get(entity_id)
+    if state is not None and state.state not in ("unavailable", "unknown"):
+        nxt = _next_event(state)
+        if nxt is None and not state.attributes.get("next_event"):
+            return None
+        if nxt is not None and nxt > now:
+            return nxt
+    return now + SCHEDULE_UNREADABLE_HOLD_HOURS * 3600
 
 
 async def read_schedule_blocks(

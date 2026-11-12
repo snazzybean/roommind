@@ -55,7 +55,7 @@ from .utils.device_utils import get_ac_eids, get_trv_eids
 from .utils.schedule_utils import (
     band_in_force,
     mask_override_band,
-    next_schedule_change,
+    override_hold_until,
     override_preset_band,
     without_temporary_shifts,
 )
@@ -549,7 +549,7 @@ class RoomMindRoomClimate(CoordinatorEntity, ClimateEntity):
             {
                 "override_heat": heat,
                 "override_cool": cool,
-                "override_until": next_schedule_change(self.coordinator.hass, self._room()),
+                "override_until": override_hold_until(self.coordinator.hass, self._room()),
                 "override_type": override_type,
             },
         )

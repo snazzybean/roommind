@@ -1,0 +1,15 @@
+name: room-climate-entity-schedule-gone
+extends: room-climate-entity
+description: >
+  The room's schedule helper is gone (deleted, YAML error, integration not loaded) when the
+  room climate entity gets a set temperature. "Until the next schedule change" cannot be
+  read then; the hold ends after 4 h instead of never (before: override_until None, the
+  override held until someone cleared it).
+refs: [238]
+duration: 1d
+timeline:
+  - {at: "+0d09h50m", do: entity.remove, entity_id: schedule.plan_wohnen}
+  - {at: "+0d10h", do: ha.service, service: climate.set_temperature, data: {entity_id: climate.roommind_wohnzimmer, temperature: 22.5}}
+expect:
+  - {check: "room.wohnzimmer.override_active == true and room.wohnzimmer.heat_target == 22.5", at: "+0d13h50m", label: set temperature holds while the schedule is unreadable}
+  - {check: "room.wohnzimmer.override_active == false", at: "+0d14h05m", label: hold ends after 4 h instead of never}

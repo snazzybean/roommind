@@ -18,7 +18,7 @@ from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature
 from homeassistant.exceptions import ServiceValidationError
 
 from custom_components.roommind.climate import RoomMindRoomClimate
-from custom_components.roommind.const import DOMAIN
+from custom_components.roommind.const import DOMAIN, SCHEDULE_UNREADABLE_HOLD_HOURS
 
 TRV = {"entity_id": "climate.trv", "type": "trv"}
 AC = {"entity_id": "climate.ac", "type": "ac"}
@@ -288,6 +288,20 @@ async def test_set_temperature_without_schedule_holds_until_changed(setup):
     entity = make(_room(schedules=[]))
     await entity.async_set_temperature(**{ATTR_TARGET_TEMP_LOW: 22.0, ATTR_TARGET_TEMP_HIGH: 25.0})
     assert _written(store)["override_until"] is None
+
+
+@pytest.mark.asyncio
+async def test_set_temperature_under_unavailable_schedule_holds_for_the_fallback(setup):
+    make, _, store, states = setup
+    states["schedule.living"].state = "unavailable"
+    states["schedule.living"].attributes = {}
+    before = time.time()
+    await make().async_set_temperature(**{ATTR_TARGET_TEMP_LOW: 22.0, ATTR_TARGET_TEMP_HIGH: 25.0})
+    until = _written(store)["override_until"]
+    assert until is not None
+    assert (
+        before + SCHEDULE_UNREADABLE_HOLD_HOURS * 3600 <= until <= time.time() + SCHEDULE_UNREADABLE_HOLD_HOURS * 3600
+    )
 
 
 @pytest.mark.asyncio

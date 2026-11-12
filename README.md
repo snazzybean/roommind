@@ -160,7 +160,7 @@ These can be used in HA automations, dashboards, or other integrations.
 
 | Climate feature | In RoomMind |
 |---|---|
-| Target temperature (range in Auto mode) | The targets currently in force. Changing it sets an override that holds until the next change of the active schedule, like a thermostat's temporary hold. Without a schedule it holds until you pick the preset `none`. Sending the value already in force changes nothing. A single temperature in Auto mode (e.g. from a voice assistant) sets the heating side and keeps the cooling side at least at comfort cooling. |
+| Target temperature (range in Auto mode) | The targets currently in force. Changing it sets an override that holds until the next change of the active schedule, like a thermostat's temporary hold. Without a schedule it holds until you pick the preset `none`; if the schedule helper cannot be read at that moment (unavailable, deleted), it holds for 4 hours. Sending the value already in force changes nothing. A single temperature in Auto mode (e.g. from a voice assistant) sets the heating side and keeps the cooling side at least at comfort cooling. |
 | Presets Comfort / Eco | Comfort or eco override, also until the next schedule change |
 | Preset Manual | Shown while a custom temperature is held (set here, in the panel or on the old override entity); picking it holds the targets in force until the next schedule change |
 | Preset Schedule (`none`) | Ends the override and returns to the schedule |

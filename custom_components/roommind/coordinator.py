@@ -112,7 +112,7 @@ from .utils.price_utils import PriceSignal
 from .utils.schedule_utils import (
     band_in_force,
     cap_to_eco,
-    next_schedule_change,
+    override_hold_until,
     price_shifted,
     resolve_schedule_index,
     set_band_sides,
@@ -778,7 +778,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         override = {
             "override_heat": band[0],
             "override_cool": band[1],
-            "override_until": next_schedule_change(self.hass, room),
+            "override_until": override_hold_until(self.hass, room),
             "override_type": OVERRIDE_CUSTOM,
         }
         _LOGGER.info(

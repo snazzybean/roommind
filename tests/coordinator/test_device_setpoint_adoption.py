@@ -311,7 +311,7 @@ async def test_fahrenheit_value_and_schedule_end(hass, mock_config_entry):
     await _cycle(coordinator, clock)
     _devices(hass, **{TRV: ("heat", {"temperature": 74.0, "target_temp_step": 1})})
     until = time.time() + 3600
-    with patch("custom_components.roommind.coordinator.next_schedule_change", return_value=until):
+    with patch("custom_components.roommind.coordinator.override_hold_until", return_value=until):
         await _cycle(coordinator, clock)
     _, override = store.async_update_room.await_args.args
     assert override["override_heat"] == 23.3
