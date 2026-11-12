@@ -582,7 +582,6 @@ export class RoomMindPanel extends LitElement {
       .hass=${this.hass}
       .rooms=${this._rooms}
       .roomsWithoutArea=${this._roomsWithoutArea}
-      .climateControlActive=${this._climateControlActive}
       .priceStatus=${this._priceStatus}
       .category=${this._settingsCategory}
       .wide=${this._wide}

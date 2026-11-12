@@ -52,12 +52,142 @@ import "./settings/rs-settings-orphans";
 /** Compressor groups the backend would reject (no member yet, conflicts), kept for the session. */
 let compressorDrafts: CompressorGroup[] = [];
 
+type FieldValues = Record<string, unknown>;
+
+/** One stored setting: the page fields (`setting-changed` keys) it is read into and sent from. */
+interface SettingSync {
+  fields: readonly string[];
+  /** Stored value -> page fields; missing for a setting the page only derives. */
+  read?: (value: unknown) => FieldValues;
+  write: (v: FieldValues) => unknown;
+}
+
+const plain = (field: string, fallback: unknown): SettingSync => ({
+  fields: [field],
+  read: (value) => ({ [field]: value ?? fallback }),
+  write: (v) => v[field],
+});
+
+const filledTargets = (v: FieldValues) =>
+  (v.moldNotificationTargets as NotificationTarget[]).filter((t) => t.entity_id);
+
+function tsToDatetimeLocal(ts: number): string {
+  const d = new Date(ts * 1000);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/**
+ * Every setting the page edits. A save sends only the settings whose fields changed here, so a
+ * value switched elsewhere meanwhile (vacation switch, climate control switch #291, dashboard
+ * floors) is not written back stale; settings fed by several fields go out together.
+ */
+const SETTINGS: [keyof GlobalSettings, SettingSync][] = [
+  ["group_by_floor", plain("groupByFloor", false)],
+  ["climate_control_active", plain("climateControlActive", true)],
+  ["learning_disabled_rooms", plain("learningDisabledRooms", [])],
+  ["outdoor_temp_sensor", plain("outdoorTempSensor", "")],
+  ["price_entity", plain("priceEntity", "")],
+  ["outdoor_humidity_sensor", plain("outdoorHumiditySensor", "")],
+  ["outdoor_cooling_min", plain("outdoorCoolingMin", 16)],
+  ["outdoor_heating_max", plain("outdoorHeatingMax", 22)],
+  ["control_mode", plain("controlMode", "mpc")],
+  ["comfort_weight", plain("comfortWeight", 70)],
+  ["weather_entity", plain("weatherEntity", "")],
+  ["outdoor_unavailable_notify", plain("outdoorUnavailableNotify", true)],
+  ["prediction_enabled", plain("predictionEnabled", true)],
+  // Goes out with every switch-on like switch.roommind_vacation: without it vacation does nothing.
+  ["vacation_temp", { ...plain("vacationTemp", 15), fields: ["vacationTemp", "vacationActive"] }],
+  [
+    "vacation_until",
+    {
+      fields: ["vacationActive", "vacationUntil"],
+      read: (value) => {
+        const until = typeof value === "number" ? value : 0;
+        const active = until > Date.now() / 1000;
+        return {
+          vacationActive: active,
+          vacationUntil: active && until < VACATION_SENTINEL ? tsToDatetimeLocal(until) : "",
+        };
+      },
+      write: (v) =>
+        v.vacationActive
+          ? v.vacationUntil
+            ? new Date(v.vacationUntil as string).getTime() / 1000
+            : VACATION_SENTINEL
+          : null,
+    },
+  ],
+  ["presence_enabled", plain("presenceEnabled", false)],
+  [
+    "presence_persons",
+    {
+      ...plain("presencePersons", []),
+      write: (v) => (v.presencePersons as string[]).filter((p) => p),
+    },
+  ],
+  ["presence_away_action", plain("presenceAwayAction", "eco")],
+  ["presence_clears_override", plain("presenceClearsOverride", false)],
+  ["schedule_off_action", plain("scheduleOffAction", "eco")],
+  ["valve_protection_enabled", plain("valveProtectionEnabled", false)],
+  ["valve_protection_interval_days", plain("valveProtectionInterval", 7)],
+  [
+    "compressor_groups",
+    {
+      fields: ["compressorGroups"],
+      // Drafts that could not be saved yet survive a reload of the page
+      read: (value) => {
+        const stored = (value as CompressorGroup[] | undefined) ?? [];
+        return {
+          compressorGroups: [
+            ...stored,
+            ...compressorDrafts.filter((d) => !stored.some((g) => g.id === d.id)),
+          ],
+        };
+      },
+      write: (v) => {
+        const groups = v.compressorGroups as CompressorGroup[];
+        return groups.filter((g) => compressorGroupProblem(g, groups) === null);
+      },
+    },
+  ],
+  ["coil_dry_enabled", plain("coilDryEnabled", false)],
+  ["coil_dry_minutes", plain("coilDryMinutes", 20)],
+  ["coil_dry_mode", plain("coilDryMode", "fan_only")],
+  ["coil_dry_fan_mode", plain("coilDryFanMode", "low")],
+  ["coil_dry_min_cooling_minutes", plain("coilDryMinCoolingMinutes", 10)],
+  ["coil_dry_drain_minutes", plain("coilDryDrainMinutes", 0)],
+  ["mold_detection_enabled", plain("moldDetectionEnabled", false)],
+  ["mold_humidity_threshold", plain("moldHumidityThreshold", 70)],
+  ["mold_f_rsi", plain("moldFRsi", 0.8)],
+  ["mold_sustained_minutes", plain("moldSustainedMinutes", 30)],
+  ["mold_notification_cooldown", plain("moldNotificationCooldown", 60)],
+  ["mold_notifications_enabled", plain("moldNotificationsEnabled", true)],
+  ["mold_notification_targets", { ...plain("moldNotificationTargets", []), write: filledTargets }],
+  ["mold_prevention_enabled", plain("moldPreventionEnabled", false)],
+  ["mold_prevention_intensity", plain("moldPreventionIntensity", "medium")],
+  ["mold_prevention_notify_enabled", plain("moldPreventionNotify", false)],
+  [
+    "mold_prevention_notify_targets",
+    {
+      fields: ["moldPreventionNotify", "moldNotificationTargets"],
+      write: (v) => (v.moldPreventionNotify ? filledTargets(v) : []),
+    },
+  ],
+];
+
+const SETTING_FIELDS = [...new Set(SETTINGS.flatMap(([, sync]) => sync.fields))];
+
+const sameValue = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+
+/** How often the open page reads the stored settings again to follow changes made elsewhere. */
+const REFRESH_MS = 5000;
+
 @customElement("rs-settings")
 export class RsSettings extends LitElement {
   @property({ attribute: false }) public hass!: HomeAssistant;
   @property({ attribute: false }) public rooms: Record<string, RoomConfig> = {};
   @property({ attribute: false }) public roomsWithoutArea: RoomWithoutArea[] = [];
-  @property({ type: Boolean }) public climateControlActive = true;
   @property({ attribute: false }) public priceStatus: PriceStatus | null = null;
   /** Requested category (from the URL); unknown or unavailable ones fall back. */
   @property({ type: String }) public category = "";
@@ -111,17 +241,29 @@ export class RsSettings extends LitElement {
   @state() private _saveError = "";
 
   private _saveDebounce?: ReturnType<typeof setTimeout>;
-  // switch.roommind_climate_control can change it while this page is open (#291), so it
-  // is only sent after the toggle here was used, never as a stale copy with other settings.
-  private _climateControlDirty = false;
+  private _refreshTimer?: ReturnType<typeof setInterval>;
+  private _refreshing = false;
+  /** Last stored settings the page knows; a refresh adopts only what changed against it. */
+  private _stored: GlobalSettings | null = null;
+  /** Fields changed here and not saved yet, with the revision of their last change. */
+  private _dirty = new Map<string, number>();
+  private _revision = 0;
+  private _saving = 0;
+  /** Bumped when a save starts and ends: a refresh read before that may predate the save. */
+  private _saveEpoch = 0;
 
   connectedCallback() {
     super.connectedCallback();
     this._loadSettings();
+    this._refreshTimer = setInterval(() => {
+      if (!document.hidden) void this._refresh();
+    }, REFRESH_MS);
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
+    clearInterval(this._refreshTimer);
+    this._refreshTimer = undefined;
     if (this._saveDebounce) {
       // Leaving the tab within the debounce: send the change instead of dropping it.
       clearTimeout(this._saveDebounce);
@@ -136,57 +278,7 @@ export class RsSettings extends LitElement {
       const result = await this.hass.callWS<{ settings: GlobalSettings }>({
         type: "roommind/settings/get",
       });
-      const s = result.settings;
-      this._groupByFloor = s.group_by_floor ?? false;
-      this._climateControlActive = s.climate_control_active ?? true;
-      this._learningDisabledRooms = s.learning_disabled_rooms ?? [];
-      this._outdoorTempSensor = s.outdoor_temp_sensor ?? "";
-      this._priceEntity = s.price_entity ?? "";
-      this._outdoorHumiditySensor = s.outdoor_humidity_sensor ?? "";
-      this._outdoorCoolingMin = s.outdoor_cooling_min ?? 16;
-      this._outdoorHeatingMax = s.outdoor_heating_max ?? 22;
-      this._controlMode = s.control_mode ?? "mpc";
-      this._comfortWeight = s.comfort_weight ?? 70;
-      this._weatherEntity = s.weather_entity ?? "";
-      this._outdoorUnavailableNotify = s.outdoor_unavailable_notify ?? true;
-      this._predictionEnabled = s.prediction_enabled ?? true;
-      const vUntil = s.vacation_until;
-      this._vacationActive = !!(vUntil && vUntil > Date.now() / 1000);
-      this._vacationTemp = s.vacation_temp ?? 15;
-      if (vUntil && vUntil > Date.now() / 1000 && vUntil < VACATION_SENTINEL) {
-        this._vacationUntil = this._tsToDatetimeLocal(vUntil);
-      } else {
-        this._vacationUntil = "";
-      }
-      this._presenceEnabled = s.presence_enabled ?? false;
-      this._presencePersons = s.presence_persons ?? [];
-      this._presenceAwayAction = s.presence_away_action ?? "eco";
-      this._presenceClearsOverride = s.presence_clears_override ?? false;
-      this._scheduleOffAction = s.schedule_off_action ?? "eco";
-      this._valveProtectionEnabled = s.valve_protection_enabled ?? false;
-      this._valveProtectionInterval = s.valve_protection_interval_days ?? 7;
-      this._moldDetectionEnabled = s.mold_detection_enabled ?? false;
-      this._moldHumidityThreshold = s.mold_humidity_threshold ?? 70;
-      this._moldFRsi = s.mold_f_rsi ?? 0.8;
-      this._moldSustainedMinutes = s.mold_sustained_minutes ?? 30;
-      this._moldNotificationCooldown = s.mold_notification_cooldown ?? 60;
-      this._moldNotificationsEnabled = s.mold_notifications_enabled ?? true;
-      this._moldNotificationTargets = s.mold_notification_targets ?? [];
-      this._moldPreventionEnabled = s.mold_prevention_enabled ?? false;
-      this._moldPreventionIntensity = s.mold_prevention_intensity ?? "medium";
-      this._moldPreventionNotify = s.mold_prevention_notify_enabled ?? false;
-      // Drafts that could not be saved yet survive a reload of the page
-      const stored = s.compressor_groups ?? [];
-      this._compressorGroups = [
-        ...stored,
-        ...compressorDrafts.filter((d) => !stored.some((g) => g.id === d.id)),
-      ];
-      this._coilDryEnabled = s.coil_dry_enabled ?? false;
-      this._coilDryMinutes = s.coil_dry_minutes ?? 20;
-      this._coilDryMode = s.coil_dry_mode ?? "fan_only";
-      this._coilDryFanMode = s.coil_dry_fan_mode ?? "low";
-      this._coilDryMinCoolingMinutes = s.coil_dry_min_cooling_minutes ?? 10;
-      this._coilDryDrainMinutes = s.coil_dry_drain_minutes ?? 0;
+      this._adopt(result.settings, { all: true });
     } catch (err) {
       // eslint-disable-next-line no-console
       console.debug("[RoomMind] loadSettings:", err);
@@ -194,6 +286,51 @@ export class RsSettings extends LitElement {
     } finally {
       this._loaded = true;
     }
+  }
+
+  /** Reads the stored settings again; values changed elsewhere replace the shown ones. */
+  private async _refresh() {
+    if (this._refreshing || this._saving || !this._loaded || this._loadFailed) return;
+    const epoch = this._saveEpoch;
+    this._refreshing = true;
+    try {
+      const result = await this.hass.callWS<{ settings: GlobalSettings }>({
+        type: "roommind/settings/get",
+      });
+      if (epoch === this._saveEpoch && !this._saving) this._adopt(result.settings);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.debug("[RoomMind] refreshSettings:", err);
+    } finally {
+      this._refreshing = false;
+    }
+  }
+
+  /**
+   * Shows stored settings: all of them (`all`) or those that changed since the last known state.
+   * Fields with an unsaved change here keep it, `keep` lists settings this page just sent.
+   */
+  private _adopt(
+    settings: GlobalSettings,
+    { all = false, keep = new Set<string>() }: { all?: boolean; keep?: ReadonlySet<string> } = {},
+  ) {
+    for (const [key, sync] of SETTINGS) {
+      if (!sync.read || keep.has(key) || sync.fields.some((f) => this._dirty.has(f))) continue;
+      if (all || !this._stored || !sameValue(settings[key], this._stored[key])) {
+        this._setFields(sync.read(settings[key]));
+      }
+    }
+    this._stored = settings;
+  }
+
+  private _fields(): FieldValues {
+    const self = this as unknown as FieldValues;
+    return Object.fromEntries(SETTING_FIELDS.map((f) => [f, self[`_${f}`]]));
+  }
+
+  private _setFields(values: FieldValues) {
+    const self = this as unknown as FieldValues;
+    for (const [field, value] of Object.entries(values)) self[`_${field}`] = value;
   }
 
   protected willUpdate(changed: Map<string, unknown>) {
@@ -211,13 +348,6 @@ export class RsSettings extends LitElement {
       // The list from the backend is current again; an id resting later must show up again
       const listed = new Set(this.roomsWithoutArea.map((r) => r.area_id));
       this._deletedOrphans = new Set([...this._deletedOrphans].filter((id) => listed.has(id)));
-    }
-    if (
-      changed.has("climateControlActive") &&
-      changed.get("climateControlActive") !== undefined &&
-      !this._climateControlDirty
-    ) {
-      this._climateControlActive = this.climateControlActive;
     }
   }
 
@@ -701,8 +831,8 @@ export class RsSettings extends LitElement {
 
   private _onSettingChanged(e: CustomEvent<{ key: string; value: unknown }>) {
     const { key, value } = e.detail;
-    if (key === "climateControlActive") this._climateControlDirty = true;
-    (this as Record<string, unknown>)[`_${key}`] = value;
+    this._setFields({ [key]: value });
+    this._dirty.set(key, ++this._revision);
     this._autoSave();
   }
 
@@ -726,88 +856,60 @@ export class RsSettings extends LitElement {
     return [...modes].map(([value, label]) => ({ value, label }));
   }
 
-  private _tsToDatetimeLocal(ts: number): string {
-    const d = new Date(ts * 1000);
-    const pad = (n: number) => String(n).padStart(2, "0");
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  }
-
   private _autoSave() {
     if (this._saveDebounce) clearTimeout(this._saveDebounce);
-    this._saveDebounce = setTimeout(() => this._doSave(), 500);
-  }
-
-  private _isDraft(group: CompressorGroup): boolean {
-    return compressorGroupProblem(group, this._compressorGroups) !== null;
+    this._saveDebounce = setTimeout(() => {
+      this._saveDebounce = undefined;
+      void this._doSave();
+    }, 500);
   }
 
   private async _doSave() {
-    compressorDrafts = this._compressorGroups.filter((g) => this._isDraft(g));
+    const sent = new Map(this._dirty);
+    if (!sent.size) return;
+    const values = this._fields();
+    const groups = values.compressorGroups as CompressorGroup[];
+    compressorDrafts = groups.filter((g) => compressorGroupProblem(g, groups) !== null);
+    const changes: Record<string, unknown> = {};
+    for (const [key, sync] of SETTINGS) {
+      if (sync.fields.some((f) => sent.has(f))) changes[key] = sync.write(values);
+    }
     fireSaveStatus(this, "saving");
-    const sentClimateControl = this._climateControlDirty ? this._climateControlActive : undefined;
-
+    this._saving++;
+    this._saveEpoch++;
     try {
-      await this.hass.callWS({
+      const result = await this.hass.callWS<{ settings: GlobalSettings }>({
         type: "roommind/settings/save",
-        group_by_floor: this._groupByFloor,
-        ...(sentClimateControl !== undefined ? { climate_control_active: sentClimateControl } : {}),
-        learning_disabled_rooms: this._learningDisabledRooms,
-        outdoor_temp_sensor: this._outdoorTempSensor,
-        price_entity: this._priceEntity,
-        outdoor_humidity_sensor: this._outdoorHumiditySensor,
-        outdoor_cooling_min: this._outdoorCoolingMin,
-        outdoor_heating_max: this._outdoorHeatingMax,
-        control_mode: this._controlMode,
-        comfort_weight: this._comfortWeight,
-        weather_entity: this._weatherEntity,
-        outdoor_unavailable_notify: this._outdoorUnavailableNotify,
-        prediction_enabled: this._predictionEnabled,
-        vacation_temp: this._vacationTemp,
-        vacation_until: this._vacationActive
-          ? this._vacationUntil
-            ? new Date(this._vacationUntil).getTime() / 1000
-            : VACATION_SENTINEL
-          : null,
-        presence_enabled: this._presenceEnabled,
-        presence_persons: this._presencePersons.filter((p) => p),
-        presence_away_action: this._presenceAwayAction,
-        presence_clears_override: this._presenceClearsOverride,
-        schedule_off_action: this._scheduleOffAction,
-        valve_protection_enabled: this._valveProtectionEnabled,
-        valve_protection_interval_days: this._valveProtectionInterval,
-        compressor_groups: this._compressorGroups.filter((g) => !this._isDraft(g)),
-        coil_dry_enabled: this._coilDryEnabled,
-        coil_dry_minutes: this._coilDryMinutes,
-        coil_dry_mode: this._coilDryMode,
-        coil_dry_fan_mode: this._coilDryFanMode,
-        coil_dry_min_cooling_minutes: this._coilDryMinCoolingMinutes,
-        coil_dry_drain_minutes: this._coilDryDrainMinutes,
-        mold_detection_enabled: this._moldDetectionEnabled,
-        mold_humidity_threshold: this._moldHumidityThreshold,
-        mold_f_rsi: this._moldFRsi,
-        mold_sustained_minutes: this._moldSustainedMinutes,
-        mold_notification_cooldown: this._moldNotificationCooldown,
-        mold_notifications_enabled: this._moldNotificationsEnabled,
-        mold_notification_targets: this._moldNotificationTargets.filter((t) => t.entity_id),
-        mold_prevention_enabled: this._moldPreventionEnabled,
-        mold_prevention_intensity: this._moldPreventionIntensity,
-        mold_prevention_notify_enabled: this._moldPreventionNotify,
-        mold_prevention_notify_targets: this._moldPreventionNotify
-          ? this._moldNotificationTargets.filter((t) => t.entity_id)
-          : [],
+        ...changes,
       });
-      // Toggled again while the request was out: stays dirty, the queued save sends it.
-      if (this._climateControlActive === sentClimateControl) this._climateControlDirty = false;
+      this._settle(sent);
+      this._adopt(result.settings, { keep: new Set(Object.keys(changes)) });
       this._saveError = "";
       fireSaveStatus(this, "saved");
     } catch (err) {
       const l = this.hass.language;
       this._saveError = errorText(err, localize("error.unknown", l), l);
-      if (this._climateControlActive === sentClimateControl) {
-        this._climateControlDirty = false;
-        this._climateControlActive = this.climateControlActive;
+      // Back to the stored values: a rejected value kept as unsaved would fail every later save.
+      this._settle(sent);
+      if (this._stored) {
+        const stored = this._stored;
+        for (const [key, sync] of SETTINGS) {
+          if (!sync.read || !sync.fields.some((f) => sent.has(f))) continue;
+          if (sync.fields.some((f) => this._dirty.has(f))) continue;
+          this._setFields(sync.read(stored[key]));
+        }
       }
       fireSaveStatus(this, "error");
+    } finally {
+      this._saving--;
+      this._saveEpoch++;
+    }
+  }
+
+  /** Sent fields are no longer unsaved, unless they changed again while the request was out. */
+  private _settle(sent: ReadonlyMap<string, number>) {
+    for (const [field, revision] of sent) {
+      if (this._dirty.get(field) === revision) this._dirty.delete(field);
     }
   }
 
