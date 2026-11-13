@@ -143,6 +143,18 @@ class VentilationController:
         previous = self._last_state.get(entity_id)
         current = state.state if state is not None else None
         self._last_state[entity_id] = current
+
+        async def switch(on: bool) -> bool:
+            if await self._async_switch(entity_id, on):
+                return True
+            # Not sent: the next cycle judges the state as if this one had not read it, so a
+            # failed re-on after a dropout is not taken for a hand switching it off
+            if previous is None:
+                self._last_state.pop(entity_id, None)
+            else:
+                self._last_state[entity_id] = previous
+            return False
+
         if state is None:
             if self._gone(entity_id):
                 self._release(entity_id)
@@ -157,7 +169,7 @@ class VentilationController:
                     # since a restart: nobody switched it off
                     if not want:
                         self._release(entity_id)
-                    elif await self._async_switch(entity_id, True):
+                    elif await switch(True):
                         self._owned[entity_id] = now
                         self.dirty = True
                 elif now - since >= VENTILATION_REPORT_GRACE_S:
@@ -166,7 +178,7 @@ class VentilationController:
                     if want:
                         self._declined.add(entity_id)
                 return
-            if not want and now - since >= VENTILATION_MIN_RUN_S and await self._async_switch(entity_id, False):
+            if not want and now - since >= VENTILATION_MIN_RUN_S and await switch(False):
                 self._release(entity_id)
             return
         if not want or current != "off":
@@ -174,7 +186,7 @@ class VentilationController:
         if previous == "on":
             # Ran by someone's hand into the bad spell and was switched off by hand in it
             self._declined.add(entity_id)
-        if entity_id not in self._declined and await self._async_switch(entity_id, True):
+        if entity_id not in self._declined and await switch(True):
             self._owned[entity_id] = now
             self.dirty = True
 

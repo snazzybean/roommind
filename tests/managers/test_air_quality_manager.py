@@ -313,3 +313,33 @@ async def test_unit_deleted_in_ha_is_released(monkeypatch, wanted):
     registry.async_get = lambda eid: None
     await v.async_reconcile(wanted, 30)
     assert not v.is_running(FAN)
+
+
+@pytest.mark.asyncio
+async def test_failed_re_on_after_a_dropout_is_retried_not_taken_for_a_hand_off():
+    hass = _Hass({FAN: "off"})
+    v = VentilationController(hass)
+    await v.async_reconcile({FAN: True}, 0)
+    hass.state_map[FAN] = "unavailable"
+    await v.async_reconcile({FAN: True}, 300)
+    hass.state_map[FAN] = "off"  # back after a power cut, the first command times out
+    hass.fail = True
+    await v.async_reconcile({FAN: True}, 330)
+    hass.fail = False
+    await v.async_reconcile({FAN: True}, 360)
+    assert hass.state_map[FAN] == "on"
+    assert v.is_running(FAN)
+
+
+@pytest.mark.asyncio
+async def test_failed_off_after_the_min_run_is_retried():
+    hass = _Hass({FAN: "off"})
+    v = VentilationController(hass)
+    await v.async_reconcile({FAN: True}, 0)
+    hass.fail = True
+    await v.async_reconcile({FAN: False}, VENTILATION_MIN_RUN_S)
+    assert v.is_running(FAN)
+    hass.fail = False
+    await v.async_reconcile({FAN: False}, VENTILATION_MIN_RUN_S + 30)
+    assert hass.state_map[FAN] == "off"
+    assert not v.is_running(FAN)
