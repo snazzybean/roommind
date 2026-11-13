@@ -213,8 +213,8 @@ export function formatClock(unixS: number, language: string, now = Date.now()): 
 
 /**
  * Everything worth a hint for a room, most important first: mold risk, window open, not
- * controlled, override (with end), compressor protection, setback, away / room empty, mold
- * prevention, price shift, pre-heat, learning. Rooms without control only get the mold risk.
+ * controlled, override (with end), compressor protection, away / room empty, mold
+ * prevention, price shift, setback, pre-heat, learning. Rooms without control only get the mold risk.
  */
 export function roomHints(
   config: RoomConfig | null,
@@ -297,8 +297,6 @@ export function roomHints(
       params: { time: formatMinutes(minutesLeft(live.compressor_protection_until), ctx.language) },
     });
   }
-  const setback = setbackHint(live, ctx.language);
-  if (setback) hints.push(setback);
   if (live.presence_away) {
     hints.push({
       id: "presence_away",
@@ -337,6 +335,8 @@ export function roomHints(
       },
     });
   }
+  const setback = setbackHint(live, ctx.language);
+  if (setback) hints.push(setback);
   if (live.preheat && live.mode === live.preheat.mode) {
     const cooling = live.preheat.mode === "cooling";
     hints.push({

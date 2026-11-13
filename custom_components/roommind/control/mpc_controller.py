@@ -756,6 +756,7 @@ async def async_idle_device(
                 entity_id,
                 exc_info=True,
             )
+            return False
         return True
 
     # --- OFF branch ---

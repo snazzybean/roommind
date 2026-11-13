@@ -81,14 +81,23 @@ describe("roomHints setback (#509)", () => {
     );
   });
 
-  test("comes right after compressor protection", () => {
+  test("does not push the more important hints out of the tile's first place", () => {
     const r = room({
       setback: { devices: ["climate.ac"], until: null },
       compressor_protection_until: Date.now() / 1000 + 600,
       compressor_protection_reason: "min_off",
       occupancy_vacant: true,
+      mold_prevention_active: true,
+      mold_prevention_delta: 1,
+      price_shift_heat: -1,
     });
-    expect(ids(r)).toEqual(["compressor", "setback", "room_vacant"]);
+    expect(ids(r)).toEqual([
+      "compressor",
+      "room_vacant",
+      "mold_prevention",
+      "price_shift",
+      "setback",
+    ]);
   });
 
   test("no hint without a held device or while the room runs", () => {

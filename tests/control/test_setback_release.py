@@ -323,6 +323,19 @@ async def test_a_setback_already_at_its_target_is_still_shown(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_a_setback_that_could_not_be_sent_is_not_shown(monkeypatch):
+    """The unit did not take the lowered setpoint, so it is not known to sit at the setback."""
+    hass, ctrl = _controller("heat", 21.0, [MODE_IDLE] * 36, monkeypatch, auto_off=False)
+    hass.services.async_call.side_effect = Exception("unit offline")
+
+    mode, _ = ctrl._evaluate_mpc(21.3, HEAT_TARGETS)
+    await ctrl.async_apply(mode, HEAT_TARGETS, power_fraction=0.0, current_temp=21.3)
+
+    assert ctrl.setback_display() is None
+    assert not await async_idle_device(hass, EID, _devices(auto_off=False), targets=HEAT_TARGETS)
+
+
+@pytest.mark.asyncio
 async def test_a_setback_the_plan_keeps_past_the_hour_shows_no_time(monkeypatch):
     _, ctrl = _controller("heat", 21.0, _with_run_at(3, MODE_HEATING), monkeypatch)
 
