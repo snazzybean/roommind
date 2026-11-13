@@ -1060,5 +1060,8 @@
   "schedules.kind_label": "Programma per",
   "schedules.kind_climate": "Temperatura",
   "schedules.kind_cover": "Tapparelle",
-  "covers.schedule_default_name": "{room} tapparelle"
+  "covers.schedule_default_name": "{room} tapparelle",
+  "schedules.also_in": "Anche in {rooms}",
+  "schedules.covers_in": "Tapparelle: {rooms}",
+  "schedules.temperature_in": "Temperatura: {rooms}"
 }

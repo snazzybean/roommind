@@ -1,6 +1,6 @@
 import { LitElement, html, css, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
-import type { HomeAssistant, HassArea, CoverScheduleEntry } from "../types";
+import type { HomeAssistant, HassArea, CoverScheduleEntry, RoomConfig } from "../types";
 import { localize, type TranslationKey } from "../utils/localize";
 import { formatClock, getEntitiesForArea } from "../utils/room-state";
 import { getSelectValue, openEntityInfo } from "../utils/events";
@@ -24,6 +24,8 @@ export class RsCoverSection extends LitElement {
   @property({ attribute: false }) public area!: HassArea;
   @property({ attribute: false }) public selectedCovers: Set<string> = new Set();
   @property({ type: Boolean }) public editing = false;
+  /** All rooms, to say where else a cover schedule is used. */
+  @property({ attribute: false }) public rooms: Record<string, RoomConfig> = {};
   @property({ type: Boolean }) public autoEnabled = false;
   @property({ type: Number }) public deployThreshold = 1.5;
   @property({ type: Number }) public minPosition = 0;
@@ -415,6 +417,8 @@ export class RsCoverSection extends LitElement {
       <rs-cover-schedule
         .hass=${this.hass}
         .roomName=${this.area.name}
+        .rooms=${this.rooms}
+        .roomId=${this.area.area_id}
         .schedules=${this.coverSchedules}
         .selectorEntity=${this.coverScheduleSelectorEntity}
         .activeIndex=${this.activeCoverScheduleIndex}

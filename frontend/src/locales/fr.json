@@ -1060,5 +1060,8 @@
   "schedules.kind_label": "Planning pour",
   "schedules.kind_climate": "Température",
   "schedules.kind_cover": "Volets",
-  "covers.schedule_default_name": "{room} volets"
+  "covers.schedule_default_name": "{room} volets",
+  "schedules.also_in": "Aussi dans {rooms}",
+  "schedules.covers_in": "Volets : {rooms}",
+  "schedules.temperature_in": "Température : {rooms}"
 }

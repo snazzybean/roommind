@@ -22,6 +22,7 @@ export class RsCoverSchedule extends RsScheduleBase {
   @property({ type: String }) public roomName = "";
 
   @state() private _creating = false;
+  protected readonly _kind = "cover";
 
   static styles = [
     tokens,
@@ -101,13 +102,13 @@ export class RsCoverSchedule extends RsScheduleBase {
       count >= 2 ? `#${index + 1}` : "",
       this._statusText(state, l),
       pos !== null ? formatPercent(pos, this.hass) : "",
+      this._usage(entry.entity_id),
     ]
       .filter(Boolean)
       .join(" · ");
     return html`<div>
       <rs-list-row
         class=${state}
-        single-line
         clickable
         chevron
         icon="mdi:calendar-clock"

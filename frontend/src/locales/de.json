@@ -1060,5 +1060,8 @@
   "schedules.kind_label": "Zeitplan für",
   "schedules.kind_climate": "Raumtemperatur",
   "schedules.kind_cover": "Rollläden",
-  "covers.schedule_default_name": "{room} Rollläden"
+  "covers.schedule_default_name": "{room} Rollläden",
+  "schedules.also_in": "Auch in {rooms}",
+  "schedules.covers_in": "Rollläden: {rooms}",
+  "schedules.temperature_in": "Temperatur: {rooms}"
 }

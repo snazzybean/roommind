@@ -11,6 +11,7 @@ import { localize } from "../../utils/localize";
 import { isAdmin } from "../../utils/schedule-api";
 import { formatClock, haTimeZone, sameDayInZone } from "../../utils/analytics-time";
 import { openEntityInfo } from "../../utils/events";
+import { roomNameOf, usageText } from "../../utils/schedule-usage";
 import { tokens } from "../../styles/tokens";
 import "../shared/rs-list-card";
 import "../shared/rs-list-row";
@@ -80,7 +81,13 @@ export class RsScheduleOverview extends LitElement {
 
   private _renderRow(item: ScheduleItem, cover: boolean) {
     const l = this.hass.language;
-    const used = cover ? item.coverRooms : item.rooms;
+    const used = usageText(
+      this.rooms,
+      item.entityId,
+      cover ? "cover" : "climate",
+      roomNameOf(this.rooms, this.hass.areas),
+      l,
+    );
     const on = this.hass.states[item.entityId]?.state === "on";
     return html`<rs-list-row
       clickable
@@ -90,10 +97,7 @@ export class RsScheduleOverview extends LitElement {
       icon-label=${localize("detail.more_info", l)}
       .iconColor=${on ? "var(--primary-color)" : ""}
       .heading=${item.name}
-      .secondary=${[
-        used.length ? used.join(", ") : localize("schedules.unused", l),
-        this._stateText(item.entityId),
-      ]
+      .secondary=${[used || localize("schedules.unused", l), this._stateText(item.entityId)]
         .filter(Boolean)
         .join(" · ")}
       @row-click=${() =>

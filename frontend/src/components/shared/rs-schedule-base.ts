@@ -4,9 +4,10 @@
  */
 import { LitElement, html, css, nothing, type TemplateResult } from "lit";
 import { property } from "lit/decorators.js";
-import type { HomeAssistant } from "../../types";
+import type { HomeAssistant, RoomConfig } from "../../types";
 import { localize } from "../../utils/localize";
 import { getSelectValue, openEntityInfo } from "../../utils/events";
+import { roomNameOf, usageText, type ScheduleKind } from "../../utils/schedule-usage";
 import "./rs-icon-button";
 import "./rs-field";
 import "./rs-list-row";
@@ -16,6 +17,37 @@ export abstract class RsScheduleBase extends LitElement {
   @property({ type: Number }) public activeIndex = -1;
   @property({ type: String }) public selectorEntity = "";
   @property({ type: Boolean }) public editing = false;
+  /** All rooms and this one, to say where else a helper is used. */
+  @property({ attribute: false }) public rooms: Record<string, RoomConfig> = {};
+  @property({ type: String }) public roomId = "";
+
+  /** Which list of the room this component edits. */
+  protected abstract readonly _kind: ScheduleKind;
+
+  /** "Auch in Küche · Rollläden: Wohnzimmer" for a helper in this room's list, "" if only here. */
+  protected _usage(entityId: string): string {
+    return usageText(
+      this.rooms,
+      entityId,
+      this._kind,
+      roomNameOf(this.rooms, this.hass?.areas),
+      this.hass.language,
+      this.roomId,
+    );
+  }
+
+  /** "Heizplan Bad · Bad" in the add list: where a helper not in this room is used. */
+  protected _optionLabel(entityId: string): string {
+    const name = this._getFriendlyName(entityId);
+    const where = usageText(
+      this.rooms,
+      entityId,
+      this._kind,
+      roomNameOf(this.rooms, this.hass?.areas),
+      this.hass.language,
+    );
+    return where ? `${name} · ${where}` : name;
+  }
 
   /** Shared CSS for schedule rows, status indicators, selector section. */
   static sharedStyles = css`
@@ -229,7 +261,7 @@ export abstract class RsScheduleBase extends LitElement {
           .label=${label}
           .options=${available.map((eid) => ({
             value: eid,
-            label: this._getFriendlyName(eid),
+            label: this._optionLabel(eid),
           }))}
           @selected=${(e: Event) => {
             const eid = getSelectValue(e);
@@ -244,9 +276,7 @@ export abstract class RsScheduleBase extends LitElement {
           naturalMenuWidth
         >
           ${available.map(
-            (eid) => html`
-              <ha-list-item value=${eid}>${this._getFriendlyName(eid)}</ha-list-item>
-            `,
+            (eid) => html` <ha-list-item value=${eid}>${this._optionLabel(eid)}</ha-list-item> `,
           )}
         </ha-select>
       </div>

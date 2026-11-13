@@ -217,6 +217,8 @@ const UNCONFIRMED_MS = 15_000;
 export class RsRoomDetail extends LitElement {
   @property({ attribute: false }) public area!: HassArea;
   @property({ attribute: false }) public config: RoomConfig | null = null;
+  /** All rooms, so the schedule lists can say where else a helper is used. */
+  @property({ attribute: false }) public rooms: Record<string, RoomConfig> = {};
   @property({ attribute: false }) public hass!: HomeAssistant;
   @property({ type: Boolean }) public presenceEnabled = false;
   /** A price source is set in the settings: shows the per-room price options. */
@@ -651,6 +653,8 @@ export class RsRoomDetail extends LitElement {
       >
         <rs-schedule-settings
           .hass=${this.hass}
+          .rooms=${this.rooms}
+          .roomId=${this.area.area_id}
           .schedules=${this._schedules}
           .scheduleSelectorEntity=${this._scheduleSelectorEntity}
           .activeScheduleIndex=${live?.active_schedule_index ?? -1}
@@ -878,6 +882,8 @@ export class RsRoomDetail extends LitElement {
             .scheduleTempWarnings=${this.config?.live?.schedule_temp_warnings ?? []}
             .editing=${true}
             .roomName=${this._displayName || this.area.name}
+            .rooms=${this.rooms}
+            .roomId=${this.area.area_id}
             @schedules-changed=${this._onSchedulesChanged}
             @schedule-selector-changed=${this._onScheduleSelectorChanged}
             @open-schedule-editor=${this._onOpenScheduleEditor}
@@ -1022,6 +1028,7 @@ export class RsRoomDetail extends LitElement {
           ${coversHelp(lang)}
           <rs-covers-section
             @open-schedule-editor=${this._onOpenScheduleEditor}
+            .rooms=${this.rooms}
             .hass=${this.hass}
             .area=${this.area}
             .editing=${true}

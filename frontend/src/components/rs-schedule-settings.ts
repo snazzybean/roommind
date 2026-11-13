@@ -72,6 +72,7 @@ export class RsScheduleSettings extends RsScheduleBase {
   @property({ type: String }) public roomName = "";
 
   @state() private _creating = false;
+  protected readonly _kind = "climate";
 
   static styles = [
     RsScheduleBase.sharedStyles,
@@ -135,7 +136,9 @@ export class RsScheduleSettings extends RsScheduleBase {
                   icon-label=${localize("detail.more_info", l)}
                   .iconColor=${state === "active" ? "var(--primary-color)" : ""}
                   .heading=${hasMultiple ? `${index + 1} · ${name}` : name}
-                  .secondary=${this._getStatusText(index, state)}
+                  .secondary=${[this._getStatusText(index, state), this._usage(schedule.entity_id)]
+                    .filter(Boolean)
+                    .join(" · ")}
                   @row-click=${open("schedule")}
                   @icon-click=${() => this._openEntityInfo(schedule.entity_id)}
                 ></rs-list-row>
@@ -382,7 +385,11 @@ export class RsScheduleSettings extends RsScheduleBase {
               ${count >= 2 ? html`<span class="schedule-number">${index + 1}</span>` : nothing}
               <span class="schedule-status-dot"></span>
               <span class="schedule-name">${this._getFriendlyName(schedule.entity_id)}</span>
-              <span class="schedule-status">${this._getStatusText(index, state)}</span>
+              <span class="schedule-status"
+                >${[this._getStatusText(index, state), this._usage(schedule.entity_id)]
+                  .filter(Boolean)
+                  .join(" · ")}</span
+              >
               ${this._renderEditorButton(schedule.entity_id)}
               ${this._renderScheduleControls(
                 index,

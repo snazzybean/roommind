@@ -1060,5 +1060,8 @@
   "schedules.kind_label": "Schedule for",
   "schedules.kind_climate": "Room temperature",
   "schedules.kind_cover": "Covers",
-  "covers.schedule_default_name": "{room} covers"
+  "covers.schedule_default_name": "{room} covers",
+  "schedules.also_in": "Also in {rooms}",
+  "schedules.covers_in": "Covers: {rooms}",
+  "schedules.temperature_in": "Temperature: {rooms}"
 }
