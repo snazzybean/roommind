@@ -1433,7 +1433,7 @@ class TestPerCoverMinPositionCorrection:
         cm.evaluate.return_value = CoverDecision(target_position=10, changed=True, reason="deploy")
         hass = _make_hass()
         positional_state = MagicMock()
-        positional_state.attributes = {"supported_features": 15}
+        positional_state.attributes = {"supported_features": 15, "current_position": 100}
         hass.states.get = MagicMock(return_value=positional_state)
         orch = CoverOrchestrator(hass, cm, _make_model_manager())
         room = _make_room(
@@ -1465,7 +1465,7 @@ class TestPerCoverMinPositionCorrection:
         cm.evaluate.return_value = CoverDecision(target_position=10, changed=True, reason="deploy")
         hass = _make_hass()
         positional_state = MagicMock()
-        positional_state.attributes = {"supported_features": 15}
+        positional_state.attributes = {"supported_features": 15, "current_position": 100}
         hass.states.get = MagicMock(return_value=positional_state)
         orch = CoverOrchestrator(hass, cm, _make_model_manager())
         room = _make_room(covers=["cover.a"])
@@ -1563,6 +1563,7 @@ class TestBinaryCoverExpectedPosition:
         cm = _make_cover_manager()
         cm.evaluate.return_value = CoverDecision(target_position=39, changed=True, reason="deploy")
         binary_state = MagicMock()
+        binary_state.state = "open"
         binary_state.attributes = {"supported_features": 3}
         hass.states.get = MagicMock(return_value=binary_state)
         orch = CoverOrchestrator(hass, cm, _make_model_manager())
@@ -1589,8 +1590,9 @@ class TestBinaryCoverExpectedPosition:
         cm = _make_cover_manager()
         cm.evaluate.return_value = CoverDecision(target_position=39, changed=True, reason="deploy")
         positional = MagicMock()
-        positional.attributes = {"supported_features": 15}
+        positional.attributes = {"supported_features": 15, "current_position": 100}
         binary = MagicMock()
+        binary.state = "open"
         binary.attributes = {"supported_features": 3}
         hass.states.get = MagicMock(side_effect=lambda eid: positional if eid == "cover.pos" else binary)
         orch = CoverOrchestrator(hass, cm, _make_model_manager())
@@ -1639,6 +1641,7 @@ class TestBinaryCoverExpectedPosition:
         cm = _make_cover_manager()
         cm.evaluate.return_value = CoverDecision(target_position=100, changed=True, reason="low_solar")
         binary_state = MagicMock()
+        binary_state.state = "open"
         binary_state.attributes = {"supported_features": 3}
         hass.states.get = MagicMock(return_value=binary_state)
         orch = CoverOrchestrator(hass, cm, _make_model_manager())
@@ -2425,6 +2428,19 @@ class TestForcedPositionWithCoverMinimum:
 
         assert sent[0] >= 1
         assert sent[1:] == [0, 0]
+
+    @pytest.mark.asyncio
+    async def test_unreadable_cover_does_not_count_for_the_expected_position(self):
+        """A cover the reading skips (unavailable, no position) must not count in the comparison either."""
+        unavailable = MagicMock()
+        unavailable.state = "unavailable"
+        unavailable.attributes = {"supported_features": 3}
+        states = {"cover.a": _position_cover(30), "cover.b": unavailable}
+        hass, orch, room = self._setup(states, covers_night_position=30)
+
+        sent = await self._night_cycles(hass, orch, room, states, {})
+
+        assert sent == [0, 0, 0]
 
     @pytest.mark.asyncio
     async def test_cover_not_yet_at_its_minimum_is_sent(self):

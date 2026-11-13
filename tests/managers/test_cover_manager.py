@@ -2109,3 +2109,47 @@ def test_cover_moved_by_hand_at_night_stays_put_in_the_morning(mock_t):
     d = mgr.evaluate("lr", predicted_peak_temp=20.0, target_temp=21.0, **_MORNING)
     assert d.changed is False
     assert d.reason == "user_position_hold"
+
+
+@patch("custom_components.roommind.managers.cover_manager.time")
+def test_cover_closed_by_hand_in_the_afternoon_stays_closed_in_the_morning(mock_t):
+    """Night close finding a cover the user closed earlier does not take it over: it stays the user's."""
+    mock_t.time.return_value = 1000.0
+    mgr = CoverManager()
+    mgr.update_position("lr", 100)
+    mgr._get_state("lr").last_commanded_position = 100  # opened by RoomMind that morning
+    mock_t.time.return_value = 2000.0
+    mgr.update_position("lr", 0)  # closed by hand in the afternoon
+
+    mock_t.time.return_value = 2000.0 + COVER_USER_OVERRIDE_MINUTES * 60 + 60
+    mgr.update_position("lr", 0)
+    d = mgr.evaluate("lr", predicted_peak_temp=20.0, target_temp=21.0, **_NIGHT)
+    assert "forced_at_target" in d.reason
+
+    mock_t.time.return_value = 60000.0
+    mgr.update_position("lr", 0)
+    d = mgr.evaluate("lr", predicted_peak_temp=20.0, target_temp=21.0, **_MORNING)
+    assert d.changed is False
+    assert d.reason == "user_position_hold"
+
+
+@patch("custom_components.roommind.managers.cover_manager.time")
+def test_room_override_at_night_end_keeps_the_covers_down_for_a_predicted_peak(mock_t):
+    """Under a climate override the night end holds like without one while a solar peak is predicted."""
+    mock_t.time.return_value = 1000.0
+    mgr = CoverManager()
+    mgr.update_position("lr", 100)
+    mgr.evaluate("lr", predicted_peak_temp=20.0, target_temp=21.0, **_NIGHT)
+    mock_t.time.return_value = 2000.0
+    mgr.update_position("lr", 0)
+
+    hot = {**_MORNING, "has_active_override": True, "current_temp": 21.0}
+    mock_t.time.return_value = 40000.0
+    d = mgr.evaluate("lr", predicted_peak_temp=26.0, target_temp=21.0, **hot)
+    assert d.changed is False
+    assert d.reason == "low_solar_but_peak_predicted"
+
+    mock_t.time.return_value = 40030.0
+    d = mgr.evaluate("lr", predicted_peak_temp=21.0, target_temp=21.0, **hot)
+    assert d.changed is True
+    assert d.target_position == 100

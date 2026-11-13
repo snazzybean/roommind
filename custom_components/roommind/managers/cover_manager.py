@@ -198,11 +198,13 @@ class CoverManager:
             # A cover's own minimum keeps it short of the raw target; compared against that, not every cycle anew
             reached = forced_expected if forced_expected is not None else forced_position
             if abs(reached - current) <= 2:
-                # Found in place (reload, or already down): the position is RoomMind's,
-                # so the forced section's end opens it again and a hand move is noticed (#499).
-                state.owned = True
-                state.last_commanded_position = current
-                state.travel_from = None
+                if state.last_commanded_position is None:
+                    # Found in place with no history (reload/restart at night): RoomMind's, so the
+                    # forced section's end opens it again and a hand move is noticed (#499).
+                    # With a history the position stays whoever's it was (closed by hand stays closed).
+                    state.owned = True
+                    state.last_commanded_position = current
+                    state.travel_from = None
                 return CoverDecision(
                     target_position=current, changed=False, reason=f"forced_at_target({forced_reason})"
                 )
@@ -227,7 +229,12 @@ class CoverManager:
         # Gate 3: Manual override — never fight the user
         if has_active_override:
             if state.last_was_forced and state.owned:
-                # A climate override is no reason to keep the night/schedule position (#499)
+                # A climate override is no reason to keep the night/schedule position (#499),
+                # but a predicted solar peak holds it as it would without the override (Gate 4)
+                if predicted_peak_temp is not None and self._solar_threat(
+                    predicted_peak_temp, target_temp, covers_deploy_threshold, current_temp
+                ):
+                    return CoverDecision(target_position=current, changed=False, reason="low_solar_but_peak_predicted")
                 state.last_was_forced = False
                 return self._retract_decision(state, "manual_override_active", "forced_end_retract", hold_time_ok=True)
             return CoverDecision(target_position=current, changed=False, reason="manual_override_active")
@@ -246,10 +253,7 @@ class CoverManager:
 
         # Gate 4: Low solar — only retract if prediction also says no solar threat ahead
         if q_solar < COVER_SOLAR_MIN:
-            solar_threat = predicted_peak_temp > target_temp + covers_deploy_threshold and (
-                current_temp is None or predicted_peak_temp > current_temp
-            )
-            if solar_threat:
+            if self._solar_threat(predicted_peak_temp, target_temp, covers_deploy_threshold, current_temp):
                 return CoverDecision(target_position=current, changed=False, reason="low_solar_but_peak_predicted")
             return self._retract_decision(
                 state,
@@ -403,6 +407,14 @@ class CoverManager:
         if area_id not in self._states:
             self._states[area_id] = _RoomCoverState()
         return self._states[area_id]
+
+    @staticmethod
+    def _solar_threat(
+        predicted_peak_temp: float, target_temp: float, deploy_threshold: float, current_temp: float | None
+    ) -> bool:
+        return predicted_peak_temp > target_temp + deploy_threshold and (
+            current_temp is None or predicted_peak_temp > current_temp
+        )
 
     def _apply_change(self, state: _RoomCoverState, position: int, reason: str) -> CoverDecision:
         state.travel_from = state.current_position

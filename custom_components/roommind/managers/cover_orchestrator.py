@@ -94,16 +94,9 @@ class CoverOrchestrator:
         cover_eids: list[str] = room.get("covers", [])
         cover_positions: list[int] = []
         for eid in cover_eids:
-            cstate = self.hass.states.get(eid)
-            if cstate is None:
-                continue
-            pos = cstate.attributes.get("current_position")
+            pos = self._reading(eid)
             if pos is not None:
-                cover_positions.append(int(pos))
-            elif cstate.state == "closed":
-                cover_positions.append(0)
-            elif cstate.state == "open":
-                cover_positions.append(100)
+                cover_positions.append(pos)
 
         if cover_positions:
             self._cover_manager.update_position(
@@ -369,14 +362,27 @@ class CoverOrchestrator:
             decision=cover_decision,
         )
 
+    def _reading(self, eid: str) -> int | None:
+        """Position a cover reports, None while it reports none (unavailable, moving binary cover)."""
+        cstate = self.hass.states.get(eid)
+        if cstate is None:
+            return None
+        pos = cstate.attributes.get("current_position")
+        if pos is not None:
+            return int(pos)
+        return {"closed": 0, "open": 100}.get(cstate.state)
+
     def _expected_position(
         self, cover_eids: list[str], target_position: int, min_positions: dict[str, int]
     ) -> int | None:
-        """Room average the covers report once *target_position* is applied (per-cover minimum, binary covers)."""
+        """Room average the covers report once *target_position* is applied (per-cover minimum, binary covers).
+
+        Counts the same covers as read_positions(), else the two averages never meet.
+        """
         expected: list[int] = []
         for eid in cover_eids:
             cstate = self.hass.states.get(eid)
-            if cstate is None:
+            if cstate is None or self._reading(eid) is None:
                 continue
             supported = cstate.attributes.get("supported_features", 0) or 0
             if supported & _SUPPORT_SET_POSITION:
