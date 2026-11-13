@@ -9,6 +9,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 
 from .const import (
+    DEFAULT_CO2_THRESHOLD,
     DEFAULT_COMFORT_COOL,
     DEFAULT_COMFORT_HEAT,
     DEFAULT_COVERS_OUTDOOR_MIN_TEMP,
@@ -297,6 +298,11 @@ class RoomMindStore:
             "heat_source_ac_min_outdoor": config.get("heat_source_ac_min_outdoor", DEFAULT_HEAT_SOURCE_AC_MIN_OUTDOOR),
             "heat_source_price_aware": config.get("heat_source_price_aware", False),
             "climate_control_enabled": config.get("climate_control_enabled", True),
+            "co2_sensor": config.get("co2_sensor", ""),
+            "co2_threshold": config.get("co2_threshold", DEFAULT_CO2_THRESHOLD),
+            "voc_sensor": config.get("voc_sensor", ""),
+            "voc_threshold": config.get("voc_threshold"),
+            "ventilation_entity": config.get("ventilation_entity", ""),
         }
         _single_temps_to_cool_side(room, config, room["climate_mode"])
         # Directional device sync for new rooms (truthiness check, not just presence)

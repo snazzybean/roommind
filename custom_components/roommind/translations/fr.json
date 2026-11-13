@@ -39,6 +39,11 @@
           }
         }
       }
+    },
+    "binary_sensor": {
+      "air_quality": {
+        "name": "{room} qualité de l’air mauvaise"
+      }
     }
   }
 }

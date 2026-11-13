@@ -3588,3 +3588,71 @@ async def test_analytics_model_reports_which_gains_were_observed(ws_hass, store,
     model = connection.send_result.call_args[0][1]["model"]
     assert model["solar_learned"] is True
     assert model["occupancy_learned"] is False
+
+
+def test_air_quality_schema():
+    """CO2 threshold 800..5000 ppm, VOC threshold free in the sensor unit, ventilation fan/switch/input_boolean (#267)."""
+    import voluptuous as vol
+
+    schema = websocket_save_room._ws_schema
+    base = {"type": "roommind/rooms/save", "id": 1, "area_id": "office"}
+    result = schema(
+        {
+            **base,
+            "co2_sensor": "sensor.office_co2",
+            "co2_threshold": "1200",
+            "voc_sensor": "sensor.office_voc",
+            "voc_threshold": 250,
+            "ventilation_entity": "fan.office",
+        }
+    )
+    assert result["co2_threshold"] == 1200
+    assert result["voc_threshold"] == 250.0
+    assert schema({**base, "voc_threshold": None})["voc_threshold"] is None
+    for eid in ("", "switch.kwl_boost", "input_boolean.luefter"):
+        assert schema({**base, "ventilation_entity": eid})["ventilation_entity"] == eid
+    for bad in (
+        {"co2_threshold": 799},
+        {"co2_threshold": 5001},
+        {"voc_threshold": 0},
+        {"ventilation_entity": "climate.ac"},
+    ):
+        with pytest.raises(vol.Invalid):
+            schema({**base, **bad})
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("co2_sensor", "sensor.roommind_living_room_target_temp"),
+        ("ventilation_entity", "switch.roommind_living_room_climate_control"),
+    ],
+)
+async def test_save_room_rejects_own_air_quality_entities(ws_hass, store, connection, field, value):
+    await store.async_load()
+    await _save_room(ws_hass, connection, {"id": 2, "type": "roommind/rooms/save", "area_id": "office", field: value})
+    assert connection.send_error.call_args[0][1] == "invalid_entity"
+
+
+@pytest.mark.asyncio
+async def test_save_room_air_quality_defaults_and_roundtrip(ws_hass, store, connection):
+    await store.async_load()
+    await _save_room(ws_hass, connection, {"id": 2, "type": "roommind/rooms/save", "area_id": "office"})
+    stored = store.get_room("office")
+    assert (stored["co2_sensor"], stored["co2_threshold"], stored["voc_threshold"], stored["ventilation_entity"]) == (
+        "",
+        1000,
+        None,
+        "",
+    )
+    msg = {
+        "id": 3,
+        "type": "roommind/rooms/save",
+        "area_id": "office",
+        "co2_sensor": "sensor.co2",
+        "co2_threshold": 900,
+    }
+    await _save_room(ws_hass, connection, msg)
+    stored = store.get_room("office")
+    assert stored["co2_sensor"] == "sensor.co2" and stored["co2_threshold"] == 900

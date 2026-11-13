@@ -20,10 +20,13 @@ from .const import (
     DEFAULT_CONFLICT_RESOLUTION,
     DEFAULT_CONTROL_MODE,
     DOMAIN,
+    MAX_CO2_THRESHOLD,
     MAX_PRICE_SHIFT_K,
+    MIN_CO2_THRESHOLD,
     MIN_OCCUPANCY_ECO_DELAY_MINUTES,
     OVERRIDE_CUSTOM,
     OVERRIDE_TYPES,
+    VENTILATION_DOMAINS,
     build_override_live,
     is_override_suppressed,
 )
@@ -163,6 +166,11 @@ _ROOM_SAVE_FIELDS = (
     "heat_source_price_aware",
     "valve_protection_exclude",
     "climate_control_enabled",
+    "co2_sensor",
+    "co2_threshold",
+    "voc_sensor",
+    "voc_threshold",
+    "ventilation_entity",
 )
 
 _SETTINGS_SAVE_FIELDS = (
@@ -233,7 +241,7 @@ def _validate_no_own_entities(config: dict, own_prefix: str) -> str | None:
         eid = device.get("entity_id", "")
         if eid.split(".", 1)[-1].startswith(own_prefix):
             return f"Cannot assign RoomMind's own entity '{eid}' to a room"
-    for field in ("temperature_sensor", "humidity_sensor"):
+    for field in ("temperature_sensor", "humidity_sensor", "co2_sensor", "voc_sensor", "ventilation_entity"):
         eid = config.get(field, "")
         if eid and eid.split(".", 1)[-1].startswith(own_prefix):
             return f"Cannot assign RoomMind's own entity '{eid}' to a room"
@@ -485,6 +493,16 @@ async def websocket_list_rooms(
         vol.Optional("heat_source_ac_min_outdoor"): vol.All(vol.Coerce(float), vol.Range(min=-30, max=5)),
         vol.Optional("heat_source_price_aware"): bool,
         vol.Optional("climate_control_enabled"): bool,
+        vol.Optional("co2_sensor"): str,
+        vol.Optional("co2_threshold"): vol.All(
+            vol.Coerce(int), vol.Range(min=MIN_CO2_THRESHOLD, max=MAX_CO2_THRESHOLD)
+        ),
+        vol.Optional("voc_sensor"): str,
+        # In the sensor's own unit (index, ppb, µg/m³); None = the reading is shown, not judged
+        vol.Optional("voc_threshold"): vol.Any(None, vol.All(vol.Coerce(float), vol.Range(min=0.001, max=1e6))),
+        vol.Optional("ventilation_entity"): vol.Any(
+            "", vol.All(str, vol.Match(rf"^({'|'.join(VENTILATION_DOMAINS)})\.[a-z0-9_]+$"))
+        ),
     }
 )
 @websocket_api.async_response

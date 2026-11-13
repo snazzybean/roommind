@@ -39,6 +39,11 @@
           }
         }
       }
+    },
+    "binary_sensor": {
+      "air_quality": {
+        "name": "{room} qualità dell’aria scarsa"
+      }
     }
   }
 }

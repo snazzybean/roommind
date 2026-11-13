@@ -68,6 +68,15 @@ DEFAULT_OCCUPANCY_ECO_DELAY_MINUTES = 15
 # Shorter delays flip the target on every motion-sensor edge and flood battery TRVs with setpoints
 MIN_OCCUPANCY_ECO_DELAY_MINUTES = 5
 
+# Air quality (#267). CO2: UBA rates < 1000 ppm harmless, 1000-2000 ppm ventilate more
+DEFAULT_CO2_THRESHOLD = 1000
+MIN_CO2_THRESHOLD = 800
+MAX_CO2_THRESHOLD = 5000
+# Good again below 80 % of the threshold (1000 -> 800 ppm); own hysteresis choice, not a UBA value
+AIR_QUALITY_CLEAR_FACTOR = 0.8
+VENTILATION_DOMAINS = ("fan", "switch", "input_boolean")
+VENTILATION_MIN_RUN_MINUTES = 15
+
 # Context identifier for RoomMind-initiated service calls.
 # Automations can check: trigger.context.parent_id == "roommind"
 ROOMMIND_CONTEXT_ID = "roommind"

@@ -87,6 +87,11 @@ NORMAL_ROOM_KEYS = {
     "coil_dry_phase",
     "coil_dry_until",
     "coil_dry_entities",
+    "co2",
+    "voc",
+    "air_quality_bad",
+    "air_quality_reason",
+    "ventilation_active",
 }
 
 OUTDOOR_ROOM_KEYS = {
@@ -136,6 +141,11 @@ OUTDOOR_ROOM_KEYS = {
     "coil_dry_phase",
     "coil_dry_until",
     "coil_dry_entities",
+    "co2",
+    "voc",
+    "air_quality_bad",
+    "air_quality_reason",
+    "ventilation_active",
 }
 
 
