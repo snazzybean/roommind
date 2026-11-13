@@ -637,7 +637,7 @@
   "schedule.price_shift_hint": "Quando l'elettricità costa poco l'obiettivo può salire un po', quando costa tanto scendere un po' (al contrario in raffrescamento). Serve solo se la stanza riscalda o raffresca con l'elettricità (pompa di calore, climatizzatore, stufa elettrica); con una caldaia a gas o gasolio non cambia nulla.",
   "schedule.price_shift_off": "Spento",
   "heat_source.price_aware": "Seguire il prezzo dell'elettricità",
-  "heat_source.price_aware_hint": "Utile solo se i termosifoni vanno a gas, gasolio o teleriscaldamento: elettricità cara, riscaldano i termosifoni; economica, il climatizzatore. A prezzo normale decide ancora la temperatura esterna. Molto sotto l'obiettivo riscaldano entrambi.",
+  "heat_source.price_aware_hint": "Utile solo se i termosifoni vanno a gas, gasolio o teleriscaldamento: elettricità cara, riscaldano i termosifoni; economica, il climatizzatore. Nelle giornate fredde (sotto «Climatizzatore sopra») il climatizzatore prende allora solo scarti inferiori a «Scarto dall'obiettivo»; uno più grande, come il riscaldamento prima del prossimo periodo comfort, resta ai termosifoni. A prezzo normale decide ancora la temperatura esterna. Molto sotto l'obiettivo riscaldano entrambi.",
   "heat_source.price_aware_summary": "Secondo il prezzo dell'elettricità",
   "analytics.price": "Prezzo dell'elettricità",
   "analytics.price_heating": "Riscaldamento per prezzo",

@@ -637,7 +637,7 @@
   "schedule.price_shift_hint": "Ist Strom günstig, darf das Ziel etwas steigen, ist er teuer, etwas sinken (beim Kühlen umgekehrt). Das hilft nur, wenn der Raum mit Strom heizt oder kühlt (Wärmepumpe, Klimagerät, Elektroheizung), mit Gas- oder Ölkessel bewirkt es nichts.",
   "schedule.price_shift_off": "Aus",
   "heat_source.price_aware": "Nach Strompreis wählen",
-  "heat_source.price_aware_hint": "Nur sinnvoll, wenn die Heizkörper mit Gas, Öl oder Fernwärme laufen: Bei teurem Strom heizen die Heizkörper, bei günstigem das Klimagerät. Bei normalem Preis entscheidet weiter die Außentemperatur. Weit unter dem Ziel heizen beide.",
+  "heat_source.price_aware_hint": "Nur sinnvoll, wenn die Heizkörper mit Gas, Öl oder Fernwärme laufen: Bei teurem Strom heizen die Heizkörper, bei günstigem das Klimagerät. An kalten Tagen (unter „Klimagerät ab Außentemperatur“) übernimmt es dann nur Abstände unter „Abstand zum Ziel“; ein größerer, etwa das Aufheizen für die nächste Komfortzeit, bleibt bei den Heizkörpern. Bei normalem Preis entscheidet weiter die Außentemperatur. Weit unter dem Ziel heizen beide.",
   "heat_source.price_aware_summary": "Nach Strompreis",
   "analytics.price": "Strompreis",
   "analytics.price_heating": "Heizen nach Preis",

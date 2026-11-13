@@ -637,7 +637,7 @@
   "schedule.price_shift_hint": "When electricity is cheap the target may rise a little, when it is expensive it may drop a little (cooling the other way round). This only helps if the room heats or cools with electricity (heat pump, AC, electric heater); with a gas or oil boiler it does nothing.",
   "schedule.price_shift_off": "Off",
   "heat_source.price_aware": "Follow the electricity price",
-  "heat_source.price_aware_hint": "Only useful when the radiators run on gas, oil or district heat: expensive power, the radiators heat; cheap power, the AC. At a normal price the outdoor rule still decides. Far below the target both heat.",
+  "heat_source.price_aware_hint": "Only useful when the radiators run on gas, oil or district heat: expensive power, the radiators heat; cheap power, the AC. On a cold day (below “AC above outdoor”) the AC then only takes gaps smaller than “Gap to target”; a larger one, such as heating up for the next comfort period, stays with the radiators. At a normal price the outdoor rule still decides. Far below the target both heat.",
   "heat_source.price_aware_summary": "By electricity price",
   "analytics.price": "Electricity price",
   "analytics.price_heating": "Heating by price",

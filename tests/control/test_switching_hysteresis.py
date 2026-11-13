@@ -520,3 +520,12 @@ def test_run_rules_follow_the_price_choice_of_a_price_aware_room():
     else the AC's 10-min rules would stop the floor every few cycles."""
     assert _orchestrated(12.0)._resolve_run_system(20.5, 21.0) == ""
     assert _orchestrated(12.0, price_level="expensive")._resolve_run_system(20.5, 21.0) == "underfloor"
+
+
+def test_cheap_electricity_in_the_cold_leaves_a_preheat_to_the_primary_rules():
+    """Frost, cheap hour: the AC takes a small gap, a pre-heat towards comfort stays with the
+    floor, and so do its run rules (same answer as the coordinator's orchestration)."""
+    assert _orchestrated(0.0, price_level="cheap")._resolve_run_system(20.5, 21.0) == ""
+    assert _orchestrated(0.0, price_level="cheap")._resolve_run_system(19.0, 21.0) == "underfloor"
+    running_floor = _orchestrated(0.0, price_level="cheap", previous_heat_sources="primary")
+    assert running_floor._resolve_run_system(20.5, 21.0) == "underfloor"

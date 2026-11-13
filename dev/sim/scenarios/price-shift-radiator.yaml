@@ -57,9 +57,15 @@ expect:
   - {metric: room.heating_h_expensive, room: schlafzimmer, max: 4.5, label: less heating while expensive}
   - {metric: room.heating_h_cheap, room: schlafzimmer, min: 18, label: heating moved to cheap hours}
   - {metric: device.commands_per_hour, entity_id: climate.schlafzimmer_trv, max: 5}
-  # Living room (radiators + AC, orchestration with heat_source_price_aware), 4 d against the same
-  # room without the price choice: AC starts 59 instead of 1 (cheap hours), radiator heat 18.9
-  # instead of 25.9 kWh, no heating without a source; in band 72.9 instead of 81.4 %: the AC alone
-  # closes medium gaps slower in a cold January house (open-points.md)
+  # Living room (radiators + AC, orchestration with heat_source_price_aware), 4 d, January frost.
+  # Up to 2026-11-13 cheap electricity handed every gap below the large one to the AC: the night
+  # pre-heat for the morning moved from the radiators to the AC, whose runs ended after 2-3 min
+  # once the air reached the target while the walls stayed cold; the room then coasted and went
+  # into the comfort blocks ~1 K colder. Seeds 1/2: in band 72.9/73.8 % (same room without the
+  # price choice 78.8/80.6 %), AC 50/71 starts. Now the AC takes only gaps below primary_delta
+  # in the cold and leaves a running radiator run alone: 77.8/77.6 %, AC 34/31 starts, AC heat in
+  # cheap hours 2.7/2.5 kWh (before 4.9/6.1), radiator heat in expensive hours unchanged (#257)
   - {metric: room.heating_without_source_h, room: wohnzimmer, max: 0.1}
   - {metric: device.commands_per_hour, entity_id: climate.wohnzimmer_ac, max: 4}
+  - {metric: comfort.in_band_pct, room: wohnzimmer, min: 76, label: a cheap hour does not cut the pre-heat short}
+  - {metric: device.device_starts, entity_id: climate.wohnzimmer_ac, max: 45}

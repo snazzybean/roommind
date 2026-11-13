@@ -411,6 +411,52 @@ class TestPriceAwareSourceChoice:
         frozen = evaluate_heat_sources(_make_room(), MODE_HEATING, 0.5, 20.5, 21.0, -20.0, "none", hass, "cheap")
         assert frozen.active_sources == "primary"
 
+    def test_cheap_electricity_in_the_cold_leaves_larger_gaps_to_the_primary_source(self):
+        """An AC run that ends at the target leaves a pre-heat unfinished (the air warms, the
+        walls stay cold): in the cold the price hands the AC only gaps below primary_delta."""
+        hass = _make_hass(["heat", "cool", "off"])
+        preheat = evaluate_heat_sources(_make_room(), MODE_HEATING, 1.0, 19.0, 21.0, 0.0, "none", hass, "cheap")
+        assert preheat.active_sources == "primary"
+        just_below = evaluate_heat_sources(_make_room(), MODE_HEATING, 1.0, 19.6, 21.0, 0.0, "none", hass, "cheap")
+        assert just_below.active_sources == "secondary"
+
+    def test_cheap_electricity_does_not_take_a_running_primary_run_over(self):
+        hass = _make_hass(["heat", "cool", "off"])
+        for current in (20.5, 21.0):
+            result = evaluate_heat_sources(
+                _make_room(), MODE_HEATING, 1.0, current, 21.0, 0.0, "primary", hass, "cheap"
+            )
+            assert result.active_sources == "primary"
+        # A new run (or one coming down from both sources) closes a small gap with the AC
+        for previous in ("none", "both"):
+            result = evaluate_heat_sources(_make_room(), MODE_HEATING, 1.0, 20.5, 21.0, 0.0, previous, hass, "cheap")
+            assert result.active_sources == "secondary"
+
+    def test_cheap_ac_run_hands_over_when_its_gap_grows(self):
+        """A rising target (pre-heat lead) during an AC run: hysteresis, then the primary source."""
+        hass = _make_hass(["heat", "cool", "off"])
+        held = evaluate_heat_sources(_make_room(), MODE_HEATING, 1.0, 19.4, 21.0, 0.0, "secondary", hass, "cheap")
+        assert held.active_sources == "secondary"
+        handed = evaluate_heat_sources(_make_room(), MODE_HEATING, 1.0, 19.1, 21.0, 0.0, "secondary", hass, "cheap")
+        assert handed.active_sources == "primary"
+
+    def test_cheap_electricity_on_a_mild_day_keeps_the_ac_for_medium_gaps(self):
+        hass = _make_hass(["heat", "cool", "off"])
+        result = evaluate_heat_sources(_make_room(), MODE_HEATING, 1.0, 19.0, 21.0, 12.0, "primary", hass, "cheap")
+        assert result.active_sources == "secondary"
+
+    def test_cheap_electricity_without_outdoor_temperature_uses_the_gap_rule(self):
+        hass = _make_hass(["heat", "cool", "off"])
+        small = evaluate_heat_sources(_make_room(), MODE_HEATING, 1.0, 19.4, 21.0, None, "none", hass, "cheap")
+        assert small.active_sources == "secondary"
+        medium = evaluate_heat_sources(_make_room(), MODE_HEATING, 1.0, 19.0, 21.0, None, "none", hass, "cheap")
+        assert medium.active_sources == "primary"
+
+    def test_cheap_electricity_starts_a_run_at_the_target_on_the_ac(self):
+        hass = _make_hass(["heat", "cool", "off"])
+        result = evaluate_heat_sources(_make_room(), MODE_HEATING, 1.0, 21.0, 21.0, 0.0, "none", hass, "cheap")
+        assert result.active_sources == "secondary"
+
     def test_normal_or_unknown_level_keeps_the_outdoor_rule(self):
         hass = _make_hass(["heat", "cool", "off"])
         for level in ("normal", None):

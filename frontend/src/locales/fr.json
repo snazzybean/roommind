@@ -637,7 +637,7 @@
   "schedule.price_shift_hint": "Quand l'électricité est bon marché, la cible peut monter un peu, quand elle est chère, baisser un peu (l'inverse en refroidissement). Cela n'aide que si la pièce chauffe ou refroidit à l'électricité (pompe à chaleur, climatiseur, chauffage électrique) ; avec une chaudière gaz ou fioul, cela ne change rien.",
   "schedule.price_shift_off": "Désactivé",
   "heat_source.price_aware": "Suivre le prix de l'électricité",
-  "heat_source.price_aware_hint": "Utile seulement si les radiateurs fonctionnent au gaz, au fioul ou au chauffage urbain : électricité chère, les radiateurs chauffent ; bon marché, le climatiseur. À prix normal, la température extérieure décide toujours. Loin sous la cible, les deux chauffent.",
+  "heat_source.price_aware_hint": "Utile seulement si les radiateurs fonctionnent au gaz, au fioul ou au chauffage urbain : électricité chère, les radiateurs chauffent ; bon marché, le climatiseur. Par temps froid (sous « Climatiseur au-dessus de »), le climatiseur ne prend alors que les écarts inférieurs à « Écart à la cible » ; un écart plus grand, comme la montée en température avant la prochaine période de confort, reste aux radiateurs. À prix normal, la température extérieure décide toujours. Loin sous la cible, les deux chauffent.",
   "heat_source.price_aware_summary": "Selon le prix de l'électricité",
   "analytics.price": "Prix de l'électricité",
   "analytics.price_heating": "Chauffage selon le prix",
