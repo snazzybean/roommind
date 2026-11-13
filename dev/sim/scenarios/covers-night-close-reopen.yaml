@@ -1,0 +1,61 @@
+name: covers-night-close-reopen
+refs: [499]
+description: >
+  Mid November, bedroom with a roller shutter under night close, offset +60 min
+  (sunset ~16:15, sunrise ~07:30 local, so close ~17:15 and open ~08:30). Night 1
+  plain. Night 2 reloads RoomMind at 02:00 while the shutter is down, so the first
+  cycle after it finds the shutter already at the night position. Night 3 has a
+  boost override set at 06:00 that still runs in the morning. Night 4 restarts
+  Home Assistant at 02:00 (in the sim the cover is not readable on the first cycle,
+  so this one passed before the fix too). Every morning the shutter must open
+  again: nothing but night close put it down.
+tags: [covers]
+start: 2026-11-10T12:00
+duration: 4d
+location: {latitude: 52.5, longitude: 13.4, time_zone: Europe/Berlin}
+weather: {profile: temperate, fixed: {cloud: 60}}
+house:
+  building: bestand_teilsaniert
+  outdoor: {sensors: {temperature: sensor.aussen_temp}}
+  rooms:
+    schlafzimmer:
+      floor_area_m2: 16
+      exterior_wall_m2: 11
+      initial: {temperature: 19.0, mass_temperature: 19.0}
+      windows: [{orientation: S, area_m2: 1.8}]
+      covers: [{entity_id: cover.sz_rollo, profile: roller_shutter}]
+      devices: [{entity_id: climate.sz_trv, profile: generic_trv}]
+      sensors:
+        temperature: {entity_id: sensor.sz_temp}
+roommind:
+  settings:
+    outdoor_temp_sensor: sensor.aussen_temp
+    weather_entity: weather.simhome
+  rooms:
+    schlafzimmer:
+      devices: [{entity_id: climate.sz_trv, type: trv, heating_system_type: radiator}]
+      temperature_sensor: sensor.sz_temp
+      climate_mode: heat_only
+      comfort_temp: 19.0
+      covers: [cover.sz_rollo]
+      covers_auto_enabled: true
+      covers_night_close: true
+      covers_night_position: 0
+      covers_night_close_offset_minutes: 60
+timeline:
+  - {at: "+1d14h", do: roommind.reload}
+  - {at: "+2d18h", do: roommind.ws, type: roommind/override/set, area_id: schlafzimmer, override_type: boost, duration: 6}
+  - {at: "+3d14h", do: ha.restart}
+expect:
+  - {invariant: no_rejected_commands}
+  - {check: "cover('cover.sz_rollo').position > 90", at: "+0d04h50m", label: still open before sunset plus offset}
+  - {check: "cover('cover.sz_rollo').position < 10", at: "+0d06h00m", label: night close after sunset plus offset}
+  - {check: "cover('cover.sz_rollo').position < 10", at: "+0d20h00m", label: still closed at sunrise (offset +60)}
+  - {check: "cover('cover.sz_rollo').position > 90", at: "+0d22h00m", label: opens in the morning}
+  - {check: "cover('cover.sz_rollo').position < 10", at: "+1d06h00m", label: second night close}
+  - {check: "cover('cover.sz_rollo').position > 90", at: "+1d22h00m", label: opens after a reload in the night}
+  - {check: "cover('cover.sz_rollo').position < 10", at: "+2d06h00m", label: third night close}
+  - {check: "cover('cover.sz_rollo').position > 90", at: "+2d22h00m", label: opens with a room override running}
+  - {check: "cover('cover.sz_rollo').position < 10", at: "+3d06h00m", label: fourth night close}
+  - {check: "cover('cover.sz_rollo').position > 90", at: "+3d22h00m", label: opens after a restart in the night}
+  - {metric: cover.max_commands_per_day, entity_id: cover.sz_rollo, max: 3, label: cover moves per day}

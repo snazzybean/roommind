@@ -2013,3 +2013,99 @@ def test_reopening_to_a_real_shade_position_stays_there(mock_t):
     mock_t.time.return_value = 1000.0 + COVER_REOPEN_HOLD_SECONDS + 1
     d = mgr.evaluate("lr", predicted_peak_temp=22.855, target_temp=21.0, shade_by_need=True, **_BASE_KWARGS)
     assert d.target_position == 78
+
+
+# ── Night close end (#499) ────────────────────────────────────────────
+
+_NIGHT = {**_BASE_KWARGS, "forced_position": 0, "forced_reason": "night_close"}
+_MORNING = {**_BASE_KWARGS, "q_solar": 0.05}
+
+
+@patch("custom_components.roommind.managers.cover_manager.time")
+def test_cover_found_at_the_night_position_opens_in_the_morning(mock_t):
+    """After a reload (or with the cover already down) night close finds it in place and still opens it."""
+    mock_t.time.return_value = 1000.0
+    mgr = CoverManager()
+    mgr.update_position("lr", 0)
+    d = mgr.evaluate("lr", predicted_peak_temp=20.0, target_temp=21.0, **_NIGHT)
+    assert d.changed is False
+    assert "forced_at_target" in d.reason
+
+    mock_t.time.return_value = 40000.0
+    mgr.update_position("lr", 0)
+    d = mgr.evaluate("lr", predicted_peak_temp=20.0, target_temp=21.0, **_MORNING)
+    assert d.changed is True
+    assert d.target_position == 100
+
+
+@patch("custom_components.roommind.managers.cover_manager.time")
+def test_room_override_does_not_keep_the_night_position(mock_t):
+    """A climate override (boost/eco/custom) must not keep the covers at the night position."""
+    mock_t.time.return_value = 1000.0
+    mgr = CoverManager()
+    mgr.update_position("lr", 100)
+    mgr.evaluate("lr", predicted_peak_temp=20.0, target_temp=21.0, **_NIGHT)
+    mock_t.time.return_value = 2000.0
+    mgr.update_position("lr", 0)
+    mgr.evaluate("lr", predicted_peak_temp=20.0, target_temp=21.0, **{**_NIGHT, "has_active_override": True})
+
+    mock_t.time.return_value = 40000.0
+    d = mgr.evaluate("lr", predicted_peak_temp=20.0, target_temp=21.0, **{**_MORNING, "has_active_override": True})
+    assert d.changed is True
+    assert d.target_position == 100
+
+    # Afterwards the override keeps shading decisions off as before
+    mock_t.time.return_value = 40030.0
+    mgr.update_position("lr", 100)
+    d = mgr.evaluate("lr", predicted_peak_temp=30.0, target_temp=21.0, **{**_BASE_KWARGS, "has_active_override": True})
+    assert d.changed is False
+    assert d.reason == "manual_override_active"
+
+
+def test_room_override_without_night_close_still_holds():
+    """Outside a forced position a climate override keeps holding the covers."""
+    mgr = CoverManager()
+    mgr.update_position("lr", 0)
+    d = mgr.evaluate("lr", predicted_peak_temp=20.0, target_temp=21.0, **{**_MORNING, "has_active_override": True})
+    assert d.changed is False
+    assert d.reason == "manual_override_active"
+
+
+@patch("custom_components.roommind.managers.cover_manager.time")
+def test_manual_open_after_a_reload_at_night_pauses_night_close(mock_t):
+    """Night close found in place takes over the reading, so a move by hand is still noticed."""
+    mock_t.time.return_value = 1000.0
+    mgr = CoverManager()
+    mgr.update_position("lr", 0)
+    mgr.evaluate("lr", predicted_peak_temp=20.0, target_temp=21.0, **_NIGHT)
+
+    mock_t.time.return_value = 2000.0
+    mgr.update_position("lr", 100)
+    d = mgr.evaluate("lr", predicted_peak_temp=20.0, target_temp=21.0, **_NIGHT)
+    assert d.changed is False
+    assert "user_override" in d.reason
+
+
+@patch("custom_components.roommind.managers.cover_manager.time")
+def test_cover_moved_by_hand_at_night_stays_put_in_the_morning(mock_t):
+    """A cover the user moved during the night is the user's: the morning does not open it."""
+    mock_t.time.return_value = 1000.0
+    mgr = CoverManager()
+    mgr.update_position("lr", 100)
+    mgr.evaluate("lr", predicted_peak_temp=20.0, target_temp=21.0, **_NIGHT)
+    mock_t.time.return_value = 2000.0
+    mgr.update_position("lr", 0)
+    mock_t.time.return_value = 3000.0
+    mgr.update_position("lr", 40)
+
+    mock_t.time.return_value = 3600.0
+    d = mgr.evaluate("lr", predicted_peak_temp=20.0, target_temp=21.0, **_MORNING)
+    assert d.changed is False
+    assert "user_override" in d.reason
+    d = mgr.evaluate("lr", predicted_peak_temp=20.0, target_temp=21.0, **{**_MORNING, "has_active_override": True})
+    assert d.changed is False
+
+    mock_t.time.return_value = 3000.0 + COVER_USER_OVERRIDE_MINUTES * 60 + 60
+    d = mgr.evaluate("lr", predicted_peak_temp=20.0, target_temp=21.0, **_MORNING)
+    assert d.changed is False
+    assert d.reason == "user_position_hold"

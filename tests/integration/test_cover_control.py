@@ -444,6 +444,8 @@ class TestCoverIntegration:
             **ROOM_WITH_COVERS_AUTO,
             "covers_night_close": True,
             "covers_night_position": 0,
+            # 4 °C outside is below the default 10 °C limit, which alone would open the covers
+            "covers_outdoor_min_temp": 0,
         }
         await setup_room(real_store, room)
 

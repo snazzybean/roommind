@@ -195,6 +195,11 @@ class CoverManager:
             state.last_was_forced = True
             state.baseline_position = None
             if abs(forced_position - current) <= 2:
+                # Found in place (reload, or already down): the position is RoomMind's,
+                # so the forced section's end opens it again and a hand move is noticed (#499).
+                state.owned = True
+                state.last_commanded_position = current
+                state.travel_from = None
                 return CoverDecision(
                     target_position=current, changed=False, reason=f"forced_at_target({forced_reason})"
                 )
@@ -218,6 +223,10 @@ class CoverManager:
 
         # Gate 3: Manual override — never fight the user
         if has_active_override:
+            if state.last_was_forced and state.owned:
+                # A climate override is no reason to keep the night/schedule position (#499)
+                state.last_was_forced = False
+                return self._retract_decision(state, "manual_override_active", "forced_end_retract", hold_time_ok=True)
             return CoverDecision(target_position=current, changed=False, reason="manual_override_active")
 
         # Gate 3b: User manually moved cover (e.g. opened for balcony)
