@@ -8,7 +8,9 @@ description: >
   boost override set at 06:00 that still runs in the morning. Night 4 restarts
   Home Assistant at 02:00 (in the sim the cover is not readable on the first cycle,
   so this one passed before the fix too). Every morning the shutter must open
-  again: nothing but night close put it down.
+  again: nothing but night close put it down. A second shutter on the balcony door
+  closes only to 30 % ("fully closed at"); night close must send it once per
+  evening, not every cycle.
 tags: [covers]
 start: 2026-11-10T12:00
 duration: 4d
@@ -22,8 +24,8 @@ house:
       floor_area_m2: 16
       exterior_wall_m2: 11
       initial: {temperature: 19.0, mass_temperature: 19.0}
-      windows: [{orientation: S, area_m2: 1.8}]
-      covers: [{entity_id: cover.sz_rollo, profile: roller_shutter}]
+      windows: [{orientation: S, area_m2: 1.8}, {orientation: S, area_m2: 1.6}]
+      covers: [{entity_id: cover.sz_rollo, profile: roller_shutter}, {entity_id: cover.sz_tuer, profile: roller_shutter}]
       devices: [{entity_id: climate.sz_trv, profile: generic_trv}]
       sensors:
         temperature: {entity_id: sensor.sz_temp}
@@ -37,7 +39,8 @@ roommind:
       temperature_sensor: sensor.sz_temp
       climate_mode: heat_only
       comfort_temp: 19.0
-      covers: [cover.sz_rollo]
+      covers: [cover.sz_rollo, cover.sz_tuer]
+      cover_min_positions: {cover.sz_tuer: 30}
       covers_auto_enabled: true
       covers_night_close: true
       covers_night_position: 0
@@ -59,3 +62,6 @@ expect:
   - {check: "cover('cover.sz_rollo').position < 10", at: "+3d06h00m", label: fourth night close}
   - {check: "cover('cover.sz_rollo').position > 90", at: "+3d22h00m", label: opens after a restart in the night}
   - {metric: cover.max_commands_per_day, entity_id: cover.sz_rollo, max: 3, label: cover moves per day}
+  - {check: "cover('cover.sz_tuer').position > 25 and cover('cover.sz_tuer').position < 35", at: "+0d06h00m", label: door shutter stops at its minimum}
+  - {check: "cover('cover.sz_tuer').position > 90", at: "+0d22h00m", label: door shutter opens in the morning}
+  - {metric: cover.max_commands_per_day, entity_id: cover.sz_tuer, max: 3, label: door shutter not resent every cycle}

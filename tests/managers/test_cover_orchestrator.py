@@ -2367,3 +2367,71 @@ class TestWindowHold:
 
         assert result.decision.changed is True
         assert result.decision.target_position < 100
+
+
+class TestForcedPositionWithCoverMinimum:
+    """A forced position a cover's own minimum keeps it from reaching goes out once, not every cycle."""
+
+    def _setup(self, states: dict, **room_kw):
+        from custom_components.roommind.managers.cover_manager import CoverManager
+
+        hass = _make_hass()
+        hass.states.get = MagicMock(side_effect=states.get)
+        hass.services.async_call = AsyncMock()
+        orch = CoverOrchestrator(hass, CoverManager(), _make_model_manager())
+        room = _make_room(**{"covers": list(states), "covers_night_close": True, "covers_night_position": 0, **room_kw})
+        return hass, orch, room
+
+    async def _night_cycles(self, hass, orch, room, states: dict, settled: dict) -> list[int]:
+        """Three night cycles; after each the covers report *settled*. Returns service calls per cycle."""
+        sent = []
+        for _ in range(3):
+            orch.read_positions("living_room", room)
+            hass.services.async_call.reset_mock()
+            await _process_night(orch, room, window_open=False)
+            sent.append(hass.services.async_call.call_count)
+            states.update(settled)
+        return sent
+
+    @pytest.mark.asyncio
+    async def test_single_cover_with_minimum_is_sent_once(self):
+        states = {"cover.a": _position_cover(100)}
+        hass, orch, room = self._setup(states, cover_min_positions={"cover.a": 30})
+
+        sent = await self._night_cycles(hass, orch, room, states, {"cover.a": _position_cover(30)})
+
+        assert sent == [1, 0, 0]
+
+    @pytest.mark.asyncio
+    async def test_mixed_minimums_are_sent_once(self):
+        states = {"cover.a": _position_cover(100), "cover.b": _position_cover(100)}
+        hass, orch, room = self._setup(states, cover_min_positions={"cover.a": 30})
+
+        sent = await self._night_cycles(
+            hass, orch, room, states, {"cover.a": _position_cover(30), "cover.b": _position_cover(0)}
+        )
+
+        assert sent[0] >= 1
+        assert sent[1:] == [0, 0]
+
+    @pytest.mark.asyncio
+    async def test_binary_cover_next_to_a_minimum_is_sent_once(self):
+        states = {"cover.a": _position_cover(100), "cover.b": _binary_cover("open")}
+        hass, orch, room = self._setup(states, cover_min_positions={"cover.a": 30}, covers_night_position=50)
+
+        sent = await self._night_cycles(
+            hass, orch, room, states, {"cover.a": _position_cover(50), "cover.b": _binary_cover("closed")}
+        )
+
+        assert sent[0] >= 1
+        assert sent[1:] == [0, 0]
+
+    @pytest.mark.asyncio
+    async def test_cover_not_yet_at_its_minimum_is_sent(self):
+        """Clamping only widens 'at target' to where the cover can go; a cover elsewhere still moves."""
+        states = {"cover.a": _position_cover(60)}
+        hass, orch, room = self._setup(states, cover_min_positions={"cover.a": 30})
+
+        sent = await self._night_cycles(hass, orch, room, states, {"cover.a": _position_cover(60)})
+
+        assert sent[0] == 1

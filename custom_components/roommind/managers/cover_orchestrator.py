@@ -329,6 +329,11 @@ class CoverOrchestrator:
             q_solar=q_solar,
             has_active_override=has_override,
             forced_position=_forced_position,
+            forced_expected=(
+                self._expected_position(cover_eids, _forced_position, _cover_min_positions)
+                if _forced_position is not None
+                else None
+            ),
             forced_reason=_forced_reason,
             current_temp=current_temp,
             solar_gated=_solar_gated,
@@ -354,28 +359,33 @@ class CoverOrchestrator:
                 cover_decision.target_position,
                 cover_min_positions=_cover_min_positions or None,
             )
-            expected_positions: list[int] = []
-            for eid in cover_eids:
-                cstate = self.hass.states.get(eid)
-                if cstate is None:
-                    continue
-                supported = cstate.attributes.get("supported_features", 0) or 0
-                if supported & _SUPPORT_SET_POSITION:
-                    expected_positions.append(max(_cover_min_positions.get(eid, 0), cover_decision.target_position))
-                elif cover_decision.target_position < 100:
-                    expected_positions.append(0)
-                else:
-                    expected_positions.append(100)
-            if expected_positions:
-                self._cover_manager.set_commanded_position(
-                    area_id, int(sum(expected_positions) / len(expected_positions))
-                )
+            expected = self._expected_position(cover_eids, cover_decision.target_position, _cover_min_positions)
+            if expected is not None:
+                self._cover_manager.set_commanded_position(area_id, expected)
 
         return CoverResult(
             forced_reason=_forced_reason if _forced_position is not None else "",
             active_cover_schedule_index=_active_cover_sched_idx,
             decision=cover_decision,
         )
+
+    def _expected_position(
+        self, cover_eids: list[str], target_position: int, min_positions: dict[str, int]
+    ) -> int | None:
+        """Room average the covers report once *target_position* is applied (per-cover minimum, binary covers)."""
+        expected: list[int] = []
+        for eid in cover_eids:
+            cstate = self.hass.states.get(eid)
+            if cstate is None:
+                continue
+            supported = cstate.attributes.get("supported_features", 0) or 0
+            if supported & _SUPPORT_SET_POSITION:
+                expected.append(max(min_positions.get(eid, 0), target_position))
+            elif target_position < 100:
+                expected.append(0)
+            else:
+                expected.append(100)
+        return int(sum(expected) / len(expected)) if expected else None
 
     def _lowers_any(self, cover_eids: list[str], target_position: int, min_positions: dict[str, int]) -> bool:
         """Return True if sending *target_position* would move any cover down.

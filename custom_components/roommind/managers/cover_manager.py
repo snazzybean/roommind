@@ -169,6 +169,7 @@ class CoverManager:
         q_solar: float,
         has_active_override: bool,
         forced_position: int | None = None,
+        forced_expected: int | None = None,
         forced_reason: str = "",
         current_temp: float | None = None,
         solar_gated: bool = True,
@@ -194,7 +195,9 @@ class CoverManager:
                 return CoverDecision(target_position=current, changed=False, reason="user_override_active")
             state.last_was_forced = True
             state.baseline_position = None
-            if abs(forced_position - current) <= 2:
+            # A cover's own minimum keeps it short of the raw target; compared against that, not every cycle anew
+            reached = forced_expected if forced_expected is not None else forced_position
+            if abs(reached - current) <= 2:
                 # Found in place (reload, or already down): the position is RoomMind's,
                 # so the forced section's end opens it again and a hand move is noticed (#499).
                 state.owned = True
