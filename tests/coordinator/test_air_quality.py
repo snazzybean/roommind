@@ -230,3 +230,23 @@ async def test_room_added_creates_the_air_quality_entity_next_to_the_cover_one(h
     with patch("homeassistant.helpers.entity_registry.async_get", return_value=_registry([])):
         coordinator._forget_room("bed")
     assert "bed" not in coordinator._air_quality_entity_areas
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("co2", ["900", None])
+async def test_a_run_from_before_the_restart_goes_on(hass, mock_config_entry, co2):
+    """Reading between release and threshold, or the sensor not reporting yet: the fan keeps running."""
+    import time
+
+    coordinator, _, _, calls = _setup(
+        hass,
+        mock_config_entry,
+        AQ_ROOM,
+        settings={"ventilation_state": {FAN: time.time() - 3600}},
+        co2=co2,
+        fan="on",
+    )
+    room = (await coordinator._async_update_data())["rooms"][AREA]
+    assert room["air_quality_bad"] is True
+    assert room["ventilation_active"] is True
+    assert _fan_calls(calls) == []

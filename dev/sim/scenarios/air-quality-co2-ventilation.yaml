@@ -6,7 +6,8 @@ description: >
   1000 ppm, good again below 800, and runs the fan for at least 15 min. Day 1 the fan is switched on
   by hand while the air is good (RoomMind must leave it alone), later switched off by hand while
   RoomMind runs it (it stays off for that bad spell); day 2 climate control of the room is off
-  (nothing switched on, the air is still judged).
+  (nothing switched on, the air is still judged). A restart in the middle of a run (day 0 10:47)
+  must not end it.
 refs: [267]
 tags: [air-quality, presence]
 extends: occupancy-eco-office
@@ -36,6 +37,7 @@ roommind:
       co2_sensor: sensor.buero_co2
       ventilation_entity: input_boolean.buero_luefter
 timeline:
+  - {at: "+0d10h47m", do: ha.restart}
   - {at: "+1d06h00m", do: ha.service, service: input_boolean.turn_on, data: {entity_id: input_boolean.buero_luefter}}
   - {at: "+1d06h50m", do: ha.service, service: input_boolean.turn_off, data: {entity_id: input_boolean.buero_luefter}}
   - {at: "+1d09h52m", do: ha.service, service: input_boolean.turn_off, data: {entity_id: input_boolean.buero_luefter}}
@@ -45,6 +47,8 @@ expect:
   - {check: "room.buero.co2 < 1000 and room.buero.air_quality_bad == true and state('input_boolean.buero_luefter') == 'on'", at: "+0d09h50m", label: on from 1000 ppm and bad until below 800}
   - {check: "room.buero.air_quality_bad == false and room.buero.ventilation_active == true", at: "+0d09h57m", label: good again but the min run holds}
   - {check: "state('input_boolean.buero_luefter') == 'off' and room.buero.ventilation_active == false", at: "+0d10h05m", label: off after the min run}
+  - {check: "state('input_boolean.buero_luefter') == 'on' and room.buero.ventilation_active == true", at: "+0d10h52m", label: a run goes on across a restart}
+  - {check: "state('input_boolean.buero_luefter') == 'off'", at: "+0d11h05m", label: and ends after its min run}
   - {check: "state('input_boolean.buero_luefter') == 'on' and room.buero.ventilation_active == false", at: "+1d06h45m", label: a fan switched on by hand is left alone}
   - {check: "room.buero.air_quality_bad == true and state('input_boolean.buero_luefter') == 'off'", at: "+1d11h", label: switched off by hand during a bad spell stays off}
   - {check: "room.buero.air_quality_bad == true and state('input_boolean.buero_luefter') == 'off'", at: "+2d12h", label: climate control off switches nothing on}

@@ -199,3 +199,18 @@ def test_load_state_ignores_garbage():
     assert v.get_state() == {"fan.a": 12.0}
     v.load_state(None)  # type: ignore[arg-type]
     assert v.get_state() == {}
+
+
+def test_tracker_seeded_bad_continues_a_run_across_a_restart():
+    t = AirQualityTracker()
+    # Between release and threshold: the run started before the restart goes on
+    assert t.evaluate("bed", "co2", 900, 1000, 0, assume_bad=True) is True
+    # Seeded only once: below the release it is good, and stays good
+    assert t.evaluate("bed", "co2", 790, 1000, 30, assume_bad=True) is False
+    assert t.evaluate("bed", "co2", 900, 1000, 60, assume_bad=True) is False
+
+
+def test_tracker_seeded_bad_holds_a_silent_sensor_until_stale():
+    t = AirQualityTracker()
+    assert t.evaluate("bed", "co2", None, 1000, 0, assume_bad=True) is True
+    assert t.evaluate("bed", "co2", None, 1000, MAX_SENSOR_STALENESS + 1, assume_bad=True) is False

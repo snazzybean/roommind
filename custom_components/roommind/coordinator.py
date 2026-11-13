@@ -2705,6 +2705,8 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         now = time.time()
         result = dict(_NO_AIR_QUALITY)
         bad: list[str] = []
+        # A run RoomMind started before a restart or reload: its air was bad then
+        venting = self._ventilation.is_running(room.get("ventilation_entity") or "")
         for kind, threshold in (
             ("co2", room.get("co2_threshold") or DEFAULT_CO2_THRESHOLD),
             ("voc", room.get("voc_threshold")),
@@ -2714,7 +2716,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 continue
             value = read_sensor_value(self.hass, sensor, area_id, kind.upper())
             result[kind] = value
-            if self._air_quality.evaluate(area_id, kind, value, threshold, now):
+            if self._air_quality.evaluate(area_id, kind, value, threshold, now, assume_bad=venting):
                 bad.append(kind)
         result["air_quality_bad"] = bool(bad)
         result["air_quality_reason"] = bad[0] if bad else None

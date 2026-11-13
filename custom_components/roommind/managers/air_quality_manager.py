@@ -47,14 +47,29 @@ class AirQualityTracker:
     """Per room and sensor kind: is the air bad, with hysteresis across cycles.
 
     A sensor without a reading keeps its last judgement for MAX_SENSOR_STALENESS, then counts as good.
+    ``assume_bad`` seeds a kind not judged since the start as bad: after a restart or reload in
+    the middle of a ventilation run the hysteresis continues, and a sensor not reporting yet does
+    not end the run before its staleness ran out.
     """
 
     def __init__(self) -> None:
         self._bad: dict[tuple[str, str], bool] = {}
         self._seen: dict[tuple[str, str], float] = {}
 
-    def evaluate(self, area_id: str, kind: str, value: float | None, threshold: float | None, now: float) -> bool:
+    def evaluate(
+        self,
+        area_id: str,
+        kind: str,
+        value: float | None,
+        threshold: float | None,
+        now: float,
+        *,
+        assume_bad: bool = False,
+    ) -> bool:
         key = (area_id, kind)
+        if assume_bad and key not in self._seen:
+            self._bad[key] = True
+            self._seen[key] = now
         if value is not None:
             self._seen[key] = now
         elif now - self._seen.get(key, -math.inf) > MAX_SENSOR_STALENESS:
