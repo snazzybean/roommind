@@ -457,6 +457,28 @@ class TestPriceAwareSourceChoice:
         result = evaluate_heat_sources(_make_room(), MODE_HEATING, 1.0, 21.0, 21.0, 0.0, "none", hass, "cheap")
         assert result.active_sources == "secondary"
 
+    def test_cheap_electricity_without_outdoor_temperature_keeps_a_primary_run_on_the_gap_rule(self):
+        hass = _make_hass(["heat", "cool", "off"])
+        for level in ("normal", "cheap"):
+            result = evaluate_heat_sources(_make_room(), MODE_HEATING, 1.0, 20.0, 21.0, None, "primary", hass, level)
+            assert result.active_sources == "secondary"
+
+    def test_cheap_electricity_never_gives_the_ac_less_than_a_normal_price(self):
+        hass = _make_hass(["heat", "cool", "off"])
+        ac_sides = ("secondary", "both")
+        for outdoor in (None, -20.0, 0.0, 4.8, 5.0, 5.2, 12.0):
+            for previous in ("none", "primary", "secondary", "both"):
+                for tenths in range(-10, 41):
+                    current = 21.0 - tenths / 10
+                    normal = evaluate_heat_sources(
+                        _make_room(), MODE_HEATING, 1.0, current, 21.0, outdoor, previous, hass, "normal"
+                    )
+                    cheap = evaluate_heat_sources(
+                        _make_room(), MODE_HEATING, 1.0, current, 21.0, outdoor, previous, hass, "cheap"
+                    )
+                    if normal.active_sources in ac_sides:
+                        assert cheap.active_sources in ac_sides, (outdoor, previous, current)
+
     def test_normal_or_unknown_level_keeps_the_outdoor_rule(self):
         hass = _make_hass(["heat", "cool", "off"])
         for level in ("normal", None):

@@ -91,8 +91,10 @@ def evaluate_heat_sources(
 
     ``price_level`` (only for rooms with ``heat_source_price_aware``): expensive electricity
     prefers the primary source instead of the outdoor rule. Cheap electricity prefers the AC;
-    where the outdoor rule picks the primary source (cold day, no outdoor reading) only for a
-    gap below ``primary_delta`` and not within a running primary run. A large gap still runs
+    where the outdoor rule picks the primary source (cold day) only for a gap below
+    ``primary_delta`` and not within a running primary run. Without an outdoor reading the
+    gap rule decides as at a normal price (it already hands the AC every smaller gap), so
+    cheap electricity never gives the AC less than a normal price. A large gap still runs
     both and the AC minimum outdoor temperature still applies.
 
     Returns a HeatSourcePlan for MODE_HEATING, or None if orchestration
@@ -159,9 +161,10 @@ def evaluate_heat_sources(
         # In the cold an AC run ends as soon as the air reaches the target while the walls
         # stay cold, so a pre-heat handed to it fell short of the comfort block: the AC
         # takes only the gaps it may close alone, and an AC run whose gap grows hands over.
-        if previous_active_sources == "primary":
-            prefer_ac = False
-        elif delta_t < primary_delta + (HEAT_SOURCE_HYSTERESIS if previous_active_sources == "secondary" else 0.0):
+        # Only ever widens the AC side: a running primary run keeps the rule of a normal price.
+        if previous_active_sources != "primary" and delta_t < primary_delta + (
+            HEAT_SOURCE_HYSTERESIS if previous_active_sources == "secondary" else 0.0
+        ):
             prefer_ac = True
 
     # At or above the target the controller heats only by its run rules: min-run
