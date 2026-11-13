@@ -1007,7 +1007,7 @@
   "sensors.no_ventilation": "Aucune. Sans ventilation, RoomMind affiche seulement la qualité de l’air.",
   "sensors.air_threshold": "Seuil",
   "sensors.co2_threshold_info": "À partir de cette valeur l’air est considéré comme vicié, de nouveau bon sous 80 % de celle-ci (sous 800 ppm pour 1000). L’Agence fédérale allemande de l’environnement juge inoffensif en dessous de 1000 ppm et recommande d’aérer davantage à partir de 1000 ppm.",
-  "sensors.voc_threshold_info": "Dans l’unité du capteur. Les capteurs de COV indiquent un indice, des ppb ou des µg/m³, il n’y a donc pas de valeur par défaut. Pour un capteur en µg/m³, l’Agence fédérale allemande de l’environnement juge les COVT au-delà de 1000 µg/m³ préoccupants ; pour un capteur à indice (100 = moyenne journalière de la pièce), 250 est courant. De nouveau bon sous 80 % du seuil.",
+  "sensors.voc_threshold_info": "Dans l’unité du capteur. Les capteurs de COV indiquent un indice, des ppb ou des µg/m³, il n’y a donc pas de valeur par défaut. Pour un capteur en µg/m³, l’Agence fédérale allemande de l’environnement juge les COVT au-delà de 1000 µg/m³ préoccupants ; pour un capteur à indice (100 = moyenne journalière de la pièce), 250 est courant. De nouveau bon sous 80 % du seuil. Videz le champ pour seulement afficher la valeur.",
   "sensors.voc_not_judged": "Sans seuil, la valeur est seulement affichée.",
   "sensors.air_bad": "air de mauvaise qualité",
   "sensors.ventilation_running": "en marche pour la qualité de l’air",

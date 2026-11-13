@@ -20,7 +20,7 @@ export type NumberKind = "number" | "temperature" | "temperature-delta";
  * The panel's number input. Commits on change (blur, Enter), not on every keystroke, so a
  * half-typed value never reaches the auto-save. The value is clamped to `min`/`max`, rounded
  * to `step` and written back into the field, so what the field shows is what was saved; an
- * empty or unreadable entry goes back to the last value. Temperatures are stored in °C and shown
+ * empty (unless `allow-empty`) or unreadable entry goes back to the last value. Temperatures are stored in °C and shown
  * in the user's unit (`kind`, needs `hass`): `value`, `min`, `max` stay in °C, `step` defaults to
  * 0.5 °C / 1 °F. Floating label inside the field, `info` icon beside it, `hint` below (rs-field).
  * Shown and typed in the user's language: German shows "1,5" and accepts "1,5" and "1.5".
@@ -42,6 +42,8 @@ export class RsNumberField extends LitElement {
   /** In display units; default 1, temperatures 0.5 °C / 1 °F. */
   @property({ type: Number }) public step: number | undefined;
   @property({ type: Boolean }) public disabled = false;
+  /** An emptied field commits `null` (an optional value, e.g. "no threshold") instead of going back. */
+  @property({ type: Boolean, attribute: "allow-empty" }) public allowEmpty = false;
 
   @query("ha-textfield") private _field?: HTMLElement & { value: string };
 
@@ -135,6 +137,13 @@ export class RsNumberField extends LitElement {
   private _onChange(e: Event) {
     e.stopPropagation();
     const field = e.target as HTMLElement & { value: string };
+    if (this.allowEmpty && String(field.value).trim() === "") {
+      field.value = "";
+      if (this.value != null) {
+        this.dispatchEvent(new CustomEvent("value-changed", { detail: { value: null } }));
+      }
+      return;
+    }
     // type=number would follow the browser's locale, not the panel's; accept comma and dot
     const raw = parseFloat(
       String(field.value).replace(/\s/g, "").replace("\u2212", "-").replace(",", "."),

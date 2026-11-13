@@ -1007,7 +1007,7 @@
   "sensors.no_ventilation": "None. Without one, RoomMind only shows the air quality.",
   "sensors.air_threshold": "Threshold",
   "sensors.co2_threshold_info": "From this value on the air counts as stale, good again below 80 % of it (below 800 ppm at 1000). The German Environment Agency rates below 1000 ppm as harmless and asks for more fresh air from 1000 ppm on.",
-  "sensors.voc_threshold_info": "In the sensor's unit. VOC sensors report an index, ppb or µg/m³, so there is no default. For a µg/m³ sensor the German Environment Agency rates TVOC above 1000 µg/m³ as conspicuous; index sensors (100 = the room's daily average) often use 250. Good again below 80 % of the threshold.",
+  "sensors.voc_threshold_info": "In the sensor's unit. VOC sensors report an index, ppb or µg/m³, so there is no default. For a µg/m³ sensor the German Environment Agency rates TVOC above 1000 µg/m³ as conspicuous; index sensors (100 = the room's daily average) often use 250. Good again below 80 % of the threshold. Empty the field to only show the value.",
   "sensors.voc_not_judged": "No threshold: the value is only shown.",
   "sensors.air_bad": "air quality poor",
   "sensors.ventilation_running": "running for the air quality",

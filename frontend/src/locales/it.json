@@ -1007,7 +1007,7 @@
   "sensors.no_ventilation": "Nessuna. Senza ventilazione RoomMind mostra solo la qualità dell’aria.",
   "sensors.air_threshold": "Soglia",
   "sensors.co2_threshold_info": "Da questo valore l’aria è considerata viziata, di nuovo buona sotto l’80 % (sotto 800 ppm con 1000). L’Agenzia federale tedesca per l’ambiente considera innocuo sotto 1000 ppm e consiglia di arieggiare di più da 1000 ppm.",
-  "sensors.voc_threshold_info": "Nell’unità del sensore. I sensori di VOC indicano un indice, ppb o µg/m³, perciò non c’è un valore predefinito. Per un sensore in µg/m³ l’Agenzia federale tedesca per l’ambiente considera critici i TVOC oltre 1000 µg/m³; per i sensori a indice (100 = media giornaliera della stanza) è comune 250. Di nuovo buona sotto l’80 % della soglia.",
+  "sensors.voc_threshold_info": "Nell’unità del sensore. I sensori di VOC indicano un indice, ppb o µg/m³, perciò non c’è un valore predefinito. Per un sensore in µg/m³ l’Agenzia federale tedesca per l’ambiente considera critici i TVOC oltre 1000 µg/m³; per i sensori a indice (100 = media giornaliera della stanza) è comune 250. Di nuovo buona sotto l’80 % della soglia. Svuota il campo per mostrare solo il valore.",
   "sensors.voc_not_judged": "Senza soglia il valore viene solo mostrato.",
   "sensors.air_bad": "aria di scarsa qualità",
   "sensors.ventilation_running": "attiva per la qualità dell’aria",

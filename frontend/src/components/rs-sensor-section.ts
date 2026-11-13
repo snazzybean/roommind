@@ -839,16 +839,17 @@ export class RsSensorSection extends LitElement {
       .info=${localize("sensors.voc_threshold_info", l)}
       .hint=${this.vocThreshold == null ? localize("sensors.voc_not_judged", l) : ""}
       .suffix=${unit}
+      allow-empty
       .min=${0.1}
       .max=${1000000}
       .step=${0.1}
       .value=${this.vocThreshold}
-      @value-changed=${(e: CustomEvent<{ value: number }>) =>
+      @value-changed=${(e: CustomEvent<{ value: number | null }>) =>
         this._fireSensorChanged("voc_threshold", e.detail.value)}
     ></rs-number-field>`;
   }
 
-  private _fireSensorChanged(key: string, value: boolean | number) {
+  private _fireSensorChanged(key: string, value: boolean | number | null) {
     this.dispatchEvent(
       new CustomEvent("sensor-changed", {
         detail: { key, value },

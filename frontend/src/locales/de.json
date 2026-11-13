@@ -1007,7 +1007,7 @@
   "sensors.no_ventilation": "Keine. Ohne Lüftung zeigt RoomMind die Luftqualität nur an.",
   "sensors.air_threshold": "Schwelle",
   "sensors.co2_threshold_info": "Ab diesem Wert gilt die Luft als verbraucht, gut wieder unter 80 % davon (bei 1000 also unter 800 ppm). Das Umweltbundesamt bewertet unter 1000 ppm als unbedenklich und empfiehlt ab 1000 ppm mehr zu lüften.",
-  "sensors.voc_threshold_info": "In der Einheit des Sensors. VOC-Sensoren melden einen Index, ppb oder µg/m³, deshalb gibt es keinen Standardwert. Für einen µg/m³-Sensor bewertet das Umweltbundesamt TVOC über 1000 µg/m³ als hygienisch auffällig; bei Index-Sensoren (100 = Tagesmittel des Raums) ist 250 verbreitet. Gut wieder unter 80 % der Schwelle.",
+  "sensors.voc_threshold_info": "In der Einheit des Sensors. VOC-Sensoren melden einen Index, ppb oder µg/m³, deshalb gibt es keinen Standardwert. Für einen µg/m³-Sensor bewertet das Umweltbundesamt TVOC über 1000 µg/m³ als hygienisch auffällig; bei Index-Sensoren (100 = Tagesmittel des Raums) ist 250 verbreitet. Gut wieder unter 80 % der Schwelle. Feld leeren, um den Wert nur anzuzeigen.",
   "sensors.voc_not_judged": "Ohne Schwelle wird der Wert nur angezeigt.",
   "sensors.air_bad": "Luft schlecht",
   "sensors.ventilation_running": "läuft wegen der Luftqualität",
