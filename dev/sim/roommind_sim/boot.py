@@ -41,13 +41,23 @@ def _parse(argv: list[str]) -> argparse.Namespace:
     return p.parse_args(argv)
 
 
+def _loop_from_policy() -> bool:
+    """HA before 2026.10 makes its event loop through the asyncio policy (no runner.create_event_loop)."""
+    from importlib.metadata import version
+
+    from .paths import ha_release
+
+    release = ha_release(version("homeassistant"))
+    return release is not None and release < (2026, 10)
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parse(sys.argv[1:] if argv is None else argv)
     inst_dir: Path = args.instance_dir.resolve()
     scenario = json.loads((inst_dir / "scenario.json").read_text())
     state_file = inst_dir / "state" / STATE_FILE
 
-    clk = clockmod.install(float(scenario["start"]), mode=clockmod.PAUSED)
+    clk = clockmod.install(float(scenario["start"]), mode=clockmod.PAUSED, policy_loops=_loop_from_policy())
     seed_randint(int(scenario.get("seed", 1)))
     if state_file.is_file():
         clk.restore(json.loads(state_file.read_text()))

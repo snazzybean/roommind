@@ -10,6 +10,7 @@ from typing import Any
 
 import yaml
 
+from .paths import ha_release
 from .scenario import Scenario, ScenarioError
 
 # Explicit list instead of default_config: no discovery (zeroconf/ssdp/dhcp/bluetooth),
@@ -36,14 +37,16 @@ def write_ha_config(
     trusted_cidrs: list[str],
     recorder: bool = False,
     log_level: str = "warning",
+    ha_version: str | None = None,
 ) -> None:
     """Create/refresh ``config_dir``. Existing ``.storage`` content (state) is kept."""
     config_dir.mkdir(parents=True, exist_ok=True)
     storage = config_dir / ".storage"
     storage.mkdir(exist_ok=True)
-    (config_dir / "configuration.yaml").write_text(
-        yaml.safe_dump(build_configuration(scenario, instance, trusted_cidrs, recorder, log_level), sort_keys=False)
-    )
+    conf = build_configuration(scenario, instance, trusted_cidrs, recorder, log_level)
+    if ha_version and not http_in_storage(ha_version):
+        conf["http"] = _http_yaml(port)
+    (config_dir / "configuration.yaml").write_text(yaml.safe_dump(conf, sort_keys=False))
     _write_storage(storage / "http", "http", 2, 2, _http_data(port))
     if not (storage / "onboarding").exists():
         _write_storage(
@@ -167,6 +170,16 @@ def _hms(value: str) -> str:
 
 def _object_id(key: str, domain: str) -> str:
     return key.split(".", 1)[1] if key.startswith(f"{domain}.") else key
+
+
+def http_in_storage(ha_version: str) -> bool:
+    """HA 2026.10 reads the http config from storage; older releases only from YAML (2026.5 kept 8123)."""
+    release = ha_release(ha_version)
+    return release is None or release >= (2026, 10)
+
+
+def _http_yaml(port: int) -> dict[str, Any]:
+    return {"server_port": port, "login_attempts_threshold": -1, "ip_ban_enabled": False}
 
 
 def _http_data(port: int) -> dict[str, Any]:

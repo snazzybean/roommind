@@ -13,7 +13,7 @@ from roommind_sim.haconfig import build_schedule, write_ha_config
 from roommind_sim.scenario import ScenarioError, load_scenario_dict
 
 
-def _write(tmp_path, src_name="checkout_a"):
+def _write(tmp_path, src_name="checkout_a", ha_version=None):
     scn = load_scenario_dict(base() | {"people": [{"id": "anna"}]})
     src = tmp_path / src_name
     (src / "custom_components" / "roommind").mkdir(parents=True, exist_ok=True)
@@ -27,6 +27,7 @@ def _write(tmp_path, src_name="checkout_a"):
         roommind_src=src / "custom_components" / "roommind",
         simhome_src=src / "simhome",
         trusted_cidrs=["127.0.0.1/32"],
+        ha_version=ha_version,
     )
     return cfg, src
 
@@ -44,6 +45,18 @@ def test_configuration_without_http_and_default_config(tmp_path):
     http = json.loads((cfg / ".storage" / "http").read_text())
     assert http["data"]["stable"]["server_port"] == 8130
     assert http["data"]["pending"] is None
+
+
+@pytest.mark.parametrize(
+    ("version", "in_yaml"), [("2026.5.0", True), ("2026.9.1", True), ("2026.10.0", False), ("2026.11.0b0", False)]
+)
+def test_port_goes_to_yaml_before_ha_2026_10(tmp_path, version, in_yaml):
+    """HA before 2026.10 ignores the http storage slot and stayed on 8123."""
+    cfg, _ = _write(tmp_path, ha_version=version)
+    conf = yaml.safe_load((cfg / "configuration.yaml").read_text())
+    assert ("http" in conf) is in_yaml
+    if in_yaml:
+        assert conf["http"]["server_port"] == 8130
 
 
 def test_symlinks_follow_the_calling_checkout(tmp_path):

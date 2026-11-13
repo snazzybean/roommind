@@ -50,7 +50,7 @@ never in the repository.
 | `sim status`, `sim world`, `sim logs [-f]`, `sim ps`, `sim down [--rm]` | Inspect and manage |
 | `sim shot <name> [--path] [--viewport desktop\|mobile\|tablet] [--dark] [--lang de] [--do click:Text]` | Screenshot with Playwright; prints browser console and HA errors |
 | `sim import <diagnostics.json> [--history roommind_room_*.csv] [--mode closed\|replay]` | Turn a reporter's export into a scenario (see below) |
-| `sim venv add\|list\|prune <ha-version>` | Additional HA versions, e.g. betas: `sim up --ha 2026.11.0b0` |
+| `sim venv add\|list\|prune <ha-version>` | Additional HA versions, e.g. betas: `sim up --ha 2026.11.0b0`. HA before 2026.10 reads the port only from YAML, so the sim writes `http:` into `configuration.yaml` for those (from 2026.10 the port lives in `.storage/http`, YAML `http:` would trigger HA's migration restart); such releases also build their event loop through the asyncio policy, so the virtual clock hooks the policy's loop factory there (`clock.install(policy_loops=True)`) |
 | `sim prune [--keep 20]` | Delete old runs and screenshots (never running or < 6 h old ones) |
 
 `--roommind-src` takes a path to another checkout or any git ref; refs are exported

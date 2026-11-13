@@ -65,7 +65,14 @@ def _scenario_json(scn: Scenario) -> dict[str, Any]:
     return data
 
 
-def _prepare(inst: Instance, scn: Scenario, port: int, recorder: bool, rm_src: Path | None = None) -> None:
+def _prepare(
+    inst: Instance,
+    scn: Scenario,
+    port: int,
+    recorder: bool,
+    rm_src: Path | None = None,
+    ha_version: str = DEFAULT_HA_VERSION,
+) -> None:
     inst.create_dirs()
     inst.scenario_path.write_text(json.dumps(_scenario_json(scn), indent=2, default=str))
     cidrs = ["127.0.0.1/32", "::1/128"]
@@ -80,6 +87,7 @@ def _prepare(inst: Instance, scn: Scenario, port: int, recorder: bool, rm_src: P
         simhome_src=simhome_src(),
         trusted_cidrs=cidrs,
         recorder=recorder,
+        ha_version=ha_version,
     )
     _apply_seed(inst, scn)
 
@@ -179,7 +187,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     inst = Instance.run(scn.name)
     port = inst_mod.allocate_port(inst.name, batch=True)
     rm_src = roommind_src(override=args.roommind_src)
-    _prepare(inst, scn, port, args.recorder, rm_src)
+    _prepare(inst, scn, port, args.recorder, rm_src, args.ha)
     src = source_info(rm_src)
     inst.write_meta(
         name=inst.name,
@@ -430,7 +438,7 @@ def cmd_up(args: argparse.Namespace) -> int:
     if rm_src == REPO_ROOT / "custom_components" / "roommind":
         _check_frontend()
     port = inst_mod.allocate_port(args.name)
-    _prepare(inst, scn, port, args.recorder, rm_src)
+    _prepare(inst, scn, port, args.recorder, rm_src, args.ha)
     inst.write_meta(
         name=args.name, kind="live", port=port, ha_version=args.ha, source=source_info(rm_src), scenario=scn.name
     )

@@ -8,6 +8,9 @@ import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from homeassistant.core import CoreState
+from homeassistant.helpers import entity_registry as er
+
 from ..const import (
     CLIMATE_MODE_HEAT_ONLY,
     COVER_CONFIDENCE_REFERENCE_SOLAR,
@@ -25,6 +28,7 @@ from ..const import (
     COVER_SOLAR_MIN,
     DEFAULT_COMFORT_COOL,
     DEFAULT_COVERS_OUTDOOR_MIN_TEMP,
+    MAX_SENSOR_STALENESS,
     MODE_COOLING,
     TargetTemps,
 )
@@ -85,6 +89,7 @@ class CoverOrchestrator:
         # (value, timestamp) per room; see _smooth()
         self._smoothed_temp: dict[str, tuple[float, float]] = {}
         self._smoothed_excess: dict[str, tuple[float, float]] = {}
+        self._running_since: float | None = None  # first cycle that saw HA fully running
 
     def set_model_manager(self, model_manager: RoomModelManager) -> None:
         """Update the model manager reference (used after full thermal reset)."""
@@ -173,7 +178,7 @@ class CoverOrchestrator:
         if cover_schedules:
             _selector = room.get("cover_schedule_selector_entity", "")
             _any_force = any(e.get("mode", "force") != "gate" for e in cover_schedules)
-            if _selector and _any_force and _unreadable(self.hass.states.get(_selector)):
+            if _selector and _any_force and self._may_still_load(_selector):
                 _forced_unknown = True
             _active_cover_sched_idx = resolve_schedule_index(
                 self.hass,
@@ -200,7 +205,7 @@ class CoverOrchestrator:
                         else:
                             _solar_gated = _sched_st.state == "on"
                     elif _unreadable(_sched_st):
-                        _forced_unknown = True
+                        _forced_unknown = _forced_unknown or self._may_still_load(eid)
                     elif _sched_st is not None and _sched_st.state == "on":
                         # Force mode (default): read position attribute and force covers.
                         _block_pos = _sched_st.attributes.get("position")
@@ -374,6 +379,25 @@ class CoverOrchestrator:
             active_cover_schedule_index=_active_cover_sched_idx,
             decision=cover_decision,
         )
+
+    def _may_still_load(self, entity_id: str) -> bool:
+        """True while an unreadable force source may still get its state (start), False once it is gone.
+
+        A deleted helper or selector (no state, no registry entry while HA runs) and one still
+        unreadable MAX_SENSOR_STALENESS after HA started running would otherwise keep a hand-closed
+        cover counting as found inside a forced phase for good (#499).
+        """
+        state = self.hass.states.get(entity_id)
+        if not _unreadable(state):
+            return False
+        if self.hass.state is not CoreState.running:
+            return True
+        now = time.monotonic()  # a wall clock jump (NTP on a Pi without RTC) must not end the window
+        if self._running_since is None:
+            self._running_since = now
+        if now - self._running_since > MAX_SENSOR_STALENESS:
+            return False
+        return state is not None or er.async_get(self.hass).async_get(entity_id) is not None
 
     def _reading(self, eid: str) -> int | None:
         """Position a cover reports, None while it reports none (unavailable, moving binary cover)."""

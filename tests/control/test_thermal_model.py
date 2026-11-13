@@ -2205,3 +2205,23 @@ def test_ekf_update_step_without_predict_uses_full_gain():
     before = ekf._x[4]
     ekf._update_step(ekf._x[0] + 1.0)
     assert ekf._x[4] > before
+
+
+def test_last_update_time_is_kept_and_survives_a_save(monkeypatch):
+    """The analytics model card shows when the model last learned; older stores have no stamp."""
+    import custom_components.roommind.control.thermal_model as tm
+
+    ekf = ThermalEKF()
+    assert ekf._last_update_at is None
+    monkeypatch.setattr(tm.time, "time", lambda: 1_700_000_000.0)
+    ekf.update(T_measured=20.0, T_outdoor=5.0, mode="idle", dt_minutes=3.0)
+    ekf.update(T_measured=19.98, T_outdoor=5.0, mode="idle", dt_minutes=3.0)
+    assert ekf._last_update_at == 1_700_000_000.0
+    ekf.sync_temperature(19.5)  # a resync after a gap learns nothing
+    assert ekf._last_update_at == 1_700_000_000.0
+
+    data = ekf.to_dict()
+    assert ThermalEKF.from_dict(data)._last_update_at == 1_700_000_000.0
+    del data["last_update_at"]
+    assert ThermalEKF.from_dict(data)._last_update_at is None
+    assert ThermalEKF.from_dict({**data, "last_update_at": "bad"})._last_update_at is None

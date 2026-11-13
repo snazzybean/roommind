@@ -438,6 +438,8 @@ export interface AnalyticsData {
     };
     n_samples: number;
     n_observations: number;
+    /** Unix time of the model's last learning step, null before the first or from an older store */
+    last_update_at?: number | null;
     n_heating: number;
     n_cooling: number;
     applicable_modes: string[];

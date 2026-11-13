@@ -341,6 +341,7 @@
   "analytics.occupancy_gain": "Gain d'occupation",
   "analytics.time_constant": "Constante de temps",
   "analytics.data_points": "Points de données",
+  "analytics.last_learned": "Dernier apprentissage {time}",
   "analytics.control_mode_mpc": "MPC actif",
   "analytics.control_mode_bangbang": "MPC apprend",
   "analytics.info.now": "Calculé à partir du modèle appris pour la température intérieure et extérieure et l'ensoleillement actuels, à pleine puissance. RoomMind planifie avec exactement ces valeurs : par temps froid, chauffer prend plus de temps et la pièce refroidit plus vite, il démarre donc plus tôt. Les valeurs changent avec la météo, le modèle continue d'apprendre à chaque mesure.",

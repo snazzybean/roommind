@@ -8,12 +8,12 @@ PRELUDE = """
 import asyncio, time, datetime
 from roommind_sim import clock as c
 START = 1_768_176_000.0
-clk = c.install(START, mode=MODE)
+clk = c.install(START, mode=MODE, policy_loops=POLICY)
 """
 
 
-def _run(body: str, mode: str = "turbo", timeout: float = 30.0):
-    code = PRELUDE.replace("MODE", repr(mode)) + body
+def _run(body: str, mode: str = "turbo", timeout: float = 30.0, policy: bool = False):
+    code = PRELUDE.replace("MODE", repr(mode)).replace("POLICY", repr(policy)) + body
     res = run_isolated(code, timeout=timeout)
     assert res.returncode == 0, res.stderr
     return res.stdout.strip()
@@ -28,6 +28,24 @@ async def main():
 asyncio.run(main(), loop_factory=asyncio.EventLoop)
 print(round(time.time() - START, 1), round(c._real_monotonic() - r0, 2))
 """
+    )
+    virt, real = out.split()
+    assert float(virt) == 3600.0
+    assert float(real) < 1.0
+
+
+def test_turbo_also_drives_a_loop_made_by_the_event_loop_policy():
+    """HA before 2026.10 builds its loop via a policy (asyncio.new_event_loop), 2026.5 stood still."""
+    out = _run(
+        """
+import warnings
+warnings.simplefilter("ignore", DeprecationWarning)
+loop = asyncio.new_event_loop()
+r0 = c._real_monotonic()
+loop.run_until_complete(asyncio.sleep(3600))
+print(round(time.time() - START, 1), round(c._real_monotonic() - r0, 2))
+""",
+        policy=True,
     )
     virt, real = out.split()
     assert float(virt) == 3600.0

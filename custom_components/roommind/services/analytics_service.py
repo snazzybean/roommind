@@ -399,6 +399,7 @@ async def build_analytics_data(
                 "model": rc.to_dict(),
                 "n_samples": est._n_updates,
                 "n_observations": est._n_updates,
+                "last_update_at": est._last_update_at,
                 "n_heating": est._n_heating,
                 "n_cooling": est._n_cooling,
                 "applicable_modes": sorted(est._applicable_modes),

@@ -341,6 +341,7 @@
   "analytics.occupancy_gain": "Occupancy gain",
   "analytics.time_constant": "Time constant",
   "analytics.data_points": "Data points",
+  "analytics.last_learned": "Last learned {time}",
   "analytics.control_mode_mpc": "MPC active",
   "analytics.control_mode_bangbang": "MPC learning",
   "analytics.info.now": "Computed from the learned model for the current room and outdoor temperature and sun, at full power. RoomMind plans with exactly these figures: on a cold day heating takes longer and the room cools faster, so it starts earlier. The values change with the weather, the model keeps learning with every reading.",

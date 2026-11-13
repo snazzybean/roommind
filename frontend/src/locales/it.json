@@ -341,6 +341,7 @@
   "analytics.occupancy_gain": "Apporto da occupazione",
   "analytics.time_constant": "Costante di tempo",
   "analytics.data_points": "Punti dati",
+  "analytics.last_learned": "Ultimo apprendimento {time}",
   "analytics.control_mode_mpc": "MPC attivo",
   "analytics.control_mode_bangbang": "MPC sta imparando",
   "analytics.info.now": "Calcolato dal modello appreso per la temperatura interna ed esterna e il sole attuali, a piena potenza. RoomMind pianifica proprio con questi valori: in una giornata fredda scaldare richiede più tempo e la stanza si raffredda più in fretta, quindi parte prima. I valori cambiano con il meteo, il modello continua a imparare a ogni misura.",

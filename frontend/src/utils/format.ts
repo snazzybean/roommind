@@ -61,3 +61,13 @@ export function formatRemaining(until: number, language: string, now = serverNow
   const left = until - now;
   return left > 0 ? formatMinutes(Math.ceil(left / 60), language) : "";
 }
+
+/** How long ago `ts` (Unix seconds) was: "vor 3 Minuten", "2 hours ago"; at least a minute. */
+export function formatAgo(ts: number, language: string, now = serverNow() / 1000): string {
+  const minutes = Math.max(1, Math.floor((now - ts) / 60));
+  const rtf = new Intl.RelativeTimeFormat(language, { numeric: "always" });
+  if (minutes < 60) return rtf.format(-minutes, "minute");
+  const hours = Math.floor(minutes / 60);
+  if (hours < 48) return rtf.format(-hours, "hour");
+  return rtf.format(-Math.floor(hours / 24), "day");
+}

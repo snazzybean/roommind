@@ -1594,6 +1594,7 @@ def _make_mock_estimator(**overrides):
     """Build a mock ThermalEKF estimator with sensible defaults."""
     est = MagicMock()
     est._n_updates = overrides.get("n_updates", 200)
+    est._last_update_at = overrides.get("last_update_at", 1_762_000_000.0)
     est._n_idle = overrides.get("n_idle", 120)
     est._n_heating = overrides.get("n_heating", 60)
     est._n_cooling = overrides.get("n_cooling", 20)
@@ -1776,6 +1777,7 @@ async def test_analytics_with_estimator(ws_hass, store, connection):
         {"date": "2026-11-11", "confidence": 0.85, "mpc_active": True, "error": 0.061, "error_steps": 412},
     ]
     assert model["n_samples"] == 200
+    assert model["last_update_at"] == 1_762_000_000.0
     assert model["n_heating"] == 60
     assert model["n_cooling"] == 20
     assert "mpc_active" in model

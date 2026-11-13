@@ -17,6 +17,7 @@ from custom_components.roommind.const import (
     COVER_PREDICTION_DT_MINUTES,
     COVER_SMOOTHING_MINUTES,
     COVER_SMOOTHING_RISE_MINUTES,
+    MAX_SENSOR_STALENESS,
     MODE_COOLING,
     MODE_HEATING,
     MODE_IDLE,
@@ -723,6 +724,87 @@ class TestAsyncProcess:
         )
 
         assert cm.evaluate.call_args.kwargs["forced_unknown"] is unknown
+
+    @pytest.mark.parametrize(
+        ("running", "registered", "elapsed", "unknown"),
+        [
+            (False, False, 10_000.0, True),  # HA still starting: the helper may just not be loaded yet
+            (True, False, 0.0, False),  # running, no state and no registry entry: deleted, not "not yet"
+            (True, True, 0.0, True),  # running, registered but no state yet
+            (True, True, MAX_SENSOR_STALENESS - 1, True),
+            (True, True, MAX_SENSOR_STALENESS + 1, False),  # unreadable for good once HA ran a while
+        ],
+    )
+    @pytest.mark.asyncio
+    async def test_missing_force_schedule_counts_as_unknown_only_while_it_may_still_load(
+        self, running, registered, elapsed, unknown
+    ):
+        """A deleted helper (or one stuck unreadable) must not keep the start-inside-a-forced-phase flag (#499)."""
+        from homeassistant.core import CoreState
+
+        hass = _make_hass()
+        hass.state = CoreState.running if running else CoreState.starting
+        registry = MagicMock()
+        registry.async_get = MagicMock(return_value=MagicMock() if registered else None)
+        cm = _make_cover_manager()
+        orch = CoverOrchestrator(hass, cm, _make_model_manager())
+        room = _make_room(covers=["cover.blind1"], cover_schedules=[{"entity_id": "schedule.gone"}])
+
+        async def _cycle(now: float) -> bool:
+            with (
+                patch("custom_components.roommind.managers.cover_orchestrator.er.async_get", return_value=registry),
+                patch("custom_components.roommind.managers.cover_orchestrator.time.monotonic", return_value=now),
+            ):
+                await orch.async_process(
+                    area_id="living_room",
+                    room=room,
+                    targets=TargetTemps(heat=21.0, cool=24.0),
+                    mode=MODE_HEATING,
+                    current_temp=20.0,
+                    outdoor_temp=15.0,
+                    q_solar=0.3,
+                    predicted_peak_temp=22.0,
+                    has_override=False,
+                )
+            return cm.evaluate.call_args.kwargs["forced_unknown"]
+
+        await _cycle(1_000.0)
+        assert await _cycle(1_000.0 + elapsed) is unknown
+
+    @pytest.mark.asyncio
+    async def test_selector_still_loading_is_not_cleared_by_a_deleted_helper(self):
+        """Selector registered but without state yet, the helper it points at deleted: still unknown."""
+        from homeassistant.core import CoreState
+
+        hass = _make_hass()
+        hass.state = CoreState.running
+        registry = MagicMock()
+        registry.async_get = MagicMock(side_effect=lambda eid: MagicMock() if eid == "input_boolean.sel" else None)
+        cm = _make_cover_manager()
+        orch = CoverOrchestrator(hass, cm, _make_model_manager())
+        room = _make_room(
+            covers=["cover.blind1"],
+            cover_schedules=[{"entity_id": "schedule.gone"}, {"entity_id": "schedule.other"}],
+            cover_schedule_selector_entity="input_boolean.sel",
+        )
+
+        with (
+            patch("custom_components.roommind.managers.cover_orchestrator.er.async_get", return_value=registry),
+            patch("custom_components.roommind.managers.cover_orchestrator.resolve_schedule_index", return_value=0),
+        ):
+            await orch.async_process(
+                area_id="living_room",
+                room=room,
+                targets=TargetTemps(heat=21.0, cool=24.0),
+                mode=MODE_HEATING,
+                current_temp=20.0,
+                outdoor_temp=15.0,
+                q_solar=0.3,
+                predicted_peak_temp=22.0,
+                has_override=False,
+            )
+
+        assert cm.evaluate.call_args.kwargs["forced_unknown"] is True
 
     @pytest.mark.asyncio
     async def test_night_close_forced(self):
@@ -2500,3 +2582,72 @@ class TestForcedPositionWithCoverMinimum:
         sent = await self._night_cycles(hass, orch, room, states, {"cover.a": _position_cover(60)})
 
         assert sent[0] == 1
+
+
+class TestDeletedForceSchedule:
+    """A force helper deleted but still listed must not make a hand-closed cover RoomMind's (#499)."""
+
+    @pytest.mark.asyncio
+    async def test_cover_closed_by_hand_stays_closed_in_the_morning(self):
+        from homeassistant.core import CoreState
+
+        from custom_components.roommind.managers.cover_manager import CoverManager
+
+        states: dict[str, tuple[str, dict]] = {}
+
+        def _get(eid):
+            if eid not in states:
+                return None
+            s = MagicMock()
+            s.state, s.attributes = states[eid]
+            return s
+
+        def _cover(position: int) -> None:
+            states["cover.blind1"] = (
+                "open" if position > 0 else "closed",
+                {"current_position": position, "supported_features": 15},
+            )
+
+        hass = _make_hass()
+        hass.state = CoreState.running
+        hass.states.get = MagicMock(side_effect=_get)
+        hass.services.async_call = AsyncMock()
+        registry = MagicMock()
+        registry.async_get = MagicMock(return_value=None)
+        orch = CoverOrchestrator(hass, CoverManager(), _make_model_manager())
+        room = _make_room(
+            covers=["cover.blind1"],
+            covers_night_close=True,
+            cover_schedules=[{"entity_id": "schedule.gone"}],
+            climate_mode="heat_only",
+        )
+
+        async def _cycle(now: float, elevation: float):
+            with (
+                patch("custom_components.roommind.managers.cover_orchestrator.er.async_get", return_value=registry),
+                patch("custom_components.roommind.managers.cover_orchestrator.time.time", return_value=now),
+                patch("custom_components.roommind.managers.cover_manager.time.time", return_value=now),
+                patch("custom_components.roommind.managers.cover_orchestrator.solar_elevation", return_value=elevation),
+            ):
+                orch.read_positions("living_room", room)
+                result = await orch.async_process(
+                    area_id="living_room",
+                    room=room,
+                    targets=TargetTemps(heat=21.0, cool=None),
+                    mode=MODE_IDLE,
+                    current_temp=21.5,
+                    outdoor_temp=15.0,
+                    q_solar=0.0,
+                    predicted_peak_temp=21.5,
+                    has_override=False,
+                )
+            return result.decision
+
+        _cover(100)
+        await _cycle(1_000.0, 30.0)  # daytime start, cover open
+        _cover(0)  # closed by hand in the afternoon
+        await _cycle(2_000.0, 10.0)
+        await _cycle(20_000.0, -5.0)  # sunset: night close finds it in place
+        morning = await _cycle(60_000.0, 10.0)
+
+        assert not morning.changed

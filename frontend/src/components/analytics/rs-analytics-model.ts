@@ -6,7 +6,13 @@ import { LitElement, html, css, nothing } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import type { HomeAssistant, AnalyticsData, BacktestFigures } from "../../types";
 import { localize, type TranslationKey } from "../../utils/localize";
-import { formatHours, formatMinutes, formatNumber, formatPercent } from "../../utils/format";
+import {
+  formatAgo,
+  formatHours,
+  formatMinutes,
+  formatNumber,
+  formatPercent,
+} from "../../utils/format";
 import {
   formatTempLocale,
   tempUnit,
@@ -109,6 +115,13 @@ export class RsAnalyticsModel extends LitElement {
                 ${formatNumber(observations, this.hass)} ${localize("analytics.data_points", l)}
                 <rs-info-icon .text=${localize("analytics.info.data_points", l)}></rs-info-icon>
               </div>
+              ${
+                hasModel && m?.last_update_at
+                  ? html`<div class="updated">
+                      ${localize("analytics.last_learned", l, { time: formatAgo(m.last_update_at, l) })}
+                    </div>`
+                  : nothing
+              }
               ${
                 this.boostHours != null
                   ? html`<div class="boost">
@@ -593,6 +606,12 @@ export class RsAnalyticsModel extends LitElement {
         margin-top: 6px;
         font-size: var(--rs-font-sm);
         font-variant-numeric: tabular-nums;
+      }
+
+      .updated {
+        margin-top: 2px;
+        font-size: var(--rs-font-sm);
+        color: var(--secondary-text-color);
       }
 
       .steps {

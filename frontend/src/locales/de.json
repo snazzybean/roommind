@@ -341,6 +341,7 @@
   "analytics.occupancy_gain": "Wärme bei Belegung",
   "analytics.time_constant": "Zeitkonstante",
   "analytics.data_points": "Datenpunkte",
+  "analytics.last_learned": "Zuletzt gelernt {time}",
   "analytics.control_mode_mpc": "MPC aktiv",
   "analytics.control_mode_bangbang": "MPC lernt",
   "analytics.info.now": "Aus dem gelernten Modell für die aktuelle Raum- und Außentemperatur und Sonne, bei voller Leistung. Genau mit diesen Werten plant RoomMind: An einem kalten Tag dauert das Aufheizen länger und der Raum kühlt schneller aus, also startet es früher. Die Werte ändern sich mit dem Wetter, das Modell lernt mit jeder Messung weiter.",

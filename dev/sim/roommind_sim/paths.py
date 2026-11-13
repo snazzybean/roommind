@@ -80,3 +80,12 @@ def source_info(src: Path) -> dict[str, str]:
 
 def simhome_src(sim_root: Path = SIM_ROOT) -> Path:
     return sim_root / "ha_component" / "simhome"
+
+
+def ha_release(version: str) -> tuple[int, int] | None:
+    """(year, month) of an HA version string like "2026.5.0" or "2026.11.0b0", None if unparsable."""
+    try:
+        year, month = (int(part) for part in version.split(".")[:2])
+    except ValueError:
+        return None
+    return year, month

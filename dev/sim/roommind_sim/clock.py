@@ -14,6 +14,7 @@ import sys
 import threading
 import time as _time
 import traceback
+import warnings
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
@@ -246,6 +247,7 @@ def install(
     *,
     stall_warn_s: float = 30.0,
     stall_abort_s: float = 120.0,
+    policy_loops: bool = False,
 ) -> Clock:
     """Patch time sources and the asyncio loop class; returns the clock."""
     global CLOCK  # noqa: PLW0603
@@ -296,4 +298,13 @@ def install(
         clock.pending_exec -= 1
 
     asyncio.EventLoop = SimEventLoop  # type: ignore[misc]
+    if not policy_loops:
+        return clock
+    # HA before 2026.10 creates its loop through an event loop policy, not asyncio.EventLoop;
+    # only then, since every other loop made by the policy (threads) would drive the clock too.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        policy = getattr(asyncio, "DefaultEventLoopPolicy", None)
+    if policy is not None and hasattr(policy, "_loop_factory"):
+        policy._loop_factory = SimEventLoop
     return clock

@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import logging
 import math
+import time
 
 from ..const import (
     RESIDUAL_SCALE_EMA_ALPHA,
@@ -358,6 +359,7 @@ class ThermalEKF:
         diag = self._p_init_diag()
         self._P: list[list[float]] = [[diag[i] if i == j else 0.0 for j in range(self._N)] for i in range(self._N)]
         self._n_updates: int = 0
+        self._last_update_at: float | None = None  # Unix time of the last learning step
         self._n_heating: int = 0
         self._n_cooling: int = 0
         self._n_idle: int = 0
@@ -707,6 +709,7 @@ class ThermalEKF:
         # Update bookkeeping
         self._last_mode = mode
         self._n_updates += 1
+        self._last_update_at = time.time()
         if predict_mode == "heating":
             self._n_heating += 1
         elif predict_mode == "cooling":
@@ -1036,6 +1039,7 @@ class ThermalEKF:
             "P": [list(row[:6]) for row in self._P[:6]],
             "beta_f": {"x": self._x[6], "P": list(self._P[6])},
             "n_updates": self._n_updates,
+            "last_update_at": self._last_update_at,
             "n_heating": self._n_heating,
             "n_cooling": self._n_cooling,
             "n_idle": self._n_idle,
@@ -1101,6 +1105,8 @@ class ThermalEKF:
                 ekf._P[j][6] = float(value)
 
         ekf._n_updates = data.get("n_updates", 0)
+        last_update_at = data.get("last_update_at")
+        ekf._last_update_at = float(last_update_at) if isinstance(last_update_at, (int, float)) else None
         ekf._n_heating = data.get("n_heating", 0)
         ekf._n_cooling = data.get("n_cooling", 0)
         ekf._n_idle = data.get("n_idle", 0)
