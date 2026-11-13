@@ -1,5 +1,5 @@
 import { html, css, nothing } from "lit";
-import { customElement, property } from "lit/decorators.js";
+import { customElement, property, state } from "lit/decorators.js";
 import type { CoverScheduleEntry } from "../types";
 import { localize } from "../utils/localize";
 import { formatPercent } from "../utils/format";
@@ -8,11 +8,20 @@ import { inputStyles } from "../styles/input-styles";
 import { tokens } from "../styles/tokens";
 import "./shared/rs-list-row";
 import "./shared/rs-segmented";
+import "./schedule/rs-schedule-create";
+import { isAdmin } from "../utils/schedule-api";
 
-/** Cover schedules of a room (edit mode only): order, mode per schedule, selector. */
+/**
+ * Cover schedules of a room (edit mode only): order, mode per schedule, selector; a row opens
+ * the schedule editor (positions per block), admins create a new cover schedule here.
+ */
 @customElement("rs-cover-schedule")
 export class RsCoverSchedule extends RsScheduleBase {
   @property({ attribute: false }) public schedules: CoverScheduleEntry[] = [];
+  /** Default name of a schedule created here. */
+  @property({ type: String }) public roomName = "";
+
+  @state() private _creating = false;
 
   static styles = [
     tokens,
@@ -33,6 +42,11 @@ export class RsCoverSchedule extends RsScheduleBase {
 
       .entries rs-list-row.unreachable {
         opacity: 0.6;
+      }
+
+      .create-row {
+        margin-inline: calc(-1 * var(--rs-form-inline, 16px));
+        --rs-list-row-padding: var(--rs-form-inline, 16px);
       }
 
       rs-segmented {
@@ -61,11 +75,11 @@ export class RsCoverSchedule extends RsScheduleBase {
             </div>`
           : nothing
       }
+      ${isAdmin(this.hass) ? this._renderCreate() : nothing}
       ${this._renderAddRow(
         localize("covers.add_schedule", l),
         this._getAvailableEntities(usedIds),
         (eid) => this._addSchedule(eid),
-        localize("covers.schedule_create_link", l),
       )}
       ${this._renderSelectorSection(
         count,
@@ -94,12 +108,15 @@ export class RsCoverSchedule extends RsScheduleBase {
       <rs-list-row
         class=${state}
         single-line
+        clickable
+        chevron
         icon="mdi:calendar-clock"
         icon-label=${localize("detail.more_info", l)}
         .heading=${name}
         .secondary=${secondary}
         .status=${state === "active" ? "on" : "off"}
         @icon-click=${() => this._openEntityInfo(entry.entity_id)}
+        @row-click=${() => this._openEditor(entry.entity_id)}
       >
         <span slot="end"
           >${this._renderScheduleControls(
@@ -138,6 +155,42 @@ export class RsCoverSchedule extends RsScheduleBase {
     if (state === "active") return localize("covers.schedule_state_active", l);
     if (state === "unreachable") return localize("covers.schedule_state_unreachable", l);
     return localize("covers.schedule_state_inactive", l);
+  }
+
+  private _renderCreate() {
+    const l = this.hass.language;
+    if (!this._creating) {
+      return html`<rs-list-row
+        class="create-row"
+        clickable
+        plain-icon
+        variant="primary"
+        icon="mdi:plus"
+        .heading=${localize("schedule_editor.create", l)}
+        @row-click=${() => (this._creating = true)}
+      ></rs-list-row>`;
+    }
+    return html`<rs-schedule-create
+      .hass=${this.hass}
+      kind="cover"
+      .defaultName=${localize("covers.schedule_default_name", l, { room: this.roomName })}
+      @create-cancelled=${() => (this._creating = false)}
+      @schedule-created=${(e: CustomEvent<{ entityId: string }>) => {
+        this._creating = false;
+        this._addSchedule(e.detail.entityId);
+        this._openEditor(e.detail.entityId);
+      }}
+    ></rs-schedule-create>`;
+  }
+
+  private _openEditor(entityId: string) {
+    this.dispatchEvent(
+      new CustomEvent("open-schedule-editor", {
+        detail: { entityId, kind: "cover" },
+        bubbles: true,
+        composed: true,
+      }),
+    );
   }
 
   private _addSchedule(entityId: string) {

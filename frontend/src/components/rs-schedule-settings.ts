@@ -309,7 +309,6 @@ export class RsScheduleSettings extends RsScheduleBase {
         localize("schedule_editor.add_existing", l),
         this._getAvailableEntities(usedIds),
         (eid) => this._addSchedule(eid),
-        "",
       )}
     `;
   }

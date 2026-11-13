@@ -141,12 +141,6 @@ export abstract class RsScheduleBase extends LitElement {
       width: 100%;
     }
 
-    /* rows reach the dialog edge so their text lines up with the fields */
-    .helper-link {
-      margin: var(--rs-space-1) calc(-1 * var(--rs-form-inline, 16px)) 0;
-      --rs-list-row-padding: var(--rs-form-inline, 16px);
-    }
-
     .no-schedules {
       font-size: 13px;
       color: var(--secondary-text-color);
@@ -227,7 +221,6 @@ export abstract class RsScheduleBase extends LitElement {
     label: string,
     available: string[],
     onAdd: (entityId: string) => void,
-    createLabel: string,
   ): TemplateResult {
     return html`
       <div class="add-schedule-row">
@@ -256,18 +249,6 @@ export abstract class RsScheduleBase extends LitElement {
             `,
           )}
         </ha-select>
-        ${
-          createLabel
-            ? html`<rs-list-row
-                class="helper-link"
-                href="/config/helpers/add?domain=schedule"
-                plain-icon
-                variant="primary"
-                icon="mdi:plus"
-                .heading=${createLabel}
-              ></rs-list-row>`
-            : nothing
-        }
       </div>
     `;
   }

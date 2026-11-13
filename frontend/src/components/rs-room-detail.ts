@@ -1021,6 +1021,7 @@ export class RsRoomDetail extends LitElement {
         >
           ${coversHelp(lang)}
           <rs-covers-section
+            @open-schedule-editor=${this._onOpenScheduleEditor}
             .hass=${this.hass}
             .area=${this.area}
             .editing=${true}
@@ -1092,7 +1093,9 @@ export class RsRoomDetail extends LitElement {
    * The schedule dialog opens the editor page: a pending room save (e.g. the just created
    * helper's assignment) goes out first, the page switch unmounts this element.
    */
-  private async _onOpenScheduleEditor(e: CustomEvent<{ entityId: string }>) {
+  private async _onOpenScheduleEditor(
+    e: CustomEvent<{ entityId: string; kind?: "climate" | "cover" }>,
+  ) {
     e.stopPropagation();
     if (this._saveDebounce) {
       clearTimeout(this._saveDebounce);
@@ -1102,7 +1105,11 @@ export class RsRoomDetail extends LitElement {
     this._editing = null;
     this.dispatchEvent(
       new CustomEvent("open-schedule-editor", {
-        detail: { entityId: e.detail.entityId, areaId: this.area.area_id },
+        detail: {
+          entityId: e.detail.entityId,
+          areaId: this.area.area_id,
+          kind: e.detail.kind ?? "climate",
+        },
         bubbles: true,
         composed: true,
       }),

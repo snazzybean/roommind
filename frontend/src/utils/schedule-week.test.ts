@@ -8,6 +8,12 @@ import {
   serializeWeek,
   splitOverMidnight,
   withTemps,
+  blockPosition,
+  withPosition,
+  withPositions,
+  hasPositions,
+  createBlock,
+  COVER_TEMPLATES,
   type Week,
 } from "./schedule-week";
 
@@ -165,5 +171,59 @@ describe("week edits", () => {
     expect(out?.[0]).toEqual([{ start: 0, end: 120, data: { heat_temperature: 19 } }]);
     w[0] = [{ start: 60, end: 180 }];
     expect(splitOverMidnight(w, 6, 0, 1320, 120)).toBeNull();
+  });
+});
+
+describe("cover positions", () => {
+  test("blockPosition reads, clamps and ignores what is no number", () => {
+    expect(blockPosition({ start: 0, end: 60, data: { position: 40 } })).toBe(40);
+    expect(blockPosition({ start: 0, end: 60, data: { position: "70" } })).toBe(70);
+    expect(blockPosition({ start: 0, end: 60, data: { position: 140 } })).toBe(100);
+    expect(blockPosition({ start: 0, end: 60, data: { position: "x" } })).toBeUndefined();
+    expect(blockPosition({ start: 0, end: 60, data: { position: true } })).toBeUndefined();
+    expect(blockPosition({ start: 0, end: 60 })).toBeUndefined();
+  });
+
+  test("withPosition keeps other keys and rounds", () => {
+    expect(withPosition({ note: "x" }, 42.6)).toEqual({ note: "x", position: 43 });
+    expect(withPosition(undefined, -5)).toEqual({ position: 0 });
+  });
+
+  test("a block drawn in the grid gets a position before it is saved", () => {
+    const empty: Week = [[], [], [], [], [], [], []];
+    const created = createBlock(empty, 2, 360, 480);
+    expect(created).not.toBeNull();
+    const week = withPositions(created!.week);
+    expect(blockPosition(week[2][0])).toBe(0);
+    expect(hasPositions(week)).toBe(true);
+  });
+
+  test("set positions stay, an unchanged week is returned as is", () => {
+    const week: Week = [[{ start: 0, end: 60, data: { position: 40 } }], [], [], [], [], [], []];
+    expect(withPositions(week)).toBe(week);
+    const mixed: Week = [
+      [
+        { start: 0, end: 60, data: { position: 40 } },
+        { start: 120, end: 180 },
+      ],
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
+    ];
+    const filled = withPositions(mixed);
+    expect(filled[0].map(blockPosition)).toEqual([40, 0]);
+    expect(hasPositions([[], [], [], [], [], [], []])).toBe(false);
+  });
+
+  test("the night template closes from 22:00 to 07:00", () => {
+    const week = COVER_TEMPLATES[0].make();
+    expect(week).toHaveLength(7);
+    expect(week[0].map((b) => [b.start, b.end, blockPosition(b)])).toEqual([
+      [0, 420, 0],
+      [1320, 1440, 0],
+    ]);
   });
 });

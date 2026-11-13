@@ -1,6 +1,6 @@
 /**
  * rs-schedule-create – Form for a new Home Assistant schedule helper: name and a start week.
- * Fires `schedule-created` `{ entityId }` once the helper exists and `create-cancelled`.
+ * Fires `schedule-created` `{ entityId, kind }` once the helper exists and `create-cancelled`.
  * Used by the room's schedule dialog and the schedule overview.
  */
 import { LitElement, html, css, nothing } from "lit";
@@ -8,7 +8,7 @@ import { customElement, property, state } from "lit/decorators.js";
 import type { HomeAssistant } from "../../types";
 import { localize } from "../../utils/localize";
 import { errorText } from "../../utils/errors";
-import { TEMPLATES, emptyWeek } from "../../utils/schedule-week";
+import { COVER_TEMPLATES, TEMPLATES, emptyWeek } from "../../utils/schedule-week";
 import { createSchedule } from "../../utils/schedule-api";
 import { tokens } from "../../styles/tokens";
 import { inputStyles } from "../../styles/input-styles";
@@ -18,6 +18,8 @@ import "../shared/rs-radio-group";
 export class RsScheduleCreate extends LitElement {
   @property({ attribute: false }) public hass!: HomeAssistant;
   @property({ type: String }) public defaultName = "";
+  /** A cover schedule offers cover templates (positions) instead of the heating ones. */
+  @property({ type: String }) public kind: "climate" | "cover" = "climate";
   /** Without its own border, e.g. inside a dialog. */
   @property({ type: Boolean, reflect: true }) public plain = false;
 
@@ -50,7 +52,7 @@ export class RsScheduleCreate extends LitElement {
       <rs-radio-group
         .options=${[
           { value: "", label: localize("schedule_editor.tpl_empty", l) },
-          ...TEMPLATES.map((t) => ({
+          ...this._templates().map((t) => ({
             value: t.id,
             label: `${localize(`schedule_editor.tpl_${t.id}` as "schedule_editor.tpl_split", l)} (${localize(
               `schedule_editor.tpl_${t.id}_sub` as "schedule_editor.tpl_split_sub",
@@ -79,19 +81,32 @@ export class RsScheduleCreate extends LitElement {
     </div>`;
   }
 
+  private _templates() {
+    return this.kind === "cover" ? COVER_TEMPLATES : TEMPLATES;
+  }
+
+  protected willUpdate(changed: Map<string, unknown>) {
+    // A template of the other kind is no choice there
+    if (changed.has("kind") && !this._templates().some((t) => t.id === this._template)) {
+      this._template = "";
+    }
+  }
+
   private _create = async () => {
     const name = this._name.trim();
     if (!name || this._busy) return;
     this._busy = true;
     this._error = "";
     try {
-      const template = TEMPLATES.find((t) => t.id === this._template);
+      const template = this._templates().find((t) => t.id === this._template);
       const entityId = await createSchedule(
         this.hass,
         name,
         template ? template.make() : emptyWeek(),
       );
-      this.dispatchEvent(new CustomEvent("schedule-created", { detail: { entityId } }));
+      this.dispatchEvent(
+        new CustomEvent("schedule-created", { detail: { entityId, kind: this.kind } }),
+      );
     } catch (err) {
       const l = this.hass.language;
       this._error = errorText(err, localize("schedule_editor.create_error", l), l);

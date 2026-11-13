@@ -60,6 +60,8 @@ export class RoomMindPanel extends LitElement {
   /** Schedule helper open in the editor page, and the room it was opened from. */
   @state() private _scheduleEntity: string | null = null;
   @state() private _scheduleRoom = "";
+  /** "cover" / "climate" when the opener knew the kind, "" = the editor tells from its use. */
+  @state() private _scheduleKind: "" | "climate" | "cover" = "";
   @state() private _scheduleOffAction: "eco" | "off" = "eco";
   /** The open room came from its analytics page; back returns there. */
   @state() private _roomFromAnalytics = false;
@@ -478,6 +480,7 @@ export class RoomMindPanel extends LitElement {
         .hass=${this.hass}
         .entityId=${this._scheduleEntity}
         .roomId=${this._scheduleRoom}
+        .kind=${this._scheduleKind}
         .rooms=${this._rooms}
         .scheduleOffAction=${this._scheduleOffAction}
         @schedule-closed=${this._onScheduleClosed}
@@ -734,13 +737,21 @@ export class RoomMindPanel extends LitElement {
     }
   }
 
-  private _onOpenScheduleEditor(e: CustomEvent<{ entityId: string; areaId: string }>) {
+  private _onOpenScheduleEditor(
+    e: CustomEvent<{ entityId: string; areaId: string; kind?: "" | "climate" | "cover" }>,
+  ) {
     this._scheduleEntity = e.detail.entityId;
     this._scheduleRoom = e.detail.areaId;
+    this._scheduleKind = e.detail.kind ?? "";
     this._selectedAreaId = null;
     if (!e.detail.areaId) this._activeTab = "schedules";
-    const room = e.detail.areaId ? `?room=${encodeURIComponent(e.detail.areaId)}` : "";
-    this._navigate(`/schedule/${encodeURIComponent(e.detail.entityId)}${room}`);
+    const query = new URLSearchParams();
+    if (e.detail.areaId) query.set("room", e.detail.areaId);
+    if (this._scheduleKind) query.set("kind", this._scheduleKind);
+    const search = query.toString();
+    this._navigate(
+      `/schedule/${encodeURIComponent(e.detail.entityId)}${search ? `?${search}` : ""}`,
+    );
   }
 
   /** Back from the schedule editor: to the room it came from, else the schedule overview. */
@@ -995,7 +1006,10 @@ export class RoomMindPanel extends LitElement {
       this._selectedAreaId = null;
       this._scheduleEntity = decodeURIComponent(path.slice(10));
       // The route carries only the path; the room comes from the query string.
-      this._scheduleRoom = new URLSearchParams(window.location.search).get("room") ?? "";
+      const query = new URLSearchParams(window.location.search);
+      this._scheduleRoom = query.get("room") ?? "";
+      const kind = query.get("kind");
+      this._scheduleKind = kind === "cover" || kind === "climate" ? kind : "";
       this._activeTab = this._scheduleRoom ? "areas" : "schedules";
     } else if (path === "/schedules") {
       this._activeTab = "schedules";

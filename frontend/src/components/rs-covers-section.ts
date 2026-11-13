@@ -414,6 +414,7 @@ export class RsCoverSection extends LitElement {
       </h4>
       <rs-cover-schedule
         .hass=${this.hass}
+        .roomName=${this.area.name}
         .schedules=${this.coverSchedules}
         .selectorEntity=${this.coverScheduleSelectorEntity}
         .activeIndex=${this.activeCoverScheduleIndex}

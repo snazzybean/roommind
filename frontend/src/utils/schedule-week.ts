@@ -382,10 +382,50 @@ export function roundToStep(value: number, step: number): number {
   return Number(rounded.toFixed(2));
 }
 
+// ─── Cover position ──────────────────────────────────────────────────
+
+/** HA cover position: 0 = closed, 100 = open. */
+export const COVER_CLOSED = 0;
+export const COVER_OPEN = 100;
+
+/** Position of a cover schedule block, undefined when the block has none. */
+export function blockPosition(block: ScheduleBlock): number | undefined {
+  const raw = block.data?.position;
+  if (raw === undefined || raw === "" || typeof raw === "boolean") return undefined;
+  const value = Number(raw);
+  return Number.isFinite(value) ? Math.max(COVER_CLOSED, Math.min(COVER_OPEN, value)) : undefined;
+}
+
+/** Block data with a new position; other keys stay. */
+export function withPosition(data: BlockData | undefined, position: number): BlockData {
+  const value = Math.round(Math.max(COVER_CLOSED, Math.min(COVER_OPEN, position)));
+  return { ...(data ?? {}), position: value };
+}
+
+/**
+ * Every block of a cover schedule gets an explicit position. The cover logic reads a block
+ * without one as closed (and logs it every cycle), so new blocks from any path (drag, add,
+ * split, copy, template) and blocks made in Home Assistant without one are written as closed:
+ * the same behaviour, now visible. Returns the same week when nothing was missing.
+ */
+export function withPositions(week: Week): Week {
+  if (week.every((day) => day.every((b) => blockPosition(b) !== undefined))) return week;
+  return week.map((day) =>
+    day.map((b) =>
+      blockPosition(b) !== undefined ? b : { ...b, data: withPosition(b.data, COVER_CLOSED) },
+    ),
+  );
+}
+
+/** Whether any block carries a position (a cover schedule made elsewhere). */
+export function hasPositions(week: Week): boolean {
+  return week.some((day) => day.some((b) => b.data?.position !== undefined));
+}
+
 // ─── Templates ───────────────────────────────────────────────────────
 
 export interface WeekTemplate {
-  id: "split" | "day" | "home";
+  id: "split" | "day" | "home" | "night";
   make: () => Week;
 }
 
@@ -413,6 +453,20 @@ export const TEMPLATES: WeekTemplate[] = [
       day(["08:00", "23:00"]),
       day(["08:00", "23:00"]),
     ],
+  },
+];
+
+/** Starting points for a new cover schedule: closed through the night. */
+export const COVER_TEMPLATES: WeekTemplate[] = [
+  {
+    id: "night",
+    make: () =>
+      WEEKDAYS.map(() =>
+        day(["00:00", "07:00"], ["22:00", "24:00"]).map((b) => ({
+          ...b,
+          data: { position: COVER_CLOSED },
+        })),
+      ),
   },
 ];
 

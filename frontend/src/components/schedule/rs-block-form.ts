@@ -13,8 +13,11 @@ import {
   usesFahrenheit,
 } from "../../utils/temperature";
 import {
+  COVER_CLOSED,
+  COVER_OPEN,
   DAY_MINUTES,
   SNAP_MINUTES,
+  blockPosition,
   blockTemps,
   hm,
   roundToStep,
@@ -23,6 +26,7 @@ import {
 } from "../../utils/schedule-week";
 import "../shared/rs-segmented";
 import "../shared/rs-stepper";
+import "../shared/rs-number-field";
 
 export interface BlockTempChange {
   heat?: number;
@@ -34,7 +38,8 @@ export interface BlockTempChange {
  * temperature, delete. Applies every valid change at once (no save button):
  * `block-times` `{ start, end }`, `block-split` `{ start, endNextDay }` for a range past
  * midnight, `block-temps` `{ temps }` (null = comfort, else only the sides that changed),
- * `block-delete`, `block-done`.
+ * `block-delete`, `block-done`. A cover schedule's block (`cover`) has a position instead of a
+ * temperature: `block-position` `{ position }`.
  * Events bubble but are not composed: the editor listens on the form itself.
  */
 @customElement("rs-block-form")
@@ -52,12 +57,17 @@ export class RsBlockForm extends LitElement {
   @property({ type: String }) public nextDayName = "";
   /** Changes when another block is opened: the draft starts over. */
   @property({ type: String }) public blockKey = "";
+  /** Block of a cover schedule: position instead of temperature. */
+  @property({ type: Boolean }) public cover = false;
+  /** Every room uses the cover schedule only to allow shading: the position does not count. */
+  @property({ type: Boolean }) public gateOnly = false;
 
   @state() private _start = 0;
   @state() private _end = 60;
   @state() private _own = false;
   @state() private _heat = 21;
   @state() private _cool = 24;
+  @state() private _position: number = COVER_CLOSED;
 
   static styles = [
     tokens,
@@ -166,6 +176,7 @@ export class RsBlockForm extends LitElement {
     this._own = !usesComfort(this.block);
     this._heat = t.heat ?? t.single ?? this.defaults.heat;
     this._cool = t.cool ?? t.single ?? this.defaults.cool;
+    this._position = blockPosition(this.block) ?? COVER_CLOSED;
   }
 
   render() {
@@ -210,19 +221,7 @@ export class RsBlockForm extends LitElement {
             </div>`
           : nothing
       }
-      <div class="section">
-        <p class="section-title" id="temp-title">${localize("schedule_editor.temperature", l)}</p>
-        <rs-segmented
-          .label=${localize("schedule_editor.temperature", l)}
-          .options=${[
-            { value: "comfort", label: localize("override.comfort", l), icon: "mdi:sofa" },
-            { value: "own", label: localize("schedule_editor.own", l), icon: "mdi:thermometer" },
-          ]}
-          .value=${this._own ? "own" : "comfort"}
-          @value-changed=${this._onKind}
-        ></rs-segmented>
-        ${this._own ? this._renderOwn() : html`<p class="hint">${this._comfortHint()}</p>`}
-      </div>
+      ${this.cover ? this._renderPosition() : this._renderTemperature()}
       <div class="footer">
         <ha-button variant="danger" appearance="plain" @click=${this._onDelete}>
           <ha-icon slot="start" icon="mdi:delete-outline"></ha-icon>
@@ -231,6 +230,44 @@ export class RsBlockForm extends LitElement {
         <ha-button @click=${this._onDone}>${localize("schedule.done", l)}</ha-button>
       </div>
     `;
+  }
+
+  private _renderTemperature() {
+    const l = this.hass.language;
+    return html`<div class="section">
+      <p class="section-title" id="temp-title">${localize("schedule_editor.temperature", l)}</p>
+      <rs-segmented
+        .label=${localize("schedule_editor.temperature", l)}
+        .options=${[
+          { value: "comfort", label: localize("override.comfort", l), icon: "mdi:sofa" },
+          { value: "own", label: localize("schedule_editor.own", l), icon: "mdi:thermometer" },
+        ]}
+        .value=${this._own ? "own" : "comfort"}
+        @value-changed=${this._onKind}
+      ></rs-segmented>
+      ${this._own ? this._renderOwn() : html`<p class="hint">${this._comfortHint()}</p>`}
+    </div>`;
+  }
+
+  private _renderPosition() {
+    const l = this.hass.language;
+    return html`<div class="section">
+      <rs-number-field
+        .label=${localize("schedule_editor.cover_position", l)}
+        suffix="%"
+        .min=${COVER_CLOSED}
+        .max=${COVER_OPEN}
+        .step=${1}
+        .value=${this._position}
+        .hint=${localize(
+          this.gateOnly
+            ? "schedule_editor.cover_position_gate"
+            : "schedule_editor.cover_position_hint",
+          l,
+        )}
+        @value-changed=${this._onPosition}
+      ></rs-number-field>
+    </div>`;
   }
 
   private _renderOwn() {
@@ -363,6 +400,12 @@ export class RsBlockForm extends LitElement {
     }
     // Only the sides that moved: the other keeps its stored value or keeps following comfort.
     this._fire("block-temps", { temps });
+  }
+
+  private _onPosition(e: CustomEvent<{ value: number | null }>) {
+    if (e.detail.value == null) return;
+    this._position = e.detail.value;
+    this._fire("block-position", { position: this._position });
   }
 
   private _onDelete() {

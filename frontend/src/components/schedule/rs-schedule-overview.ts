@@ -1,8 +1,8 @@
 /**
- * rs-schedule-overview – Every Home Assistant schedule helper with the rooms that use it.
- * Room schedules (and helpers no room uses) open the schedule editor; cover schedules only
- * Home Assistant's more-info, the editor has no cover position (a force block without one
- * would close to 0 %). Admins can create a schedule here without a room.
+ * rs-schedule-overview – Every Home Assistant schedule helper with the rooms that use it, in
+ * two cards: room temperature and covers (helpers used only for covers). Each opens the
+ * schedule editor in its kind; a helper no room uses lets the editor tell from its blocks.
+ * Admins create schedules of either kind here, without a room.
  */
 import { LitElement, html, css, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
@@ -15,6 +15,7 @@ import { tokens } from "../../styles/tokens";
 import "../shared/rs-list-card";
 import "../shared/rs-list-row";
 import "./rs-schedule-create";
+import "../shared/rs-segmented";
 
 interface ScheduleItem {
   entityId: string;
@@ -29,6 +30,7 @@ export class RsScheduleOverview extends LitElement {
   @property({ attribute: false }) public rooms: Record<string, RoomConfig> = {};
 
   @state() private _creating = false;
+  @state() private _createKind: "climate" | "cover" = "climate";
 
   private _items(): ScheduleItem[] {
     const lang = this.hass.language;
@@ -94,7 +96,8 @@ export class RsScheduleOverview extends LitElement {
       ]
         .filter(Boolean)
         .join(" · ")}
-      @row-click=${() => (cover ? this._moreInfo(item.entityId) : this._open(item.entityId))}
+      @row-click=${() =>
+        this._open(item.entityId, cover ? "cover" : item.rooms.length ? "climate" : "")}
       @icon-click=${() => this._moreInfo(item.entityId)}
     ></rs-list-row>`;
   }
@@ -132,21 +135,38 @@ export class RsScheduleOverview extends LitElement {
       ></rs-list-row>`;
     }
     return html`<div class="create">
+      <span class="kind-label">${localize("schedules.kind_label", l)}</span>
+      <rs-segmented
+        wrap
+        .label=${localize("schedules.kind_label", l)}
+        .options=${[
+          {
+            value: "climate",
+            label: localize("schedules.kind_climate", l),
+            icon: "mdi:thermometer",
+          },
+          { value: "cover", label: localize("schedules.kind_cover", l), icon: "mdi:blinds" },
+        ]}
+        .value=${this._createKind}
+        @value-changed=${(e: CustomEvent<{ value: string }>) =>
+          (this._createKind = e.detail.value === "cover" ? "cover" : "climate")}
+      ></rs-segmented>
       <rs-schedule-create
         .hass=${this.hass}
+        .kind=${this._createKind}
         @create-cancelled=${() => (this._creating = false)}
-        @schedule-created=${(e: CustomEvent<{ entityId: string }>) => {
+        @schedule-created=${(e: CustomEvent<{ entityId: string; kind: "climate" | "cover" }>) => {
           this._creating = false;
-          this._open(e.detail.entityId);
+          this._open(e.detail.entityId, e.detail.kind);
         }}
       ></rs-schedule-create>
     </div>`;
   }
 
-  private _open(entityId: string) {
+  private _open(entityId: string, kind: "" | "climate" | "cover") {
     this.dispatchEvent(
       new CustomEvent("open-schedule-editor", {
-        detail: { entityId, areaId: "" },
+        detail: { entityId, areaId: "", kind },
         bubbles: true,
         composed: true,
       }),
@@ -174,7 +194,14 @@ export class RsScheduleOverview extends LitElement {
         font-size: var(--rs-font-md);
       }
       .create {
-        padding: 0 var(--rs-space-4);
+        display: flex;
+        flex-direction: column;
+        gap: var(--rs-space-2);
+        padding: var(--rs-space-2) var(--rs-space-4) 0;
+      }
+      .kind-label {
+        font-size: 13px;
+        color: var(--secondary-text-color);
       }
       .note {
         margin: 0;

@@ -8,11 +8,14 @@ import { tokens } from "../../styles/tokens";
 import { floatingStyles } from "../../styles/floating-styles";
 import { inputStyles } from "../../styles/input-styles";
 import { fireSaveStatus } from "../../utils/events";
-import { formatNumber } from "../../utils/format";
+import { formatNumber, formatPercent } from "../../utils/format";
 import { hideFromTopLayer, positionNear, showInTopLayer } from "../../utils/popover";
 import { formatTempLocale, tempUnit, toDisplay, usesFahrenheit } from "../../utils/temperature";
 import {
+  COVER_CLOSED,
+  COVER_OPEN,
   DAY_GROUPS,
+  blockPosition,
   blockTemps,
   clearDay,
   copyDay,
@@ -28,6 +31,9 @@ import {
   splitOverMidnight,
   suggestBlock,
   usesComfort,
+  hasPositions,
+  withPosition,
+  withPositions,
   withTemps,
   type ScheduleBlock,
   type Week,
@@ -65,6 +71,8 @@ interface UsingRoom {
   icon: string;
   mode: ClimateMode;
   config: RoomConfig;
+  /** How the room uses a cover schedule. */
+  coverMode?: "force" | "gate";
 }
 
 type Dialog = { kind: "copy"; day: number; targets: number[] } | { kind: "delete" } | null;
@@ -95,6 +103,8 @@ export class RsScheduleEditor extends LitElement {
   /** Room the editor was opened from ("" for a deep link without room). */
   @property({ type: String }) public roomId = "";
   @property({ attribute: false }) public rooms: Record<string, RoomConfig> = {};
+  /** "cover" for a cover schedule, "climate" for a room temperature one, "" = from its use. */
+  @property({ type: String }) public kind: "" | "climate" | "cover" = "";
   @property({ type: String }) public scheduleOffAction: "eco" | "off" = "eco";
 
   @state() private _loaded: LoadedSchedule | null = null;
@@ -568,7 +578,8 @@ export class RsScheduleEditor extends LitElement {
   }
 
   private _change(week: Week) {
-    this._week = week;
+    // A cover block without position closes the covers: every block gets one written
+    this._week = this._cover || this._coverUsers().length ? withPositions(week) : week;
     if (this._open && !this._week[this._open.day]?.[this._open.index]) this._closeBlock();
     this._scheduleSave();
   }
@@ -666,16 +677,51 @@ export class RsScheduleEditor extends LitElement {
     return this._rooms[id]?.display_name || this.hass.areas?.[id]?.name || id;
   }
 
-  private _users(rooms: Record<string, RoomConfig> = this._rooms): UsingRoom[] {
+  private _uses(list: { entity_id: string }[] | undefined): boolean {
+    return (list ?? []).some((s) => s.entity_id === this.entityId);
+  }
+
+  /**
+   * A cover schedule: asked for by the page that opened it, else used only for covers, else
+   * used by no room and its blocks carry positions.
+   */
+  private get _cover(): boolean {
+    if (this.kind) return this.kind === "cover";
+    const rooms = Object.values(this._rooms);
+    const climate = rooms.some((r) => this._uses(r.schedules));
+    const cover = rooms.some((r) => this._uses(r.cover_schedules));
+    return cover ? !climate : !climate && hasPositions(this._week);
+  }
+
+  private _using(room: RoomConfig): UsingRoom {
+    return {
+      id: room.area_id,
+      name: this._roomName(room.area_id),
+      icon: this.hass.areas?.[room.area_id]?.icon || "mdi:texture-box",
+      mode: room.climate_mode ?? "auto",
+      config: room,
+    };
+  }
+
+  private _climateUsers(rooms: Record<string, RoomConfig> = this._rooms): UsingRoom[] {
     return Object.values(rooms)
-      .filter((r) => (r.schedules ?? []).some((s) => s.entity_id === this.entityId))
+      .filter((r) => this._uses(r.schedules))
+      .map((r) => this._using(r));
+  }
+
+  private _coverUsers(rooms: Record<string, RoomConfig> = this._rooms): UsingRoom[] {
+    return Object.values(rooms)
+      .filter((r) => this._uses(r.cover_schedules))
       .map((r) => ({
-        id: r.area_id,
-        name: this._roomName(r.area_id),
-        icon: this.hass.areas?.[r.area_id]?.icon || "mdi:texture-box",
-        mode: r.climate_mode ?? "auto",
-        config: r,
+        ...this._using(r),
+        coverMode:
+          (r.cover_schedules ?? []).find((s) => s.entity_id === this.entityId)?.mode ?? "force",
       }));
+  }
+
+  /** Rooms using the helper the way this page edits it. */
+  private _users(rooms: Record<string, RoomConfig> = this._rooms): UsingRoom[] {
+    return this._cover ? this._coverUsers(rooms) : this._climateUsers(rooms);
   }
 
   /** Rooms whose climate mode decides the temperature keys: users, else the room it came from. */
@@ -728,7 +774,33 @@ export class RsScheduleEditor extends LitElement {
     return v === undefined ? localize("override.comfort", l) : `${this._temp(v)}${unit}`;
   }
 
+  /** "Zu", "40 %", "Offen"; a block without position counts as closed, as in the cover logic. */
+  private _positionText(block: ScheduleBlock): string {
+    const l = this.hass.language;
+    const pos = blockPosition(block) ?? COVER_CLOSED;
+    if (pos <= COVER_CLOSED) return localize("schedule_editor.cover_closed", l);
+    if (pos >= COVER_OPEN) return localize("schedule_editor.cover_open", l);
+    return formatPercent(pos, this.hass);
+  }
+
+  /** Cover blocks: the more closed, the stronger the tint. */
+  private _coverLook() {
+    const days = this._dayNames("long");
+    return (block: ScheduleBlock, day: number): BlockLook => {
+      const pos = blockPosition(block) ?? COVER_CLOSED;
+      const text = this._positionText(block);
+      return {
+        label: text,
+        short: text,
+        description: `${days[day]} ${hm(block.start)}–${hm(block.end)}, ${text}`,
+        color: "var(--primary-color)",
+        tint: Math.round(14 + ((COVER_OPEN - pos) / COVER_OPEN) * 30),
+      };
+    };
+  }
+
   private _lookFactory(rooms: RoomConfig[]) {
+    if (this._cover) return this._coverLook();
     const coolOnly = rooms.length > 0 && rooms.every((r) => r.climate_mode === "cool_only");
     const ref = rooms[0];
     const refHeat = toDisplay(ref?.comfort_heat ?? ref?.comfort_temp ?? 21, this.hass);
@@ -793,8 +865,8 @@ export class RsScheduleEditor extends LitElement {
               </div>`
           : this._renderWeekCard(look, modeRooms, editable)
       }
-      ${editable ? this._renderDeleteRow(users) : nothing} ${this._renderBlockEditor(modeRooms)}
-      ${this._renderDialog(users, look)}
+      ${editable ? this._renderDeleteRow(users) : nothing}
+      ${this._renderBlockEditor(modeRooms, users)} ${this._renderDialog(users, look)}
     `;
   }
 
@@ -816,7 +888,8 @@ export class RsScheduleEditor extends LitElement {
             : nothing
       }
       ${
-        editable && others.length > 0
+        // "also used by" only makes sense from the room it was opened from
+        editable && this.roomId && others.length > 0
           ? html`<div class="notice warn">
               <ha-icon icon="mdi:account-multiple-outline"></ha-icon>
               <span
@@ -827,6 +900,7 @@ export class RsScheduleEditor extends LitElement {
             </div>`
           : nothing
       }
+      ${this._renderMixedNotice()}
       ${
         this._conflict
           ? html`<div class="notice warn" role="alert">
@@ -844,6 +918,22 @@ export class RsScheduleEditor extends LitElement {
           : nothing
       }
     `;
+  }
+
+  /** One helper for room temperature in some rooms and for covers in others. */
+  private _renderMixedNotice() {
+    const climate = this._climateUsers();
+    const cover = this._coverUsers();
+    if (!climate.length || !cover.length) return nothing;
+    return html`<div class="notice warn">
+      <ha-icon icon="mdi:information-outline"></ha-icon>
+      <span
+        >${localize("schedule_editor.mixed_notice", this.hass.language, {
+          climate: climate.map((u) => u.name).join(", "),
+          cover: cover.map((u) => u.name).join(", "),
+        })}</span
+      >
+    </div>`;
   }
 
   private _renderHead(users: UsingRoom[], editable: boolean) {
@@ -879,8 +969,21 @@ export class RsScheduleEditor extends LitElement {
         <div class="users">
           ${
             users.length
-              ? html`<span>${localize("schedule_editor.used_by", l)}</span>
-                  ${users.map((u) => html`<rs-pill .icon=${u.icon}>${u.name}</rs-pill>`)}`
+              ? html`<span>${localize("schedule_editor.used_by", l)}</span> ${users.map(
+                    (u) =>
+                      html`<rs-pill .icon=${u.icon}
+                        >${u.name}${
+                          u.coverMode
+                            ? ` · ${localize(
+                                u.coverMode === "gate"
+                                  ? "covers.schedule_mode_gate"
+                                  : "covers.schedule_mode_force",
+                                l,
+                              )}`
+                            : ""
+                        }</rs-pill
+                      >`,
+                  )}`
               : html`<span>${localize("schedule_editor.unused", l)}</span>`
           }
         </div>
@@ -948,6 +1051,20 @@ export class RsScheduleEditor extends LitElement {
 
   private _renderLegend(modeRooms: RoomConfig[]) {
     const l = this.hass.language;
+    if (this._cover) {
+      return html`<div class="legend">
+        <span
+          ><i class="swatch" style="--swatch:var(--primary-color);--swatch-tint:40%"></i
+          ><b>${localize("schedule_editor.cover_block", l)}</b>
+          ${localize("schedule_editor.cover_block_legend", l)}</span
+        >
+        <span
+          ><i class="swatch" style="--swatch:var(--secondary-text-color);--swatch-tint:0%"></i
+          ><b>${localize("schedule_editor.cover_no_block", l)}</b>
+          ${localize("schedule_editor.cover_no_block_legend", l)}</span
+        >
+      </div>`;
+    }
     const coolOnly = modeRooms.length > 0 && modeRooms.every((r) => r.climate_mode === "cool_only");
     const color = coolOnly ? "var(--rs-cool)" : "var(--rs-heat)";
     const off = this.scheduleOffAction === "off";
@@ -1066,10 +1183,10 @@ export class RsScheduleEditor extends LitElement {
         return html`<rs-list-row
           ?clickable=${editable}
           ?chevron=${editable}
-          icon=${usesComfort(b) ? "mdi:sofa" : "mdi:thermometer"}
+          icon=${this._cover ? "mdi:blinds" : usesComfort(b) ? "mdi:sofa" : "mdi:thermometer"}
           icon-color=${lk.color}
           .heading=${`${hm(b.start)}–${hm(b.end)}`}
-          .value=${this._tempText(b, true)}
+          .value=${this._cover ? this._positionText(b) : this._tempText(b, true)}
           data-day=${day}
           data-index=${index}
           @row-click=${(e: Event) => this._openBlock(day, index, e.currentTarget as HTMLElement)}
@@ -1119,7 +1236,7 @@ export class RsScheduleEditor extends LitElement {
 
   // ─── Block popover / sheet ──────────────────────────────────────────
 
-  private _renderBlockEditor(modeRooms: RoomConfig[]) {
+  private _renderBlockEditor(modeRooms: RoomConfig[], users: UsingRoom[]) {
     const open = this._open;
     const block = open ? this._week[open.day]?.[open.index] : undefined;
     if (!open || !block) return nothing;
@@ -1141,6 +1258,9 @@ export class RsScheduleEditor extends LitElement {
       .comfortText=${comfortText}
       .nextDayName=${names[(open.day + 1) % 7]}
       .blockKey=${open.key}
+      .cover=${this._cover}
+      .gateOnly=${this._cover && users.length > 0 && users.every((u) => u.coverMode === "gate")}
+      @block-position=${this._onFormPosition}
       @block-times=${this._onFormTimes}
       @block-split=${this._onFormSplit}
       @block-temps=${this._onFormTemps}
@@ -1321,6 +1441,23 @@ export class RsScheduleEditor extends LitElement {
       }),
       next,
       [open.day, (open.day + 1) % 7],
+    );
+  }
+
+  private _onFormPosition(e: CustomEvent<{ position: number }>) {
+    const open = this._open;
+    if (!open) return;
+    const block = this._week[open.day][open.index];
+    if (!block) return;
+    const nextBlock: ScheduleBlock = {
+      start: block.start,
+      end: block.end,
+      data: withPosition(block.data, e.detail.position),
+    };
+    this._change(
+      this._week.map((day, d) =>
+        d === open.day ? day.map((b, i) => (i === open.index ? nextBlock : b)) : day,
+      ),
     );
   }
 
@@ -1533,11 +1670,13 @@ export class RsScheduleEditor extends LitElement {
     const shifted: string[] = [];
     const selectorLast: string[] = [];
     for (const u of users) {
-      const list = u.config.schedules ?? [];
+      const list = (this._cover ? u.config.cover_schedules : u.config.schedules) ?? [];
       const index = list.findIndex((s) => s.entity_id === this.entityId);
       const rest = list.filter((s) => s.entity_id !== this.entityId);
       if (rest.length === 0) comfort.push(u.name);
-      else if (u.config.schedule_selector_entity) {
+      else if (
+        this._cover ? u.config.cover_schedule_selector_entity : u.config.schedule_selector_entity
+      ) {
         if (index < list.length - 1) shifted.push(u.name);
         else selectorLast.push(u.name);
       } else if (index === 0) {
@@ -1576,9 +1715,15 @@ export class RsScheduleEditor extends LitElement {
       ${
         effects.comfort.length
           ? html`<p>
-              ${localize("schedule_editor.delete_effect_comfort", l, {
-                rooms: join(effects.comfort),
-              })}
+              ${localize(
+                this._cover
+                  ? "schedule_editor.delete_effect_cover_none"
+                  : "schedule_editor.delete_effect_comfort",
+                l,
+                {
+                  rooms: join(effects.comfort),
+                },
+              )}
             </p>`
           : nothing
       }
@@ -1600,9 +1745,13 @@ export class RsScheduleEditor extends LitElement {
       ${
         effects.selectorLast.length
           ? html`<p>
-              ${localize("schedule_editor.delete_selector_last", l, {
-                rooms: join(effects.selectorLast),
-              })}
+              ${localize(
+                this._cover
+                  ? "schedule_editor.delete_selector_last_cover"
+                  : "schedule_editor.delete_selector_last",
+                l,
+                { rooms: join(effects.selectorLast) },
+              )}
             </p>`
           : nothing
       }
@@ -1627,13 +1776,25 @@ export class RsScheduleEditor extends LitElement {
     </rs-confirm-dialog>`;
   }
 
-  /** Partial room save: only `schedules` changes, every other field stays as stored. */
-  private async _dropFromRoom(room: RoomConfig) {
-    await this.hass.callWS({
-      type: "roommind/rooms/save",
-      area_id: room.area_id,
-      schedules: (room.schedules ?? []).filter((s) => s.entity_id !== this.entityId),
-    });
+  /**
+   * Partial room save: only the schedule lists holding the helper change, every other field
+   * stays as stored. `kinds` limits it to one list ("only here" on this page's kind).
+   */
+  private async _dropFromRoom(
+    room: RoomConfig,
+    kinds: Array<"climate" | "cover"> = ["climate", "cover"],
+  ) {
+    const changes: Record<string, unknown> = {};
+    if (kinds.includes("climate") && this._uses(room.schedules)) {
+      changes.schedules = (room.schedules ?? []).filter((s) => s.entity_id !== this.entityId);
+    }
+    if (kinds.includes("cover") && this._uses(room.cover_schedules)) {
+      changes.cover_schedules = (room.cover_schedules ?? []).filter(
+        (s) => s.entity_id !== this.entityId,
+      );
+    }
+    if (!Object.keys(changes).length) return;
+    await this.hass.callWS({ type: "roommind/rooms/save", area_id: room.area_id, ...changes });
   }
 
   private _removeFromRoom = async () => {
@@ -1647,7 +1808,7 @@ export class RsScheduleEditor extends LitElement {
       }
       // Built from the stored room, so a schedule added meanwhile is not dropped with it.
       const room = (await this._fetchRooms())[this.roomId];
-      if (room) await this._dropFromRoom(room);
+      if (room) await this._dropFromRoom(room, [this._cover ? "cover" : "climate"]);
       this._dialog = null;
       this._closed();
     } catch (err) {
@@ -1674,7 +1835,9 @@ export class RsScheduleEditor extends LitElement {
       while (this._saving) await this._saving;
       // A room saved a moment ago (helper just created) may be missing from the panel's poll;
       // left out here it would keep a reference to a helper that no longer exists.
-      for (const u of this._users(await this._fetchRooms())) await this._dropFromRoom(u.config);
+      // Out of both lists: a room using it for covers must not keep a deleted helper either
+      const rooms = await this._fetchRooms();
+      for (const room of Object.values(rooms)) await this._dropFromRoom(room);
       await deleteSchedule(this.hass, itemId);
       this._savedJson = this._payloadJson();
       this._dialog = null;
