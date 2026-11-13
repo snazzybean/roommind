@@ -583,6 +583,52 @@ class TestFahrenheitConversion:
         assert sent == [30.0]
         assert data["rooms"]["living_room_abc12345"]["device_setpoint"] == 30.0
 
+    @pytest.mark.asyncio
+    async def test_ac_only_room_shows_the_capped_ac_setpoint(self, hass, mock_config_entry):
+        """An AC-only room shows the AC's own boost (max 32, step 1 → 31), not the TRV default (#507)."""
+        room = {
+            **SAMPLE_ROOM,
+            "climate_mode": "heat_only",
+            "thermostats": [],
+            "acs": ["climate.living_room"],
+            "devices": [{"entity_id": "climate.living_room", "type": "ac", "role": "auto", "heating_system_type": ""}],
+        }
+        store = _make_store_mock({"living_room_abc12345": room})
+        hass.data = {"roommind": {"store": store}}
+        hass.states.get = MagicMock(
+            side_effect=make_mock_states_get(
+                temp="15.0",
+                humidity="55.0",
+                outdoor_temp="0",
+                extra={
+                    "climate.living_room": (
+                        "heat",
+                        {
+                            "current_temperature": 15.0,
+                            "temperature": 21.0,
+                            "max_temp": 32.0,
+                            "min_temp": 16.0,
+                            "target_temp_step": 1.0,
+                            "hvac_modes": ["off", "heat", "cool"],
+                            "hvac_action": "heating",
+                        },
+                    ),
+                },
+            ),
+        )
+        hass.services.async_call = AsyncMock()
+
+        coordinator = _create_coordinator(hass, mock_config_entry)
+        data = await coordinator._async_update_data()
+
+        sent = [
+            c[0][2]["temperature"]
+            for c in hass.services.async_call.call_args_list
+            if c[0][1] == "set_temperature" and c[0][2].get("entity_id") == "climate.living_room"
+        ]
+        assert sent == [31.0]
+        assert data["rooms"]["living_room_abc12345"]["device_setpoint"] == 31.0
+
 
 class TestManagedModeDisplay:
     """Tests for Managed Mode display and EKF training fixes (#69)."""

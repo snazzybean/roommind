@@ -1926,6 +1926,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 target_temp,
                 has_external_sensor,
                 device_max_temp=device_max_temp,
+                ac_device_max_temp=ac_device_max_temp,
                 device_min_temp=device_min_temp,
                 has_thermostats=bool(get_trv_eids(_room_devices)),
                 has_acs=bool(get_ac_eids(_room_devices)),
@@ -2033,6 +2034,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         device_max_temp: float | None = None,
         device_min_temp: float | None = None,
         has_thermostats: bool = True,
+        ac_device_max_temp: float | None = None,
         has_acs: bool = False,
         all_direct: bool = False,
         direct_offset: float = 0.0,
@@ -2052,8 +2054,11 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             return (direct_target if direct_target is not None else target_temp) + direct_offset
 
         if mode == MODE_HEATING:
-            default_boost = HEATING_BOOST_TARGET if has_thermostats else AC_HEATING_BOOST_TARGET
-            boost = device_max_temp if device_max_temp is not None else default_boost
+            # A room with TRVs shows the TRV setpoint, else the AC heating one (as async_apply sends it, #507)
+            if has_thermostats:
+                boost = device_max_temp if device_max_temp is not None else HEATING_BOOST_TARGET
+            else:
+                boost = ac_device_max_temp if ac_device_max_temp is not None else AC_HEATING_BOOST_TARGET
             if not has_thermostats and not has_acs:
                 return None
             sp = round(current_temp + power_fraction * (boost - current_temp), 1)
