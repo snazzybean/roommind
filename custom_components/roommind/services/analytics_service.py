@@ -142,6 +142,7 @@ def _csv_to_points(rows: list[dict]) -> list[dict]:
                 "cool_starts": _safe_int(row.get("cool_starts", "")),
                 "room_temp_max": _safe_float(row.get("room_temp_max", "")),
                 "room_temp_min": _safe_float(row.get("room_temp_min", "")),
+                "co2": _safe_float(row.get("co2", "")),
             }
         )
     return result

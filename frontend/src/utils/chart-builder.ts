@@ -25,13 +25,14 @@ const PANEL_BOTTOM = 24;
  * shows while its series has data and is not hidden in the legend. A new panel = an entry
  * here plus its series tagged with `panel` in buildChartSeries.
  */
-export type SubPanel = "outdoor" | "humidity" | "price";
+export type SubPanel = "outdoor" | "humidity" | "co2" | "price";
 export const SUB_PANELS: Record<SubPanel, { height: number; series: string }> = {
   outdoor: { height: 68, series: "outdoor_temp" },
   humidity: { height: 84, series: "humidity" },
+  co2: { height: 68, series: "co2" },
   price: { height: 68, series: "price" },
 };
-export const SUB_PANEL_ORDER: readonly SubPanel[] = ["outdoor", "humidity", "price"];
+export const SUB_PANEL_ORDER: readonly SubPanel[] = ["outdoor", "humidity", "co2", "price"];
 // Neutral: the line and area take the level colours (priceVisualMap), gold is the price target
 const PRICE_COLOR = "rgb(128, 128, 128)";
 /** Mirrors COMFORT_TOLERANCE_K (analytics_stats): the summary counts this far outside as on target. */
@@ -143,6 +144,7 @@ const PANEL_TITLE_KEYS: Record<SubPanel | "main", TranslationKey> = {
   main: "analytics.temperature",
   outdoor: "analytics.panel_outdoor",
   humidity: "analytics.humidity",
+  co2: "analytics.co2",
   price: "analytics.price",
 };
 
@@ -153,7 +155,14 @@ export function panelTitle(
   units: { temp: string; price: string },
 ): string {
   const title = localize(PANEL_TITLE_KEYS[panel], language);
-  const unit = panel === "humidity" ? "%" : panel === "price" ? units.price : units.temp;
+  const unit =
+    panel === "humidity"
+      ? "%"
+      : panel === "co2"
+        ? "ppm"
+        : panel === "price"
+          ? units.price
+          : units.temp;
   return unit ? `${title} (${unit})` : title;
 }
 
@@ -295,6 +304,7 @@ export function buildChartSeries(
   const outdoorData: Array<[number, number]> = [];
   const deviceTargetData: Array<[number, number]> = [];
   const humidityData: Array<[number, number]> = [];
+  const co2Data: Array<[number, number]> = [];
   const bandBaseData: Array<[number, number | null]> = [];
   const bandData: Array<[number, number | null]> = [];
   // Outside the judged sides: too cold below the heat side, too warm above the cool side
@@ -331,6 +341,7 @@ export function buildChartSeries(
     if (p.outdoor_temp !== null) outdoorData.push([ts, d(p.outdoor_temp)]);
     if (!isOutdoor && p.device_setpoint != null) deviceTargetData.push([ts, d(p.device_setpoint)]);
     if (p.humidity != null) humidityData.push([ts, p.humidity]);
+    if (p.co2 != null) co2Data.push([ts, p.co2]);
     if (targetBand && !isOutdoor) pushBand(p);
   }
 
@@ -438,6 +449,20 @@ export function buildChartSeries(
       step: "end",
       lineStyle: { width: 1, type: "dashed" },
       yAxisIndex: 0,
+    });
+  }
+
+  if (co2Data.length > 0) {
+    series.push({
+      id: "co2",
+      type: "line",
+      name: localize("analytics.co2", l),
+      color: colors.neutral,
+      data: co2Data,
+      showSymbol: false,
+      smooth: true,
+      lineStyle: { width: 1.5 },
+      panel: "co2",
     });
   }
 
@@ -792,6 +817,7 @@ export function buildChartOptions(
             value = `${Math.round(v)}\u00A0%`;
             if (level !== "good") value += ` (${localize(`analytics.humidity_${level}`, l)})`;
           }
+          if (sid === "co2") value = `${formatNumber(v, hass, 0)} ppm`;
           if (sid === "price") {
             value = new Intl.NumberFormat(l, { maximumSignificantDigits: 4 }).format(v);
             if (ctx.priceUnit) value += `\u00A0${ctx.priceUnit}`;
@@ -888,6 +914,24 @@ function outdoorAxis(
   };
 }
 
+/** From outdoor air (400 ppm) up, in steps of 500 ppm past the highest reading. */
+function co2Axis(
+  points: AnalyticsDataPoint[],
+  gridIndex: number,
+  hass: HomeAssistant,
+): Record<string, unknown> {
+  const high = points.reduce((m, p) => (p.co2 != null ? Math.max(m, p.co2) : m), 1000);
+  const max = Math.ceil(high / 500) * 500;
+  return {
+    type: "value",
+    gridIndex,
+    min: 400,
+    max,
+    interval: (max - 400) / 2,
+    axisLabel: unitLabel("", hass, { maximumFractionDigits: 0 }),
+  };
+}
+
 function panelAxis(
   panel: SubPanel,
   points: AnalyticsDataPoint[],
@@ -898,6 +942,7 @@ function panelAxis(
   if (panel === "humidity")
     return { ...humidityAxis(points, gridIndex), axisLabel: unitLabel("%", hass) };
   if (panel === "outdoor") return outdoorAxis(points, gridIndex, hass);
+  if (panel === "co2") return co2Axis(points, gridIndex, hass);
   // Price: whatever unit the source uses; bounds from the prices, the level bands reach far above
   const prices = points.map((p) => p.price).filter((v): v is number => v != null);
   const low = prices.length > 0 ? prices.reduce((a, b) => Math.min(a, b)) : 0;

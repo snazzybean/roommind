@@ -28,7 +28,7 @@ from roommind_sim.scenario import Scenario, load_scenario_dict
 from roommind_sim.world import World
 
 from .bridge import WsBridge
-from .const import FLUSH_INTERVAL_S, OBSERVE_INTERVAL_S, PERSIST_INTERVAL_S
+from .const import FLUSH_INTERVAL_S, OBSERVE_INTERVAL_S, OBSERVED_STATE_DOMAINS, PERSIST_INTERVAL_S
 
 _LOGGER = logging.getLogger(__name__)
 SIM_USER_NAME = "Sim"
@@ -257,6 +257,10 @@ class SimRuntime:
         for area_id, live in (getattr(coordinator, "rooms", None) or {}).items():
             rooms[area_id] = {k: v for k, v in live.items() if _jsonable(v)}
         rec: dict[str, Any] = {"t": round(time.time(), 1), "rooms": rooms}
+        # Helpers and fans RoomMind may switch (ventilation, #267): their state for checks
+        states = {s.entity_id: s.state for s in self.hass.states.async_all(OBSERVED_STATE_DOMAINS)}
+        if states:
+            rec["states"] = states
         if rec["t"] % MODEL_TRACE_INTERVAL_S < OBSERVE_INTERVAL_S:
             models = model_snapshot(coordinator)
             if models:

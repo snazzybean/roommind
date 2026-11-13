@@ -312,3 +312,37 @@ def test_a_preheat_peaking_before_its_block_is_judged_against_the_block():
     rows = [(18.5, 16.5, "heating"), (19.5, 16.5, "idle"), (20.1, 16.5, "idle"), (20.0, 20.0, "idle")]
     m = _room_metrics(_overshoot_run(rows), "r")
     assert m["run_overshoot_max_k"] == pytest.approx(0.1)
+
+
+def test_air_quality_metrics_count_runs_and_tell_a_hand_off_apart():
+    """Ventilation runs RoomMind ended vs one ended because someone switched the fan off (#267)."""
+    from roommind_sim.analysis.metrics import _air_quality_metrics
+
+    scn = load_scenario_dict(scenario({"r": {}}))
+    t0 = scn.start
+    fan = "input_boolean.fan"
+    # (co2, bad, ventilation_active, fan state), one row a minute
+    rows = (
+        [(900, False, False, "off")]
+        + [(1000, True, True, "on")] * 5
+        + [(780, False, True, "on")] * 10
+        + [(700, False, False, "off")] * 3
+        + [(1010, True, True, "on")] * 2
+        + [(1020, True, True, "off")]  # switched off by hand, RoomMind still runs it
+        + [(1050, True, False, "off")] * 2
+    )
+    observer = [
+        {
+            "t": t0 + 60 * i,
+            "rooms": {"r": {"co2": c, "air_quality_bad": b, "ventilation_active": a}},
+            "states": {fan: s},
+        }
+        for i, (c, b, a, s) in enumerate(rows)
+    ]
+    run = RunData(None, scn, [], observer, [], t0 + 60 * len(rows), {"rooms": {"r": {"ventilation_entity": fan}}})  # type: ignore[arg-type]
+    m = _air_quality_metrics(run, "r")
+    assert m["ventilation_starts"] == 2
+    assert m["ventilation_shortest_run_min"] == 15.0
+    assert m["ventilation_ended_by_hand"] == 1
+    assert m["co2_max"] == 1050
+    assert m["air_bad_h"] == 0.15  # the last row only closes the interval before it

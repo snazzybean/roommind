@@ -492,6 +492,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                             "price_level": rs.get("price_level") or "",
                             # Signed like the heat side; a cool-only room moves its cool side the other way
                             "price_shift": (rs.get("price_shift_heat") or -(rs.get("price_shift_cool") or 0.0)) or "",
+                            "co2": rs.get("co2"),
                         },
                     )
                 except Exception:  # noqa: BLE001

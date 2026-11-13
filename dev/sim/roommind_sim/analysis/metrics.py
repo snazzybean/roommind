@@ -260,6 +260,7 @@ def _room_metrics(run: RunData, area: str) -> dict[str, Any]:
     temps = [s["rooms"][area]["t_air"] for s in run.samples]
     return {
         **_run_overshoot(run, area),
+        **_air_quality_metrics(run, area),
         "heating_h_cheap": round(by_level["cheap"], 2),
         "heating_h_normal": round(by_level["normal"], 2),
         "heating_h_expensive": round(by_level["expensive"], 2),
@@ -279,6 +280,62 @@ def _room_metrics(run: RunData, area: str) -> dict[str, Any]:
         "temp_min": round(min(temps), 2) if temps else None,
         "temp_max": round(max(temps), 2) if temps else None,
         "prediction_mae_30m": round(sum(pred_err) / len(pred_err), 3) if pred_err else None,
+    }
+
+
+def _air_quality_metrics(run: RunData, area: str) -> dict[str, Any]:
+    """Air quality and the ventilation RoomMind runs for it (#267).
+
+    ``air_bad_h``: how long RoomMind judged the air bad. ``ventilation_starts`` /
+    ``ventilation_on_h``: runs of the room's ventilation that RoomMind switched on;
+    ``ventilation_shortest_run_min`` is the shortest one RoomMind ended itself (min run
+    check), None without one; ``ventilation_ended_by_hand``: runs that ended because the
+    unit was switched off by someone (it read off while RoomMind still ran it).
+    ``co2_max`` / ``co2_over_1000_h`` from the reading RoomMind saw.
+    """
+    unit = (run.rooms_config().get(area) or {}).get("ventilation_entity")
+    bad_h = on_h = over_h = 0.0
+    starts = by_hand = 0
+    unit_off_while_active = False
+    runs: list[float] = []
+    run_start: float | None = None
+    co2_max: float | None = None
+    prev: tuple[float, dict[str, Any]] | None = None
+    for o in run.observer:
+        room = o["rooms"].get(area) or {}
+        if prev is not None:
+            dt = (o["t"] - prev[0]) / 3600
+            if prev[1].get("air_quality_bad"):
+                bad_h += dt
+            if prev[1].get("ventilation_active"):
+                on_h += dt
+            if (prev[1].get("co2") or 0) >= 1000:
+                over_h += dt
+        active = bool(room.get("ventilation_active"))
+        if active and run_start is None:
+            starts += 1
+            run_start = o["t"]
+            unit_off_while_active = False
+        elif not active and run_start is not None:
+            if unit_off_while_active:
+                by_hand += 1
+            else:
+                runs.append((o["t"] - run_start) / 60)
+            run_start = None
+        if active and unit and (o.get("states") or {}).get(unit) == "off":
+            unit_off_while_active = True
+        co2 = room.get("co2")
+        if co2 is not None:
+            co2_max = co2 if co2_max is None else max(co2_max, co2)
+        prev = (o["t"], room)
+    return {
+        "air_bad_h": round(bad_h, 2),
+        "ventilation_starts": starts,
+        "ventilation_on_h": round(on_h, 2),
+        "ventilation_shortest_run_min": round(min(runs), 1) if runs else None,
+        "ventilation_ended_by_hand": by_hand,
+        "co2_max": co2_max,
+        "co2_over_1000_h": round(over_h, 2),
     }
 
 

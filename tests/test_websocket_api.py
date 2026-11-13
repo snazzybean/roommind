@@ -3656,3 +3656,33 @@ async def test_save_room_air_quality_defaults_and_roundtrip(ws_hass, store, conn
     await _save_room(ws_hass, connection, msg)
     stored = store.get_room("office")
     assert stored["co2_sensor"] == "sensor.co2" and stored["co2_threshold"] == 900
+
+
+@pytest.mark.asyncio
+async def test_list_rooms_forwards_air_quality(ws_hass, store, connection):
+    """Hint, sensor rows and the dashboard card read the air quality from rooms/list (#267)."""
+    await store.async_load()
+    await _save_room(ws_hass, connection, {"id": 2, "type": "roommind/rooms/save", "area_id": "office"})
+    mock_coordinator = MagicMock()
+    mock_coordinator.rooms = {
+        "office": {
+            "co2": 1210.0,
+            "voc": None,
+            "air_quality_bad": True,
+            "air_quality_reason": "co2",
+            "ventilation_active": True,
+        }
+    }
+    mock_coordinator.async_request_refresh = AsyncMock()
+    ws_hass.data[DOMAIN]["coordinator"] = mock_coordinator
+
+    await _list_rooms(ws_hass, connection, {"id": 3, "type": "roommind/rooms/list"})
+
+    live = connection.send_result.call_args[0][1]["rooms"]["office"]["live"]
+    assert {k: live[k] for k in ("co2", "voc", "air_quality_bad", "air_quality_reason", "ventilation_active")} == {
+        "co2": 1210.0,
+        "voc": None,
+        "air_quality_bad": True,
+        "air_quality_reason": "co2",
+        "ventilation_active": True,
+    }

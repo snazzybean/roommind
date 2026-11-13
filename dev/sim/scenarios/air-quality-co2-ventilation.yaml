@@ -1,0 +1,56 @@
+name: air-quality-co2-ventilation
+description: >
+  Office with a CO2 sensor and an exhaust fan (input_boolean). The CO2 is a template sensor
+  integrated every minute: one person in the room adds 600 ppm/h (18 l/h in 30 m³), air change
+  0.5/h with the fan off and 4/h with it on, outdoor air 420 ppm. RoomMind judges the air bad from
+  1000 ppm, good again below 800, and runs the fan for at least 15 min. Day 1 the fan is switched on
+  by hand while the air is good (RoomMind must leave it alone), later switched off by hand while
+  RoomMind runs it (it stays off for that bad spell); day 2 climate control of the room is off
+  (nothing switched on, the air is still judged).
+refs: [267]
+tags: [air-quality, presence]
+extends: occupancy-eco-office
+duration: 3d
+helpers:
+  input_boolean:
+    buero_luefter: {name: Büro Lüfter}
+  template:
+    - trigger:
+        - trigger: time_pattern
+          minutes: "/1"
+      sensor:
+        - name: Buero CO2
+          unique_id: sim_buero_co2
+          unit_of_measurement: ppm
+          device_class: carbon_dioxide
+          state_class: measurement
+          state: >-
+            {% set c = this.state | float(450) %}
+            {% set occ = 10 if is_state('binary_sensor.buero_praesenz', 'on') else 0 %}
+            {% set n = 4.0 if is_state('input_boolean.buero_luefter', 'on') else 0.5 %}
+            {{ (c + occ - n / 60 * (c - 420)) | round(0) }}
+roommind:
+  rooms:
+    buero:
+      occupancy_eco_enabled: false
+      co2_sensor: sensor.buero_co2
+      ventilation_entity: input_boolean.buero_luefter
+timeline:
+  - {at: "+1d06h00m", do: ha.service, service: input_boolean.turn_on, data: {entity_id: input_boolean.buero_luefter}}
+  - {at: "+1d06h50m", do: ha.service, service: input_boolean.turn_off, data: {entity_id: input_boolean.buero_luefter}}
+  - {at: "+1d09h52m", do: ha.service, service: input_boolean.turn_off, data: {entity_id: input_boolean.buero_luefter}}
+  - {at: "+2d00h00m", do: roommind.ws, type: roommind/rooms/save, area_id: buero, climate_control_enabled: false}
+expect:
+  - {invariant: no_rejected_commands}
+  - {check: "room.buero.co2 < 1000 and room.buero.air_quality_bad == true and state('input_boolean.buero_luefter') == 'on'", at: "+0d09h50m", label: on from 1000 ppm and bad until below 800}
+  - {check: "room.buero.air_quality_bad == false and room.buero.ventilation_active == true", at: "+0d09h57m", label: good again but the min run holds}
+  - {check: "state('input_boolean.buero_luefter') == 'off' and room.buero.ventilation_active == false", at: "+0d10h05m", label: off after the min run}
+  - {check: "state('input_boolean.buero_luefter') == 'on' and room.buero.ventilation_active == false", at: "+1d06h45m", label: a fan switched on by hand is left alone}
+  - {check: "room.buero.air_quality_bad == true and state('input_boolean.buero_luefter') == 'off'", at: "+1d11h", label: switched off by hand during a bad spell stays off}
+  - {check: "room.buero.air_quality_bad == true and state('input_boolean.buero_luefter') == 'off'", at: "+2d12h", label: climate control off switches nothing on}
+  # 2026-11-13, 3 d: day 0 8 runs of 15 min every hour of work (on at 1000 ppm, good at ~790 after
+  # 10 min, off at ~720), day 1 one run until the hand switched it off; 2.07 h fan in all,
+  # CO2 >= 1000 ppm 17.1 h (day 0 none past 1002), max 1560 ppm on the days the fan stayed off
+  - {metric: room.ventilation_shortest_run_min, room: buero, min: 15}
+  - {metric: room.ventilation_starts, room: buero, min: 8, max: 20}
+  - {metric: room.ventilation_ended_by_hand, room: buero, min: 1, max: 1}

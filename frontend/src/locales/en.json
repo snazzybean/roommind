@@ -1014,5 +1014,6 @@
   "card.hint.air_co2": "CO₂ {value} ppm, air the room",
   "card.hint.air_co2_venting": "CO₂ {value} ppm, ventilation on",
   "card.hint.air_bad": "Poor air quality, air the room",
-  "card.hint.air_venting": "Poor air quality, ventilation on"
+  "card.hint.air_venting": "Poor air quality, ventilation on",
+  "analytics.co2": "CO₂"
 }

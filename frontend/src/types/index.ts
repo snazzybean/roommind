@@ -338,6 +338,8 @@ export interface AnalyticsDataPoint {
   cover_reason?: string;
   device_setpoint?: number | null;
   humidity?: number | null;
+  /** Room CO2 in ppm (#267). */
+  co2?: number | null;
   heat_target?: number | null;
   cool_target?: number | null;
   /** What set the target: "" schedule, else a TargetReason. */

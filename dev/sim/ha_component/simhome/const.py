@@ -5,3 +5,5 @@ PLATFORMS = ["binary_sensor", "climate", "cover", "device_tracker", "number", "s
 OBSERVE_INTERVAL_S = 30.0
 PERSIST_INTERVAL_S = 300.0
 FLUSH_INTERVAL_S = 600.0
+# Domains whose HA state the observer records for checks (RoomMind ventilation, #267)
+OBSERVED_STATE_DOMAINS = ("input_boolean", "fan")

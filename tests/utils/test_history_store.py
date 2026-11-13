@@ -640,6 +640,16 @@ def test_price_columns_are_recorded_and_downsampled(history_dir):
     assert bucket["price_shift"] == -0.5
 
 
+def test_co2_column_is_recorded_and_downsampled(history_dir):
+    """Room CO2 for the analytics panel (#267); a room without sensor writes an empty cell."""
+    store = HistoryStore(history_dir)
+    store.record("room_a", {"mode": "idle", "co2": 900.0}, 1000)
+    store.record("room_a", {"mode": "idle", "co2": 1100.0}, 1060)
+    store.record("room_b", {"mode": "idle", "co2": None}, 1000)
+    assert store._downsample(store.read_detail("room_a"), bucket_seconds=300)[0]["co2"] == 1000.0
+    assert store.read_detail("room_b")[0]["co2"] == ""
+
+
 def test_record_marks_the_rows_where_a_run_starts(history_dir):
     store = HistoryStore(history_dir)
     for i, mode in enumerate(["heating", "heating", "idle", "heating", "cooling", "cooling"]):

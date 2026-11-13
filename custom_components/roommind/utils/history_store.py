@@ -40,6 +40,8 @@ DETAIL_FIELDS = [
     # Extremes of a history bucket: a short run peaks inside it, the bucket mean hides the peak
     "room_temp_max",
     "room_temp_min",
+    # Room air CO2 in ppm (#267)
+    "co2",
 ]
 START_FIELDS = {MODE_HEATING: "heat_starts", MODE_COOLING: "cool_starts"}
 DETAIL_MAX_AGE = 48 * 3600  # 48 hours
@@ -121,6 +123,7 @@ class HistoryStore:
                     "price": data.get("price", ""),
                     "price_level": data.get("price_level", ""),
                     "price_shift": data.get("price_shift", ""),
+                    "co2": data.get("co2", ""),
                     **{key: int(mode == run and previous != run) for run, key in START_FIELDS.items()},
                 }
             )
@@ -257,6 +260,7 @@ class HistoryStore:
                 "mold_boost",
                 "price",
                 "price_shift",
+                "co2",
             ):
                 vals = [v for r in bucket if (v := self._float(r.get(field, ""))) is not None]
                 avg_row[field] = round(sum(vals) / len(vals), 2) if vals else ""

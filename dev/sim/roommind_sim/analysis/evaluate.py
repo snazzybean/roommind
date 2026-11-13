@@ -168,6 +168,8 @@ def _check(run: RunData, exp: dict[str, Any]) -> dict[str, Any]:
         "world": _ns(sample),
         "dev": lambda eid: _ns(sample["devices"].get(eid) or {}),
         "cover": lambda eid: _ns(sample.get("covers", {}).get(eid) or {}),
+        # HA state of a helper or fan (observer ``states``), None if not recorded
+        "state": (obs.get("states") or {}).get,
         "true_temp": lambda area: sample["rooms"][area]["t_air"],
         "outdoor": _ns(sample.get("outdoor") or {}),
         "true": True,

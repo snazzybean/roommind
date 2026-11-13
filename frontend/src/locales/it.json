@@ -1014,5 +1014,6 @@
   "card.hint.air_co2": "CO₂ {value} ppm, arieggia la stanza",
   "card.hint.air_co2_venting": "CO₂ {value} ppm, ventilazione attiva",
   "card.hint.air_bad": "Aria di scarsa qualità, arieggia la stanza",
-  "card.hint.air_venting": "Aria di scarsa qualità, ventilazione attiva"
+  "card.hint.air_venting": "Aria di scarsa qualità, ventilazione attiva",
+  "analytics.co2": "CO₂"
 }

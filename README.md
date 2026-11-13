@@ -27,6 +27,7 @@
 - **Vacation Mode** - Global setback temperature with end date for all rooms.
 - **Window/Door Pause** - Pauses climate control when windows or doors are open, with configurable open/close delays.
   After a restart, RoomMind waits until the window sensors report a state (at most 5 minutes; a sensor that is still unavailable then counts as closed). A sensor that no longer exists at all (deleted or renamed) counts as closed right away once Home Assistant has finished starting, with a warning in the log. A sensor that drops out briefly keeps its last state.
+- **Air Quality (CO₂/VOC)** - Per room, optional. Add a CO₂ and/or VOC sensor in the room's sensor settings. From the threshold on (CO₂: 1000 ppm by default, the level from which the German Environment Agency asks for more fresh air) the room and its dashboard card show a hint and `binary_sensor.roommind_{area_id}_air_quality` turns on; it turns off again below 80 % of the threshold (800 ppm). VOC sensors report an index, ppb or µg/m³, so the VOC threshold is entered in the sensor's own unit; without one the reading is only shown. Optionally pick a ventilation entity (`fan.*`, `switch.*` or `input_boolean.*`, e.g. an extractor fan or the boost of a ventilation unit): RoomMind switches it on when the air turns bad and off again once it is good, after at least 15 minutes. It only switches off what it switched on itself, leaves a fan alone that someone switched off during a bad spell, switches nothing on while climate control is off and switches its own fan off then. An AC's fan mode only recirculates the air and does not lower the CO₂, so RoomMind does not use it for this.
 - **Mold Risk Detection & Prevention** - Surface humidity estimation using the DIN 4108-2 method. Configurable notifications and automatic temperature raise to prevent mold growth.
 - **Automatic Blind/Cover Shading** - Smart cover deployment based on predicted solar overheating. Includes night close, manual override detection, cover schedules, and an optional per-room hold that keeps covers up while a window is open (checked every 30 s, a cover already moving is not stopped).
 - **Valve Protection** - Periodic cycling of idle TRV valves to prevent seizing and calcification.
@@ -107,7 +108,7 @@ Select a room and time range (24h / 7d / 30d / 90d / custom) to view temperature
 - **Daily rhythm**: an overview of at least 14 days by hour, with the selected range marked. It stays on the latest days, grows with a longer range (up to 31 days) and moves back for an older one. One view shows when the room heats or cools and when windows were open, the other when it missed its target. Hover or tap an hour for its figures, tap a day to show it in the chart above.
 - **Heat loss** in the model card: how many degrees per hour the room loses without heating at 10° difference to outside, for comparing rooms or a renovation before and after. Degrees per hour, not watts, because RoomMind does not know the size of the room.
 
-Humidity needs a humidity sensor on the room. Humidity and time on target start with the first readings after the update, older history has neither.
+Humidity needs a humidity sensor on the room. Humidity and time on target start with the first readings after the update, older history has neither. Rooms with a CO₂ sensor get a CO₂ plot below the temperature, from the first reading on.
 
 ## How It Works
 
@@ -151,6 +152,7 @@ For a more detailed explanation of the `Priority` slider, device types, setpoint
 | `switch.roommind_climate_control` | Global climate control toggle, the same as `Settings -> General`. Off stops RoomMind controlling all rooms and leaves the devices as they are, e.g. for a summer/winter automation |
 | `switch.roommind_{area_id}_cover_auto` | Per-room automatic cover control toggle |
 | `binary_sensor.roommind_{area_id}_cover_paused` | On when manual cover override is detected |
+| `binary_sensor.roommind_{area_id}_air_quality` | On while the room's CO₂ or VOC is past its threshold (rooms with an air quality sensor); attributes `co2`, `voc`, `reason`, `ventilation_active` |
 
 These can be used in HA automations, dashboards, or other integrations.
 
@@ -205,7 +207,7 @@ These per-room entities still work but will be removed in a future release. If a
 
 - **Home Assistant** 2026.2+
 - At least one HA area with a `climate.*` entity
-- Optional: temperature sensor, humidity sensor, window sensors, weather entity, schedule helpers, person entities
+- Optional: temperature sensor, humidity sensor, window sensors, CO₂/VOC sensor, weather entity, schedule helpers, person entities
 
 No cloud services required - everything runs locally.
 
