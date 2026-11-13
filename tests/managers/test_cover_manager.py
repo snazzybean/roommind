@@ -2134,6 +2134,36 @@ def test_cover_closed_by_hand_in_the_afternoon_stays_closed_in_the_morning(mock_
 
 
 @patch("custom_components.roommind.managers.cover_manager.time")
+def test_cover_closed_by_hand_before_a_daytime_restart_stays_closed_in_the_morning(mock_t):
+    """A restart in the afternoon loses the history; daytime cycles show the closed cover is not RoomMind's."""
+    mock_t.time.return_value = 1000.0
+    mgr = CoverManager()
+    mgr.update_position("lr", 0)  # closed by hand, then HA restarted before sunset
+    for _ in range(3):
+        d = mgr.evaluate("lr", predicted_peak_temp=21.0, target_temp=21.0, **_BASE_KWARGS)
+        assert d.changed is False
+
+    mock_t.time.return_value = 20000.0
+    d = mgr.evaluate("lr", predicted_peak_temp=20.0, target_temp=21.0, **_NIGHT)
+    assert "forced_at_target" in d.reason
+
+    mock_t.time.return_value = 60000.0
+    d = mgr.evaluate("lr", predicted_peak_temp=20.0, target_temp=21.0, **_MORNING)
+    assert d.changed is False
+    assert d.reason == "user_position_hold"
+
+
+def test_window_hold_keeps_the_daytime_mark():
+    """Undoing a held move must not forget that the room was already seen outside a forced position."""
+    mgr = CoverManager()
+    mgr.update_position("lr", 100)
+    before = mgr.snapshot("lr")
+    mgr.evaluate("lr", predicted_peak_temp=25.0, target_temp=22.0, **_BASE_KWARGS)
+    mgr.hold("lr", before, "window_hold")
+    assert mgr._get_state("lr").seen_unforced is True
+
+
+@patch("custom_components.roommind.managers.cover_manager.time")
 def test_room_override_at_night_end_keeps_the_covers_down_for_a_predicted_peak(mock_t):
     """Under a climate override the night end holds like without one while a solar peak is predicted."""
     mock_t.time.return_value = 1000.0

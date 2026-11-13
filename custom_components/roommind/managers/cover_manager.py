@@ -68,6 +68,7 @@ class _RoomCoverState:
     travel_from: int | None = None  # real reading at command time (travel corridor anchor)
     last_reading: int | None = None  # last real reading; never overwritten by commands
     drift_latched: bool = False  # current drift episode already armed an override once
+    seen_unforced: bool = False  # evaluated outside a forced position since the start
 
 
 class CoverManager:
@@ -186,6 +187,9 @@ class CoverManager:
         if not cover_entity_ids:
             return CoverDecision(target_position=current, changed=False, reason="disabled")
 
+        if forced_position is None:
+            state.seen_unforced = True
+
         # Gate 1: Forced position (schedule or night close) — immediate, no rate limit.
         # Note: the orchestrator returns early when covers_auto_enabled=False, so this gate
         # is only reached when auto control is on (or when evaluate() is called directly).
@@ -198,10 +202,10 @@ class CoverManager:
             # A cover's own minimum keeps it short of the raw target; compared against that, not every cycle anew
             reached = forced_expected if forced_expected is not None else forced_position
             if abs(reached - current) <= 2:
-                if state.last_commanded_position is None:
-                    # Found in place with no history (reload/restart at night): RoomMind's, so the
-                    # forced section's end opens it again and a hand move is noticed (#499).
-                    # With a history the position stays whoever's it was (closed by hand stays closed).
+                if state.last_commanded_position is None and not state.seen_unforced:
+                    # Found in place right after a start inside the forced section (reload/restart at
+                    # night): RoomMind's, so its end opens it again and a hand move is noticed (#499).
+                    # Otherwise the position stays whoever's it was (closed by hand stays closed).
                     state.owned = True
                     state.last_commanded_position = current
                     state.travel_from = None
@@ -327,6 +331,7 @@ class CoverManager:
         The next cycle decides afresh, so a held forced position (night close,
         schedule) goes out as soon as the hold ends.
         """
+        snapshot.seen_unforced = snapshot.seen_unforced or self._get_state(area_id).seen_unforced
         self._states[area_id] = snapshot
         return CoverDecision(target_position=snapshot.current_position, changed=False, reason=reason)
 
