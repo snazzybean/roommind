@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -83,6 +84,15 @@ def _notify_hass(entities: frozenset[str] = frozenset(), legacy: frozenset[str] 
     return hass
 
 
+async def _send(hass, *args, **kwargs):
+    """Call async_send_mold_notification and wait for its background delivery."""
+    hass.async_create_background_task = MagicMock(side_effect=lambda coro, name: asyncio.ensure_future(coro))
+    task = await async_send_mold_notification(hass, *args, **kwargs)
+    if task is not None:
+        await task
+    return task
+
+
 @pytest.mark.asyncio
 async def test_notify_entity_gets_message_and_title_only():
     """A notify entity (Mobile App since 2024) must not get data: HA rejects the call (#502)."""
@@ -90,12 +100,64 @@ async def test_notify_entity_gets_message_and_title_only():
     targets = [{"entity_id": "notify.pixel_9", "person_entity": "", "notify_when": "always"}]
 
     with patch("custom_components.roommind.utils.notification_utils.async_create") as mock_create:
-        await async_send_mold_notification(hass, "living_room", "Wohnzimmer", targets, "Alert", "RoomMind")
+        await _send(hass, "living_room", "Wohnzimmer", targets, "Alert", "RoomMind")
 
     hass.services.async_call.assert_awaited_once_with(
-        "notify", "send_message", {"entity_id": "notify.pixel_9", "message": "Alert", "title": "RoomMind"}
+        "notify",
+        "send_message",
+        {"entity_id": "notify.pixel_9", "message": "Alert", "title": "RoomMind"},
+        blocking=True,
     )
     mock_create.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_unavailable_notify_entity_counts_as_failed():
+    """HA skips an unavailable entity without an error; the alert must still reach the sidebar."""
+    hass = _notify_hass(entities=frozenset({"notify.pixel_9"}))
+    hass.states.get = MagicMock(return_value=MagicMock(state="unavailable"))
+    targets = [{"entity_id": "notify.pixel_9", "person_entity": "", "notify_when": "always"}]
+
+    with patch("custom_components.roommind.utils.notification_utils.async_create") as mock_create:
+        await _send(hass, "living_room", "Wohnzimmer", targets, "Alert", "RoomMind")
+
+    hass.services.async_call.assert_not_awaited()
+    mock_create.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_other_legacy_services_get_no_data():
+    """Only the Companion app knows tag and group; e.g. signal_messenger rejects them."""
+    hass = _notify_hass(legacy=frozenset({"signal_home"}))
+    targets = [{"entity_id": "notify.signal_home", "person_entity": "", "notify_when": "always"}]
+
+    await _send(hass, "living_room", "Wohnzimmer", targets, "Alert", "RoomMind")
+
+    hass.services.async_call.assert_awaited_once_with(
+        "notify", "signal_home", {"message": "Alert", "title": "RoomMind"}, blocking=True
+    )
+
+
+@pytest.mark.asyncio
+async def test_delivery_waits_in_the_background_and_a_hanging_push_falls_back(monkeypatch):
+    """The cycle gets the task back before the push answers; a push that never answers times out."""
+    monkeypatch.setattr("custom_components.roommind.utils.notification_utils.NOTIFY_TIMEOUT_S", 0.05)
+    hass = _notify_hass(entities=frozenset({"notify.pixel_9"}))
+    hass.async_create_background_task = MagicMock(side_effect=lambda coro, name: asyncio.ensure_future(coro))
+
+    async def _hangs(*args, **kwargs):
+        await asyncio.sleep(10)
+
+    hass.services.async_call.side_effect = _hangs
+    targets = [{"entity_id": "notify.pixel_9", "person_entity": "", "notify_when": "always"}]
+
+    with patch("custom_components.roommind.utils.notification_utils.async_create") as mock_create:
+        task = await async_send_mold_notification(hass, "living_room", "Wohnzimmer", targets, "Alert", "RoomMind")
+        assert task is not None and not task.done()
+        mock_create.assert_not_called()
+        await task
+
+    mock_create.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -105,9 +167,7 @@ async def test_legacy_notify_service_keeps_tag_and_group():
     targets = [{"entity_id": "notify.mobile_app_phone_a", "person_entity": "", "notify_when": "always"}]
 
     with patch("custom_components.roommind.utils.notification_utils.async_create") as mock_create:
-        await async_send_mold_notification(
-            hass, "bedroom", "Schlafzimmer", targets, "Prevention active", "RoomMind", tag_suffix="prevention"
-        )
+        await _send(hass, "bedroom", "Schlafzimmer", targets, "Prevention active", "RoomMind", tag_suffix="prevention")
 
     hass.services.async_call.assert_awaited_once_with(
         "notify",
@@ -117,6 +177,7 @@ async def test_legacy_notify_service_keeps_tag_and_group():
             "title": "RoomMind",
             "data": {"tag": "roommind_mold_bedroom_prevention", "group": "roommind"},
         },
+        blocking=True,
     )
     mock_create.assert_not_called()
 
@@ -131,7 +192,7 @@ async def test_unknown_notify_target_falls_back_to_persistent():
         patch("custom_components.roommind.utils.notification_utils.async_create") as mock_create,
         patch("custom_components.roommind.utils.notification_utils._LOGGER") as log,
     ):
-        await async_send_mold_notification(hass, "living_room", "Wohnzimmer", targets, "Alert", "RoomMind")
+        await _send(hass, "living_room", "Wohnzimmer", targets, "Alert", "RoomMind")
 
     hass.services.async_call.assert_not_awaited()
     mock_create.assert_called_once()
@@ -152,7 +213,7 @@ async def test_one_target_failing_does_not_drop_the_others():
         patch("custom_components.roommind.utils.notification_utils.async_create") as mock_create,
         patch("custom_components.roommind.utils.notification_utils._LOGGER") as log,
     ):
-        await async_send_mold_notification(hass, "living_room", "Wohnzimmer", targets, "Alert", "RoomMind")
+        await _send(hass, "living_room", "Wohnzimmer", targets, "Alert", "RoomMind")
 
     assert hass.services.async_call.await_count == 2
     mock_create.assert_not_called()
@@ -169,7 +230,7 @@ async def test_send_notification_with_targets():
         {"entity_id": "notify.phone_b", "person_entity": "", "notify_when": "always"},
     ]
 
-    await async_send_mold_notification(
+    await _send(
         hass,
         "living_room",
         "Wohnzimmer",
@@ -201,7 +262,7 @@ async def test_send_notification_home_only_skips_away():
     ]
 
     with patch("custom_components.roommind.utils.notification_utils.async_create") as mock_persistent:
-        await async_send_mold_notification(
+        await _send(
             hass,
             "living_room",
             "Wohnzimmer",
@@ -230,7 +291,7 @@ async def test_send_notification_home_only_sends_when_home():
         {"entity_id": "notify.mobile_app_kevin", "person_entity": "person.kevin", "notify_when": "home_only"},
     ]
 
-    await async_send_mold_notification(
+    await _send(
         hass,
         "living_room",
         "Wohnzimmer",
@@ -248,7 +309,7 @@ async def test_send_notification_no_targets_persistent():
     hass = MagicMock()
 
     with patch("custom_components.roommind.utils.notification_utils.async_create") as mock_create:
-        await async_send_mold_notification(
+        await _send(
             hass,
             "living_room",
             "Wohnzimmer",
@@ -273,13 +334,15 @@ async def test_send_notification_person_unavailable_treated_as_home():
 
     person_state = MagicMock()
     person_state.state = "unavailable"
-    hass.states.get = MagicMock(return_value=person_state)
+    hass.states.get = MagicMock(
+        side_effect=lambda eid: person_state if eid == "person.resident" else MagicMock(state="unknown")
+    )
 
     targets = [
-        {"entity_id": "notify.mobile_app_kevin", "person_entity": "person.kevin", "notify_when": "home_only"},
+        {"entity_id": "notify.mobile_app_phone_a", "person_entity": "person.resident", "notify_when": "home_only"},
     ]
 
-    await async_send_mold_notification(
+    await _send(
         hass,
         "living_room",
         "Wohnzimmer",
@@ -324,7 +387,7 @@ async def test_send_notification_skips_target_with_empty_entity_id():
     targets = [{"entity_id": "", "person_entity": "", "notify_when": "always"}]
 
     with patch("custom_components.roommind.utils.notification_utils.async_create") as mock_create:
-        await async_send_mold_notification(
+        await _send(
             hass,
             "living_room",
             "Wohnzimmer",
@@ -346,7 +409,7 @@ async def test_send_notification_service_exception_triggers_fallback():
     targets = [{"entity_id": "notify.test", "person_entity": "", "notify_when": "always"}]
 
     with patch("custom_components.roommind.utils.notification_utils.async_create") as mock_create:
-        await async_send_mold_notification(
+        await _send(
             hass,
             "living_room",
             "Wohnzimmer",
