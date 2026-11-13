@@ -502,8 +502,9 @@ class TestCoverIntegration:
                 return_value=26.0,
             ),
         ):
-            await coordinator._async_update_data()
+            data = await coordinator._async_update_data()
 
+        assert data["rooms"]["living_room"]["cover_reason"] == "low_solar_but_peak_predicted"
         # Covers should NOT open — solar_threat detected (peak 26 > target+1.5 AND > current 21)
         cover_calls = [c for c in coordinator.hass.services.async_call.call_args_list if c[0][0] == "cover"]
         assert len(cover_calls) == 0, (
