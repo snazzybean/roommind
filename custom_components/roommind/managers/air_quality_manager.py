@@ -4,7 +4,7 @@ Air counts as bad from the threshold on and good again below ``AIR_QUALITY_CLEAR
 A ventilation entity (fan, switch, input_boolean) is switched on when the air turns bad while it
 is off, and off again once no room wants it any more and its minimum run is over. RoomMind only
 switches off what it switched on itself: a unit that was already running, or that someone
-switched off meanwhile, is left alone.
+switched off during the bad spell, is left alone until the air was good again.
 """
 
 from __future__ import annotations
@@ -12,6 +12,9 @@ from __future__ import annotations
 import logging
 import math
 from typing import TYPE_CHECKING
+
+from homeassistant.core import CoreState
+from homeassistant.helpers import entity_registry as er
 
 from ..const import (
     AIR_QUALITY_CLEAR_FACTOR,
@@ -97,6 +100,9 @@ class VentilationController:
         self._owned: dict[str, float] = {}
         # Switched off by someone during a bad spell: not switched on again until the air was good
         self._declined: set[str] = set()
+        # State read in the last cycle (or commanded by RoomMind): tells a hand on the switch
+        # from a unit coming back after a dropout
+        self._last_state: dict[str, str | None] = {}
         self.dirty = False
 
     def load_state(self, data: dict) -> None:
@@ -113,28 +119,48 @@ class VentilationController:
 
         ``wanted`` has an entry for every entity a room under control uses (True: some room
         needs fresh air). An owned entity missing there (room deleted, entity removed from the
-        room, climate control off) goes off at once.
+        room, climate control off) goes off at once; while it is unavailable RoomMind keeps it
+        and switches it off once it is back.
         """
         for entity_id, want in wanted.items():
             await self._async_reconcile_one(entity_id, want, now)
         for entity_id in [e for e in self._owned if e not in wanted]:
             state = self.hass.states.get(entity_id)
-            if state is None or state.state != "on":
+            if state is None:
+                if self._gone(entity_id):
+                    self._release(entity_id)
+            elif state.state == "off":
                 self._release(entity_id)
-            elif await self._async_switch(entity_id, False):
+            elif state.state == "on" and await self._async_switch(entity_id, False):
                 self._release(entity_id)
         self._declined &= set(wanted)
+        self._last_state = {e: v for e, v in self._last_state.items() if e in wanted}
 
     async def _async_reconcile_one(self, entity_id: str, want: bool, now: float) -> None:
         if not want:
             self._declined.discard(entity_id)
         state = self.hass.states.get(entity_id)
-        if state is None or state.state not in ("on", "off"):
+        previous = self._last_state.get(entity_id)
+        current = state.state if state is not None else None
+        self._last_state[entity_id] = current
+        if state is None:
+            if self._gone(entity_id):
+                self._release(entity_id)
+            return
+        if current not in ("on", "off"):
             return
         since = self._owned.get(entity_id)
         if since is not None:
-            if state.state == "off":
-                if now - since >= VENTILATION_REPORT_GRACE_S:
+            if current == "off":
+                if previous not in ("on", "off"):
+                    # Back from unavailable/unknown (power cut, Zigbee rejoin) or the first reading
+                    # since a restart: nobody switched it off
+                    if not want:
+                        self._release(entity_id)
+                    elif await self._async_switch(entity_id, True):
+                        self._owned[entity_id] = now
+                        self.dirty = True
+                elif now - since >= VENTILATION_REPORT_GRACE_S:
                     # Switched off by someone: stays off for this bad spell
                     self._release(entity_id)
                     if want:
@@ -143,10 +169,20 @@ class VentilationController:
             if not want and now - since >= VENTILATION_MIN_RUN_S and await self._async_switch(entity_id, False):
                 self._release(entity_id)
             return
-        if want and state.state == "off" and entity_id not in self._declined:
-            if await self._async_switch(entity_id, True):
-                self._owned[entity_id] = now
-                self.dirty = True
+        if not want or current != "off":
+            return
+        if previous == "on":
+            # Ran by someone's hand into the bad spell and was switched off by hand in it
+            self._declined.add(entity_id)
+        if entity_id not in self._declined and await self._async_switch(entity_id, True):
+            self._owned[entity_id] = now
+            self.dirty = True
+
+    def _gone(self, entity_id: str) -> bool:
+        """Deleted in Home Assistant: no state and no registry entry once HA runs (not just loading yet)."""
+        if self.hass.state is not CoreState.running:
+            return False
+        return er.async_get(self.hass).async_get(entity_id) is None
 
     def _release(self, entity_id: str) -> None:
         if self._owned.pop(entity_id, None) is not None:
@@ -165,4 +201,6 @@ class VentilationController:
         except Exception:  # noqa: BLE001
             _LOGGER.warning("Ventilation '%s': switching %s failed", entity_id, "on" if on else "off", exc_info=True)
             return False
+        # Our own switch is no hand on it in the next cycle
+        self._last_state[entity_id] = "on" if on else "off"
         return True

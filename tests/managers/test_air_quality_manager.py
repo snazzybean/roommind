@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from homeassistant.core import CoreState
 
 from custom_components.roommind.const import MAX_SENSOR_STALENESS
 from custom_components.roommind.managers.air_quality_manager import (
@@ -72,6 +73,7 @@ class _Hass:
         self.states.get = lambda eid: SimpleNamespace(state=self.state_map[eid]) if eid in self.state_map else None
         self.calls: list[tuple[str, str, str]] = []
         self.fail = False
+        self.state = CoreState.running
 
         async def _call(domain, service, data, **_kw):
             if self.fail:
@@ -214,3 +216,100 @@ def test_tracker_seeded_bad_holds_a_silent_sensor_until_stale():
     t = AirQualityTracker()
     assert t.evaluate("bed", "co2", None, 1000, 0, assume_bad=True) is True
     assert t.evaluate("bed", "co2", None, 1000, MAX_SENSOR_STALENESS + 1, assume_bad=True) is False
+
+
+@pytest.mark.asyncio
+async def test_hand_on_then_hand_off_during_a_bad_spell_stays_off():
+    """Switched on by hand while the air was good, off by hand while it is bad: not switched on again (M2)."""
+    hass = _Hass({FAN: "on"})
+    v = VentilationController(hass)
+    await v.async_reconcile({FAN: True}, 0)
+    assert not v.is_running(FAN)
+    hass.state_map[FAN] = "off"
+    await v.async_reconcile({FAN: True}, 30)
+    await v.async_reconcile({FAN: True}, 60)
+    assert hass.calls == []
+    # The next bad spell is RoomMind's again
+    await v.async_reconcile({FAN: False}, 90)
+    await v.async_reconcile({FAN: True}, 120)
+    assert hass.calls == [("fan", "turn_on", FAN)]
+
+
+@pytest.mark.asyncio
+async def test_own_switch_off_is_no_hand_on_it():
+    """RoomMind ended its run; the air turning bad again right after switches it on again."""
+    hass = _Hass({FAN: "off"})
+    v = VentilationController(hass)
+    await v.async_reconcile({FAN: True}, 0)
+    await v.async_reconcile({FAN: False}, VENTILATION_MIN_RUN_S)
+    await v.async_reconcile({FAN: True}, VENTILATION_MIN_RUN_S + 30)
+    assert [c[1] for c in hass.calls] == ["turn_on", "turn_off", "turn_on"]
+
+
+@pytest.mark.asyncio
+async def test_owned_unit_unavailable_when_the_room_drops_it_goes_off_once_back():
+    """Ownership is kept while the unit is unavailable, else it ran on for good (Mi1)."""
+    hass = _Hass({FAN: "off"})
+    v = VentilationController(hass)
+    await v.async_reconcile({FAN: True}, 0)
+    hass.state_map[FAN] = "unavailable"
+    await v.async_reconcile({}, 100)
+    assert v.is_running(FAN)
+    hass.state_map[FAN] = "on"
+    await v.async_reconcile({}, 200)
+    assert hass.calls[-1] == ("fan", "turn_off", FAN)
+    assert not v.is_running(FAN)
+
+
+@pytest.mark.asyncio
+async def test_off_after_a_dropout_is_no_hand_on_it():
+    """Power cut or Zigbee rejoin: the unit comes back off while the air is still bad (Mi3)."""
+    hass = _Hass({FAN: "off"})
+    v = VentilationController(hass)
+    await v.async_reconcile({FAN: True}, 0)
+    hass.state_map[FAN] = "unavailable"
+    await v.async_reconcile({FAN: True}, 300)
+    hass.state_map[FAN] = "off"
+    await v.async_reconcile({FAN: True}, 330)
+    assert hass.calls == [("fan", "turn_on", FAN), ("fan", "turn_on", FAN)]
+    assert v.is_running(FAN)
+    # Air good meanwhile: the unit is only released
+    hass.state_map[FAN] = "unknown"
+    await v.async_reconcile({FAN: False}, 400)
+    hass.state_map[FAN] = "off"
+    await v.async_reconcile({FAN: False}, 430)
+    assert not v.is_running(FAN)
+    assert len(hass.calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_first_reading_after_a_restart_off_is_switched_on_again():
+    hass = _Hass({FAN: "off"})
+    v = VentilationController(hass)
+    v.load_state({FAN: 0.0})
+    await v.async_reconcile({FAN: True}, 100)
+    assert hass.calls == [("fan", "turn_on", FAN)]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("wanted", [{FAN: True}, {}])
+async def test_unit_deleted_in_ha_is_released(monkeypatch, wanted):
+    """No state and no registry entry once HA runs (Mi6); still loading or registered: kept."""
+    from custom_components.roommind.managers import air_quality_manager
+
+    registry = SimpleNamespace(async_get=lambda eid: None)
+    monkeypatch.setattr(air_quality_manager.er, "async_get", lambda _hass: registry)
+    hass = _Hass({FAN: "off"})
+    v = VentilationController(hass)
+    await v.async_reconcile({FAN: True}, 0)
+    del hass.state_map[FAN]
+    hass.state = CoreState.starting
+    await v.async_reconcile(wanted, 10)
+    assert v.is_running(FAN)
+    registry.async_get = lambda eid: object()
+    hass.state = CoreState.running
+    await v.async_reconcile(wanted, 20)
+    assert v.is_running(FAN)
+    registry.async_get = lambda eid: None
+    await v.async_reconcile(wanted, 30)
+    assert not v.is_running(FAN)
