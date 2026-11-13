@@ -43,7 +43,7 @@ import { errorText } from "../utils/errors";
 import { showToast } from "../utils/toast";
 import { fireSaveStatus } from "../utils/events";
 import { deviceAbilities, modeFits, resolveHeatingSystemType } from "../utils/device-utils";
-import { DEFAULT_OCCUPANCY_ECO_DELAY } from "../utils/constants";
+import { DEFAULT_CO2_THRESHOLD, DEFAULT_OCCUPANCY_ECO_DELAY } from "../utils/constants";
 import { NO_OVERRIDE, type EffectiveOverride } from "../utils/override";
 import { tokens } from "../styles/tokens";
 
@@ -106,6 +106,11 @@ const ROOM_FIELDS: [string, RoomFieldSync][] = [
     "occupancy_eco_delay",
     plain("_occupancyEcoDelay", (c) => c?.occupancy_eco_delay ?? DEFAULT_OCCUPANCY_ECO_DELAY),
   ],
+  ["co2_sensor", plain("_co2Sensor", (c) => c?.co2_sensor ?? "")],
+  ["co2_threshold", plain("_co2Threshold", (c) => c?.co2_threshold ?? DEFAULT_CO2_THRESHOLD)],
+  ["voc_sensor", plain("_vocSensor", (c) => c?.voc_sensor ?? "")],
+  ["voc_threshold", plain("_vocThreshold", (c) => c?.voc_threshold ?? null)],
+  ["ventilation_entity", plain("_ventilationEntity", (c) => c?.ventilation_entity ?? "")],
   ["preheat_enabled", plain("_preheatEnabled", (c) => c?.preheat_enabled ?? true)],
   [
     "follow_device_setpoint",
@@ -242,6 +247,11 @@ export class RsRoomDetail extends LitElement {
   @state() private _priceShift = 0;
   @state() private _heatSourcePriceAware = false;
   @state() private _occupancyEcoDelay = DEFAULT_OCCUPANCY_ECO_DELAY;
+  @state() private _co2Sensor = "";
+  @state() private _co2Threshold = DEFAULT_CO2_THRESHOLD;
+  @state() private _vocSensor = "";
+  @state() private _vocThreshold: number | null = null;
+  @state() private _ventilationEntity = "";
   @state() private _selectedWindowSensors: Set<string> = new Set();
   @state() private _windowOpenDelay = 0;
   @state() private _windowCloseDelay = 0;
@@ -775,6 +785,12 @@ export class RsRoomDetail extends LitElement {
         .occupancySensors=${this._selectedOccupancySensors}
         .occupancyEcoEnabled=${this._occupancyEcoEnabled}
         .occupancyEcoDelay=${this._occupancyEcoDelay}
+        .co2Sensor=${this._co2Sensor}
+        .co2Threshold=${this._co2Threshold}
+        .vocSensor=${this._vocSensor}
+        .vocThreshold=${this._vocThreshold}
+        .ventilationEntity=${this._ventilationEntity}
+        .live=${this.config?.live}
         .windowSensors=${this._selectedWindowSensors}
         .windowOpenDelay=${this._windowOpenDelay}
         .windowCloseDelay=${this._windowCloseDelay}
@@ -962,6 +978,12 @@ export class RsRoomDetail extends LitElement {
             .occupancySensors=${this._selectedOccupancySensors}
             .occupancyEcoEnabled=${this._occupancyEcoEnabled}
             .occupancyEcoDelay=${this._occupancyEcoDelay}
+            .co2Sensor=${this._co2Sensor}
+            .co2Threshold=${this._co2Threshold}
+            .vocSensor=${this._vocSensor}
+            .vocThreshold=${this._vocThreshold}
+            .ventilationEntity=${this._ventilationEntity}
+            .live=${this.config?.live}
             .windowSensors=${this._selectedWindowSensors}
             .windowOpenDelay=${this._windowOpenDelay}
             .windowCloseDelay=${this._windowCloseDelay}
@@ -1232,7 +1254,7 @@ export class RsRoomDetail extends LitElement {
   }
 
   private _onSensorChanged(
-    e: CustomEvent<{ key: string; value: string | string[] | number | boolean }>,
+    e: CustomEvent<{ key: string; value: string | string[] | number | boolean | null }>,
   ) {
     const { key, value } = e.detail;
     if (key === "temperature_sensor") {
@@ -1245,6 +1267,16 @@ export class RsRoomDetail extends LitElement {
       this._occupancyEcoEnabled = value as boolean;
     } else if (key === "occupancy_eco_delay") {
       this._occupancyEcoDelay = value as number;
+    } else if (key === "co2_sensor") {
+      this._co2Sensor = value as string;
+    } else if (key === "co2_threshold") {
+      this._co2Threshold = value as number;
+    } else if (key === "voc_sensor") {
+      this._vocSensor = value as string;
+    } else if (key === "voc_threshold") {
+      this._vocThreshold = value as number | null;
+    } else if (key === "ventilation_entity") {
+      this._ventilationEntity = value as string;
     } else if (key === "window_sensors") {
       this._selectedWindowSensors = new Set(value as string[]);
     } else if (key === "window_open_delay") {

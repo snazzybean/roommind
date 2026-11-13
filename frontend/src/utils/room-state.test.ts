@@ -108,3 +108,47 @@ describe("roomHints setback (#509)", () => {
     ).not.toContain("setback");
   });
 });
+
+describe("roomHints air quality (#267)", () => {
+  test("names the CO2 reading and comes right after the mold risk", () => {
+    const hints = roomHints(
+      room({
+        mold_risk_level: "warning",
+        window_open: true,
+        co2: 1349.6,
+        air_quality_bad: true,
+        air_quality_reason: "co2",
+      }),
+      "controlled",
+      ctx,
+    );
+    expect(hints.map((h) => h.id).slice(0, 3)).toEqual(["mold_risk", "air_quality", "window_open"]);
+    expect(hintText(hints[1], "de")).toBe("CO₂ 1.350 ppm, bitte lüften");
+  });
+
+  test("says when RoomMind ventilates, and VOC has no figure", () => {
+    const venting = roomHints(
+      room({
+        co2: 1100,
+        air_quality_bad: true,
+        air_quality_reason: "co2",
+        ventilation_active: true,
+      }),
+      "controlled",
+      ctx,
+    );
+    expect(hintText(venting[0], "de")).toBe("CO₂ 1.100 ppm, Lüftung läuft");
+    const voc = roomHints(
+      room({ voc: 300, air_quality_bad: true, air_quality_reason: "voc" }),
+      "sensor",
+      ctx,
+    );
+    expect(voc.map((h) => h.id)).toEqual(["air_quality"]);
+    expect(hintText(voc[0], "de")).toBe("Luft belastet, bitte lüften");
+  });
+
+  test("no hint while the air is good", () => {
+    const hints = roomHints(room({ co2: 900, air_quality_bad: false }), "controlled", ctx);
+    expect(hints.map((h) => h.id)).not.toContain("air_quality");
+  });
+});

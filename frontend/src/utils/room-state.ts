@@ -161,6 +161,7 @@ export function roomStateInfo(config: RoomConfig, climateControlActive: boolean)
 
 export type RoomHintId =
   | "mold_risk"
+  | "air_quality"
   | "window_open"
   | "not_controlled"
   | "override"
@@ -212,9 +213,10 @@ export function formatClock(unixS: number, language: string, now = Date.now()): 
 }
 
 /**
- * Everything worth a hint for a room, most important first: mold risk, window open, not
- * controlled, override (with end), compressor protection, away / room empty, mold
- * prevention, price shift, setback, pre-heat, learning. Rooms without control only get the mold risk.
+ * Everything worth a hint for a room, most important first: mold risk, air quality, window
+ * open, not controlled, override (with end), compressor protection, away / room empty, mold
+ * prevention, price shift, setback, pre-heat, learning. Rooms without control only get the
+ * measured ones (mold risk, air quality).
  */
 export function roomHints(
   config: RoomConfig | null,
@@ -233,6 +235,8 @@ export function roomHints(
       key: critical ? "card.mold_critical" : "card.mold_warning",
     });
   }
+  const air = airQualityHint(live, ctx.language);
+  if (air) hints.push(air);
   if (kind !== "controlled") return hints;
 
   if (live.window_open) {
@@ -385,6 +389,27 @@ export function setbackHint(live: RoomLiveData, language: string): RoomHint | nu
           params: { time: formatMinutes(minutesLeft(until), language) },
         }
       : { key: "card.hint.setback" }),
+  };
+}
+
+/** Stale or polluted air (#267): the CO2 reading when that is the reason, and whether RoomMind ventilates. */
+function airQualityHint(live: NonNullable<RoomConfig["live"]>, language: string): RoomHint | null {
+  if (!live.air_quality_bad) return null;
+  const venting = !!live.ventilation_active;
+  if (live.air_quality_reason === "co2" && live.co2 != null) {
+    return {
+      id: "air_quality",
+      icon: "mdi:molecule-co2",
+      severity: "warn",
+      key: venting ? "card.hint.air_co2_venting" : "card.hint.air_co2",
+      params: { value: formatNumber(Math.round(live.co2), { language }) },
+    };
+  }
+  return {
+    id: "air_quality",
+    icon: "mdi:air-filter",
+    severity: "warn",
+    key: venting ? "card.hint.air_venting" : "card.hint.air_bad",
   };
 }
 

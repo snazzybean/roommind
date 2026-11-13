@@ -1,6 +1,6 @@
 import { LitElement, html, css, nothing, type PropertyValues } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
-import type { HomeAssistant, HassArea } from "../types";
+import type { HomeAssistant, HassArea, RoomLiveData } from "../types";
 import { getEntitiesForArea } from "../utils/room-state";
 import { localize } from "../utils/localize";
 import { openEntityInfo } from "../utils/events";
@@ -9,17 +9,34 @@ import { formatMinutes, formatNumber, formatPercent } from "../utils/format";
 import { tokens } from "../styles/tokens";
 import { inputStyles } from "../styles/input-styles";
 import { formStyles } from "../styles/form-styles";
-import { DEFAULT_OCCUPANCY_ECO_DELAY, MIN_OCCUPANCY_ECO_DELAY } from "../utils/constants";
+import {
+  DEFAULT_CO2_THRESHOLD,
+  DEFAULT_OCCUPANCY_ECO_DELAY,
+  MAX_CO2_THRESHOLD,
+  MIN_CO2_THRESHOLD,
+  MIN_OCCUPANCY_ECO_DELAY,
+} from "../utils/constants";
 import "./shared/rs-field";
 import "./shared/rs-number-field";
 import "./shared/rs-icon-button";
 import "./shared/rs-info-icon";
 import "./shared/rs-list-row";
 
-type SensorKind = "temp" | "humidity" | "occupancy" | "window";
+type SensorKind = "temp" | "humidity" | "occupancy" | "window" | "co2" | "voc" | "ventilation";
+type SingleKind = "temp" | "humidity" | "co2" | "voc" | "ventilation";
 
 const OCCUPANCY_CLASSES = ["occupancy", "motion", "presence"];
 const WINDOW_CLASSES = ["window", "door", "opening"];
+// VOC sensors report an index, ppb or µg/m³; ESPHome's SGP4x index comes as aqi or without a class
+const VOC_CLASSES = ["volatile_organic_compounds", "volatile_organic_compounds_parts", "aqi"];
+const VENTILATION_DOMAINS = ["fan", "switch", "input_boolean"];
+const SINGLE_KEYS: Record<SingleKind, string> = {
+  temp: "temperature_sensor",
+  humidity: "humidity_sensor",
+  co2: "co2_sensor",
+  voc: "voc_sensor",
+  ventilation: "ventilation_entity",
+};
 
 @customElement("rs-sensor-section")
 export class RsSensorSection extends LitElement {
@@ -33,6 +50,13 @@ export class RsSensorSection extends LitElement {
   @property({ attribute: false }) public windowSensors: Set<string> = new Set();
   @property({ type: Number }) public windowOpenDelay = 0;
   @property({ type: Number }) public windowCloseDelay = 0;
+  @property({ type: String }) public co2Sensor = "";
+  @property({ type: Number }) public co2Threshold = DEFAULT_CO2_THRESHOLD;
+  @property({ type: String }) public vocSensor = "";
+  @property({ attribute: false }) public vocThreshold: number | null = null;
+  @property({ type: String }) public ventilationEntity = "";
+  /** Live state of the room: air quality judgement and whether RoomMind runs the ventilation. */
+  @property({ attribute: false }) public live?: RoomLiveData;
   @property({ type: String }) public heatingSystemType = "";
   @property({ type: Boolean }) public editing = false;
   /** Outdoor area: only temperature and humidity, nothing that controls. */
@@ -150,6 +174,7 @@ export class RsSensorSection extends LitElement {
           : nothing
       }
       ${this.outdoor ? nothing : this._renderControlRows(delays, occupancyNote)}
+      ${this.outdoor ? nothing : this._renderAirRows()}
       <rs-list-row
         clickable
         plain-icon
@@ -185,6 +210,63 @@ export class RsSensorSection extends LitElement {
           on ? "var(--rs-ok)" : "",
         );
       })}
+    `;
+  }
+
+  /** CO2, VOC and the ventilation entity (#267). */
+  private _renderAirRows() {
+    const l = this.hass.language;
+    const reason = this.live?.air_quality_bad ? this.live.air_quality_reason : null;
+    const vocNote = this.vocThreshold == null ? localize("sensors.voc_not_judged", l) : "";
+    return html`
+      ${
+        this.co2Sensor
+          ? this._row(
+              this.co2Sensor,
+              "mdi:molecule-co2",
+              [
+                localize("detail.sensors.co2", l),
+                reason === "co2" ? localize("sensors.air_bad", l) : "",
+              ]
+                .filter(Boolean)
+                .join(" · "),
+              this._numberValue(this.co2Sensor),
+              reason === "co2" ? "var(--rs-warn)" : "",
+            )
+          : nothing
+      }
+      ${
+        this.vocSensor
+          ? this._row(
+              this.vocSensor,
+              "mdi:air-filter",
+              [
+                localize("detail.sensors.voc", l),
+                reason === "voc" ? localize("sensors.air_bad", l) : vocNote,
+              ]
+                .filter(Boolean)
+                .join(" · "),
+              this._numberValue(this.vocSensor),
+              reason === "voc" ? "var(--rs-warn)" : "",
+            )
+          : nothing
+      }
+      ${
+        this.ventilationEntity && (this.co2Sensor || this.vocSensor)
+          ? this._row(
+              this.ventilationEntity,
+              "mdi:fan",
+              [
+                localize("detail.sensors.ventilation", l),
+                this.live?.ventilation_active ? localize("sensors.ventilation_running", l) : "",
+              ]
+                .filter(Boolean)
+                .join(" · "),
+              this._onOffValue(this.ventilationEntity),
+              this.live?.ventilation_active ? "var(--rs-ok)" : "",
+            )
+          : nothing
+      }
     `;
   }
 
@@ -224,6 +306,26 @@ export class RsSensorSection extends LitElement {
     return st ? localize("detail.devices.unavailable", this.hass.language) : "";
   }
 
+  /** A CO2/VOC reading with the sensor's own unit. */
+  private _numberValue(entityId: string): string {
+    const st = this.hass.states[entityId];
+    const num = Number(st?.state);
+    if (st?.state == null || st.state === "" || !Number.isFinite(num)) {
+      return st ? localize("detail.devices.unavailable", this.hass.language) : "";
+    }
+    const unit = st.attributes?.unit_of_measurement as string | undefined;
+    return [formatNumber(num, this.hass, 0, Math.abs(num) < 10 ? 2 : 0), unit]
+      .filter(Boolean)
+      .join("\u00a0");
+  }
+
+  private _onOffValue(entityId: string): string {
+    const state = this.hass.states[entityId]?.state;
+    if (state === "on") return localize("detail.on", this.hass.language);
+    if (state === "off") return localize("detail.off", this.hass.language);
+    return localize("detail.devices.unavailable", this.hass.language);
+  }
+
   private _binaryValue(
     entityId: string,
     onKey: "detail.sensors.open" | "detail.sensors.occupied",
@@ -248,7 +350,15 @@ export class RsSensorSection extends LitElement {
       this._focusPicker(changed.get("_pickerFor") as SensorKind | null);
     }
     if (!this._focusKind || !this.editing) return;
-    const lists = ["temperatureSensor", "humiditySensor", "occupancySensors", "windowSensors"];
+    const lists = [
+      "temperatureSensor",
+      "humiditySensor",
+      "occupancySensors",
+      "windowSensors",
+      "co2Sensor",
+      "vocSensor",
+      "ventilationEntity",
+    ];
     if (!lists.some((p) => changed.has(p))) return;
     const section = this.renderRoot.querySelector(`section[data-kind="${this._focusKind}"]`);
     this._focusKind = null;
@@ -282,13 +392,33 @@ export class RsSensorSection extends LitElement {
         );
       case "window":
         return domain === "binary_sensor" && WINDOW_CLASSES.includes(dc ?? "");
+      case "co2":
+        return domain === "sensor" && dc === "carbon_dioxide";
+      case "voc":
+        return (
+          domain === "sensor" && (VOC_CLASSES.includes(dc ?? "") || (!dc && /voc/i.test(entityId)))
+        );
+      case "ventilation":
+        return VENTILATION_DOMAINS.includes(domain);
     }
   }
 
+  private _single(kind: SingleKind): string {
+    return {
+      temp: this.temperatureSensor,
+      humidity: this.humiditySensor,
+      co2: this.co2Sensor,
+      voc: this.vocSensor,
+      ventilation: this.ventilationEntity,
+    }[kind];
+  }
+
   private _assigned(kind: SensorKind): string[] {
-    if (kind === "temp") return this.temperatureSensor ? [this.temperatureSensor] : [];
-    if (kind === "humidity") return this.humiditySensor ? [this.humiditySensor] : [];
-    return [...(kind === "occupancy" ? this.occupancySensors : this.windowSensors)];
+    if (kind === "occupancy" || kind === "window") {
+      return [...(kind === "occupancy" ? this.occupancySensors : this.windowSensors)];
+    }
+    const id = this._single(kind);
+    return id ? [id] : [];
   }
 
   private _renderEditMode() {
@@ -304,6 +434,7 @@ export class RsSensorSection extends LitElement {
             (id) =>
               !id.startsWith("input_number.") &&
               !id.startsWith("climate.") &&
+              (kind !== "ventilation" || id.startsWith("fan.")) &&
               this._accepts(kind, id),
           )
         : [];
@@ -316,7 +447,19 @@ export class RsSensorSection extends LitElement {
         this.outdoor
           ? nothing
           : html`${this._renderKind("window", inArea("window"), this._renderWindowSettings(l))}
-            ${this._renderKind("occupancy", inArea("occupancy"), this._renderOccupancySettings(l))}`
+            ${this._renderKind("occupancy", inArea("occupancy"), this._renderOccupancySettings(l))}
+            ${this._renderKind("co2", inArea("co2"), this._renderCo2Settings(l))}
+            ${this._renderKind("voc", inArea("voc"), this._renderVocSettings(l))}
+            ${
+              this.co2Sensor || this.vocSensor || this.ventilationEntity
+                ? this._renderKind(
+                    "ventilation",
+                    inArea("ventilation"),
+                    nothing,
+                    html`<p class="note">${localize("sensors.ventilation_note", l)}</p>`,
+                  )
+                : nothing
+            }`
       }
     `;
   }
@@ -362,6 +505,24 @@ export class RsSensorSection extends LitElement {
           title: "detail.sensors.occupancy",
           info: "sensors.occupancy_info",
         } as const;
+      case "co2":
+        return {
+          icon: "mdi:molecule-co2",
+          title: "detail.sensors.co2",
+          info: "sensors.co2_info",
+        } as const;
+      case "voc":
+        return {
+          icon: "mdi:air-filter",
+          title: "detail.sensors.voc",
+          info: "sensors.voc_info",
+        } as const;
+      case "ventilation":
+        return {
+          icon: "mdi:fan",
+          title: "detail.sensors.ventilation",
+          info: "sensors.ventilation_info",
+        } as const;
     }
   }
 
@@ -374,7 +535,7 @@ export class RsSensorSection extends LitElement {
     const l = this.hass.language;
     const meta = this._kindMeta(kind);
     const assigned = this._assigned(kind);
-    const single = kind === "temp" || kind === "humidity";
+    const single = kind !== "occupancy" && kind !== "window";
     const suggestions = areaCandidates.filter((id) => !assigned.includes(id));
     return html`<section class="group" data-kind=${kind}>
       <h4 class="group-title">
@@ -387,7 +548,9 @@ export class RsSensorSection extends LitElement {
         ${assigned.map((id) => this._renderAssigned(kind, id, this._areaIds.has(id)))}
         ${
           !assigned.length && kind !== "temp"
-            ? html`<p class="note">${localize("sensors.none_assigned", l)}</p>`
+            ? html`<p class="note">
+                ${localize(kind === "ventilation" ? "sensors.no_ventilation" : "sensors.none_assigned", l)}
+              </p>`
             : nothing
         }
         ${suggestions.map(
@@ -474,6 +637,9 @@ export class RsSensorSection extends LitElement {
       humidity: ["sensor", "input_number"],
       occupancy: ["binary_sensor", "input_boolean"],
       window: ["binary_sensor"],
+      co2: ["sensor"],
+      voc: ["sensor"],
+      ventilation: VENTILATION_DOMAINS,
     }[kind];
     return html`<div class="picker">
       <ha-entity-picker
@@ -506,6 +672,8 @@ export class RsSensorSection extends LitElement {
   private _kindValue(kind: SensorKind, entityId: string): string {
     if (kind === "temp") return this._tempValue(entityId);
     if (kind === "humidity") return this._humidityValue(entityId);
+    if (kind === "co2" || kind === "voc") return this._numberValue(entityId);
+    if (kind === "ventilation") return this._onOffValue(entityId);
     return kind === "window"
       ? this._binaryValue(entityId, "detail.sensors.open", "detail.sensors.closed")
       : this._binaryValue(entityId, "detail.sensors.occupied", "detail.sensors.free");
@@ -592,24 +760,24 @@ export class RsSensorSection extends LitElement {
     `;
   }
 
-  /** Temperature and humidity hold one entity each (a new one replaces it), the others a list. */
+  /** Occupancy and window hold a list, every other kind one entity (a new one replaces it). */
   private _add(kind: SensorKind, entityId: string) {
     this._pickerFor = null;
     this._focusKind = kind;
-    if (kind === "temp" || kind === "humidity") this._onSensorSelected(entityId, kind);
-    else if (kind === "occupancy") this._onOccupancyToggle(entityId, true);
-    else this._onWindowToggle(entityId, true);
+    if (kind === "occupancy") this._onOccupancyToggle(entityId, true);
+    else if (kind === "window") this._onWindowToggle(entityId, true);
+    else this._onSensorSelected(entityId, kind);
   }
 
   private _remove(kind: SensorKind, entityId: string) {
     this._focusKind = kind;
-    if (kind === "temp" || kind === "humidity") this._onSensorSelected("", kind);
-    else if (kind === "occupancy") this._onOccupancyToggle(entityId, false);
-    else this._onWindowToggle(entityId, false);
+    if (kind === "occupancy") this._onOccupancyToggle(entityId, false);
+    else if (kind === "window") this._onWindowToggle(entityId, false);
+    else this._onSensorSelected("", kind);
   }
 
-  private _onSensorSelected(entityId: string, kind: "temp" | "humidity") {
-    const key = kind === "temp" ? "temperature_sensor" : "humidity_sensor";
+  private _onSensorSelected(entityId: string, kind: SingleKind) {
+    const key = SINGLE_KEYS[kind];
     this.dispatchEvent(
       new CustomEvent("sensor-changed", {
         detail: { key, value: entityId },
@@ -643,6 +811,41 @@ export class RsSensorSection extends LitElement {
         composed: true,
       }),
     );
+  }
+
+  private _renderCo2Settings(l: string) {
+    if (!this.co2Sensor) return nothing;
+    return html`<rs-number-field
+      .label=${localize("sensors.air_threshold", l)}
+      .info=${localize("sensors.co2_threshold_info", l)}
+      suffix="ppm"
+      .min=${MIN_CO2_THRESHOLD}
+      .max=${MAX_CO2_THRESHOLD}
+      .step=${50}
+      .value=${this.co2Threshold}
+      @value-changed=${(e: CustomEvent<{ value: number }>) =>
+        this._fireSensorChanged("co2_threshold", e.detail.value)}
+    ></rs-number-field>`;
+  }
+
+  /** In the sensor's own unit: VOC sensors report an index, ppb or µg/m³, no default fits all. */
+  private _renderVocSettings(l: string) {
+    if (!this.vocSensor) return nothing;
+    const unit =
+      (this.hass.states[this.vocSensor]?.attributes?.unit_of_measurement as string | undefined) ??
+      "";
+    return html`<rs-number-field
+      .label=${localize("sensors.air_threshold", l)}
+      .info=${localize("sensors.voc_threshold_info", l)}
+      .hint=${this.vocThreshold == null ? localize("sensors.voc_not_judged", l) : ""}
+      .suffix=${unit}
+      .min=${0.1}
+      .max=${1000000}
+      .step=${0.1}
+      .value=${this.vocThreshold}
+      @value-changed=${(e: CustomEvent<{ value: number }>) =>
+        this._fireSensorChanged("voc_threshold", e.detail.value)}
+    ></rs-number-field>`;
   }
 
   private _fireSensorChanged(key: string, value: boolean | number) {

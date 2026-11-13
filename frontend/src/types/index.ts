@@ -44,6 +44,13 @@ export interface RoomLiveData {
   mpc_active: boolean;
   presence_away: boolean;
   occupancy_vacant?: boolean;
+  /** Air quality readings (#267), null without sensor or reading. */
+  co2?: number | null;
+  voc?: number | null;
+  air_quality_bad?: boolean;
+  air_quality_reason?: "co2" | "voc" | null;
+  /** RoomMind runs the room's ventilation entity for bad air. */
+  ventilation_active?: boolean;
   mold_risk_level: "ok" | "warning" | "critical";
   mold_surface_rh: number | null;
   mold_surface_temp: number | null;
@@ -142,6 +149,14 @@ export interface RoomConfig {
   occupancy_sensors?: string[];
   occupancy_eco_enabled?: boolean;
   occupancy_eco_delay?: number;
+  co2_sensor?: string;
+  /** ppm; good again below 80 % of it. */
+  co2_threshold?: number;
+  voc_sensor?: string;
+  /** In the VOC sensor's unit; null = shown, not judged. */
+  voc_threshold?: number | null;
+  /** fan.*, switch.* or input_boolean.* RoomMind switches on for bad air. */
+  ventilation_entity?: string;
   preheat_enabled?: boolean;
   /** K the schedule target may move with the electricity price, 0 = off. */
   price_shift?: number;
