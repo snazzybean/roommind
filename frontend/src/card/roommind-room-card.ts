@@ -4,7 +4,14 @@ import type { ClimateMode, HomeAssistant, OverrideType, RoomConfig } from "../ty
 import { localize, uiLanguage, type TranslationKey } from "../utils/localize";
 import { errorText } from "../utils/errors";
 import { deviceAbilities, modeFits } from "../utils/device-utils";
-import { getModeClass, roomKind, roomStateInfo, scheduleNextChange } from "../utils/room-state";
+import {
+  getModeClass,
+  hintText,
+  roomKind,
+  roomStateInfo,
+  scheduleNextChange,
+  setbackHint,
+} from "../utils/room-state";
 import { formatHours, formatMinutes, formatPercent, formatRemaining } from "../utils/format";
 import { modeStyles } from "../styles/shared-mode-styles";
 import { tokens } from "../styles/tokens";
@@ -369,6 +376,7 @@ export class RoomMindRoomCard extends LitElement {
     const unit = tempUnit(this.hass);
     const fmt = (c: number) => formatTempLocale(c, this.hass, 0, 1);
     const paused = !this._optimisticOverride && !!live.override_suppressed;
+    const setback = setbackHint(live, l);
     let remaining = "";
     if (paused) {
       remaining = localize("roomcard.paused", l);
@@ -421,6 +429,16 @@ export class RoomMindRoomCard extends LitElement {
                     role="img"
                     title=${localize("card.presence_away", l)}
                     aria-label=${localize("card.presence_away", l)}
+                  ></ha-icon>`
+                : nothing
+            }
+            ${
+              setback
+                ? html`<ha-icon
+                    icon=${setback.icon}
+                    role="img"
+                    title=${hintText(setback, l)}
+                    aria-label=${hintText(setback, l)}
                   ></ha-icon>`
                 : nothing
             }

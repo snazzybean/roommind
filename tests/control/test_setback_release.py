@@ -294,3 +294,78 @@ async def test_async_idle_device_release_ignores_other_idle_actions():
     )
 
     assert [d["hvac_mode"] for d in _calls(hass, "set_hvac_mode")] == ["fan_only"]
+
+
+# --- Live display of the setback (#509) ---
+
+
+@pytest.mark.asyncio
+async def test_a_held_setback_is_shown_with_the_earliest_off_time(monkeypatch):
+    idle_since = _idle_for(20)
+    _, ctrl = _controller("heat", 21.0, [MODE_IDLE] * 36, monkeypatch, idle_since=idle_since)
+
+    mode, _ = ctrl._evaluate_mpc(21.3, HEAT_TARGETS)
+    await ctrl.async_apply(mode, HEAT_TARGETS, power_fraction=0.0, current_temp=21.3)
+
+    assert ctrl.setback_display() == {"devices": [EID], "until": pytest.approx(idle_since + SETBACK_HOLD_MINUTES * 60)}
+
+
+@pytest.mark.asyncio
+async def test_a_setback_already_at_its_target_is_still_shown(monkeypatch):
+    """Nothing is sent when the unit already sits at the setback target; it is held all the same."""
+    hass, ctrl = _controller("heat", 19.0, [MODE_IDLE] * 36, monkeypatch, auto_off=False)
+
+    mode, _ = ctrl._evaluate_mpc(21.3, HEAT_TARGETS)
+    await ctrl.async_apply(mode, HEAT_TARGETS, power_fraction=0.0, current_temp=21.3)
+
+    assert _calls(hass, "set_temperature") == []
+    assert ctrl.setback_display() == {"devices": [EID], "until": None}
+
+
+@pytest.mark.asyncio
+async def test_a_setback_the_plan_keeps_past_the_hour_shows_no_time(monkeypatch):
+    _, ctrl = _controller("heat", 21.0, _with_run_at(3, MODE_HEATING), monkeypatch)
+
+    mode, _ = ctrl._evaluate_mpc(21.3, HEAT_TARGETS)
+    await ctrl.async_apply(mode, HEAT_TARGETS, power_fraction=0.0, current_temp=21.3)
+
+    assert ctrl.setback_display() == {"devices": [EID], "until": None}
+
+
+@pytest.mark.asyncio
+async def test_a_setback_without_a_plan_shows_no_time(monkeypatch):
+    """Managed Mode (and bang-bang) never end a setback, so there is no time to count down."""
+    _, ctrl = _controller(
+        "heat", 21.0, [MODE_IDLE] * 36, monkeypatch, has_external_sensor=False, idle_since=_idle_for(5)
+    )
+
+    await ctrl.async_evaluate(None, TargetTemps(heat=21.0, cool=None))
+    await ctrl.async_apply(MODE_IDLE, TargetTemps(heat=21.0, cool=None), power_fraction=0.0)
+
+    assert ctrl.setback_display() == {"devices": [EID], "until": None}
+
+
+@pytest.mark.asyncio
+async def test_released_forced_off_and_held_devices_are_no_setback(monkeypatch):
+    _, ctrl = _controller("heat", 21.0, [MODE_IDLE] * 36, monkeypatch)
+    mode, _ = ctrl._evaluate_mpc(21.3, HEAT_TARGETS)
+
+    await ctrl.async_apply(mode, HEAT_TARGETS, power_fraction=0.0, current_temp=21.3)
+    assert ctrl.setback_display() is None  # released: switched off
+
+    await ctrl.async_apply(MODE_IDLE, HEAT_TARGETS, power_fraction=0.0, current_temp=21.3, force_off=True)
+    assert ctrl.setback_display() is None
+
+    await ctrl.async_apply(MODE_IDLE, HEAT_TARGETS, power_fraction=0.0, current_temp=21.3, compressor_forced_on={EID})
+    assert ctrl.setback_display() is None
+
+
+@pytest.mark.asyncio
+async def test_a_running_room_shows_no_setback(monkeypatch):
+    _, ctrl = _controller("heat", 21.0, [MODE_IDLE] * 36, monkeypatch, idle_since=_idle_for(5))
+    await ctrl.async_apply(MODE_IDLE, HEAT_TARGETS, power_fraction=0.0, current_temp=21.3)
+    assert ctrl.setback_display() is not None
+
+    await ctrl.async_apply(MODE_HEATING, HEAT_TARGETS, power_fraction=0.5, current_temp=20.0)
+
+    assert ctrl.setback_display() is None

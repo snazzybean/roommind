@@ -7,6 +7,7 @@ import type {
   HassEntityRegistryEntry,
   OverrideType,
   RoomConfig,
+  RoomLiveData,
   RoomMode,
 } from "../types";
 import { localize, type TranslationKey } from "./localize";
@@ -164,6 +165,7 @@ export type RoomHintId =
   | "not_controlled"
   | "override"
   | "compressor"
+  | "setback"
   | "presence_away"
   | "room_vacant"
   | "mold_prevention"
@@ -211,7 +213,7 @@ export function formatClock(unixS: number, language: string, now = Date.now()): 
 
 /**
  * Everything worth a hint for a room, most important first: mold risk, window open, not
- * controlled, override (with end), compressor protection, away / room empty, mold
+ * controlled, override (with end), compressor protection, setback, away / room empty, mold
  * prevention, price shift, pre-heat, learning. Rooms without control only get the mold risk.
  */
 export function roomHints(
@@ -295,6 +297,8 @@ export function roomHints(
       params: { time: formatMinutes(minutesLeft(live.compressor_protection_until), ctx.language) },
     });
   }
+  const setback = setbackHint(live, ctx.language);
+  if (setback) hints.push(setback);
   if (live.presence_away) {
     hints.push({
       id: "presence_away",
@@ -362,6 +366,26 @@ export function roomHints(
     });
   }
   return hints;
+}
+
+/**
+ * Devices kept on at their setback target while the room is idle (#509). The time is the
+ * earliest switch-off; past it the plan keeps the device as long as it expects a run.
+ */
+export function setbackHint(live: RoomLiveData, language: string): RoomHint | null {
+  if (!live.setback?.devices.length || live.mode !== "idle") return null;
+  const until = live.setback.until;
+  return {
+    id: "setback",
+    icon: "mdi:thermometer-chevron-down",
+    severity: "info",
+    ...(until != null && until * 1000 > serverNow()
+      ? {
+          key: "card.hint.setback_until",
+          params: { time: formatMinutes(minutesLeft(until), language) },
+        }
+      : { key: "card.hint.setback" }),
+  };
 }
 
 /* ---------- Electricity price shift ---------- */

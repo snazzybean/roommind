@@ -3550,6 +3550,7 @@ async def test_list_rooms_passes_price_shift_to_the_hero(ws_hass, store, connect
             "price_shift_heat": 1.0,
             "price_shift_cool": 0.0,
             "preheat": {"mode": "heating", "target": 21.0, "at": 5},
+            "setback": {"devices": ["climate.kitchen_ac"], "until": 1234.0},
         }
     }
     mock_coordinator.async_request_refresh = AsyncMock()
@@ -3563,6 +3564,7 @@ async def test_list_rooms_passes_price_shift_to_the_hero(ws_hass, store, connect
     assert live["price_shift_heat"] == 1.0
     assert live["price_shift_cool"] == 0.0
     assert live["preheat"] == {"mode": "heating", "target": 21.0, "at": 5}
+    assert live["setback"] == {"devices": ["climate.kitchen_ac"], "until": 1234.0}
 
 
 @pytest.mark.asyncio

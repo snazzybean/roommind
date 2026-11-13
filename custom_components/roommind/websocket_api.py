@@ -337,6 +337,7 @@ async def websocket_list_rooms(
             "schedule_temp_warnings": live.get("schedule_temp_warnings", []),
             "price_level": live.get("price_level"),
             "preheat": live.get("preheat"),
+            "setback": live.get("setback"),
             "price_shift_heat": live.get("price_shift_heat", 0.0),
             "price_shift_cool": live.get("price_shift_cool", 0.0),
             "recent_temps": coordinator.recent_temps.get(area_id) if coordinator else [],

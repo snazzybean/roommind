@@ -54,6 +54,8 @@ export interface RoomLiveData {
   price_level?: "cheap" | "normal" | "expensive" | null;
   /** Stricter target a running pre-heat (pre-cool) aims at and when it starts (Unix s). */
   preheat?: { mode: "heating" | "cooling"; target: number; at: number } | null;
+  /** Devices kept on at their setback target while the room is idle; `until` = earliest switch-off (Unix s). */
+  setback?: { devices: string[]; until: number | null } | null;
   mold_prevention_delta: number;
   blind_position: number | null;
   cover_auto_paused: boolean;

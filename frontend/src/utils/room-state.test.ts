@@ -55,3 +55,47 @@ describe("roomHints pre-heat", () => {
     expect(roomHints(stale, "controlled", ctx).map((h) => h.id)).not.toContain("preheat");
   });
 });
+
+describe("roomHints setback (#509)", () => {
+  const ids = (r: RoomConfig) => roomHints(r, "controlled", ctx).map((h) => h.id);
+  const setbackText = (r: RoomConfig) =>
+    hintText(
+      roomHints(r, "controlled", ctx).find((h) => h.id === "setback")!,
+      "de",
+    );
+
+  test("counts down to the earliest switch-off", () => {
+    const until = Date.now() / 1000 + 25 * 60;
+    expect(setbackText(room({ setback: { devices: ["climate.ac"], until } }))).toBe(
+      "Absenkung, aus in 25\u00a0min ohne Bedarf",
+    );
+  });
+
+  test("without a time, or once it passed, the device just stays on", () => {
+    expect(setbackText(room({ setback: { devices: ["climate.ac"], until: null } }))).toBe(
+      "Absenkung, bleibt an",
+    );
+    const past = Date.now() / 1000 - 60;
+    expect(setbackText(room({ setback: { devices: ["climate.ac"], until: past } }))).toBe(
+      "Absenkung, bleibt an",
+    );
+  });
+
+  test("comes right after compressor protection", () => {
+    const r = room({
+      setback: { devices: ["climate.ac"], until: null },
+      compressor_protection_until: Date.now() / 1000 + 600,
+      compressor_protection_reason: "min_off",
+      occupancy_vacant: true,
+    });
+    expect(ids(r)).toEqual(["compressor", "setback", "room_vacant"]);
+  });
+
+  test("no hint without a held device or while the room runs", () => {
+    expect(ids(room({ setback: null }))).not.toContain("setback");
+    expect(ids(room({ setback: { devices: [], until: null } }))).not.toContain("setback");
+    expect(
+      ids(room({ mode: "heating", setback: { devices: ["climate.ac"], until: null } })),
+    ).not.toContain("setback");
+  });
+});

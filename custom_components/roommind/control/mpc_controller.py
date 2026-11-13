@@ -607,7 +607,7 @@ async def async_idle_device(
     use_setpoint_offset: bool = True,
     release_setback: frozenset[str] = frozenset(),
     head_offset: float = 0.0,
-) -> None:
+) -> bool:
     """Idle a climate device per its configured idle_action.
 
     "off"      -> async_turn_off_climate() (existing behavior)
@@ -615,6 +615,7 @@ async def async_idle_device(
     "setback"  -> keep current hvac_mode, shift target by offset
     "low"      -> lower setpoint to device min_temp, never send set_hvac_mode(off)
     Falls back to off when the configured action is not applicable.
+    Returns True when the device is held at its setback target (#509).
 
     ``use_setpoint_offset`` lets the setback keep a direct device's sensor
     offset (#369); the controller turns it off in Managed mode.
@@ -653,7 +654,7 @@ async def async_idle_device(
     if idle_action == IDLE_ACTION_LOW:
         state = hass.states.get(entity_id)
         if state is None:
-            return
+            return False
         effective_setpoint = _resolve_idle_setpoint(
             state,
             fallback_temp,
@@ -662,7 +663,7 @@ async def async_idle_device(
         )
         if effective_setpoint is not None:
             await _send_idle_setpoint(hass, entity_id, state, effective_setpoint, area_id=area_id)
-        return
+        return False
 
     # --- SETBACK branch ---
     if idle_action == IDLE_ACTION_SETBACK:
@@ -677,7 +678,7 @@ async def async_idle_device(
                 entity_id,
             )
             await async_turn_off_climate(hass, entity_id, area_id=area_id, fallback_setpoint=fallback_temp)
-            return
+            return False
 
         if current_hvac not in ("heat", "cool") or targets is None:
             _LOGGER.debug(
@@ -688,7 +689,7 @@ async def async_idle_device(
                 targets,
             )
             await async_turn_off_climate(hass, entity_id, area_id=area_id, fallback_setpoint=fallback_temp)
-            return
+            return False
 
         # Direct devices keep their sensor offset (#369), but only where the active
         # path applies it too (Full Control).
@@ -699,7 +700,7 @@ async def async_idle_device(
             setback_temp = targets.cool + sensor_offset + head_offset + DEFAULT_IDLE_SETBACK_OFFSET
         else:
             await async_turn_off_climate(hass, entity_id, area_id=area_id, fallback_setpoint=fallback_temp)
-            return
+            return False
 
         # Convert to HA units FIRST, then clamp to device min/max
         # (device attributes min_temp/max_temp are in HA units, not Celsius)
@@ -723,13 +724,13 @@ async def async_idle_device(
         # Redundancy check: already at setback temp
         current_temp_attr = state.attributes.get("temperature")
         if current_temp_attr is not None and abs(float(current_temp_attr) - ha_t) < 0.1:
-            return
+            return True
 
         # Cache check (only for devices without reliable state feedback)
         if _should_use_cache(state):
             cached = _last_commands.get(entity_id)
             if cached and cached.get("service") == "set_temperature" and cached.get("temperature") == ha_t:
-                return
+                return True
 
         _LOGGER.debug(
             "Area '%s': setback on '%s' — target %.1f → %.1f",
@@ -755,12 +756,12 @@ async def async_idle_device(
                 entity_id,
                 exc_info=True,
             )
-        return
+        return True
 
     # --- OFF branch ---
     if idle_action != IDLE_ACTION_FAN_ONLY:
         await async_turn_off_climate(hass, entity_id, area_id=area_id, fallback_setpoint=fallback_temp)
-        return
+        return False
 
     state = hass.states.get(entity_id)
     hvac_modes: list[str] = (state.attributes.get("hvac_modes") or []) if state else []
@@ -772,7 +773,7 @@ async def async_idle_device(
             entity_id,
         )
         await async_turn_off_climate(hass, entity_id, area_id=area_id, fallback_setpoint=fallback_temp)
-        return
+        return False
 
     # A fan mode the device does not have is left alone, like an empty idle_fan_mode:
     # waiting for the device to report it would resend fan_only every cycle.
@@ -790,7 +791,7 @@ async def async_idle_device(
     if state and state.state == "fan_only":
         current_fan = state.attributes.get("fan_mode")
         if fan_mode is None or current_fan == fan_mode:
-            return
+            return False
 
     # Cache fallback for IR devices (only when device has no reliable state)
     if _should_use_cache(state):
@@ -798,7 +799,7 @@ async def async_idle_device(
         if cached and cached.get("service") == "set_hvac_mode" and cached.get("hvac_mode") == "fan_only":
             cached_fan = _last_by_service.get((entity_id, "set_fan_mode"))
             if fan_mode is None or (cached_fan is not None and cached_fan.get("fan_mode") == fan_mode):
-                return
+                return False
 
     try:
         await hass.services.async_call(
@@ -819,7 +820,7 @@ async def async_idle_device(
             entity_id,
             exc_info=True,
         )
-        return
+        return False
 
     if fan_mode is not None:
         try:
@@ -839,6 +840,7 @@ async def async_idle_device(
                 entity_id,
                 exc_info=True,
             )
+    return False
 
 
 def resolve_hvac_mode(desired: str, hvac_modes: list[str]) -> str | None:
@@ -1427,6 +1429,10 @@ class MPCController:
         self.preheat: dict[str, Any] | None = None
         # hvac modes whose setback devices may switch off (set by _evaluate_mpc)
         self._setback_release: frozenset[str] = frozenset()
+        # Only the MPC path can end a setback in off (set by _evaluate_mpc)
+        self._planned = False
+        # Devices the idle branch of async_apply holds at their setback target (#509)
+        self.setback_eids: list[str] = []
 
         s = settings or {}
         self._mpc_enabled = is_mpc_enabled(s)
@@ -1475,6 +1481,7 @@ class MPCController:
         self._lead_heat = self._lead_cool = None
         self.preheat = None
         self._setback_release = frozenset()
+        self._planned = False
         if not self.has_external_sensor:
             mode = self._evaluate_managed_mode(targets)
             return mode, 1.0  # managed mode: device self-regulates
@@ -1846,6 +1853,7 @@ class MPCController:
             if shown_resolver is not None
             else None
         )
+        self._planned = True
         if action[0] == MODE_IDLE and self._setback_hold_over() and len(plan.actions) >= SETBACK_RELEASE_BLOCKS:
             ahead = plan.actions[:SETBACK_RELEASE_BLOCKS]
             self._setback_release = frozenset(
@@ -2173,6 +2181,7 @@ class MPCController:
         # after backward-compat conversion so legacy callers get a TargetTemps.
         self._idle_targets = targets
         self._force_off = force_off
+        self.setback_eids = []
         for eid in self.thermostats + self.acs:
             if eid not in _forced_on:
                 _overshoot_sent.discard(eid)
@@ -2597,7 +2606,7 @@ class MPCController:
                     if not await self._async_hold_valve(eid, targets):
                         await self._async_hold_retarget(eid, targets, current_temp)
                     continue
-                await async_idle_device(
+                if await async_idle_device(
                     self.hass,
                     eid,
                     self._devices,
@@ -2607,8 +2616,25 @@ class MPCController:
                     head_offset=self._head_offset(eid, "idle"),
                     force_off=force_off,
                     release_setback=self._release_setback_for(eid, sitting_out),
-                )
+                ):
+                    self.setback_eids.append(eid)
                 await self._async_release_valve(eid)
+
+    def setback_display(self) -> dict[str, Any] | None:
+        """Devices held at their setback target, and the earliest time they switch off (#509).
+
+        ``until`` only while every held device has setback_auto_off and the room runs on
+        the MPC plan; from then on the plan decides each cycle, so no time is shown.
+        """
+        if not self.setback_eids:
+            return None
+        until: float | None = None
+        if self._planned and all(get_setback_auto_off(self._devices, eid) for eid in self.setback_eids):
+            idle_since = self._idle_since if self._idle_since is not None else time.time()
+            until = idle_since + SETBACK_HOLD_MINUTES * 60
+            if until <= time.time():
+                until = None
+        return {"devices": list(self.setback_eids), "until": until}
 
     def _release_setback_for(self, eid: str, sitting_out: set[str]) -> frozenset[str]:
         """Modes in which ``eid``'s setback ends in off: always while sitting out, else only when opted in (#255)."""
