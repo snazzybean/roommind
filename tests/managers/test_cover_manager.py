@@ -2153,6 +2153,27 @@ def test_cover_closed_by_hand_before_a_daytime_restart_stays_closed_in_the_morni
     assert d.reason == "user_position_hold"
 
 
+@patch("custom_components.roommind.managers.cover_manager.time")
+def test_start_inside_a_force_block_with_the_schedule_not_loaded_yet_still_reopens(mock_t):
+    """A first cycle without a readable force schedule proves nothing: the block found later is still the start's."""
+    mock_t.time.return_value = 1000.0
+    mgr = CoverManager()
+    mgr.update_position("lr", 0)
+    mgr.evaluate("lr", predicted_peak_temp=21.0, target_temp=21.0, **{**_BASE_KWARGS, "forced_unknown": True})
+    d = mgr.evaluate(
+        "lr",
+        predicted_peak_temp=21.0,
+        target_temp=21.0,
+        **{**_BASE_KWARGS, "forced_position": 0, "forced_reason": "schedule_active"},
+    )
+    assert "forced_at_target" in d.reason
+
+    mock_t.time.return_value = 20000.0
+    d = mgr.evaluate("lr", predicted_peak_temp=20.0, target_temp=21.0, **_MORNING)
+    assert d.changed is True
+    assert d.target_position == 100
+
+
 def test_window_hold_keeps_the_daytime_mark():
     """Undoing a held move must not forget that the room was already seen outside a forced position."""
     mgr = CoverManager()

@@ -172,6 +172,7 @@ class CoverManager:
         forced_position: int | None = None,
         forced_expected: int | None = None,
         forced_reason: str = "",
+        forced_unknown: bool = False,
         current_temp: float | None = None,
         solar_gated: bool = True,
     ) -> CoverDecision:
@@ -187,7 +188,8 @@ class CoverManager:
         if not cover_entity_ids:
             return CoverDecision(target_position=current, changed=False, reason="disabled")
 
-        if forced_position is None:
+        # Only a cycle whose force sources were readable proves the start was outside a forced section
+        if forced_position is None and not forced_unknown:
             state.seen_unforced = True
 
         # Gate 1: Forced position (schedule or night close) — immediate, no rate limit.

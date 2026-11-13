@@ -675,6 +675,55 @@ class TestAsyncProcess:
         call_kwargs = cm.evaluate.call_args
         assert call_kwargs[1]["forced_position"] == 25 or call_kwargs.kwargs["forced_position"] == 25
 
+    @pytest.mark.parametrize(
+        ("states", "schedules", "selector", "unknown"),
+        [
+            ({}, [{"entity_id": "schedule.c"}], "", True),
+            ({"schedule.c": "unavailable"}, [{"entity_id": "schedule.c"}], "", True),
+            ({"schedule.c": "off"}, [{"entity_id": "schedule.c"}], "", False),
+            ({}, [{"entity_id": "schedule.c", "mode": "gate"}], "", False),
+            ({"schedule.c": "off"}, [{"entity_id": "schedule.c"}], "input_boolean.sel", True),
+            (
+                {"schedule.c": "off", "input_boolean.sel": "off"},
+                [{"entity_id": "schedule.c"}],
+                "input_boolean.sel",
+                False,
+            ),
+            ({"schedule.c": "off"}, [{"entity_id": "schedule.c", "mode": "gate"}], "input_boolean.sel", False),
+        ],
+    )
+    @pytest.mark.asyncio
+    async def test_unreadable_force_schedule_is_reported(self, states, schedules, selector, unknown):
+        """A force schedule or selector without a state yet (start) is passed on as unknown, a gate schedule is not."""
+        hass = _make_hass()
+        cm = _make_cover_manager()
+        orch = CoverOrchestrator(hass, cm, _make_model_manager())
+
+        def _get(eid):
+            if eid not in states:
+                return None
+            s = MagicMock()
+            s.state = states[eid]
+            s.attributes = {}
+            return s
+
+        hass.states.get = MagicMock(side_effect=_get)
+        room = _make_room(covers=["cover.blind1"], cover_schedules=schedules, cover_schedule_selector_entity=selector)
+
+        await orch.async_process(
+            area_id="living_room",
+            room=room,
+            targets=TargetTemps(heat=21.0, cool=24.0),
+            mode=MODE_HEATING,
+            current_temp=20.0,
+            outdoor_temp=15.0,
+            q_solar=0.3,
+            predicted_peak_temp=22.0,
+            has_override=False,
+        )
+
+        assert cm.evaluate.call_args.kwargs["forced_unknown"] is unknown
+
     @pytest.mark.asyncio
     async def test_night_close_forced(self):
         """Night close forces position when solar elevation <= 0."""

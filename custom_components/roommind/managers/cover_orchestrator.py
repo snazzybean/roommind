@@ -64,6 +64,11 @@ class CoverResult:
     decision: CoverDecision
 
 
+def _unreadable(state: Any) -> bool:
+    """True while an entity has no state yet or reports unavailable/unknown (e.g. right after a start)."""
+    return state is None or state.state in ("unavailable", "unknown")
+
+
 class CoverOrchestrator:
     """Coordinates cover position reading, schedule resolution, and control decisions."""
 
@@ -162,9 +167,14 @@ class CoverOrchestrator:
         _forced_reason = ""
         _active_cover_sched_idx = -1
         _solar_gated = True  # True = solar protection allowed (default); False = gate schedule is off
+        _forced_unknown = False  # a force schedule (or its selector) has no readable state yet
 
         cover_schedules = room.get("cover_schedules", [])
         if cover_schedules:
+            _selector = room.get("cover_schedule_selector_entity", "")
+            _any_force = any(e.get("mode", "force") != "gate" for e in cover_schedules)
+            if _selector and _any_force and _unreadable(self.hass.states.get(_selector)):
+                _forced_unknown = True
             _active_cover_sched_idx = resolve_schedule_index(
                 self.hass,
                 room,
@@ -189,6 +199,8 @@ class CoverOrchestrator:
                             )
                         else:
                             _solar_gated = _sched_st.state == "on"
+                    elif _unreadable(_sched_st):
+                        _forced_unknown = True
                     elif _sched_st is not None and _sched_st.state == "on":
                         # Force mode (default): read position attribute and force covers.
                         _block_pos = _sched_st.attributes.get("position")
@@ -328,6 +340,7 @@ class CoverOrchestrator:
                 else None
             ),
             forced_reason=_forced_reason,
+            forced_unknown=_forced_unknown,
             current_temp=current_temp,
             solar_gated=_solar_gated,
         )
