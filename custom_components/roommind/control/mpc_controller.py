@@ -843,6 +843,38 @@ async def async_idle_device(
     return False
 
 
+def boost_cap_ha(hass: HomeAssistant, state: Any) -> float | None:
+    """Highest proportional heating setpoint a device gets, in HA units; None without a max_temp.
+
+    One step below max_temp: some integrations validate the upper bound exclusively or
+    after a unit round trip, so exactly max_temp can be rejected (#396). The sender never
+    goes below the room target with it. Without ``target_temp_step`` a device that shows
+    whole degrees gets a whole-degree ceiling, so what it reads back equals what was sent;
+    devices showing tenths keep the 0.5 K margin. The device_setpoint display uses the same cap (#507).
+    """
+    raw_max = state.attributes.get("max_temp") if state else None
+    if raw_max is None:
+        return None
+    try:
+        max_t = float(raw_max)
+        step = float(state.attributes.get("target_temp_step") or 0.0)
+    except (TypeError, ValueError):
+        return None
+    whole_ceiling = False
+    if step <= 0:
+        # In HA units so that a whole-degree snap on °F devices (no step reported) still lands below max_temp
+        step = celsius_delta_to_ha(hass, BOOST_CAP_FALLBACK_STEP)
+        try:
+            whole_ceiling = float(state.attributes.get("temperature")).is_integer()
+        except (TypeError, ValueError):
+            pass
+    cap = max_t - step
+    if whole_ceiling:
+        # The device shows whole degrees: 29.5 would read back as 30 and be resent every cycle
+        cap = math.floor(cap)
+    return cap
+
+
 def resolve_hvac_mode(desired: str, hvac_modes: list[str]) -> str | None:
     """Pick the best available hvac_mode for the desired intent.
 
@@ -2977,39 +3009,12 @@ class MPCController:
         return self._boost_setpoint_ha(eid, proportional_celsius, effective_target)
 
     def _boost_setpoint_ha(self, eid: str, celsius: float, effective_target: float) -> float:
-        """HA-unit proportional heating setpoint, kept one step below the device's max_temp.
-
-        Some integrations validate the upper bound exclusively or after a
-        unit round trip, so exactly max_temp can be rejected (#396). The cap
-        only trims the top step of the boost and never goes below the room
-        target. Without ``target_temp_step`` a device that shows whole degrees
-        gets a whole-degree ceiling, so what it reads back equals what was
-        sent; devices showing tenths keep the 0.5 K margin.
-        """
+        """HA-unit proportional heating setpoint, kept below the device's max_temp (``boost_cap_ha``)."""
         ha_t = celsius_to_ha_temp(self.hass, celsius)
-        state = self.hass.states.get(eid)
-        raw_max = state.attributes.get("max_temp") if state else None
-        if raw_max is None:
+        cap = boost_cap_ha(self.hass, self.hass.states.get(eid))
+        if cap is None:
             return ha_t
-        try:
-            max_t = float(raw_max)
-            step = float(state.attributes.get("target_temp_step") or 0.0)
-        except (TypeError, ValueError):
-            return ha_t
-        whole_ceiling = False
-        if step <= 0:
-            # In HA units so that a whole-degree snap on °F devices (no step reported) still lands below max_temp
-            step = celsius_delta_to_ha(self.hass, BOOST_CAP_FALLBACK_STEP)
-            try:
-                whole_ceiling = float(state.attributes.get("temperature")).is_integer()
-            except (TypeError, ValueError):
-                pass
-        cap = max_t - step
-        if whole_ceiling:
-            # The device shows whole degrees: 29.5 would read back as 30 and be resent every cycle
-            cap = math.floor(cap)
-        ceiling = max(cap, celsius_to_ha_temp(self.hass, effective_target))
-        return min(ha_t, ceiling)
+        return min(ha_t, max(cap, celsius_to_ha_temp(self.hass, effective_target)))
 
     def _proportional_deadband(self, eid: str, current_temp: float | None, effective_target: float) -> float | None:
         """Deadband for a proportional setpoint send; None marks a send that is not proportional.

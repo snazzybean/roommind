@@ -65,6 +65,7 @@ from .control.mpc_controller import (
     MPCController,
     ac_heating_excluded,
     async_idle_device,
+    boost_cap_ha,
     check_acs_can_heat,
     get_can_heat_cool,
     infer_running_mode,
@@ -151,6 +152,13 @@ COVER_ENTITY_SUFFIXES = ("_cover_auto", "_cover_paused")
 _COMPRESSOR_STATES = ("heat", "cool", "heat_cool", "auto", "dry")
 # hvac modes in which an AC's reading teaches the learned sensor offset (HeadOffsetTracker)
 _HEAD_OFFSET_HVAC_MODES = ("heat", "cool", "heat_cool", "auto")
+
+
+def _within_boost_cap(setpoint: float, cap: float | None, floor: float) -> float:
+    """A displayed heating setpoint trimmed like the sent one: to the device's cap, never below *floor* (#507)."""
+    if cap is None:
+        return setpoint
+    return min(setpoint, max(cap, floor))
 
 
 def _setpoint_side(attr: str, state: Any, device_type: str, climate_mode: str) -> str | None:
@@ -1142,14 +1150,19 @@ class RoomMindCoordinator(DataUpdateCoordinator):
 
         # Read device temperature limits for dynamic boost targets
         trv_max_temps: list[float] = []
+        # The highest proportional heating setpoint each device actually gets (#396), for the display (#507)
+        trv_caps: list[float] = []
         for eid in get_trv_eids(room.get("devices", [])):
             st = self.hass.states.get(eid)
             if st and st.attributes.get("max_temp") is not None:
                 trv_max_temps.append(ha_temp_to_celsius(self.hass, st.attributes["max_temp"]))
+            if (cap := boost_cap_ha(self.hass, st)) is not None:
+                trv_caps.append(ha_temp_to_celsius(self.hass, cap))
         device_max_temp = min(trv_max_temps) if trv_max_temps else None
 
         ac_min_temps: list[float] = []
         ac_max_temps: list[float] = []
+        ac_caps: list[float] = []
         for eid in get_ac_eids(room.get("devices", [])):
             st = self.hass.states.get(eid)
             if st:
@@ -1157,6 +1170,8 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                     ac_min_temps.append(ha_temp_to_celsius(self.hass, st.attributes["min_temp"]))
                 if st.attributes.get("max_temp") is not None:
                     ac_max_temps.append(ha_temp_to_celsius(self.hass, st.attributes["max_temp"]))
+            if (cap := boost_cap_ha(self.hass, st)) is not None:
+                ac_caps.append(ha_temp_to_celsius(self.hass, cap))
         device_min_temp = max(ac_min_temps) if ac_min_temps else None
         ac_device_max_temp = min(ac_max_temps) if ac_max_temps else None
 
@@ -1521,6 +1536,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             heat_source_plan=heat_source_plan,
             device_max_temp=device_max_temp,
             ac_device_max_temp=ac_device_max_temp,
+            boost_caps=(min(trv_caps) if trv_caps else None, min(ac_caps) if ac_caps else None),
             device_min_temp=device_min_temp,
             has_external_sensor=has_external_sensor,
             window_open=window_open,
@@ -1815,6 +1831,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         ac_device_max_temp: float | None,
         device_min_temp: float | None,
         has_external_sensor: bool,
+        boost_caps: tuple[float | None, float | None] = (None, None),
         window_open: bool,
         presence_away: bool,
         occupancy_vacant: bool,
@@ -1899,6 +1916,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 direct_offsets=_direct_offsets,
                 direct_target=direct_target,
                 head_offsets=_ac_heat_shifts,
+                boost_caps=boost_caps,
             )
             if heat_source_plan is not None
             else self._compute_device_setpoint(
@@ -1915,6 +1933,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 direct_offset=_display_offset,
                 direct_target=direct_target,
                 head_offset=_head_shift,
+                boost_caps=boost_caps,
             ),
             "window_open": window_open,
             **build_override_live(
@@ -1970,11 +1989,13 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         direct_offsets: dict[str, float] | None = None,
         direct_target: float | None = None,
         head_offsets: dict[str, float] | None = None,
+        boost_caps: tuple[float | None, float | None] = (None, None),
     ) -> float | None:
         """Compute device setpoint from the orchestrated heat source plan.
 
         ``head_offsets`` are the learned heating offsets of proportional ACs; an AC's value
-        is shown in its own frame, as async_apply() sends it.
+        is shown in its own frame, as async_apply() sends it. ``boost_caps`` (TRV, AC) are
+        the highest heating setpoints the devices get (``boost_cap_ha``, °C).
         """
         if current_temp is None or target_temp is None:
             return None
@@ -1989,14 +2010,18 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             return base + (direct_offsets or {}).get(cmd.entity_id, 0.0)
         if cmd.device_type == "thermostat":
             boost = device_max_temp if device_max_temp is not None else HEATING_BOOST_TARGET
+            cap = boost_caps[0]
         else:
             boost = ac_device_max_temp if ac_device_max_temp is not None else AC_HEATING_BOOST_TARGET
+            cap = boost_caps[1]
         sp = round(current_temp + cmd.power_fraction * (boost - current_temp), 1)
         sp = max(target_temp, sp)
         sp = min(boost, sp)
+        shift = 0.0
         if cmd.device_type == "ac" and head_offsets:
-            sp = min(boost, round(sp + head_offsets.get(cmd.entity_id, 0.0), 1))
-        return sp
+            shift = head_offsets.get(cmd.entity_id, 0.0)
+            sp = min(boost, round(sp + shift, 1))
+        return _within_boost_cap(sp, cap, target_temp + shift)
 
     @staticmethod
     def _compute_device_setpoint(
@@ -2013,11 +2038,13 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         direct_offset: float = 0.0,
         direct_target: float | None = None,
         head_offset: float = 0.0,
+        boost_caps: tuple[float | None, float | None] = (None, None),
     ) -> float | None:
         """Compute the device setpoint for UI display (Full Control only).
 
         ``head_offset`` is the learned AC sensor offset; it moves an AC-only room's value
-        into the device's frame, as async_apply() sends it.
+        into the device's frame, as async_apply() sends it. ``boost_caps`` (TRV, AC) are the
+        highest heating setpoints the devices get (``boost_cap_ha``, °C).
         """
         if not has_external_sensor or current_temp is None or target_temp is None:
             return None
@@ -2032,9 +2059,10 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             sp = round(current_temp + power_fraction * (boost - current_temp), 1)
             sp = max(target_temp, sp)
             sp = min(boost, sp)
-            if not has_thermostats:
-                sp = min(boost, round(sp + head_offset, 1))
-            return sp
+            if has_thermostats:
+                return _within_boost_cap(sp, boost_caps[0], target_temp)
+            sp = min(boost, round(sp + head_offset, 1))
+            return _within_boost_cap(sp, boost_caps[1], target_temp + head_offset)
 
         if mode == MODE_COOLING and has_acs:
             boost = device_min_temp if device_min_temp is not None else AC_COOLING_BOOST_TARGET

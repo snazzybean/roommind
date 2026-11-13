@@ -58,6 +58,43 @@ class TestComputeDeviceSetpoint:
         result = coordinator._compute_device_setpoint("heating", 1.0, 20.0, 21.0, True, device_max_temp=25.0)
         assert result == 25.0
 
+    def test_boost_cap_trims_the_display_like_the_send(self, hass, mock_config_entry):
+        """The display stops at the device's boost cap, as the sent setpoint does (#507)."""
+        coordinator = _create_coordinator(hass, mock_config_entry)
+        trv = coordinator._compute_device_setpoint(
+            "heating", 1.0, 20.0, 21.0, True, device_max_temp=30.5, boost_caps=(30.0, None)
+        )
+        assert trv == 30.0
+        # Below the cap nothing changes
+        assert (
+            coordinator._compute_device_setpoint(
+                "heating", 0.5, 20.0, 21.0, True, device_max_temp=30.5, boost_caps=(30.0, None)
+            )
+            == 25.2
+        )
+        # Never below the target, like the sender
+        assert (
+            coordinator._compute_device_setpoint(
+                "heating", 1.0, 20.0, 21.0, True, device_max_temp=21.0, boost_caps=(20.5, None)
+            )
+            == 21.0
+        )
+
+    def test_boost_cap_of_an_ac_only_room_is_in_the_device_frame(self, hass, mock_config_entry):
+        coordinator = _create_coordinator(hass, mock_config_entry)
+        result = coordinator._compute_device_setpoint(
+            "heating",
+            1.0,
+            20.0,
+            21.0,
+            True,
+            has_thermostats=False,
+            has_acs=True,
+            head_offset=1.0,
+            boost_caps=(None, 29.0),
+        )
+        assert result == 29.0
+
     def test_device_max_temp_none_no_clamping(self, hass, mock_config_entry):
         coordinator = _create_coordinator(hass, mock_config_entry)
         # Without device_max_temp, should reach 30 (HEATING_BOOST_TARGET)
@@ -175,6 +212,17 @@ class TestComputeDeviceSetpoint:
 
 class TestComputeDeviceSetpointOrchestrated:
     """Tests for _compute_device_setpoint_orchestrated with direct_eids."""
+
+    @pytest.mark.parametrize(("device_type", "expected"), [("thermostat", 29.5), ("ac", 27.0)])
+    def test_boost_cap_per_device_type(self, hass, mock_config_entry, device_type, expected):
+        """The running command's own kind of cap trims the display (#507)."""
+        coordinator = _create_coordinator(hass, mock_config_entry)
+        cmd = MagicMock(active=True, entity_id="climate.x", device_type=device_type, power_fraction=1.0)
+        plan = MagicMock(commands=[cmd])
+        result = coordinator._compute_device_setpoint_orchestrated(
+            plan, 20.0, 21.0, 30.0, 28.0, boost_caps=(29.5, 27.0)
+        )
+        assert result == expected
 
     def test_direct_device_returns_target(self, hass, mock_config_entry):
         coordinator = _create_coordinator(hass, mock_config_entry)
@@ -495,6 +543,45 @@ class TestFahrenheitConversion:
         temp_arg = set_temp_calls[0][0][2].get("temperature")
         if temp_arg is not None:
             assert temp_arg <= 95.0, f"set_temperature sent {temp_arg}degF, exceeds device max 95degF"
+
+    @pytest.mark.asyncio
+    async def test_displayed_setpoint_is_the_capped_one_that_was_sent(self, hass, mock_config_entry):
+        """A Homematic TRV (max 30.5, step 0.5) gets 30.0 at full power; the room page showed 30.5 (#507)."""
+        store = _make_store_mock({"living_room_abc12345": SAMPLE_ROOM})
+        hass.data = {"roommind": {"store": store}}
+        hass.states.get = MagicMock(
+            side_effect=make_mock_states_get(
+                temp="15.0",
+                humidity="55.0",
+                outdoor_temp="0",
+                extra={
+                    "climate.living_room": (
+                        "heat",
+                        {
+                            "current_temperature": 15.0,
+                            "temperature": 21.0,
+                            "max_temp": 30.5,
+                            "min_temp": 4.5,
+                            "target_temp_step": 0.5,
+                            "hvac_modes": ["off", "heat"],
+                            "hvac_action": "heating",
+                        },
+                    ),
+                },
+            ),
+        )
+        hass.services.async_call = AsyncMock()
+
+        coordinator = _create_coordinator(hass, mock_config_entry)
+        data = await coordinator._async_update_data()
+
+        sent = [
+            c[0][2]["temperature"]
+            for c in hass.services.async_call.call_args_list
+            if c[0][1] == "set_temperature" and c[0][2].get("entity_id") == "climate.living_room"
+        ]
+        assert sent == [30.0]
+        assert data["rooms"]["living_room_abc12345"]["device_setpoint"] == 30.0
 
 
 class TestManagedModeDisplay:
