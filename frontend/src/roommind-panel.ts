@@ -19,10 +19,11 @@ import "./components/rs-analytics";
 import "./components/dashboard/rs-dashboard";
 import "./components/dashboard/rs-dashboard-edit";
 import "./components/schedule/rs-schedule-editor";
+import "./components/schedule/rs-schedule-overview";
 import type { RsScheduleEditor } from "./components/schedule/rs-schedule-editor";
 import "./components/shared/rs-icon-button";
 
-type TabId = "areas" | "analytics" | "settings";
+type TabId = "areas" | "analytics" | "schedules" | "settings";
 
 /** Panel width from which settings show list and panel side by side (design system). */
 const SETTINGS_WIDE_MIN = 900;
@@ -232,6 +233,16 @@ export class RoomMindPanel extends LitElement {
         .content {
           padding: 16px;
         }
+        .tabs {
+          padding: 0 4px;
+          overflow-x: auto;
+          scrollbar-width: none;
+        }
+        .tab {
+          flex: 1 0 auto;
+          justify-content: center;
+          padding: 12px 10px;
+        }
       }
 
       .loading {
@@ -340,6 +351,7 @@ export class RoomMindPanel extends LitElement {
     const tabLabels: Record<TabId, string> = {
       areas: localize("panel.tab.rooms", l),
       analytics: localize("tabs.analytics", l),
+      schedules: localize("panel.tab.schedules", l),
       settings: localize("panel.tab.settings", l),
     };
 
@@ -381,7 +393,9 @@ export class RoomMindPanel extends LitElement {
                 icon="mdi:arrow-left"
                 .label=${localize(
                   inSchedule
-                    ? "room.back_to_room"
+                    ? this._scheduleRoom
+                      ? "room.back_to_room"
+                      : "schedules.back"
                     : this._roomFromAnalytics
                       ? "room.back_to_analytics"
                       : "room.back",
@@ -459,6 +473,16 @@ export class RoomMindPanel extends LitElement {
   }
 
   private _renderTab() {
+    if (this._scheduleEntity && this._roomsLoaded) {
+      return html`<rs-schedule-editor
+        .hass=${this.hass}
+        .entityId=${this._scheduleEntity}
+        .roomId=${this._scheduleRoom}
+        .rooms=${this._rooms}
+        .scheduleOffAction=${this._scheduleOffAction}
+        @schedule-closed=${this._onScheduleClosed}
+      ></rs-schedule-editor>`;
+    }
     switch (this._activeTab) {
       case "areas":
         return this._renderAreas();
@@ -470,6 +494,14 @@ export class RoomMindPanel extends LitElement {
           .controlMode=${this._controlMode}
           @room-selected=${this._onAnalyticsRoomSelected}
         ></rs-analytics>`;
+      case "schedules":
+        return this._roomsLoaded
+          ? html`<rs-schedule-overview
+              .hass=${this.hass}
+              .rooms=${this._rooms}
+              @open-schedule-editor=${this._onOpenScheduleEditor}
+            ></rs-schedule-overview>`
+          : this._renderAreas();
       case "settings":
         return this._renderSettings();
       default:
@@ -487,17 +519,6 @@ export class RoomMindPanel extends LitElement {
     }
     if (!this._roomsLoaded) {
       return html`<div class="loading">${localize("panel.loading", this.hass.language)}</div>`;
-    }
-
-    if (this._scheduleEntity) {
-      return html`<rs-schedule-editor
-        .hass=${this.hass}
-        .entityId=${this._scheduleEntity}
-        .roomId=${this._scheduleRoom}
-        .rooms=${this._rooms}
-        .scheduleOffAction=${this._scheduleOffAction}
-        @schedule-closed=${this._onScheduleClosed}
-      ></rs-schedule-editor>`;
     }
 
     if (this._selectedAreaId) {
@@ -717,12 +738,12 @@ export class RoomMindPanel extends LitElement {
     this._scheduleEntity = e.detail.entityId;
     this._scheduleRoom = e.detail.areaId;
     this._selectedAreaId = null;
-    this._navigate(
-      `/schedule/${encodeURIComponent(e.detail.entityId)}?room=${encodeURIComponent(e.detail.areaId)}`,
-    );
+    if (!e.detail.areaId) this._activeTab = "schedules";
+    const room = e.detail.areaId ? `?room=${encodeURIComponent(e.detail.areaId)}` : "";
+    this._navigate(`/schedule/${encodeURIComponent(e.detail.entityId)}${room}`);
   }
 
-  /** Back from the schedule editor: to the room it came from, else the dashboard. */
+  /** Back from the schedule editor: to the room it came from, else the schedule overview. */
   private _onBackFromSchedule = async () => {
     const editor = this.renderRoot.querySelector<RsScheduleEditor>("rs-schedule-editor");
     // The editor unmounts next: a failed or refused save is reported here.
@@ -741,10 +762,12 @@ export class RoomMindPanel extends LitElement {
     this._scheduleEntity = null;
     this._scheduleRoom = "";
     if (room && this.hass?.areas?.[room]) {
+      this._activeTab = "areas";
       this._selectedAreaId = room;
       this._navigateBack(`/room/${room}`);
     } else {
-      this._navigateBack("");
+      this._activeTab = "schedules";
+      this._navigateBack("/schedules");
     }
   };
 
@@ -969,11 +992,14 @@ export class RoomMindPanel extends LitElement {
     const path = this.route?.path ?? "";
     this._scheduleEntity = null;
     if (path.startsWith("/schedule/")) {
-      this._activeTab = "areas";
       this._selectedAreaId = null;
       this._scheduleEntity = decodeURIComponent(path.slice(10));
       // The route carries only the path; the room comes from the query string.
       this._scheduleRoom = new URLSearchParams(window.location.search).get("room") ?? "";
+      this._activeTab = this._scheduleRoom ? "areas" : "schedules";
+    } else if (path === "/schedules") {
+      this._activeTab = "schedules";
+      this._selectedAreaId = null;
     } else if (path.startsWith("/room/")) {
       this._activeTab = "areas";
       this._selectedAreaId = decodeURIComponent(path.slice(6));

@@ -420,11 +420,6 @@ export class RsRoomDetail extends LitElement {
     this._storedArea = this.config?.area_id ?? this.area?.area_id ?? null;
     this._unconfirmed = new Map();
     this._dirty = false;
-
-    // Unconfigured rooms open the device-edit dialog automatically; outdoor areas need none.
-    if (this._devices.length === 0 && !this._isOutdoor && this._editing === null) {
-      this._editing = "devices";
-    }
   }
 
   /** Fields changed elsewhere since the last poll and not here are taken over (see ROOM_FIELDS). */

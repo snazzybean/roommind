@@ -10,7 +10,8 @@ import type { HomeAssistant, NotificationTarget } from "../../types";
 import { localize } from "../../utils/localize";
 import "../shared/rs-icon-button";
 import "../shared/rs-list-row";
-import { getSelectValue } from "../../utils/events";
+import "../shared/rs-segmented";
+import { notifyTargetIcon, notifyTargetName } from "../../utils/notify-target";
 
 @customElement("rs-settings-notifications")
 export class RsSettingsNotifications extends RsSettingsBase {
@@ -42,88 +43,25 @@ export class RsSettingsNotifications extends RsSettingsBase {
       ${
         this.notificationsEnabled
           ? html`
-              <div class="settings-section">
-                <p class="hint">${localize("notifications.desc", l)}</p>
-
-                <div class="target-list">
-                  ${this.notificationTargets.map((t, idx) => {
-                    const name = t.entity_id
-                      ? (this.hass.states[t.entity_id]?.attributes?.friendly_name ??
-                        t.entity_id.replace("notify.", ""))
-                      : localize("notifications.target_unnamed", l);
-                    return html`
-                      <div class="target-card">
-                        <div class="target-header">
-                          <ha-icon icon="mdi:bell" aria-hidden="true"></ha-icon>
-                          <span>${name}</span>
-                          <rs-icon-button
-                            size="sm"
-                            icon="mdi:close"
-                            .label=${localize("common.remove_named", l, { name: String(name) })}
-                            @click=${() => {
-                              this._fire(
-                                "moldNotificationTargets",
-                                this.notificationTargets.filter((_, i) => i !== idx),
-                              );
-                            }}
-                          ></rs-icon-button>
-                        </div>
-                        <div class="target-detail">
-                          <ha-entity-picker
-                            .hass=${this.hass}
-                            .value=${t.person_entity}
-                            .includeDomains=${["person"]}
-                            .label=${localize("notifications.target_person", l)}
-                            allow-custom-entity
-                            @value-changed=${(e: CustomEvent) => {
-                              const targets = [...this.notificationTargets];
-                              targets[idx] = {
-                                ...targets[idx],
-                                person_entity: (e.detail?.value as string) ?? "",
-                              };
-                              this._fire("moldNotificationTargets", targets);
-                            }}
-                          ></ha-entity-picker>
-                          <ha-select
-                            .value=${t.notify_when}
-                            .options=${[
-                              {
-                                value: "always",
-                                label: localize("notifications.target_when_always", l),
-                              },
-                              {
-                                value: "home_only",
-                                label: localize("notifications.target_when_home", l),
-                              },
-                            ]}
-                            fixedMenuPosition
-                            @selected=${(e: Event) => {
-                              const v = getSelectValue(e) as "always" | "home_only";
-                              if (!v) return;
-                              const targets = [...this.notificationTargets];
-                              targets[idx] = { ...targets[idx], notify_when: v };
-                              this._fire("moldNotificationTargets", targets);
-                            }}
-                            @closed=${(e: Event) => e.stopPropagation()}
-                          >
-                            <ha-list-item value="always"
-                              >${localize("notifications.target_when_always", l)}</ha-list-item
-                            >
-                            <ha-list-item value="home_only"
-                              >${localize("notifications.target_when_home", l)}</ha-list-item
-                            >
-                          </ha-select>
-                        </div>
-                      </div>
-                    `;
-                  })}
+              <div class="settings-section stack">
+                <div>
+                  <h3 class="section-title">${localize("notifications.recipients", l)}</h3>
+                  <p class="note">${localize("notifications.desc", l)}</p>
                 </div>
-
-                <div class="add-target">
+                ${
+                  this.notificationTargets.length
+                    ? html`<div class="target-list">
+                        ${this.notificationTargets.map((t, idx) => this._renderTarget(t, idx))}
+                      </div>`
+                    : nothing
+                }
+                <div>
                   <ha-entity-picker
                     .hass=${this.hass}
                     .value=${""}
                     .includeDomains=${["notify"]}
+                    .entityFilter=${(entity: { entity_id: string }) =>
+                      !this.notificationTargets.some((t) => t.entity_id === entity.entity_id)}
                     .label=${localize("notifications.add_target_label", l)}
                     allow-custom-entity
                     @value-changed=${(e: CustomEvent) => {
@@ -176,6 +114,77 @@ export class RsSettingsNotifications extends RsSettingsBase {
           : nothing
       }
     `;
+  }
+
+  private _renderTarget(t: NotificationTarget, idx: number) {
+    const l = this.hass.language;
+    const name = t.entity_id
+      ? notifyTargetName(this.hass, t.entity_id)
+      : localize("notifications.target_unnamed", l);
+    const homeOnly = t.notify_when === "home_only";
+    const update = (changes: Partial<NotificationTarget>) => {
+      const targets = [...this.notificationTargets];
+      targets[idx] = { ...targets[idx], ...changes };
+      this._fire("moldNotificationTargets", targets);
+    };
+    return html`<div class="target">
+      <div class="target-head">
+        <ha-icon .icon=${notifyTargetIcon(t.entity_id)} aria-hidden="true"></ha-icon>
+        <div class="target-name">
+          <span>${name}</span>
+          ${
+            t.entity_id && name !== t.entity_id.replace(/^notify\./, "")
+              ? html`<small>${t.entity_id}</small>`
+              : nothing
+          }
+        </div>
+        <rs-icon-button
+          size="sm"
+          icon="mdi:close"
+          .label=${localize("common.remove_named", l, { name })}
+          @click=${() =>
+            this._fire(
+              "moldNotificationTargets",
+              this.notificationTargets.filter((_, i) => i !== idx),
+            )}
+        ></rs-icon-button>
+      </div>
+      <rs-segmented
+        wrap
+        size="sm"
+        .label=${localize("notifications.target_when_label", l, { name })}
+        .options=${[
+          { value: "always", label: localize("notifications.target_when_always", l) },
+          { value: "home_only", label: localize("notifications.target_when_home", l) },
+        ]}
+        .value=${homeOnly ? "home_only" : "always"}
+        @value-changed=${(e: CustomEvent<{ value: string }>) => {
+          const v = e.detail.value as NotificationTarget["notify_when"];
+          if (v && v !== t.notify_when) update({ notify_when: v });
+        }}
+      ></rs-segmented>
+      ${
+        homeOnly
+          ? html`<div>
+              <ha-entity-picker
+                .hass=${this.hass}
+                .value=${t.person_entity}
+                .includeDomains=${["person"]}
+                .label=${localize("notifications.target_person", l)}
+                @value-changed=${(e: CustomEvent) =>
+                  update({ person_entity: (e.detail?.value as string) ?? "" })}
+              ></ha-entity-picker>
+              ${
+                t.person_entity
+                  ? nothing
+                  : html`<span class="field-hint"
+                      >${localize("notifications.target_person_missing", l)}</span
+                    >`
+              }
+            </div>`
+          : nothing
+      }
+    </div>`;
   }
 
   /** Only mold detection and the prevention notice send anything from this page. */
@@ -235,57 +244,45 @@ export class RsSettingsNotifications extends RsSettingsBase {
       .target-list {
         display: flex;
         flex-direction: column;
-        gap: 2px;
+        gap: var(--rs-space-2);
       }
-      .target-card {
+      .target {
         display: flex;
         flex-direction: column;
-        gap: 4px;
-        padding: 8px 8px 8px 12px;
-        border-radius: var(--rs-radius-sm);
+        gap: var(--rs-space-3);
+        padding: var(--rs-space-2) var(--rs-space-2) var(--rs-space-3) var(--rs-space-3);
+        border-radius: var(--rs-radius);
         background: var(--rs-fill);
       }
-      .target-header {
+      .target-head {
         display: flex;
         align-items: center;
-        gap: 8px;
-        --mdc-icon-size: 18px;
+        gap: var(--rs-space-3);
+        --mdc-icon-size: 20px;
       }
-      .target-header ha-icon {
+      .target-head ha-icon {
         color: var(--secondary-text-color);
+        flex: none;
       }
-      .add-target {
-        margin-top: var(--rs-space-2);
-      }
-      .target-header span {
+      .target-name {
         flex: 1;
         min-width: 0;
-        overflow-wrap: anywhere;
-        font-size: 14px;
-        font-weight: 500;
-      }
-      .target-detail {
         display: flex;
-        gap: 8px;
-        align-items: center;
-        padding-left: 26px;
+        flex-direction: column;
       }
-      .target-detail ha-entity-picker {
-        flex: 1;
+      .target-name span {
+        font-size: var(--rs-font-md);
+        font-weight: 500;
+        overflow-wrap: anywhere;
       }
-      .target-detail ha-select {
-        min-width: 120px;
+      .target-name small {
+        font-size: var(--rs-font-sm);
+        color: var(--secondary-text-color);
+        overflow-wrap: anywhere;
       }
-
-      @container (max-width: 520px) {
-        .target-detail {
-          flex-direction: column;
-          align-items: stretch;
-          padding-left: 0;
-        }
-        .target-detail ha-entity-picker {
-          flex: none;
-        }
+      .target > rs-segmented,
+      .target > div:last-child:not(.target-head) {
+        margin-right: var(--rs-space-1);
       }
     `,
   ];

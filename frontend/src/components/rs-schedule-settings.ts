@@ -2,7 +2,6 @@ import { html, css, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import type { ScheduleEntry, ClimateMode, ScheduleTempWarning } from "../types";
 import { localize } from "../utils/localize";
-import { errorText } from "../utils/errors";
 import {
   formatTempLocale,
   tempUnit,
@@ -15,11 +14,10 @@ import { formatNumber } from "../utils/format";
 import { RsScheduleBase } from "./shared/rs-schedule-base";
 import { inputStyles } from "../styles/input-styles";
 import { priceShiftLabel } from "./room-detail/rs-price-shift";
-import { TEMPLATES, emptyWeek } from "../utils/schedule-week";
-import { createSchedule, isAdmin, isEditableSchedule } from "../utils/schedule-api";
+import { isAdmin, isEditableSchedule } from "../utils/schedule-api";
 import "./shared/rs-list-row";
 import "./shared/rs-info-icon";
-import "./shared/rs-radio-group";
+import "./schedule/rs-schedule-create";
 
 /** Mirrors _WEEKDAYS in the backend's schedule_utils.py. */
 const WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
@@ -74,10 +72,6 @@ export class RsScheduleSettings extends RsScheduleBase {
   @property({ type: String }) public roomName = "";
 
   @state() private _creating = false;
-  @state() private _newName = "";
-  @state() private _newTemplate = "";
-  @state() private _createBusy = false;
-  @state() private _createError = "";
 
   static styles = [
     RsScheduleBase.sharedStyles,
@@ -99,33 +93,6 @@ export class RsScheduleSettings extends RsScheduleBase {
       .schedule-row ha-button {
         flex: none;
         margin-left: auto;
-      }
-
-      .create {
-        display: flex;
-        flex-direction: column;
-        gap: 12px;
-        margin: 4px 0 16px;
-        padding: 12px 14px;
-        border: 1px solid var(--divider-color);
-        border-radius: 8px;
-      }
-
-      .create-label {
-        font-size: 13px;
-        color: var(--secondary-text-color);
-      }
-
-      .create-actions {
-        display: flex;
-        justify-content: flex-end;
-        flex-wrap: wrap;
-        gap: 8px;
-      }
-
-      .create-error {
-        color: var(--rs-err-text);
-        font-size: 13px;
       }
 
       .create-row {
@@ -360,83 +327,21 @@ export class RsScheduleSettings extends RsScheduleBase {
         @row-click=${this._startCreate}
       ></rs-list-row>`;
     }
-    return html`<div class="create">
-      <ha-textfield
-        .label=${localize("schedule_editor.name", l)}
-        .value=${this._newName}
-        required
-        autocomplete="off"
-        @input=${(e: Event) => (this._newName = (e.target as HTMLInputElement).value)}
-        @keydown=${(e: KeyboardEvent) => e.key === "Enter" && this._create()}
-      ></ha-textfield>
-      <span class="create-label">${localize("schedule_editor.start_with", l)}</span>
-      <rs-radio-group
-        .options=${[
-          { value: "", label: localize("schedule_editor.tpl_empty", l) },
-          ...TEMPLATES.map((t) => ({
-            value: t.id,
-            label: `${localize(`schedule_editor.tpl_${t.id}` as "schedule_editor.tpl_split", l)} (${localize(
-              `schedule_editor.tpl_${t.id}_sub` as "schedule_editor.tpl_split_sub",
-              l,
-            )})`,
-          })),
-        ]}
-        .selected=${this._newTemplate}
-        @selected-changed=${(e: CustomEvent<string>) => {
-          e.stopPropagation();
-          this._newTemplate = e.detail;
-        }}
-      ></rs-radio-group>
-      ${this._createError ? html`<span class="create-error" role="alert">${this._createError}</span>` : nothing}
-      <div class="create-actions">
-        <ha-button
-          appearance="plain"
-          ?disabled=${this._createBusy}
-          @click=${() => (this._creating = false)}
-          >${localize("detail.cancel", l)}</ha-button
-        >
-        <ha-button
-          .loading=${this._createBusy}
-          ?disabled=${!this._newName.trim()}
-          @click=${this._create}
-          >${localize("schedule_editor.create_confirm", l)}</ha-button
-        >
-      </div>
-    </div>`;
+    return html`<rs-schedule-create
+      .hass=${this.hass}
+      .defaultName=${this.roomName}
+      @create-cancelled=${() => (this._creating = false)}
+      @schedule-created=${(e: CustomEvent<{ entityId: string }>) => {
+        this._creating = false;
+        this._emitSchedules([...this.schedules, { entity_id: e.detail.entityId }]);
+        this._openEditor(e.detail.entityId);
+      }}
+    ></rs-schedule-create>`;
   }
 
   private _startCreate() {
-    this._newName = this.roomName;
-    this._newTemplate = "";
-    this._createError = "";
     this._creating = true;
-    void this.updateComplete.then(() =>
-      this.renderRoot.querySelector<HTMLElement>(".create ha-textfield")?.focus(),
-    );
   }
-
-  private _create = async () => {
-    const name = this._newName.trim();
-    if (!name || this._createBusy) return;
-    this._createBusy = true;
-    this._createError = "";
-    try {
-      const template = TEMPLATES.find((t) => t.id === this._newTemplate);
-      const entityId = await createSchedule(
-        this.hass,
-        name,
-        template ? template.make() : emptyWeek(),
-      );
-      this._creating = false;
-      this._emitSchedules([...this.schedules, { entity_id: entityId }]);
-      this._openEditor(entityId);
-    } catch (err) {
-      const l = this.hass.language;
-      this._createError = errorText(err, localize("schedule_editor.create_error", l), l);
-    } finally {
-      this._createBusy = false;
-    }
-  };
 
   /** "Edit" for storage helpers (admins), "View" for YAML helpers and non-admins. */
   private _renderEditorButton(entityId: string) {

@@ -274,6 +274,8 @@ export class RsDeviceSection extends LitElement {
         variant="primary"
         icon="mdi:plus"
         .heading=${localize("detail.devices.add", l)}
+        .secondary=${ordered.length ? "" : localize("detail.devices.none_hint", l)}
+        ?wrap=${!ordered.length}
         @row-click=${(e: Event) => this._fireEdit(e)}
       ></rs-list-row>
     `;

@@ -7,7 +7,12 @@ import { customElement, property } from "lit/decorators.js";
 import type { HomeAssistant, AnalyticsData } from "../../types";
 import { localize, type TranslationKey } from "../../utils/localize";
 import { formatHours, formatMinutes, formatNumber, formatPercent } from "../../utils/format";
-import { tempUnit, toDisplayDelta } from "../../utils/temperature";
+import {
+  formatTempLocale,
+  tempUnit,
+  toCelsiusDelta,
+  toDisplayDelta,
+} from "../../utils/temperature";
 import {
   MPC_MAX_PREDICTION_STD,
   MPC_MIN_ACTIVE_SAMPLES,
@@ -114,7 +119,7 @@ export class RsAnalyticsModel extends LitElement {
                   : nothing
               }
             </div>
-            ${this._renderStages()}
+            ${this._mpcRunning() ? this._renderNow() : this._renderStages()}
           </div>
           <div class="tiles">${this._tiles().map((t) => this._renderTile(t))}</div>
         </div>
@@ -212,6 +217,121 @@ export class RsAnalyticsModel extends LitElement {
       control,
     ];
     return stages;
+  }
+
+  /** Once MPC runs the stages no longer change; the card then shows what the model says now. */
+  private _mpcRunning(): boolean {
+    const m = this.data?.model;
+    return !this.managed && this.controlMode !== "bangbang" && !!m?.model && !!m.mpc_active;
+  }
+
+  /** Newest detail sample with room and outdoor temperature. */
+  private _latest(): { room: number; outdoor: number } | null {
+    const points = this.data?.detail ?? [];
+    for (let i = points.length - 1; i >= 0; i--) {
+      const p = points[i];
+      if (p.room_temp != null && p.outdoor_temp != null) {
+        return { room: p.room_temp, outdoor: p.outdoor_temp };
+      }
+    }
+    return null;
+  }
+
+  /**
+   * The learned model at the current room and outdoor temperature and sun: how long one degree
+   * up (down) takes at full power and where the room drifts without heating or cooling. This is
+   * what the planner works with, so it explains when RoomMind starts.
+   */
+  private _nowFacts(): { icon: string; label: string; value: string }[] {
+    const m = this.data?.model;
+    const model = m?.model;
+    const now = this._latest();
+    if (!m || !model || !now) return [];
+    const l = this.language;
+    const unit = tempUnit(this.hass);
+    const oneDegree = toCelsiusDelta(1, this.hass);
+    const loss = model.U * (now.room - now.outdoor);
+    const sun = m.solar_learned ? (m.solar_gain_now ?? 0) : 0;
+    const minutes = (net: number) =>
+      net > 0.05
+        ? localize("analytics.now_minutes", l, { time: formatMinutes((60 * oneDegree) / net, l) })
+        : localize("analytics.now_not_enough", l);
+    const facts: { icon: string; label: string; value: string }[] = [];
+    if (this.canHeat && (m.n_heating ?? 0) >= MIN_TILE_SAMPLES) {
+      facts.push({
+        icon: "mdi:fire",
+        label: localize("analytics.now_heat", l, { delta: `1 ${unit}` }),
+        value: minutes(model.Q_heat - loss + sun),
+      });
+    }
+    if (this.canCool && (m.n_cooling ?? 0) >= MIN_TILE_SAMPLES) {
+      facts.push({
+        icon: "mdi:snowflake",
+        label: localize("analytics.now_cool", l, { delta: `1 ${unit}` }),
+        value: minutes(model.Q_cool + loss - sun),
+      });
+    }
+    if (model.U > 0) {
+      const drift = toDisplayDelta(sun - loss, this.hass);
+      const sign = drift >= 0.05 ? "+" : drift <= -0.05 ? "\u2212" : "";
+      facts.push({
+        icon: "mdi:home-thermometer-outline",
+        label: localize(
+          this.canHeat
+            ? this.canCool
+              ? "analytics.now_drift"
+              : "analytics.now_drift_heat"
+            : "analytics.now_drift_cool",
+          l,
+        ),
+        value: `${sign}${formatNumber(Math.abs(drift), this.hass, 1)} ${unit}/h`,
+      });
+    }
+    return facts;
+  }
+
+  private _renderNow() {
+    const l = this.language;
+    const now = this._latest();
+    const facts = this._nowFacts();
+    return html`<div class="now">
+      <div class="step current reached">
+        <span class="dot" aria-hidden="true"><ha-icon icon="mdi:brain"></ha-icon></span>
+        <div class="step-text">
+          <span class="step-title"
+            >${localize("analytics.now_title", l)}
+            ${
+              facts.length
+                ? html`<rs-info-icon .text=${localize("analytics.info.now", l)}></rs-info-icon>`
+                : nothing
+            }</span
+          >
+          <small
+            >${
+              now && facts.length
+                ? localize("analytics.now_sub", l, {
+                    room: `${formatTempLocale(now.room, this.hass, 1, 1)} ${tempUnit(this.hass)}`,
+                    outdoor: `${formatTempLocale(now.outdoor, this.hass, 1, 1)} ${tempUnit(this.hass)}`,
+                  })
+                : localize("analytics.stage_control_sub", l)
+            }</small
+          >
+        </div>
+      </div>
+      ${
+        facts.length
+          ? html`<dl class="facts">
+              ${facts.map(
+                (f) =>
+                  html`<div class="fact">
+                    <dt><ha-icon .icon=${f.icon} aria-hidden="true"></ha-icon>${f.label}</dt>
+                    <dd>${f.value}</dd>
+                  </div>`,
+              )}
+            </dl>`
+          : nothing
+      }
+    </div>`;
   }
 
   private _renderStages() {
@@ -530,6 +650,49 @@ export class RsAnalyticsModel extends LitElement {
         font-size: var(--rs-font-sm);
         line-height: 1.4;
         color: var(--secondary-text-color);
+      }
+
+      .now .step::before {
+        display: none;
+      }
+
+      .now .step-title {
+        display: inline-flex;
+        align-items: center;
+        gap: 2px;
+      }
+
+      .facts {
+        margin: var(--rs-space-3) 0 0;
+        padding: 0 0 0 36px;
+        max-width: 420px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+
+      .fact {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: var(--rs-space-3);
+        font-size: 13px;
+      }
+
+      .fact dt {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        min-width: 0;
+        color: var(--secondary-text-color);
+        --mdc-icon-size: 16px;
+      }
+
+      .fact dd {
+        margin: 0;
+        font-weight: 500;
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
       }
 
       .tiles {
