@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -270,6 +271,11 @@ class TestMoldRiskDetection:
             ),
         )
         hass.services.async_call = AsyncMock()
+        # The notification is delivered in a background task (#502)
+        tasks: list[asyncio.Task] = []
+        hass.async_create_background_task = MagicMock(
+            side_effect=lambda coro, name: tasks.append(asyncio.ensure_future(coro)) or tasks[-1]
+        )
 
         coordinator = _create_coordinator(hass, mock_config_entry)
         with patch(
@@ -277,6 +283,7 @@ class TestMoldRiskDetection:
             return_value="Living Room",
         ):
             await coordinator._async_update_data()
+        await asyncio.gather(*tasks)
 
         mold_calls = [c for c in hass.services.async_call.call_args_list if c[0][0] == "notify"]
         assert len(mold_calls) >= 1
