@@ -63,7 +63,8 @@ async def async_send_mold_notification(
     For each target dict ``{entity_id, person_entity, notify_when}``:
     - If ``notify_when == "home_only"`` and *person_entity* is set and the
       person is not home, the target is skipped.
-    - Otherwise the notification is sent via ``notify.send_message``.
+    - Otherwise the notification goes to the notify entity via ``notify.send_message``,
+      or to the legacy notify service of that name.
 
     If *targets* is empty, a persistent HA notification is created as fallback.
 
@@ -103,26 +104,37 @@ async def async_send_mold_notification(
                 continue
 
         try:
-            await hass.services.async_call(
-                "notify",
-                "send_message",
-                {
-                    "entity_id": entity_id,
-                    "message": message,
-                    "title": title,
-                    "data": {
-                        "tag": tag,
-                        "group": "roommind",
-                    },
-                },
-            )
+            await _async_notify(hass, entity_id, message, title, tag)
             sent_any = True
-        except Exception:  # noqa: BLE001
-            _LOGGER.warning("Failed to send mold notification to %s", entity_id)
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.warning("Failed to send mold notification to %s: %s", entity_id, err)
 
     if not sent_any:
         # All targets were skipped or failed → persistent fallback
         async_create(hass, message, title=title, notification_id=notification_id)
+
+
+async def _async_notify(hass: HomeAssistant, target: str, message: str, title: str, tag: str) -> None:
+    """Send to a notify entity, or to a legacy notify service typed in by hand.
+
+    ``notify.send_message`` accepts only message and title and rejects ``data``
+    (#502); a legacy service such as ``notify.mobile_app_<phone>`` has no state,
+    and an entity service would only log it as missing. The legacy service takes
+    ``data``, so the phone app replaces an older alert of the room instead of stacking it.
+    """
+    if hass.states.get(target) is not None:
+        await hass.services.async_call(
+            "notify", "send_message", {"entity_id": target, "message": message, "title": title}
+        )
+        return
+    domain, _, service = target.partition(".")
+    if domain != "notify" or not hass.services.has_service("notify", service):
+        raise ValueError("no notify entity or service with this name")
+    await hass.services.async_call(
+        "notify",
+        service,
+        {"message": message, "title": title, "data": {"tag": tag, "group": "roommind"}},
+    )
 
 
 def dismiss_mold_notification(
