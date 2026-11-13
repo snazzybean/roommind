@@ -455,7 +455,25 @@ export interface AnalyticsData {
     afterglow_k?: number;
     afterglow_minutes?: number;
     afterglow_learned?: boolean;
+    /** The model one hour ahead on this range (backend model_backtest), null without a model. */
+    backtest?: ModelBacktest | null;
   };
+}
+
+export interface BacktestFigures {
+  /** Hours (overlapping, one per recorded point) that went into the figure. */
+  n: number;
+  /** Mean absolute deviation after the horizon (°C), null below the minimum of hours. */
+  mae: number | null;
+  /** Mean signed deviation: model minus measured, negative = room warmer than the model says. */
+  bias: number | null;
+}
+
+export interface ModelBacktest {
+  horizon_minutes: number;
+  idle: BacktestFigures;
+  /** Hours with heating or cooling. */
+  active: BacktestFigures;
 }
 
 export type TimeRange = "12h" | "24h" | "2d" | "7d" | "14d" | "30d" | "90d";

@@ -19,7 +19,6 @@ import {
   createBlock,
   emptyWeek,
   hm,
-  neededSides,
   nowInZone,
   parseWeek,
   removeBlock,
@@ -83,6 +82,12 @@ interface OpenBlock {
  * helpers and non-admins see the same week read-only. Fires `schedule-closed` (composed) after
  * the helper was deleted or removed from the room, so the panel goes back.
  */
+/**
+ * A schedule helper is not tied to a room and can be used by any: every block offers heating
+ * and cooling, a room that only heats or only cools takes its side.
+ */
+const BOTH_SIDES = { heat: true, cool: true };
+
 @customElement("rs-schedule-editor")
 export class RsScheduleEditor extends LitElement {
   @property({ attribute: false }) public hass!: HomeAssistant;
@@ -945,8 +950,6 @@ export class RsScheduleEditor extends LitElement {
     const l = this.hass.language;
     const coolOnly = modeRooms.length > 0 && modeRooms.every((r) => r.climate_mode === "cool_only");
     const color = coolOnly ? "var(--rs-cool)" : "var(--rs-heat)";
-    const sides = neededSides(modeRooms.map((r) => r.climate_mode ?? "auto"));
-    const keyNote = sides.heat && sides.cool ? "both" : sides.heat ? "heat" : "cool";
     const off = this.scheduleOffAction === "off";
     const own = this._ownTempKinds();
     return html`<div class="legend">
@@ -983,9 +986,7 @@ export class RsScheduleEditor extends LitElement {
       >
       ${
         this._canEdit
-          ? html`<span class="lines"
-              >${localize(`schedule_editor.keys_${keyNote}` as "schedule_editor.keys_both", l)}</span
-            >`
+          ? html`<span class="lines">${localize("schedule_editor.keys_both", l)}</span>`
           : nothing
       }
     </div>`;
@@ -1124,7 +1125,6 @@ export class RsScheduleEditor extends LitElement {
     if (!open || !block) return nothing;
     const l = this.hass.language;
     const names = this._dayNames("long");
-    const sides = neededSides(modeRooms.map((r) => r.climate_mode ?? "auto"));
     const ref = modeRooms[0];
     const step = usesFahrenheit(this.hass) ? 1 : 0.5;
     const defaults = {
@@ -1136,7 +1136,7 @@ export class RsScheduleEditor extends LitElement {
       .hass=${this.hass}
       .block=${block}
       .others=${this._week[open.day].filter((_, i) => i !== open.index)}
-      .sides=${sides}
+      .sides=${BOTH_SIDES}
       .defaults=${defaults}
       .comfortText=${comfortText}
       .nextDayName=${names[(open.day + 1) % 7]}
@@ -1329,8 +1329,7 @@ export class RsScheduleEditor extends LitElement {
     if (!open) return;
     const block = this._week[open.day][open.index];
     if (!block) return;
-    const sides = neededSides(this._modeRooms(this._users()).map((r) => r.climate_mode ?? "auto"));
-    const data = withTemps(block.data, e.detail.temps, sides);
+    const data = withTemps(block.data, e.detail.temps, BOTH_SIDES);
     const nextBlock: ScheduleBlock = { start: block.start, end: block.end };
     if (data) nextBlock.data = data;
     this._change(

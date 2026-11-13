@@ -32,8 +32,10 @@ from ..control.mpc_controller import (
 from ..control.residual_heat import afterglow_rise_k, get_min_run_blocks, residual_tau
 from ..control.solar import compute_q_solar_norm
 from ..control.thermal_model import ThermalEKF
+from ..utils.history_store import MODEL_INPUT_FIELDS
 from ..utils.price_utils import PriceSignal
 from .analytics_stats import compute_period_stats, compute_rhythm, rhythm_window
+from .model_backtest import backtest
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -143,6 +145,7 @@ def _csv_to_points(rows: list[dict]) -> list[dict]:
                 "room_temp_max": _safe_float(row.get("room_temp_max", "")),
                 "room_temp_min": _safe_float(row.get("room_temp_min", "")),
                 "co2": _safe_float(row.get("co2", "")),
+                **{f: _safe_float(row.get(f, "")) for f in MODEL_INPUT_FIELDS},
             }
         )
     return result
@@ -302,9 +305,23 @@ async def build_analytics_data(
     room_config = store.get_room(area_id) or {}
     climate_mode = room_config.get("climate_mode", "auto")
     stats = compute_period_stats(sorted(history + detail, key=lambda p: p["ts"]), climate_mode)
-    # Only the figures need the run starts and bucket extremes; 90 days of points would carry them to the chart
+    # The model's error one hour ahead on this range; the line replaces the stored 3-min prediction
+    backtest_figures: dict | None = None
+    if coordinator and area_id in coordinator._model_manager._estimators:
+        est = coordinator._model_manager._estimators[area_id]
+        merged = sorted(history + detail, key=lambda p: p["ts"])
+        result = await hass.async_add_executor_job(backtest, merged, est.get_model(), est.k_window)
+        backtest_figures = result.figures()
+        for point in merged:
+            point["predicted_temp"] = result.predicted.get(point["ts"])
+    else:
+        for point in history + detail:
+            point["predicted_temp"] = None
+    # Only the figures need the run starts, bucket extremes and model inputs; 90 days of points would carry them
     for point in history + detail:
         del point["heat_starts"], point["cool_starts"], point["room_temp_max"], point["room_temp_min"]
+        for f in MODEL_INPUT_FIELDS:
+            del point[f]
 
     rhythm: dict | None = None
     if history_store:
@@ -404,6 +421,7 @@ async def build_analytics_data(
                     3,
                 ),
                 **_afterglow_figures(room_config, est, rc.Q_heat, check_acs_can_heat(hass, room_config)),
+                "backtest": backtest_figures,
             }
 
     # Build merged forecast: same format as history points, on a shared 5-min grid

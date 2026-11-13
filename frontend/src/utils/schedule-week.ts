@@ -3,7 +3,6 @@
  * times as minutes of the day (0-1440), one sorted block list per weekday, block `data` kept
  * as it came from Home Assistant so keys RoomMind does not know survive every edit.
  */
-import type { ClimateMode } from "../types";
 
 /** Same order and names as Home Assistant's schedule config (and `_WEEKDAYS` in the backend). */
 export const WEEKDAYS = [
@@ -344,15 +343,6 @@ export function blockTemps(block: ScheduleBlock): BlockTemps {
 export function usesComfort(block: ScheduleBlock): boolean {
   const t = blockTemps(block);
   return t.heat === undefined && t.cool === undefined && t.single === undefined;
-}
-
-/** Which own-temperature keys a schedule needs, from the climate modes of the rooms using it. */
-export function neededSides(modes: ClimateMode[]): { heat: boolean; cool: boolean } {
-  const list: ClimateMode[] = modes.length ? modes : ["auto"];
-  return {
-    heat: list.some((m) => m !== "cool_only"),
-    cool: list.some((m) => m !== "heat_only"),
-  };
 }
 
 /**

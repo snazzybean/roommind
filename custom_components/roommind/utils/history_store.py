@@ -11,6 +11,8 @@ from ..const import MODE_COOLING, MODE_HEATING
 
 _LOGGER = logging.getLogger(__name__)
 
+MODEL_INPUT_FIELDS = ("model_power", "model_solar", "model_residual", "model_occupancy")
+
 DETAIL_FIELDS = [
     "timestamp",
     "room_temp",
@@ -42,6 +44,9 @@ DETAIL_FIELDS = [
     "room_temp_min",
     # Room air CO2 in ppm (#267)
     "co2",
+    # What the model learned from (analytics backtest): signed delivered power share
+    # (+ heating, - cooling), sun behind the covers, residual heat share, occupancy
+    *MODEL_INPUT_FIELDS,
 ]
 START_FIELDS = {MODE_HEATING: "heat_starts", MODE_COOLING: "cool_starts"}
 DETAIL_MAX_AGE = 48 * 3600  # 48 hours
@@ -124,6 +129,7 @@ class HistoryStore:
                     "price_level": data.get("price_level", ""),
                     "price_shift": data.get("price_shift", ""),
                     "co2": data.get("co2", ""),
+                    **{field: data.get(field, "") for field in MODEL_INPUT_FIELDS},
                     **{key: int(mode == run and previous != run) for run, key in START_FIELDS.items()},
                 }
             )
@@ -261,6 +267,7 @@ class HistoryStore:
                 "price",
                 "price_shift",
                 "co2",
+                *MODEL_INPUT_FIELDS,
             ):
                 vals = [v for r in bucket if (v := self._float(r.get(field, ""))) is not None]
                 avg_row[field] = round(sum(vals) / len(vals), 2) if vals else ""

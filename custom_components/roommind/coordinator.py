@@ -274,6 +274,8 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         self._residual_learner = ResidualHeatLearner()
         # AC rebound charge (air pulled below the building mass while cooling)
         self._rebound_tracker = AcReboundTracker()
+        # Inputs the model learned from this cycle, recorded for the analytics backtest
+        self._model_inputs: dict[str, dict[str, float]] = {}
         # Offset of each AC's own sensor from the room sensor while it runs (setpoints in the device's frame)
         self._head_offsets = HeadOffsetTracker()
         # Setpoints changed on the devices themselves, taken over as an override where the room opts in (#259).
@@ -493,6 +495,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                             # Signed like the heat side; a cool-only room moves its cool side the other way
                             "price_shift": (rs.get("price_shift_heat") or -(rs.get("price_shift_cool") or 0.0)) or "",
                             "co2": rs.get("co2"),
+                            **self._model_inputs.get(area_id, {}),
                         },
                     )
                 except Exception:  # noqa: BLE001
@@ -854,6 +857,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         """Process a single room: read sensor, evaluate schedule, apply control."""
         room = self._without_pending_override_seed(room)
         area_id = room.get("area_id", "unknown")
+        self._model_inputs.pop(area_id, None)
         if not room.get("is_outdoor", False):
             room = await self._async_adopt_device_setpoints(room, settings)
 
@@ -1610,6 +1614,31 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         room_state.update(air_quality)
         return room_state
 
+    def _note_model_inputs(
+        self,
+        area_id: str,
+        ekf_mode: str | None,
+        ekf_pf: float,
+        shading_factor: float | None,
+        q_residual: float,
+        q_occupancy: float,
+    ) -> None:
+        """Keep the inputs the EKF learned from this cycle for the history (analytics backtest).
+
+        The history's heating_power is the commanded share; the model learns from the delivered
+        one (and from the sun behind the covers), so a backtest needs these to judge the model.
+        """
+        if ekf_mode not in (MODE_HEATING, MODE_COOLING, MODE_IDLE):
+            self._model_inputs.pop(area_id, None)
+            return
+        sign = 1.0 if ekf_mode == MODE_HEATING else -1.0 if ekf_mode == MODE_COOLING else 0.0
+        self._model_inputs[area_id] = {
+            "model_power": round(sign * ekf_pf, 3),
+            "model_solar": round(self._current_q_solar * (shading_factor if shading_factor is not None else 0.0), 3),
+            "model_residual": round(q_residual, 3),
+            "model_occupancy": q_occupancy,
+        }
+
     async def _observe_and_train(
         self,
         *,
@@ -1780,7 +1809,9 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 q_occupancy=q_occupancy,
                 q_rebound=q_rebound,
             )
+            self._note_model_inputs(area_id, ekf_mode, ekf_pf, shading_factor, q_residual_training, q_occupancy)
         else:
+            self._model_inputs.pop(area_id, None)
             # A held unit or a coil dry run keeps the old resume (learn the change across the
             # pause): in the sim it offsets the air relaxing after a heating run, a resync
             # gave beta_s 3.2 -> 5.0 in compressor-hold-mixed-room.
@@ -2907,6 +2938,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         self._block_temp_warned = {k for k in self._block_temp_warned if k[0] != area_id}
         self._ekf_training.remove_room(area_id)
         self._pending_predictions.pop(area_id, None)
+        self._model_inputs.pop(area_id, None)
         self._residual_tracker.remove_room(area_id)
         self._residual_learner.remove_room(area_id)
         self._rebound_tracker.remove_room(area_id)

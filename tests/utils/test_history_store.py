@@ -731,3 +731,29 @@ def test_rotate_keeps_the_starts_in_an_old_history_file(history_dir):
     rows = store.read_history("room_a")
     assert rows[0]["heat_starts"] == ""
     assert sum(int(r["heat_starts"]) for r in rows[1:]) == 2
+
+
+def test_record_and_downsample_keep_the_model_inputs(history_dir):
+    store = HistoryStore(history_dir)
+    for i, power in enumerate([1.0, 0.5, 0.0]):
+        store.record(
+            "room_a",
+            {
+                "mode": "heating",
+                "model_power": power,
+                "model_solar": 0.2,
+                "model_residual": 0.1,
+                "model_occupancy": 1.0,
+            },
+            600 + i * 60,
+        )
+    rows = store.read_detail("room_a")
+    assert rows[0]["model_power"] == "1.0"
+    (bucket,) = store._downsample(rows, bucket_seconds=300)
+    assert (bucket["model_power"], bucket["model_solar"], bucket["model_occupancy"]) == (0.5, 0.2, 1.0)
+
+
+def test_rows_without_model_inputs_leave_the_columns_empty(history_dir):
+    store = HistoryStore(history_dir)
+    store.record("room_a", {"mode": "idle"}, 600)
+    assert store.read_detail("room_a")[0]["model_power"] == ""

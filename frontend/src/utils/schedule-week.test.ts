@@ -3,7 +3,6 @@ import {
   copyDay,
   dayIsValid,
   emptyWeek,
-  neededSides,
   parseTime,
   parseWeek,
   serializeWeek,
@@ -93,15 +92,6 @@ describe("withTemps", () => {
     const src = { temperature: 22 };
     withTemps(src, { heat: 20 }, both);
     expect(src).toEqual({ temperature: 22 });
-  });
-});
-
-describe("neededSides", () => {
-  test("follows the climate modes of the rooms using the schedule", () => {
-    expect(neededSides([])).toEqual(both);
-    expect(neededSides(["heat_only"])).toEqual(heatOnly);
-    expect(neededSides(["cool_only"])).toEqual(coolOnly);
-    expect(neededSides(["heat_only", "cool_only"])).toEqual(both);
   });
 });
 

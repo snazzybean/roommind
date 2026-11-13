@@ -301,6 +301,8 @@ export function buildChartSeries(
   const roomData: Array<[number, number]> = [];
   const targetData: Array<[number, number]> = [];
   const predictedData: Array<[number, number]> = [];
+  // The model one hour ahead from the reading an hour before; null breaks the line where it has no inputs
+  const backtestData: Array<[number, number | null]> = [];
   const outdoorData: Array<[number, number]> = [];
   const deviceTargetData: Array<[number, number]> = [];
   const humidityData: Array<[number, number]> = [];
@@ -337,7 +339,7 @@ export function buildChartSeries(
     const ts = p.ts * 1000;
     if (p.room_temp !== null) roomData.push([ts, d(p.room_temp)]);
     if (!isOutdoor && p.target_temp !== null) targetData.push([ts, d(p.target_temp)]);
-    if (!isOutdoor && p.predicted_temp !== null) predictedData.push([ts, d(p.predicted_temp)]);
+    if (!isOutdoor) backtestData.push([ts, p.predicted_temp != null ? d(p.predicted_temp) : null]);
     if (p.outdoor_temp !== null) outdoorData.push([ts, d(p.outdoor_temp)]);
     if (!isOutdoor && p.device_setpoint != null) deviceTargetData.push([ts, d(p.device_setpoint)]);
     if (p.humidity != null) humidityData.push([ts, p.humidity]);
@@ -421,6 +423,20 @@ export function buildChartSeries(
         areaStyle: { color, opacity: 0.07 },
       }),
     );
+  }
+
+  if (backtestData.some(([, v]) => v !== null)) {
+    series.push({
+      id: "backtest_temp",
+      type: "line",
+      name: localize("analytics.backtest", l),
+      color: colors.neutral,
+      data: backtestData,
+      showSymbol: false,
+      connectNulls: false,
+      lineStyle: { width: 1.5, type: "dashed", opacity: 0.8 },
+      yAxisIndex: 0,
+    });
   }
 
   if (predictedData.length > 0) {
@@ -837,13 +853,13 @@ export function buildChartOptions(
           );
           groups.set(group, rows);
           if (p.seriesId === "room_temp") roomVal = v;
-          if (p.seriesId === "predicted_temp") predVal = v;
+          if (p.seriesId === "backtest_temp") predVal = v;
         }
         markup += (groups.get("main") ?? []).join("");
         if (roomVal !== null && predVal !== null) {
           const delta = roomVal - predVal;
           const sign = delta >= 0 ? "+" : "";
-          markup += `<div style="border-top:1px solid rgba(128,128,128,0.3);margin-top:4px;padding-top:4px">${localize("analytics.prediction_delta", l)}: ${sign}${formatNumber(delta, hass, 2)}\u00A0${unit}</div>`;
+          markup += `<div style="border-top:1px solid rgba(128,128,128,0.3);margin-top:4px;padding-top:4px">${localize("analytics.backtest_delta", l)}: ${sign}${formatNumber(delta, hass, 2)}\u00A0${unit}</div>`;
         }
         for (const panel of SUB_PANEL_ORDER) {
           const rows = groups.get(panel);

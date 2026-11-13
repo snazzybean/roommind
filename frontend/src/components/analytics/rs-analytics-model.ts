@@ -4,7 +4,7 @@
  */
 import { LitElement, html, css, nothing } from "lit";
 import { customElement, property } from "lit/decorators.js";
-import type { HomeAssistant, AnalyticsData } from "../../types";
+import type { HomeAssistant, AnalyticsData, BacktestFigures } from "../../types";
 import { localize, type TranslationKey } from "../../utils/localize";
 import { formatHours, formatMinutes, formatNumber, formatPercent } from "../../utils/format";
 import {
@@ -29,8 +29,8 @@ const HEAT_LOSS_REFERENCE_K = 10;
 // Samples a figure needs before the tile shows it
 const MIN_TILE_SAMPLES = 10;
 const PENDING = "—";
-// Where the 5-min prediction spread settles once a model has learned (info text example)
-const TYPICAL_PREDICTION_STD_K = 0.2;
+// A systematic lean worth naming: at least this far and half the mean deviation
+const BIAS_MIN_K = 0.1;
 
 type StageState = "done" | "current" | "todo" | "off";
 
@@ -49,6 +49,8 @@ interface Tile {
   tone?: "heat" | "cool";
   value: string | null;
   detail?: string;
+  /** Info text key when it is not analytics.info.<id>. */
+  info?: TranslationKey;
 }
 
 const STAGE_STATE_KEY: Record<StageState, TranslationKey> = {
@@ -449,25 +451,46 @@ export class RsAnalyticsModel extends LitElement {
         value: m.occupancy_learned ? rate(model.Q_occupancy) : null,
       });
     }
-    tiles.push({
-      id: "accuracy_idle",
-      icon: "mdi:bullseye-arrow",
-      value:
-        hasIdle && m?.prediction_std_idle != null
-          ? `±${delta(m.prediction_std_idle, 2)} ${unit}`
-          : null,
-    });
-    if (canHeat) {
-      tiles.push({
-        id: "accuracy_heating",
-        icon: "mdi:bullseye",
-        value:
-          hasHeated && m?.prediction_std_heating != null
-            ? `±${delta(m.prediction_std_heating, 2)} ${unit}`
-            : null,
-      });
+    const bt = m?.backtest;
+    if (bt) {
+      tiles.push(this._deviationTile("deviation_idle", "mdi:bullseye-arrow", bt.idle));
+      if (canHeat || canCool) {
+        tiles.push(
+          this._deviationTile(
+            canHeat ? (canCool ? "deviation_active" : "deviation_heat") : "deviation_cool",
+            "mdi:bullseye",
+            bt.active,
+          ),
+        );
+      }
     }
     return tiles;
+  }
+
+  /** Mean deviation of the model one hour ahead, and which way it leans if it clearly does. */
+  private _deviationTile(id: string, icon: string, f: BacktestFigures): Tile {
+    const l = this.language;
+    const unit = tempUnit(this.hass);
+    const delta = (k: number) => formatNumber(toDisplayDelta(k, this.hass), this.hass, 2);
+    let detail: string | undefined;
+    if (f.mae == null) {
+      detail = localize("analytics.deviation_collecting", l);
+    } else if (f.bias != null && Math.abs(f.bias) >= Math.max(BIAS_MIN_K, f.mae / 2)) {
+      detail = localize(
+        f.bias < 0 ? "analytics.deviation_warmer" : "analytics.deviation_cooler",
+        l,
+        {
+          delta: `${delta(Math.abs(f.bias))} ${unit}`,
+        },
+      );
+    }
+    return {
+      id,
+      icon,
+      value: f.mae != null ? `±${delta(f.mae)} ${unit}` : null,
+      detail,
+      info: "analytics.info.deviation",
+    };
   }
 
   private _renderTile(t: Tile) {
@@ -478,9 +501,8 @@ export class RsAnalyticsModel extends LitElement {
       .label=${localize(`analytics.${t.id}` as TranslationKey, l)}
       .value=${t.value ?? PENDING}
       ?pending=${t.value == null}
-      .info=${localize(`analytics.info.${t.id}` as TranslationKey, l, {
+      .info=${localize(t.info ?? (`analytics.info.${t.id}` as TranslationKey), l, {
         threshold: this._delta(MPC_MAX_PREDICTION_STD),
-        typical: this._delta(TYPICAL_PREDICTION_STD_K),
       })}
     >
       ${t.detail ? html`<span slot="info">${t.detail}</span>` : nothing}
