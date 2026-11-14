@@ -330,6 +330,35 @@ CONFLICT_RESOLUTIONS = [
 ]
 DEFAULT_CONFLICT_RESOLUTION = CONFLICT_RESOLUTION_HEATING_PRIORITY
 
+# Time-of-Use (TOU) tariff awareness
+# Normalized tier vocabulary every tariff source is mapped onto.
+TOU_TIER_PEAK = "peak"
+TOU_TIER_MID = "mid"
+TOU_TIER_OFF = "off"
+TOU_TIER_ULTRA_LOW = "ultra_low"
+TOU_TIER_UNKNOWN = "unknown"
+TOU_TIERS = [TOU_TIER_PEAK, TOU_TIER_MID, TOU_TIER_OFF, TOU_TIER_ULTRA_LOW]
+
+# Which entity class the panel treats as THE source for the current tier and
+# for future-tier lookahead. "auto" = legacy cascade (period -> flags -> rate;
+# calendars -> next-change) so existing installs are unchanged until the user
+# picks a mode explicitly.
+TOU_TIER_SOURCES = ["auto", "period", "rate", "flags"]
+TOU_LOOKAHEADS = ["auto", "calendar", "next_change_rate", "next_change", "none"]
+
+# Canonical weekday names for manual tariff windows (date.weekday() order).
+TOU_WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+
+# How far ahead the tariff timeline is built (minutes). Covers the MPC's
+# longest pre-heat lead (12 h) plus margin.
+TOU_TIMELINE_HORIZON_MINUTES = 960
+
+# Tariff source kinds reported in diagnostics/snapshot.
+TOU_SOURCE_PERIOD = "period_sensor"
+TOU_SOURCE_FLAGS = "flags"
+TOU_SOURCE_RATE = "rate_thresholds"
+TOU_SOURCE_NONE = "none"
+
 
 # Far-future sentinel: vacation active indefinitely (year 2999)
 VACATION_SENTINEL_UNTIL = 32503680000.0

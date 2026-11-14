@@ -93,6 +93,7 @@ from .managers.mold_manager import MoldManager
 from .managers.price_manager import PriceManager
 from .managers.recent_temps import RECENT_WINDOW_S, RecentTemps
 from .managers.residual_heat_tracker import AcReboundTracker, ResidualHeatLearner, ResidualHeatTracker
+from .managers.tou_manager import TouManager
 from .managers.valve_manager import ValveManager
 from .managers.weather_manager import WeatherManager
 from .managers.window_manager import WindowManager
@@ -262,6 +263,8 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         self._pending_predictions: dict[str, float] = {}
         self._prediction_forecasts: dict[str, list[dict]] = {}
         self._weather_manager = WeatherManager(hass)
+        # Time-of-Use tariff awareness (tier timeline for the TOU layers and snapshot)
+        self._tou_manager = TouManager(hass)
         self._current_q_solar: float = 0.0
         # Valve protection (anti-seize)
         self._valve_manager = ValveManager(hass)
@@ -420,6 +423,9 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             time.time(),
             cloud_coverage,
         )
+
+        # Time-of-Use: build the tariff tier timeline once per cycle for all rooms.
+        await self._tou_manager.async_build_timeline(settings)
 
         await self._async_switch_resting_rooms_off(stored_rooms, rooms, settings)
         await self._async_switch_deleted_rooms_off(settings)
@@ -592,7 +598,11 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             self._coil_dry_manager.state_dirty = False
 
         self.rooms = room_states
-        return {"rooms": room_states}
+        data: dict[str, Any] = {"rooms": room_states}
+        tou_snapshot = self._tou_manager.snapshot()
+        if tou_snapshot.get("enabled"):
+            data["tou"] = tou_snapshot
+        return data
 
     def _read_room_sensors(
         self,

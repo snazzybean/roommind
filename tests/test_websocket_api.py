@@ -3688,3 +3688,136 @@ async def test_list_rooms_forwards_air_quality(ws_hass, store, connection):
         "air_quality_reason": "co2",
         "ventilation_active": True,
     }
+
+
+# ---------------------------------------------------------------------------
+# Time-of-Use settings tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_save_settings_tou_valid(ws_hass, store, connection):
+    """Saving a complete Time-of-Use source configuration succeeds and persists it."""
+    await store.async_load()
+
+    msg = {
+        "id": 60,
+        "type": "roommind/settings/save",
+        "tou_enabled": True,
+        "tou_tier_source": "period",
+        "tou_lookahead": "calendar",
+        "tou_rate_entity": "sensor.hydro_one_rate",
+        "tou_period_entity": "sensor.hydro_one_period",
+        "tou_next_change_tier": "",
+        "tou_calendar_entities": [{"entity_id": "calendar.ultou_peak", "tier": "peak"}],
+        "tou_flag_entities": {"off": "input_boolean.off_peak"},
+        "tou_peak_threshold": 0.3,
+        "tou_mid_threshold": 0.15,
+        "tou_ultra_threshold": None,
+    }
+    await _save_settings(ws_hass, connection, msg)
+
+    connection.send_result.assert_called_once()
+    settings = connection.send_result.call_args[0][1]["settings"]
+    assert settings["tou_enabled"] is True
+    assert settings["tou_tier_source"] == "period"
+    assert settings["tou_lookahead"] == "calendar"
+    assert settings["tou_next_change_tier"] == ""
+    assert settings["tou_calendar_entities"][0]["entity_id"] == "calendar.ultou_peak"
+    assert settings["tou_flag_entities"] == {"off": "input_boolean.off_peak"}
+    assert settings["tou_ultra_threshold"] is None
+
+
+@pytest.mark.asyncio
+async def test_save_settings_tou_rate_windows(ws_hass, store, connection):
+    """Manual tariff windows persist with their weekday lists and wrapping times."""
+    await store.async_load()
+
+    msg = {
+        "id": 66,
+        "type": "roommind/settings/save",
+        "tou_rate_windows": [
+            {"id": "night", "rate": 0.24, "start": "22:00", "end": "06:00", "days": ["monday", "tuesday"]},
+        ],
+    }
+    await _save_settings(ws_hass, connection, msg)
+
+    connection.send_result.assert_called_once()
+    settings = connection.send_result.call_args[0][1]["settings"]
+    assert settings["tou_rate_windows"][0]["end"] == "06:00"
+    assert settings["tou_rate_windows"][0]["days"] == ["monday", "tuesday"]
+
+
+@pytest.mark.parametrize(("start", "days"), [("25:00", ["monday"]), ("07:00", ["funday"])])
+@pytest.mark.asyncio
+async def test_save_settings_tou_rate_windows_invalid(ws_hass, store, connection, start, days):
+    """Wall-clock format and weekday names are validated before persisting."""
+    await store.async_load()
+
+    msg = {
+        "id": 67,
+        "type": "roommind/settings/save",
+        "tou_rate_windows": [{"id": "x", "rate": 0.1, "start": start, "end": "08:00", "days": days}],
+    }
+    await _save_settings(ws_hass, connection, msg)
+
+    assert connection.send_result.call_count == 0
+    assert connection.send_error.call_args[0][1] in ("invalid_tou_window_time", "invalid_tou_window_days")
+
+
+@pytest.mark.asyncio
+async def test_save_settings_tou_period_aliases(ws_hass, store, connection):
+    """User-assigned period vocabulary persists through the settings save."""
+    await store.async_load()
+    await _save_settings(
+        ws_hass,
+        connection,
+        {
+            "id": 95,
+            "type": "roommind/settings/save",
+            "tou_period_aliases": {"partially_peak": "peak", "evening surge": "ultra_low"},
+        },
+    )
+    connection.send_result.assert_called_once()
+    saved = connection.send_result.call_args[0][1]["settings"]
+    assert saved["tou_period_aliases"] == {"partially_peak": "peak", "evening surge": "ultra_low"}
+    assert store.get_settings()["tou_period_aliases"]["partially_peak"] == "peak"
+
+
+@pytest.mark.asyncio
+async def test_list_rooms_carries_tou_snapshot(ws_hass, store, connection):
+    """rooms/list exposes the tariff snapshot the last coordinator cycle published."""
+    await store.async_load()
+
+    snapshot = {"enabled": True, "tier": "off", "rate": 0.033, "rate_unit": "CAD/kWh", "segments": []}
+    mock_coordinator = MagicMock()
+    mock_coordinator.rooms = {}
+    mock_coordinator.async_request_refresh = AsyncMock()
+    mock_coordinator.outdoor_temp_effective = None
+    mock_coordinator.outdoor_humidity = None
+    mock_coordinator.data = {"rooms": {}, "tou": snapshot}
+    ws_hass.data[DOMAIN]["coordinator"] = mock_coordinator
+
+    await _list_rooms(ws_hass, connection, {"id": 96, "type": "roommind/rooms/list"})
+
+    payload = connection.send_result.call_args[0][1]
+    assert payload["tou"] == snapshot
+
+
+@pytest.mark.asyncio
+async def test_list_rooms_omits_tou_snapshot_when_disabled(ws_hass, store, connection):
+    """Without an enabled TOU cycle the payload is byte-identical to the pre-TOU base."""
+    await store.async_load()
+
+    mock_coordinator = MagicMock()
+    mock_coordinator.rooms = {}
+    mock_coordinator.async_request_refresh = AsyncMock()
+    mock_coordinator.outdoor_temp_effective = None
+    mock_coordinator.outdoor_humidity = None
+    mock_coordinator.data = {"rooms": {}}
+    ws_hass.data[DOMAIN]["coordinator"] = mock_coordinator
+
+    await _list_rooms(ws_hass, connection, {"id": 97, "type": "roommind/rooms/list"})
+
+    payload = connection.send_result.call_args[0][1]
+    assert "tou" not in payload

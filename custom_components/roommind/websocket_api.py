@@ -26,6 +26,10 @@ from .const import (
     MIN_OCCUPANCY_ECO_DELAY_MINUTES,
     OVERRIDE_CUSTOM,
     OVERRIDE_TYPES,
+    TOU_LOOKAHEADS,
+    TOU_TIER_SOURCES,
+    TOU_TIERS,
+    TOU_WEEKDAYS,
     VENTILATION_DOMAINS,
     build_override_live,
     is_override_suppressed,
@@ -216,6 +220,30 @@ _SETTINGS_SAVE_FIELDS = (
     "room_order",
     "group_by_floor",
     "compressor_groups",
+    "tou_enabled",
+    "tou_tier_source",
+    "tou_lookahead",
+    "tou_rate_entity",
+    "tou_period_entity",
+    "tou_next_change_entity",
+    "tou_next_rate_entity",
+    "tou_next_period_entity",
+    "tou_next_change_tier",
+    "tou_calendar_entities",
+    "tou_rate_windows",
+    "tou_flag_entities",
+    "tou_price_weighting",
+    "tou_peak_threshold",
+    "tou_mid_threshold",
+    "tou_ultra_threshold",
+    "tou_heat_min",
+    "tou_heat_max",
+    "tou_cool_min",
+    "tou_cool_max",
+    "tou_swing",
+    "tou_store_gap",
+    "tou_period_aliases",
+    "tou_coast_max_minutes",
 )
 
 
@@ -361,6 +389,11 @@ async def websocket_list_rooms(
     vacation_until = settings.get("vacation_until")
     vacation_active = bool(vacation_until and time.time() < vacation_until)
 
+    # TOU tariff snapshot from the last cycle (absent while Time-of-Use is off,
+    # so the payload is byte-identical to the pre-TOU base when disabled).
+    coordinator_data = getattr(coordinator, "data", None) if coordinator else None
+    tou_snapshot = coordinator_data.get("tou") if isinstance(coordinator_data, dict) else None
+
     connection.send_result(
         msg["id"],
         {
@@ -399,6 +432,7 @@ async def websocket_list_rooms(
             ),
             "coil_dry_drain_minutes": settings.get("coil_dry_drain_minutes", DEFAULT_COIL_DRY_DRAIN_MINUTES),
             "compressor_groups": settings.get("compressor_groups", []),
+            **({"tou": tou_snapshot} if tou_snapshot else {}),
         },
     )
 
@@ -892,6 +926,52 @@ async def websocket_get_settings(
                 vol.Optional("enforce_uniform_mode", default=False): bool,
             }
         ],
+        # Time-of-Use tariff sources (the TOU manager reads them each cycle;
+        # the settings panel is a follow-up PR, so these are API-only today).
+        vol.Optional("tou_enabled"): bool,
+        vol.Optional("tou_tier_source"): vol.In(TOU_TIER_SOURCES),
+        vol.Optional("tou_lookahead"): vol.In(TOU_LOOKAHEADS),
+        vol.Optional("tou_rate_entity"): str,
+        vol.Optional("tou_period_entity"): str,
+        vol.Optional("tou_next_change_entity"): str,
+        vol.Optional("tou_next_rate_entity"): str,
+        vol.Optional("tou_next_period_entity"): str,
+        vol.Optional("tou_next_change_tier"): vol.Any("", vol.In(TOU_TIERS)),
+        vol.Optional("tou_calendar_entities"): vol.All(
+            [
+                {
+                    vol.Required("entity_id"): str,
+                    vol.Required("tier"): vol.In(TOU_TIERS),
+                }
+            ],
+            vol.Length(max=4),
+        ),
+        vol.Optional("tou_rate_windows"): [
+            {
+                vol.Required("id"): str,
+                vol.Required("rate"): vol.Coerce(float),
+                vol.Required("start"): str,
+                vol.Required("end"): str,
+                vol.Optional("days", default=[]): [str],
+            }
+        ],
+        vol.Optional("tou_flag_entities"): {vol.In(TOU_TIERS): str},
+        # User-assigned period vocabulary: raw state (lower-cased) -> tier.
+        # Consulted by TouManager._normalize_period before word recognition.
+        vol.Optional("tou_period_aliases"): {
+            vol.All(str, vol.Length(min=1, max=64)): vol.In(TOU_TIERS),
+        },
+        vol.Optional("tou_price_weighting"): bool,
+        vol.Optional("tou_peak_threshold"): vol.Any(None, vol.Coerce(float)),
+        vol.Optional("tou_mid_threshold"): vol.Any(None, vol.Coerce(float)),
+        vol.Optional("tou_ultra_threshold"): vol.Any(None, vol.Coerce(float)),
+        vol.Optional("tou_heat_min"): vol.All(vol.Coerce(float), vol.Range(min=5, max=35)),
+        vol.Optional("tou_heat_max"): vol.All(vol.Coerce(float), vol.Range(min=5, max=40)),
+        vol.Optional("tou_cool_min"): vol.All(vol.Coerce(float), vol.Range(min=5, max=35)),
+        vol.Optional("tou_cool_max"): vol.All(vol.Coerce(float), vol.Range(min=5, max=40)),
+        vol.Optional("tou_swing"): vol.All(vol.Coerce(float), vol.Range(min=0, max=10)),
+        vol.Optional("tou_store_gap"): vol.All(vol.Coerce(float), vol.Range(min=1, max=10)),
+        vol.Optional("tou_coast_max_minutes"): vol.All(vol.Coerce(int), vol.Range(min=30, max=1440)),
     }
 )
 @websocket_api.async_response
@@ -979,6 +1059,40 @@ async def websocket_save_settings(
                 "A master entity cannot be assigned to multiple groups",
             )
             return
+
+    # Tariff window rows: wall-clock format and weekday names. Rates map to
+    # tiers through the cost thresholds inside the engine; rows that cannot
+    # classify stay inert rather than guessing, so only shape is validated.
+    windows = changes.get("tou_rate_windows")
+    if windows:
+        for w in windows:
+            for key in ("start", "end"):
+                raw = str(w.get(key) or "")
+                if not raw:
+                    continue
+                parts = raw.split(":")
+                ok = (
+                    len(parts) >= 2
+                    and parts[0].isdigit()
+                    and parts[1].isdigit()
+                    and 0 <= int(parts[0]) <= 23
+                    and 0 <= int(parts[1]) <= 59
+                )
+                if not ok:
+                    connection.send_error(
+                        msg["id"],
+                        "invalid_tou_window_time",
+                        f"Tariff windows need '{key}' as 'HH:MM'",
+                    )
+                    return
+            bad = [d for d in (w.get("days") or []) if d not in TOU_WEEKDAYS]
+            if bad:
+                connection.send_error(
+                    msg["id"],
+                    "invalid_tou_window_days",
+                    f"Tariff window days must be weekday names, not {bad}",
+                )
+                return
 
     settings = await store.async_save_settings(changes)
     connection.send_result(msg["id"], {"settings": settings})
