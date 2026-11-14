@@ -64,13 +64,7 @@ RoomMind writes its setpoint to every device it controls and sets it again when 
 
 ### Proportional
 
-RoomMind calculates the required heating power, then sends a boosted device setpoint to achieve roughly that output.
-
-Example:
-
-- room target is `21°C`
-- more heat is needed
-- RoomMind may send `26-28°C` to the TRV to force the valve open harder
+RoomMind decides from your room sensor when the room needs heat. While heating, the TRV gets a raised setpoint, in most cases close to its maximum (around `30°C`); a TRV opens its valve fully anyway once its setpoint is a little above its own reading. Once the room sensor shows the target, RoomMind switches the TRV off (or to whatever `When idle` says). So the radiator runs at full power in runs rather than at a steady partial output, and the TRV setpoint does not tell how much heat the room needs. If something else reads the TRV setpoint, for example an automation that sets the flow temperature, use `Direct` for that TRV, or read the valve opening or the `hvac_action` of the room climate entity instead. For a steady partial opening, see [Direct Valve Control](#direct-valve-control-trvs).
 
 Best for:
 
