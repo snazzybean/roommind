@@ -1730,6 +1730,7 @@ class MPCController:
         shown_targets: list[TargetTemps] = []
         shown_resolver: Callable[[float], TargetTemps] | None = None
         schedule_heat_series: list[float] | None = None
+        schedule_cool_series: list[float] | None = None
         now = time.time()
         if self._target_resolver is not None:
             dt_seconds = PLAN_DT_MINUTES * 60
@@ -1749,9 +1750,9 @@ class MPCController:
                     shown_targets = [
                         self._schedule_target_resolver(now + i * dt_seconds) for i in range(horizon_blocks)
                     ]
-                    schedule_heat_series = [
-                        fill_missing_targets(t.heat, t.cool, current_temp)[0] for t in shown_targets
-                    ]
+                    schedule_filled = [fill_missing_targets(t.heat, t.cool, current_temp) for t in shown_targets]
+                    schedule_heat_series = [h for h, _ in schedule_filled]
+                    schedule_cool_series = [c for _, c in schedule_filled]
             else:
                 # Legacy resolver returning float|None
                 float_targets = cast(list[float | None], raw_targets)
@@ -1811,6 +1812,7 @@ class MPCController:
                 rebound_charge=self.q_rebound,
                 heat_run=self._heat_run,
                 schedule_heat_series=schedule_heat_series,
+                schedule_cool_series=schedule_cool_series,
             )
             self.last_plan = plan
             # Shading can attenuate solar gain, never the body heat of whoever just

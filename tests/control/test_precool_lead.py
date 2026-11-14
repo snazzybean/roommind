@@ -62,10 +62,11 @@ def test_precool_reaches_the_comfort_target(monkeypatch):
     print("lead window:", lead)
     print("T at +1h:", log[11][2], "+1h30:", log[17][2], "+2h:", log[23][2], "+3h:", log[35][2])
     # v1.7.9: pre-cool at pf 1.0 from +35 min, 26.81 -> 25.80 at +1 h, 24.64 at +1 h 30
-    # HEAD:   pre-cool at pf 0.15 from +35 min, 26.81 -> 26.84 at +1 h, 25.63 at +1 h 30
+    # #450:   pre-cool at pf 0.15 from +35 min, 26.81 -> 26.84 at +1 h, 25.63 at +1 h 30
+    # deadline: full power from the start, 24.17 at +1 h (the 3 K/h unit needs the whole hour)
     first = next(i for i, entry in enumerate(log) if entry[0] == MODE_COOLING)
-    assert first < 12, "the plan does start a pre-cool"
-    assert log[11][2] < log[first - 1][2], "the pre-cool must actually lower the room before the target drops"
+    assert first == 0, "waiting would miss the comfort target, so the pre-cool starts at once"
+    assert log[11][2] < 24.3, "the room is near the comfort target when it starts"
 
 
 def test_hypothesis_and_applied_power_agree():

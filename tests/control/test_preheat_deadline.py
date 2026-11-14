@@ -332,9 +332,40 @@ def test_prediction_unshifts_the_forecast_for_the_deadline(monkeypatch):
 
 
 def test_unshifted_forecast_has_no_float_noise():
-    from custom_components.roommind.control.analytics_simulator import _schedule_heat_series
+    from custom_components.roommind.control.analytics_simulator import _schedule_series
 
     # A 60 °F block (15.6 °C) charged by 0.5: 16.1 - 0.5 must not read as a rise over 15.6
     charged = {"target_temp": 16.1, "heat_target": 16.1, "cool_target": None, "price_shift_heat": 0.5}
     plain = {"target_temp": 15.6, "heat_target": 15.6, "cool_target": None, "price_shift_heat": 0.0}
-    assert _schedule_heat_series([plain, charged], 15.0) == [15.6, 15.6]
+    series = _schedule_series([plain, charged], 15.0)
+    assert series is not None and series[0] == [15.6, 15.6]
+
+
+def test_controller_and_prediction_hand_the_unshifted_cool_schedule_to_the_plan(monkeypatch):
+    from custom_components.roommind.control.analytics_simulator import _simulate_mpc
+
+    seen: list = []
+    real = MPCOptimizer.optimize
+
+    def spy(self, *args, **kwargs):
+        seen.append(kwargs.get("schedule_cool_series"))
+        return real(self, *args, **kwargs)
+
+    for module in ("mpc_controller", "analytics_simulator"):
+        monkeypatch.setattr(f"custom_components.roommind.control.{module}.MPCOptimizer.optimize", spy)
+    ctrl = MPCController(
+        build_hass(),
+        make_room(climate_mode="cool_only", thermostats=[], acs=["climate.ac"]),
+        model_manager=RoomModelManager(),
+        outdoor_temp=30.0,
+        settings={},
+        has_external_sensor=True,
+        target_resolver=lambda ts: TargetTemps(None, 25.0),
+        schedule_target_resolver=lambda ts: TargetTemps(None, 24.0),
+    )
+    ctrl._evaluate_mpc(25.5, TargetTemps(None, 25.0))
+    assert seen and set(seen[0]) == {24.0}
+    seen.clear()
+    shifted = {"target_temp": 25.0, "heat_target": None, "cool_target": 25.0, "price_shift_cool": 1.0}
+    _simulate_mpc(SLOW, [shifted] * 6, [30.0] * 6, 25.5, make_room(climate_mode="cool_only"), {})
+    assert seen[0] == [24.0] * 6

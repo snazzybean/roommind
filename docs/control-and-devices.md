@@ -18,7 +18,8 @@ When a schedule block raises the target (for example eco 17 °C until 06:00, the
 - Each room has its own switch `Pre-heat before schedule blocks` in the schedule section. Turned off, that room only heats shortly before a block, whatever the slider says, for example a bedroom that should not heat up during the night. The same applies to the end of a vacation or an override. The switch is shown for rooms with their own temperature sensor in `Intelligent (MPC)` mode; underfloor heating keeps its own pre-heating unless an orchestrated AC heats the room.
 - Underfloor heating uses its own pre-heating that accounts for the heat stored in the screed.
 - Radiator rooms learn how much heat their radiators release after a run stops, and how slowly (from the room sensor in the hour after each undisturbed run). A run whose stored heat carries the room to the target stops early, also during pre-heating. Where a short run is enough, the pre-heat is a short run started as late as it still reaches the block, so less of the stored heat arrives after the block. Diagnostics show the learned values as `residual_scale` and `residual_decay_minutes`.
-- `Simple` control mode does not pre-heat.
+- Rooms with an AC that cools pre-cool the same way: when a cooler schedule block (for example comfort 24 °C after eco 27 °C) cannot be reached by starting shortly before it, cooling starts early enough that the room is near the target when the block begins. It counts on the AC pulling the air down quickly at the start of a run, as the learned model does. The slider limit and the room switch apply to pre-cooling too; the switch is then called `Pre-cool before schedule blocks` (cool only) or `Pre-heat and pre-cool before schedule blocks`.
+- `Simple` control mode does not pre-heat or pre-cool.
 
 This setting does **not** change your schedule targets, overrides, comfort temperature, or eco temperature. It only changes how aggressively MPC tries to reach and hold those targets.
 

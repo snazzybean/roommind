@@ -24,6 +24,25 @@ import "./schedule/rs-day-timeline";
 /** Mirrors _WEEKDAYS in the backend's schedule_utils.py. */
 const WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
 
+/** Texts of the pre-heat switch by the lead it controls. */
+const PREHEAT_KEYS = {
+  heat: {
+    label: "schedule.preheat_label",
+    sub: "detail.schedule.preheat_sub",
+    hint: "schedule.preheat_hint",
+  },
+  cool: {
+    label: "schedule.precool_label",
+    sub: "detail.schedule.precool_sub",
+    hint: "schedule.precool_hint",
+  },
+  both: {
+    label: "schedule.preheat_precool_label",
+    sub: "detail.schedule.preheat_precool_sub",
+    hint: "schedule.preheat_precool_hint",
+  },
+} as const;
+
 /** Which dialog a row of the card opens (`edit-click` detail `{ part }`). */
 export type ScheduleCardPart = "schedule" | "temperatures" | "price";
 
@@ -57,7 +76,8 @@ export class RsScheduleSettings extends RsScheduleBase {
   @property({ type: String }) public climateMode: ClimateMode = "auto";
   @property({ attribute: false }) public scheduleTempWarnings: ScheduleTempWarning[] = [];
   @property({ type: Boolean }) public preheatEnabled = true;
-  @property({ type: Boolean }) public showPreheat = false;
+  /** Which lead the pre-heat switch controls here ("" hides it). */
+  @property({ type: String }) public preheatSides: "" | "heat" | "cool" | "both" = "";
   @property({ type: Boolean }) public followDeviceSetpoint = false;
   /** K the schedule target may move with the electricity price (0 = off). */
   @property({ type: Number }) public priceShift = 0;
@@ -249,18 +269,21 @@ export class RsScheduleSettings extends RsScheduleBase {
         @row-click=${open("temperatures")}
       ></rs-list-row>
       ${
-        this.showPreheat
+        this.preheatSides
           ? html`<rs-list-row
               switch
               wrap
               icon="mdi:clock-fast"
-              .heading=${localize("schedule.preheat_label", l)}
-              .secondary=${localize("detail.schedule.preheat_sub", l)}
+              .heading=${localize(PREHEAT_KEYS[this.preheatSides].label, l)}
+              .secondary=${localize(PREHEAT_KEYS[this.preheatSides].sub, l)}
               .checked=${this.preheatEnabled}
               @toggle-changed=${(e: CustomEvent<boolean>) =>
                 this._fireValue("preheat-changed", e.detail)}
             >
-              <rs-info-icon slot="end" .text=${localize("schedule.preheat_hint", l)}></rs-info-icon>
+              <rs-info-icon
+                slot="end"
+                .text=${localize(PREHEAT_KEYS[this.preheatSides].hint, l)}
+              ></rs-info-icon>
             </rs-list-row>`
           : nothing
       }

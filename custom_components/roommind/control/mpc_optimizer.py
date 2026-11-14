@@ -155,6 +155,7 @@ class MPCOptimizer:
         rebound_charge: float | None = None,
         heat_run: tuple[float, float] | None = None,
         schedule_heat_series: list[float] | None = None,
+        schedule_cool_series: list[float] | None = None,
     ) -> MPCPlan:
         """Find optimal action sequence over the planning horizon.
 
@@ -181,7 +182,8 @@ class MPCOptimizer:
         afterglow instead of ``residual_series`` (the real room's).
 
         ``schedule_heat_series`` is the heat target without the electricity price shift
-        (None: the room does not follow the price). Only the pre-heat deadline reads it.
+        (None: the room does not follow the price). Only the pre-heat deadline reads it;
+        ``schedule_cool_series`` likewise for the pre-cool deadline.
         """
         self._glow_cache.clear()  # scale and decay may have changed since the last plan
         if cool_target_series is None:
@@ -322,6 +324,28 @@ class MPCOptimizer:
                     best_action = MODE_HEATING
                     if i == 0:
                         preheat_blocks = deadline
+            # Also when the greedy step already cools: a room held at its eco target picks
+            # cooling at the edge, and without the lead the controller's start hysteresis
+            # turned that start down until the lower target was 30 min away
+            if not deadline and MODE_COOLING in available and (best_action != MODE_COOLING or i == 0):
+                lead = self._precool_deadline(
+                    i,
+                    current_temp,
+                    T_outdoor_series,
+                    cool_target_series,
+                    dt_minutes,
+                    schedule_cool_series=schedule_cool_series,
+                    q_solar=q_solar,
+                    q_occupancy=q_occupancy,
+                    q_residual=q_residual[i:],
+                    continuing=last_action == MODE_COOLING,
+                    rebound_charge=charge,
+                )
+                if lead:
+                    deadline = lead
+                    best_action = MODE_COOLING
+                    if i == 0:
+                        preheat_blocks = lead
 
             # Compute proportional power fraction for this block
             # Use heat target for heating power, cool target for cooling power
@@ -574,6 +598,72 @@ class MPCOptimizer:
             )
             target = goal[j + 1]
             if rises(j + 1) and T < target - PREHEAT_DEADLINE_MARGIN:
+                return j + 1 - i
+        return 0
+
+    def _precool_deadline(
+        self,
+        i: int,
+        T_room: float,
+        T_outdoor_series: list[float],
+        cool_target_series: list[float],
+        dt_minutes: float,
+        *,
+        q_solar: list[float],
+        q_occupancy: list[float],
+        q_residual: list[float],
+        continuing: bool,
+        rebound_charge: float | None,
+        schedule_cool_series: list[float] | None = None,
+    ) -> int:
+        """Blocks from *i* to the falling cool target that waiting would miss (mirror of ``_preheat_deadline``).
+
+        The greedy plan sees a lower cool target only ``_lookahead_blocks`` ahead, so a warm
+        room started cooling 30 min before the comfort block and reached it an hour late.
+        Waits one block (a running pre-cool ``PREHEAT_CONTINUE_BLOCKS``), then cools at full
+        power; if that misses a later, lower cool target, the pre-cool starts now. Same lead
+        limit (slider, room switch) and price rule as pre-heating: only a fall of the schedule
+        counts, and only down to the schedule. The run pulls the air down (``Q_fast`` with the
+        rebound charge) like in the EKF's prediction: without it a learned whole-room rate
+        started the run hours early and held the target with short runs until the block.
+        """
+        n = len(cool_target_series)
+        now = cool_target_series[i]
+        if self.preheat_max_blocks is not None:
+            n = min(n, i + self.preheat_max_blocks + 1)
+        schedule = schedule_cool_series if schedule_cool_series is not None else cool_target_series
+        goal = [max(c, sch) for c, sch in zip(cool_target_series, schedule, strict=False)]
+        n = min(n, len(goal))
+
+        def falls(j: int) -> bool:
+            return goal[j] < now and schedule[j] < schedule[i]
+
+        if next((j for j in range(i + 1, n) if falls(j) and goal[j] < T_room), None) is None:
+            return 0
+        wait = max(PREHEAT_CONTINUE_BLOCKS, self._min_run_for(MODE_COOLING)) if continuing else 1
+        T = T_room
+        charge = rebound_charge
+        for j in range(i, n - 1):
+            waiting = j < i + wait
+            Q = 0.0 if waiting else -self.model.Q_cool
+            qb = None
+            if charge is not None:
+                # Unlike the plan, the deadline lets the run pull the air down (as the EKF's own
+                # prediction does): that is when the room sensor reads the target
+                drive = 0.0 if waiting else 1.0
+                qb = mean_rebound(charge, drive, dt_minutes)
+                charge = advance_rebound(charge, drive, dt_minutes)
+            T = self.model.predict(
+                T,
+                T_outdoor_series[j],
+                Q,
+                dt_minutes,
+                q_solar=q_solar[j] if j < len(q_solar) else 0.0,
+                q_occupancy=q_occupancy[j] if j < len(q_occupancy) else 0.0,
+                q_residual=(q_residual[j - i] if j - i < len(q_residual) else 0.0) if waiting else 0.0,
+                q_rebound=qb,
+            )
+            if falls(j + 1) and T > goal[j + 1] + PREHEAT_DEADLINE_MARGIN:
                 return j + 1 - i
         return 0
 

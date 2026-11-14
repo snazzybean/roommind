@@ -668,7 +668,7 @@ export class RsRoomDetail extends LitElement {
           .followDeviceSetpoint=${this._followDeviceSetpoint}
           .priceShift=${this._priceShift}
           .priceConfigured=${this.priceConfigured}
-          .showPreheat=${this._showPreheat()}
+          .preheatSides=${this._preheatSides()}
           .scheduleOffAction=${this.scheduleOffAction}
           .presenceAwayAction=${this.presenceAwayAction}
           .presenceActive=${this._presenceActive()}
@@ -1198,21 +1198,25 @@ export class RsRoomDetail extends LitElement {
   }
 
   /**
-   * Only where the pre-heat lead applies: MPC with a room sensor, not cool_only. Underfloor
-   * heating pre-heats through its own control, unless an orchestrated AC heats the room.
+   * Where the pre-heat/pre-cool lead applies: MPC with a room sensor and a schedule (or price
+   * shift) to start early for. Heating: not cool_only; underfloor heating pre-heats through its
+   * own control, unless an orchestrated AC heats the room. Cooling: an AC, not heat_only.
    */
-  private _showPreheat(): boolean {
+  private _preheatSides(): "" | "heat" | "cool" | "both" {
     if (
-      // Without a schedule or price shift there is no warmer block to start early for
       (!this._schedules.length && !(this._priceShift > 0)) ||
       this.controlMode !== "mpc" ||
-      !this._selectedTempSensor ||
-      this._climateMode === "cool_only"
+      !this._selectedTempSensor
     ) {
-      return false;
+      return "";
     }
-    const acHeats = this._heatSourceOrchestration && this._devices.some((d) => d.type === "ac");
-    return resolveHeatingSystemType(this._devices) !== "underfloor" || acHeats;
+    const hasAc = this._devices.some((d) => d.type === "ac");
+    const acHeats = this._heatSourceOrchestration && hasAc;
+    const heat =
+      this._climateMode !== "cool_only" &&
+      (resolveHeatingSystemType(this._devices) !== "underfloor" || acHeats);
+    const cool = this._climateMode !== "heat_only" && hasAc;
+    return heat && cool ? "both" : heat ? "heat" : cool ? "cool" : "";
   }
 
   private _onPreheatChanged(e: CustomEvent<{ value: boolean }>) {
