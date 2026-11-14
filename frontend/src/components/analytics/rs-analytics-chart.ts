@@ -37,11 +37,21 @@ const LEGEND_OWNER: Record<string, string> = {
   humidity_band_base: "humidity",
   humidity_band: "humidity",
 };
-// Per-panel copies of the window band and the "now" line carry the panel in their id
-const legendOwner = (id: string) =>
-  id.startsWith("window_events_") ? "window_events" : (LEGEND_OWNER[id] ?? id);
-const inLegend = (id: string) =>
-  !(id in LEGEND_OWNER) && !id.startsWith("window_events_") && !id.startsWith("now_marker");
+// Per-panel copies of the window band and the "now" line carry the panel in their id.
+// The past model line and the future prediction are one "Prediction" entry while both are drawn.
+const legendOwner = (id: string, prediction = false) =>
+  id.startsWith("window_events_")
+    ? "window_events"
+    : prediction && id === "backtest_temp"
+      ? "predicted_temp"
+      : (LEGEND_OWNER[id] ?? id);
+const inLegend = (id: string, prediction = false) =>
+  !(id in LEGEND_OWNER) &&
+  !(prediction && id === "backtest_temp") &&
+  !id.startsWith("window_events_") &&
+  !id.startsWith("now_marker");
+const hasPrediction = (series: Array<Record<string, unknown>>) =>
+  series.some((s) => s.id === "predicted_temp");
 
 interface EChartsLike {
   on(event: string, handler: () => void): void;
@@ -140,6 +150,7 @@ export class RsAnalyticsChart extends LitElement {
     // the run strips' placeholder value and they fill the whole plot
     const allY: number[] = [];
     const chartSeries = placeOnPanels(allSeries, panels);
+    const prediction = hasPrediction(allSeries);
     const displaySeries = chartSeries.map((s) => {
       const id = s.id as string;
       const ls = (s.lineStyle as Record<string, unknown>) || {};
@@ -151,7 +162,7 @@ export class RsAnalyticsChart extends LitElement {
           if (point && point[1] != null) allY.push(point[1]);
         }
       }
-      if (this._hiddenSeries.has(legendOwner(id))) {
+      if (this._hiddenSeries.has(legendOwner(id, prediction))) {
         const hidden: Record<string, unknown> = {
           ...s,
           lineStyle: { ...ls, width: 0, opacity: 0 },
@@ -258,7 +269,8 @@ export class RsAnalyticsChart extends LitElement {
   }
 
   private _renderSeriesLegend(series: Array<Record<string, unknown>>) {
-    const legendSeries = series.filter((s) => inLegend(s.id as string) && s.name);
+    const prediction = hasPrediction(series);
+    const legendSeries = series.filter((s) => inLegend(s.id as string, prediction) && s.name);
     const { good, fair, poor } = this._humidityColors();
     return html`
       <div class="series-legend">

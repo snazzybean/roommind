@@ -276,6 +276,7 @@ function bandPair(
 ): Array<Record<string, unknown>> {
   const common = {
     stack: id,
+    step: "end",
     showSymbol: false,
     lineStyle: { width: 0 },
     tooltip: { show: false },
@@ -377,6 +378,8 @@ export function buildChartSeries(
       data: targetData,
       showSymbol: false,
       smooth: false,
+      // A target holds until the next sample: steps, so the reason overlays sit on it
+      step: "end",
       lineStyle: { width: 2, type: "dashed" },
       yAxisIndex: 0,
     });
