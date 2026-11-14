@@ -43,7 +43,7 @@ expect:
   - {invariant: min_run_respected}
   # Days 3-5 (the model needs two days of cooling before MPC runs). Before the pre-cool
   # deadline 25.3 °C at 18:00 (start at 17:30); after it the run starts 2-4 h ahead at 27 °C
-  # and reads 24.2-24.4 °C at 18:00, in band 92.5 -> 99.7 %, energy +5 %, starts +8 %.
+  # and reads 24.2-24.4 °C at 18:00, in band 92.5 -> 99.7 %, energy +5 %, starts +8-9 % (seeds 1, 2).
   - {check: "room.wohnzimmer.current_temp <= 24.5", at: "+2d18h05m", label: near comfort when the block starts (day 3)}
   - {check: "room.wohnzimmer.current_temp <= 24.5", at: "+3d18h05m", label: near comfort when the block starts (day 4)}
   - {check: "room.wohnzimmer.current_temp <= 24.5", at: "+4d18h05m", label: near comfort when the block starts (day 5)}
