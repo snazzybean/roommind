@@ -73,6 +73,11 @@ export function hm(minutes: number): string {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
 
+/** A day's blocks as text, "06:00–08:00, 16:30–22:30" ("" without blocks). */
+export function dayTimes(day: ScheduleBlock[]): string {
+  return day.map((b) => `${hm(b.start)}–${hm(b.end)}`).join(", ");
+}
+
 function sortDay(day: ScheduleBlock[]): ScheduleBlock[] {
   return [...day].sort((a, b) => a.start - b.start);
 }

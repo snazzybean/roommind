@@ -91,6 +91,8 @@
   "schedule.off_action_eco": "Utiliser la température Éco",
   "schedule.off_action_off": "Éteindre les appareils",
   "schedule.state_active": "Actif",
+  "schedule.today_blocks": "Aujourd’hui : {times}",
+  "schedule.today_none": "Aucune plage horaire aujourd’hui",
   "schedule.state_inactive": "Inactif",
   "schedule.state_unreachable": "Inaccessible",
   "schedule.no_schedules": "Pas encore de planification",

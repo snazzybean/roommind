@@ -91,6 +91,8 @@
   "schedule.off_action_eco": "Usa la temperatura eco",
   "schedule.off_action_off": "Spegni i dispositivi",
   "schedule.state_active": "Attivo",
+  "schedule.today_blocks": "Oggi: {times}",
+  "schedule.today_none": "Nessuna fascia oraria oggi",
   "schedule.state_inactive": "Non attivo",
   "schedule.state_unreachable": "Non raggiungibile",
   "schedule.no_schedules": "Ancora nessun programma",

@@ -91,6 +91,8 @@
   "schedule.off_action_eco": "Use eco temperature",
   "schedule.off_action_off": "Turn off devices",
   "schedule.state_active": "Active",
+  "schedule.today_blocks": "Today: {times}",
+  "schedule.today_none": "No schedule blocks today",
   "schedule.state_inactive": "Inactive",
   "schedule.state_unreachable": "Unreachable",
   "schedule.no_schedules": "No schedule yet",

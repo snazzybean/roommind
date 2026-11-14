@@ -14,10 +14,12 @@ import { formatNumber } from "../utils/format";
 import { RsScheduleBase } from "./shared/rs-schedule-base";
 import { inputStyles } from "../styles/input-styles";
 import { priceShiftLabel } from "./room-detail/rs-price-shift";
-import { isAdmin, isEditableSchedule } from "../utils/schedule-api";
+import { isAdmin, isEditableSchedule, readWeek } from "../utils/schedule-api";
+import { dayTimes, nowInZone, type Week } from "../utils/schedule-week";
 import "./shared/rs-list-row";
 import "./shared/rs-info-icon";
 import "./schedule/rs-schedule-create";
+import "./schedule/rs-day-timeline";
 
 /** Mirrors _WEEKDAYS in the backend's schedule_utils.py. */
 const WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
@@ -72,7 +74,64 @@ export class RsScheduleSettings extends RsScheduleBase {
   @property({ type: String }) public roomName = "";
 
   @state() private _creating = false;
+  /** Week of the active schedule for today's timeline; `_weekKey` = what it was read for. */
+  @state() private _week: Week | null = null;
+  @state() private _now = nowInZone(undefined);
+  private _weekKey = "";
+  private _clock?: ReturnType<typeof setInterval>;
   protected readonly _kind = "climate";
+
+  connectedCallback() {
+    super.connectedCallback();
+    this._tick();
+    this._clock = setInterval(() => this._tick(), 60_000);
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    clearInterval(this._clock);
+    this._weekKey = "";
+  }
+
+  private _tick() {
+    this._now = nowInZone(this.hass?.config?.time_zone);
+  }
+
+  protected willUpdate(changed: Map<PropertyKey, unknown>) {
+    super.willUpdate(changed);
+    // The first hass brings Home Assistant's time zone
+    if (changed.has("hass") && !changed.get("hass")) this._tick();
+  }
+
+  protected updated(changed: Map<PropertyKey, unknown>) {
+    super.updated(changed);
+    this._loadWeek();
+  }
+
+  /** Reads the active schedule again when it changes or its entity reports a new state. */
+  private _loadWeek() {
+    if (this.editing || !this.hass) return;
+    const index = this.schedules.findIndex(
+      (_, i) => this._getScheduleState(i, this.schedules.length) === "active",
+    );
+    const eid = index >= 0 ? this.schedules[index].entity_id : "";
+    const st = eid ? this.hass.states[eid] : undefined;
+    const key = st && st.state !== "unavailable" ? `${eid}|${st.last_updated}` : "";
+    if (key === this._weekKey) return;
+    this._weekKey = key;
+    if (!key) {
+      this._week = null;
+      return;
+    }
+    readWeek(this.hass, eid).then(
+      (week) => {
+        if (this._weekKey === key) this._week = week;
+      },
+      () => {
+        if (this._weekKey === key) this._week = null;
+      },
+    );
+  }
 
   static styles = [
     RsScheduleBase.sharedStyles,
@@ -141,7 +200,8 @@ export class RsScheduleSettings extends RsScheduleBase {
                     .join(" · ")}
                   @row-click=${open("schedule")}
                   @icon-click=${() => this._openEntityInfo(schedule.entity_id)}
-                ></rs-list-row>
+                  >${state === "active" ? this._renderToday() : nothing}</rs-list-row
+                >
                 ${this._renderRejectedTempWarning(state, true)}
               `;
             })
@@ -242,6 +302,23 @@ export class RsScheduleSettings extends RsScheduleBase {
           : nothing
       }
     `;
+  }
+
+  /** Today's blocks of the active schedule as a bar under its row. */
+  private _renderToday() {
+    if (!this._week) return nothing;
+    const l = this.hass.language;
+    const blocks = this._week[this._now.day] ?? [];
+    const times = dayTimes(blocks);
+    return html`<rs-day-timeline
+      slot="secondary"
+      .blocks=${blocks}
+      .nowMinute=${this._now.minute}
+      .color=${this.climateMode === "cool_only" ? "var(--rs-cool)" : "var(--rs-heat)"}
+      .label=${
+        times ? localize("schedule.today_blocks", l, { times }) : localize("schedule.today_none", l)
+      }
+    ></rs-day-timeline>`;
   }
 
   /** When comfort applies in this room. */

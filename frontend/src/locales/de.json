@@ -91,6 +91,8 @@
   "schedule.off_action_eco": "Eco-Temperatur verwenden",
   "schedule.off_action_off": "Geräte ausschalten",
   "schedule.state_active": "Aktiv",
+  "schedule.today_blocks": "Heute: {times}",
+  "schedule.today_none": "Heute keine Zeitblöcke",
   "schedule.state_inactive": "Inaktiv",
   "schedule.state_unreachable": "Nicht erreichbar",
   "schedule.no_schedules": "Noch kein Zeitplan",

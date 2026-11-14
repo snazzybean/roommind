@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import {
+  dayTimes,
   copyDay,
   dayIsValid,
   emptyWeek,
@@ -225,5 +226,18 @@ describe("cover positions", () => {
       [0, 420, 0],
       [1320, 1440, 0],
     ]);
+  });
+});
+
+describe("dayTimes", () => {
+  test("lists the blocks of a day in order, empty without blocks", () => {
+    const week = parseWeek({
+      monday: [
+        { from: "16:30:00", to: "23:59:59.999999" },
+        { from: "06:00:00", to: "08:00:00" },
+      ],
+    });
+    expect(dayTimes(week[0])).toBe("06:00–08:00, 16:30–24:00");
+    expect(dayTimes(week[1])).toBe("");
   });
 });

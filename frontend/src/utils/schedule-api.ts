@@ -49,7 +49,8 @@ async function scheduleEntityIds(hass: HomeAssistant): Promise<Map<string, strin
   return map;
 }
 
-async function readThroughService(hass: HomeAssistant, entityId: string): Promise<Week> {
+/** The week of any schedule helper (storage or YAML) through `schedule.get_schedule`, also for non-admins. */
+export async function readWeek(hass: HomeAssistant, entityId: string): Promise<Week> {
   const result = await hass.callWS<{ response?: Record<string, Record<string, unknown>> }>({
     type: "call_service",
     domain: "schedule",
@@ -84,7 +85,7 @@ export async function loadSchedule(hass: HomeAssistant, entityId: string): Promi
     entityId,
     itemId: null,
     name,
-    week: await readThroughService(hass, entityId),
+    week: await readWeek(hass, entityId),
     snapshot: "",
   };
 }
