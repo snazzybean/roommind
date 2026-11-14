@@ -327,7 +327,12 @@ class MPCOptimizer:
             # Also when the greedy step already cools: a room held at its eco target picks
             # cooling at the edge, and without the lead the controller's start hysteresis
             # turned that start down until the lower target was 30 min away
-            if not deadline and MODE_COOLING in available and (best_action != MODE_COOLING or i == 0):
+            if (
+                not deadline
+                and best_action != MODE_HEATING
+                and MODE_COOLING in available
+                and (best_action != MODE_COOLING or i == 0)
+            ):
                 lead = self._precool_deadline(
                     i,
                     current_temp,

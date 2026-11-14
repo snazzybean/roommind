@@ -5,6 +5,7 @@ description: >
   30 min ahead, so the room reached 24 °C about an hour into the block (25.5 °C at 18:00).
   The pre-cool deadline (mirror of the pre-heat deadline) starts early enough to be near
   the comfort target when the block begins.
+refs: [450]
 tags: [ac, mpc, schedule]
 start: 2026-07-06T00:00
 duration: 5d

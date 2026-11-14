@@ -176,3 +176,17 @@ def test_room_held_at_its_eco_target_still_gets_the_lead():
     assert plan.actions[0] == MODE_COOLING
     assert plan.preheat_blocks == 20
     assert plan.power_fractions[0] == 1.0
+
+
+def test_a_heating_block_is_not_turned_into_a_precool():
+    """A boost band now (heat 23, room 21) ending into a lower band (cool 20): the room heats, no pre-cool."""
+    opt = MPCOptimizer(SMALL_AC, can_heat=True, can_cool=True, cool_min_run_blocks=2)
+    n = 72
+    plan = opt.optimize(
+        T_room=21.0,
+        T_outdoor_series=[20.0] * n,
+        heat_target_series=[23.0] * 6 + [18.0] * (n - 6),
+        cool_target_series=[26.0] * 6 + [20.0] * (n - 6),
+        dt_minutes=5,
+    )
+    assert plan.actions[0] == MODE_HEATING
