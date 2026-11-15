@@ -21,6 +21,7 @@ from custom_components.roommind.utils.schedule_utils import (
     mask_override_band,
     override_hold_until,
     override_preset_band,
+    override_until_for_room,
     read_schedule_blocks,
     resolve_schedule_index,
     resolve_target_at_time,
@@ -1972,3 +1973,54 @@ def test_hold_under_an_unreadable_schedule_ends_after_the_fallback(hass):
     now = time.time()
     until = override_hold_until(hass, _HOLD_ROOM, now=now)
     assert until == now + SCHEDULE_UNREADABLE_HOLD_HOURS * 3600
+
+
+class TestOverrideUntilForRoom:
+    """How long a manual target holds, per room."""
+
+    NOW = 1_700_000_000.0
+
+    @staticmethod
+    def _hass_with_next_event(next_event: datetime | None):
+        hass = MagicMock()
+        state = MagicMock()
+        state.state = "on"
+        state.attributes = {"next_event": next_event} if next_event else {}
+        hass.states.get.return_value = state
+        return hass
+
+    def test_default_is_next_schedule_change(self):
+        nxt = datetime(2026, 10, 19, 6, 0, tzinfo=UTC)
+        hass = self._hass_with_next_event(nxt)
+        room = {"schedules": [{"entity_id": "schedule.x"}]}
+        assert override_until_for_room(hass, room, self.NOW) == nxt.timestamp()
+        assert override_until_for_room(hass, {**room, "override_duration_mode": "bogus"}, self.NOW) == nxt.timestamp()
+
+    def test_schedule_mode_without_schedule_holds_until_changed(self):
+        room = {"schedules": [], "override_duration_mode": "schedule"}
+        assert override_until_for_room(_make_hass(), room, self.NOW) is None
+
+    def test_minutes(self):
+        room = {"override_duration_mode": "minutes", "override_duration_minutes": 45}
+        assert override_until_for_room(_make_hass(), room, self.NOW) == self.NOW + 45 * 60
+
+    def test_minutes_default_and_clamp(self):
+        hass = _make_hass()
+        assert override_until_for_room(hass, {"override_duration_mode": "minutes"}, self.NOW) == self.NOW + 120 * 60
+        low = {"override_duration_mode": "minutes", "override_duration_minutes": 1}
+        assert override_until_for_room(hass, low, self.NOW) == self.NOW + 5 * 60
+        high = {"override_duration_mode": "minutes", "override_duration_minutes": 99999}
+        assert override_until_for_room(hass, high, self.NOW) == self.NOW + 1440 * 60
+        bad = {"override_duration_mode": "minutes", "override_duration_minutes": "x"}
+        assert override_until_for_room(hass, bad, self.NOW) == self.NOW + 120 * 60
+
+    def test_minutes_uses_clock_without_now(self):
+        room = {"override_duration_mode": "minutes", "override_duration_minutes": 10}
+        before = time.time()
+        until = override_until_for_room(_make_hass(), room)
+        assert until is not None and before + 600 <= until <= time.time() + 600
+
+    def test_permanent(self):
+        nxt = datetime(2026, 10, 19, 6, 0, tzinfo=UTC)
+        room = {"schedules": [{"entity_id": "schedule.x"}], "override_duration_mode": "permanent"}
+        assert override_until_for_room(self._hass_with_next_event(nxt), room, self.NOW) is None

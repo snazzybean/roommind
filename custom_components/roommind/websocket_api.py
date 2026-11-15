@@ -21,12 +21,15 @@ from .const import (
     DEFAULT_CONTROL_MODE,
     DOMAIN,
     MAX_CO2_THRESHOLD,
+    MAX_OVERRIDE_DURATION_MINUTES,
     MAX_PRICE_SHIFT_K,
     MAX_TARGET_TEMP,
     MIN_CO2_THRESHOLD,
     MIN_OCCUPANCY_ECO_DELAY_MINUTES,
+    MIN_OVERRIDE_DURATION_MINUTES,
     MIN_TARGET_TEMP,
     OVERRIDE_CUSTOM,
+    OVERRIDE_DURATION_MODES,
     OVERRIDE_TYPES,
     VENTILATION_DOMAINS,
     build_override_live,
@@ -173,6 +176,8 @@ _ROOM_SAVE_FIELDS = (
     "voc_sensor",
     "voc_threshold",
     "ventilation_entity",
+    "override_duration_mode",
+    "override_duration_minutes",
 )
 
 # Same limits as the room climate entity; also turns away nan/inf
@@ -530,6 +535,10 @@ async def websocket_list_rooms(
         vol.Optional("voc_threshold"): vol.Any(None, vol.All(vol.Coerce(float), vol.Range(min=0.001, max=1e6))),
         vol.Optional("ventilation_entity"): vol.Any(
             "", vol.All(str, vol.Match(rf"^({'|'.join(VENTILATION_DOMAINS)})\.[a-z0-9_]+$"))
+        ),
+        vol.Optional("override_duration_mode"): vol.In(OVERRIDE_DURATION_MODES),
+        vol.Optional("override_duration_minutes"): vol.All(
+            vol.Coerce(int), vol.Range(min=MIN_OVERRIDE_DURATION_MINUTES, max=MAX_OVERRIDE_DURATION_MINUTES)
         ),
     }
 )

@@ -23,6 +23,14 @@ OVERRIDE_BOOST = "boost"
 OVERRIDE_ECO = "eco"
 OVERRIDE_CUSTOM = "custom"
 OVERRIDE_TYPES = [OVERRIDE_BOOST, OVERRIDE_ECO, OVERRIDE_CUSTOM]
+# How long a target set on the room climate entity or a thermostat holds (per room)
+OVERRIDE_DURATION_SCHEDULE = "schedule"
+OVERRIDE_DURATION_MINUTES = "minutes"
+OVERRIDE_DURATION_PERMANENT = "permanent"
+OVERRIDE_DURATION_MODES = [OVERRIDE_DURATION_SCHEDULE, OVERRIDE_DURATION_MINUTES, OVERRIDE_DURATION_PERMANENT]
+DEFAULT_OVERRIDE_DURATION_MINUTES = 120
+MIN_OVERRIDE_DURATION_MINUTES = 5
+MAX_OVERRIDE_DURATION_MINUTES = 1440
 # Grace period after the override entity is switched on before the seeded
 # override is evaluated; the caller's real targets normally arrive within it (#447).
 OVERRIDE_TURN_ON_REFRESH_DELAY_S = 3.0
