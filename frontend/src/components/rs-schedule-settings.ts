@@ -1,6 +1,12 @@
 import { html, css, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
-import type { ScheduleEntry, ClimateMode, ScheduleTempWarning, PresenceAwayAction } from "../types";
+import type {
+  ScheduleEntry,
+  ClimateMode,
+  OverrideDurationMode,
+  ScheduleTempWarning,
+  PresenceAwayAction,
+} from "../types";
 import { localize } from "../utils/localize";
 import {
   formatTempLocale,
@@ -10,7 +16,7 @@ import {
   MAX_TARGET_TEMP_C,
   tempRange,
 } from "../utils/temperature";
-import { formatNumber } from "../utils/format";
+import { formatMinutes, formatNumber } from "../utils/format";
 import { RsScheduleBase } from "./shared/rs-schedule-base";
 import { inputStyles } from "../styles/input-styles";
 import { priceShiftLabel } from "./room-detail/rs-price-shift";
@@ -44,7 +50,7 @@ const PREHEAT_KEYS = {
 } as const;
 
 /** Which dialog a row of the card opens (`edit-click` detail `{ part }`). */
-export type ScheduleCardPart = "schedule" | "temperatures" | "price";
+export type ScheduleCardPart = "schedule" | "temperatures" | "price" | "manual";
 
 /**
  * The room's "Schedule & temperatures" card. View mode: one row per schedule, comfort, eco,
@@ -79,6 +85,9 @@ export class RsScheduleSettings extends RsScheduleBase {
   /** Which lead the pre-heat switch controls here ("" hides it). */
   @property({ type: String }) public preheatSides: "" | "heat" | "cool" | "both" = "";
   @property({ type: Boolean }) public followDeviceSetpoint = false;
+  /** How long a target set on the room climate entity holds (per room). */
+  @property({ type: String }) public overrideDurationMode: OverrideDurationMode = "schedule";
+  @property({ type: Number }) public overrideDurationMinutes = 120;
   /** K the schedule target may move with the electricity price (0 = off). */
   @property({ type: Number }) public priceShift = 0;
   /** A price source is set in the settings; without one the option is hidden. */
@@ -328,6 +337,15 @@ export class RsScheduleSettings extends RsScheduleBase {
           .text=${localize("schedule.follow_device_setpoint_hint", l)}
         ></rs-info-icon>
       </rs-list-row>
+      <rs-list-row
+        clickable
+        chevron
+        icon="mdi:hand-back-right-outline"
+        .heading=${localize("schedule.manual_title", l)}
+        .secondary=${localize("schedule.manual_duration_label", l)}
+        .value=${this._manualDurationText(l)}
+        @row-click=${open("manual")}
+      ></rs-list-row>
       ${
         this.priceConfigured
           ? html`<rs-list-row
@@ -394,6 +412,16 @@ export class RsScheduleSettings extends RsScheduleBase {
     if (!when.length) return localize("detail.schedule.eco_sub_manual", l);
     const list = new Intl.ListFormat(l, { type: "disjunction" }).format(when);
     return localize("detail.schedule.eco_sub", l, { when: list });
+  }
+
+  private _manualDurationText(l: string): string {
+    if (this.overrideDurationMode === "minutes") {
+      return formatMinutes(this.overrideDurationMinutes, l);
+    }
+    if (this.overrideDurationMode === "permanent") {
+      return localize("schedule.manual_duration_permanent", l);
+    }
+    return localize("schedule.manual_duration_schedule", l);
   }
 
   private _onEditClick(e: Event, part: ScheduleCardPart) {
