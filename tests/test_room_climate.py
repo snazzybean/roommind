@@ -671,3 +671,8 @@ async def test_celsius_echo_tolerance_is_half_a_step(setup, want, kept):
     await entity.async_set_temperature(temperature=want)
 
     assert store.async_update_room.called is not kept
+
+
+def test_room_entity_is_enabled_for_new_rooms(setup):
+    make, *_ = setup
+    assert make(_room()).entity_registry_enabled_default is True

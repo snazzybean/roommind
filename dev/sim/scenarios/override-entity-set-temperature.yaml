@@ -30,7 +30,11 @@ roommind:
       comfort_cool: 24.0
       eco_heat: 18.0
       eco_cool: 27.0
+external_entities: [climate.roommind_wohnzimmer_override]
 timeline:
+  # Rooms set up since 2.0 get the deprecated entity disabled; enable it like an install from before
+  - {at: "+0d00h10m", do: roommind.ws, type: config/entity_registry/update, entity_id: climate.roommind_wohnzimmer_override, disabled_by: null}
+  - {at: "+0d00h11m", do: roommind.reload}
   - {at: "+0d10h", do: ha.service, service: climate.set_temperature, data: {entity_id: climate.roommind_wohnzimmer_override, temperature: 22.5}}
   - {at: "+0d12h", do: ha.service, service: climate.set_hvac_mode, data: {entity_id: climate.roommind_wohnzimmer_override, hvac_mode: "off"}}
   - {at: "+0d14h", do: ha.service, service: climate.set_temperature, data: {entity_id: climate.roommind_wohnzimmer_override, target_temp_low: 19.0, target_temp_high: 26.0, hvac_mode: heat_cool}}

@@ -156,6 +156,8 @@ class RoomMindOverrideClimate(CoordinatorEntity, ClimateEntity):
     """Climate entity for room override control."""
 
     _attr_has_entity_name = True
+    # Deprecated (#238): only rooms set up before 2.0 keep it enabled; HA applies this to new registry entries only
+    _attr_entity_registry_enabled_default = False
     _attr_icon = "mdi:thermometer-alert"
     _attr_native_temperature_unit = UnitOfTemperature.CELSIUS
     _attr_temperature_unit = UnitOfTemperature.CELSIUS

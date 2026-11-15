@@ -150,3 +150,10 @@ def test_sensor_entity_id():
     mode_sensor = RoomMindModeSensor(coordinator, "room_a")
     assert temp_sensor.entity_id == f"sensor.{DOMAIN}_room_a_target_temp"
     assert mode_sensor.entity_id == f"sensor.{DOMAIN}_room_a_mode"
+
+
+def test_deprecated_sensors_are_disabled_for_new_rooms():
+    """New registry entries of the deprecated sensors start disabled (#238)."""
+    coordinator = _make_coordinator()
+    assert RoomMindTargetTemperatureSensor(coordinator, "room_a").entity_registry_enabled_default is False
+    assert RoomMindModeSensor(coordinator, "room_a").entity_registry_enabled_default is False

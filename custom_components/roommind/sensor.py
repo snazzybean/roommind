@@ -48,6 +48,8 @@ class _RoomMindBaseSensor(CoordinatorEntity, SensorEntity):
     """Base class for all RoomMind room sensors."""
 
     _attr_has_entity_name = True
+    # Deprecated (#238): only rooms set up before 2.0 keep them enabled; HA applies this to new registry entries only
+    _attr_entity_registry_enabled_default = False
     _data_key: str  # Key in the room state dict (e.g. "current_temp")
 
     def __init__(

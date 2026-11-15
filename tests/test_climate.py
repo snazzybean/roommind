@@ -75,6 +75,12 @@ def test_unique_id_and_entity_id(mock_coordinator):
     assert entity.entity_id == "climate.roommind_living_room_override"
 
 
+def test_deprecated_override_entity_is_disabled_for_new_rooms(mock_coordinator):
+    """New registry entries of the deprecated override entity start disabled (#238)."""
+    coordinator, _ = mock_coordinator
+    assert RoomMindOverrideClimate(coordinator, "living_room").entity_registry_enabled_default is False
+
+
 def test_hvac_mode_off_when_no_override(mock_coordinator):
     """hvac_mode returns OFF when no override is set."""
     coordinator, store = mock_coordinator
