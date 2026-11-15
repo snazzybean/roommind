@@ -3,6 +3,7 @@
  */
 
 export type ClimateMode = "auto" | "heat_only" | "cool_only";
+export type OverrideDurationMode = "schedule" | "minutes" | "permanent";
 
 export type RoomMode = "idle" | "heating" | "cooling";
 
@@ -265,6 +266,8 @@ export interface RoomConfig {
   /** Orchestration: expensive electricity prefers the primary source, cheap the AC. */
   heat_source_price_aware?: boolean;
   climate_control_enabled?: boolean;
+  override_duration_mode?: OverrideDurationMode;
+  override_duration_minutes?: number;
   live?: RoomLiveData;
 }
 

@@ -31,6 +31,7 @@ from .const import (
     MAX_HUMIDITY_MIN,
     MAX_MASTER_DELAY_S,
     MAX_MASTER_TEMPERATURE,
+    MAX_OVERRIDE_DURATION_MINUTES,
     MAX_PRICE_SHIFT_K,
     MAX_TARGET_TEMP,
     MIN_CO2_THRESHOLD,
@@ -38,8 +39,10 @@ from .const import (
     MIN_HUMIDITY_MIN,
     MIN_MASTER_TEMPERATURE,
     MIN_OCCUPANCY_ECO_DELAY_MINUTES,
+    MIN_OVERRIDE_DURATION_MINUTES,
     MIN_TARGET_TEMP,
     OVERRIDE_CUSTOM,
+    OVERRIDE_DURATION_MODES,
     OVERRIDE_TYPES,
     ROOM_FAN_MODES,
     VENTILATION_DOMAINS,
@@ -197,6 +200,8 @@ _ROOM_SAVE_FIELDS = (
     "room_fan_entity",
     "room_fan_mode",
     "ac_dry_enabled",
+    "override_duration_mode",
+    "override_duration_minutes",
 )
 
 # Same limits as the room climate entity; also turns away nan/inf
@@ -639,6 +644,10 @@ async def websocket_list_rooms(
         ),
         vol.Optional("room_fan_mode"): vol.In(ROOM_FAN_MODES),
         vol.Optional("ac_dry_enabled"): bool,
+        vol.Optional("override_duration_mode"): vol.In(OVERRIDE_DURATION_MODES),
+        vol.Optional("override_duration_minutes"): vol.All(
+            vol.Coerce(int), vol.Range(min=MIN_OVERRIDE_DURATION_MINUTES, max=MAX_OVERRIDE_DURATION_MINUTES)
+        ),
     }
 )
 @websocket_api.async_response
