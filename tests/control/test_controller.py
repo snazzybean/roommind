@@ -191,6 +191,20 @@ async def test_mpc_requires_min_updates():
     assert mode3 == "heating"
     assert 0.0 < pf3 <= 1.0
 
+    # A radiator room whose sensor lags the afterglow plans from the estimate (AfterglowReading)
+    ctrl4 = MPCController(
+        hass,
+        room,
+        model_manager=model_mgr,
+        outdoor_temp=5.0,
+        settings={},
+        has_external_sensor=True,
+        planning_temp=21.1,
+    )
+    ctrl4._evaluate_mpc = MagicMock(return_value=("idle", 0.0))
+    await ctrl4.async_evaluate(current_temp=20.9, target_temp=21.0)
+    assert ctrl4._evaluate_mpc.call_args.args[0] == 21.1
+
 
 # ---------------------------------------------------------------------------
 # T4: _compute_horizon_blocks unit tests

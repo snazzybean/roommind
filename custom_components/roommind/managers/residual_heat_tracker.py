@@ -6,6 +6,7 @@ import time
 from dataclasses import dataclass, field
 
 from ..const import (
+    AFTERGLOW_READING_MAX_STEP_K,
     MODE_COOLING,
     MODE_HEATING,
     MODE_IDLE,
@@ -267,6 +268,65 @@ class ResidualHeatLearner:
         """Drop all observations."""
         self._obs.clear()
         self._tau_samples.clear()
+
+
+class AfterglowReading:
+    """Where a radiator room stands while its sensor lags the afterglow of a stopped run.
+
+    A sensor reports in steps (often 0.2 K): after the plan stops a run on the heat stored in
+    the radiator, the room rises but the reading stays at the last step for minutes. Planning
+    from that stale value, the next cycle found the stored heat short and started the run
+    again (three 6-min runs within 25 min ahead of a comfort block). While the reading has not
+    fallen below the one at the stop, the plan works from the temperature the stopping plan
+    predicted, at most one reporting step above the reading (the step the sensor last moved).
+    Less stored heat than learned then costs a step at most, and the restart comes once the
+    reading shows it. Only the plan uses it; the EKF, history and display keep the reading.
+    """
+
+    def __init__(self) -> None:
+        self._last: dict[str, float] = {}
+        self._step: dict[str, float] = {}
+        # area -> (stop time, reading at the stop, predicted temperatures, block minutes)
+        self._stops: dict[str, tuple[float, float, list[float], float]] = {}
+
+    def observe(self, area_id: str, reading: float) -> None:
+        """Note this cycle's reading; a change sets the sensor's reporting step."""
+        last = self._last.get(area_id)
+        if last is not None and reading != last:
+            self._step[area_id] = min(abs(reading - last), AFTERGLOW_READING_MAX_STEP_K)
+        self._last[area_id] = reading
+
+    def note_stop(self, area_id: str, reading: float, temperatures: list[float], dt_minutes: float) -> None:
+        """The plan stopped a run: remember what it expects the room to do now."""
+        self._stops[area_id] = (time.time(), reading, list(temperatures), dt_minutes)
+
+    def clear(self, area_id: str) -> None:
+        """A run started (or the room went away): the stop no longer applies."""
+        self._stops.pop(area_id, None)
+
+    def remove_room(self, area_id: str) -> None:
+        """Drop everything kept for a removed room."""
+        self._stops.pop(area_id, None)
+        self._last.pop(area_id, None)
+        self._step.pop(area_id, None)
+
+    def estimate(self, area_id: str, reading: float) -> float:
+        """The temperature to plan from: *reading*, or the stopping plan's, at most a step above."""
+        stop = self._stops.get(area_id)
+        step = self._step.get(area_id, 0.0)
+        if stop is None or step <= 0.0:
+            return reading
+        at, stop_reading, temps, dt = stop
+        minutes = (time.time() - at) / 60.0
+        if reading < stop_reading or minutes > RESIDUAL_LEARN_WINDOW_MINUTES or not temps or dt <= 0:
+            # Falling below the stop: the stored heat was smaller, the reading leads now
+            self._stops.pop(area_id, None)
+            return reading
+        k = minutes / dt
+        i = min(int(k), len(temps) - 1)
+        j = min(i + 1, len(temps) - 1)
+        predicted = temps[i] + (temps[j] - temps[i]) * (k - i)
+        return max(reading, min(reading + step, predicted))
 
 
 class AcReboundTracker:

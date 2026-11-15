@@ -347,6 +347,8 @@ def _device_metrics(run: RunData, eid: str, duration_h: float) -> dict[str, Any]
     (TRVs with direct valve control): ``number.set_value`` calls on its opening/closing entities.
     ``setpoint_lost_h``: in heat, RoomMind's last accepted setpoint lies above the room, but the
     device's own setpoint does not (it dropped the value), so the device cannot heat.
+    ``restarts_10min``: commanded runs that start within 10 min of the previous run's end
+    (a stop RoomMind took back right away).
     """
     cmds = [c for c in run.commands if c["entity_id"] == eid]
     lost_h = 0.0
@@ -406,6 +408,7 @@ def _device_metrics(run: RunData, eid: str, duration_h: float) -> dict[str, Any]
         "rejections": sorted({c["result"] for c in rejected}),
         "commanded_runs": len(runs),
         "shortest_run_min": round(min(iv.duration for iv in runs) / 60, 1) if runs else None,
+        "restarts_10min": sum(1 for a, b in zip(runs, runs[1:], strict=False) if b.start - a.end < 600),
         "device_starts": starts,
         "starts_per_day": round(starts / days, 2),
         "active_h": round(active_h, 2),

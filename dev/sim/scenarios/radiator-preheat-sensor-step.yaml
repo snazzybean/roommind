@@ -1,0 +1,54 @@
+name: radiator-preheat-sensor-step
+description: >
+  Heavy radiators (the air follows them slowly, so a 5-min run leaves ~0.6 K of stored heat
+  and RoomMind learns a single-block min run) and a sensor reporting in 0.2 K steps. Eco 20,
+  comfort 22: the well-kept living room sits between the two when the morning block comes up,
+  so every morning is a short pre-heat. A running pre-heat stopped as soon as its afterglow
+  just reached the coming target; the reading then stayed a step behind the room and the next
+  cycle started it again (real room: three 6-min runs within 25 min). After a stop the plan now
+  works from the temperature the stopping plan predicted, at most one sensor step above the
+  reading. The restarts left come from stored heat that arrives later than learned.
+tags: [trv, mpc, radiator, residual-heat, preheat]
+refs: [495]
+extends: radiator-afterglow-overshoot
+duration: 10d
+house:
+  building: neubau_kfw55
+  rooms:
+    wohnzimmer:
+      initial: {temperature: 21.0}
+      windows: [{orientation: N, area_m2: 3.0}]
+      devices:
+        - {entity_id: climate.wohnzimmer_trv, profile: generic_trv, design_factor: 5.0, capacity_kj_per_h: 4.0, heating_curve: false}
+        - {entity_id: climate.heizung_kessel, profile: generic_boiler, heating_curve: false}
+      sensors:
+        temperature: {entity_id: sensor.wohnzimmer_temp, profile: sonoff_snzb02d}
+    kinderzimmer-: ~
+    schlafzimmer-: ~
+helpers:
+  schedule:
+    plan_wohnen: {weekdays: ["07:00-09:00", "12:00-13:30", "17:00-23:00"], weekend: ["08:00-12:00", "14:00-23:00"]}
+    plan_kind-: ~
+    plan_schlafen-: ~
+roommind:
+  settings:
+    comfort_weight: 65
+    compressor_groups:
+      - id: kessel
+        name: Kessel
+        members: [climate.wohnzimmer_trv]
+        master_entity: climate.heizung_kessel
+        min_run_minutes: 5
+        min_off_minutes: 5
+  rooms:
+    wohnzimmer:
+      comfort_temp: 22.0
+      eco_temp: 20.0
+    kinderzimmer-: ~
+    schlafzimmer-: ~
+expect:
+  - {invariant: no_rejected_commands}
+  # seeds 1/2: 5/4 restarts within 10 min of a stop on v2.0.0-beta.1, 3/1 after; starts 49 -> 48/46,
+  # in band 99.7/99.8 % both, heat overshoot 4.3/3.4 -> 3.7/4.0 Kh
+  - {metric: device.restarts_10min, entity_id: climate.wohnzimmer_trv, max: 3, label: a pre-heat is not stopped and restarted}
+  - {metric: comfort.in_band_pct, room: wohnzimmer, min: 90}

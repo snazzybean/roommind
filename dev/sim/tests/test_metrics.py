@@ -346,3 +346,17 @@ def test_air_quality_metrics_count_runs_and_tell_a_hand_off_apart():
     assert m["ventilation_ended_by_hand"] == 1
     assert m["co2_max"] == 1050
     assert m["air_bad_h"] == 0.15  # the last row only closes the interval before it
+
+
+def test_restarts_within_ten_minutes_of_a_stop_are_counted():
+    devices = [{"entity_id": "climate.d", "profile": "generic_trv"}]
+    scn = load_scenario_dict(scenario({"r": {"devices": devices}}, duration="1d"))
+    t0 = scn.start
+    cmd = {"type": "command", "entity_id": "climate.d", "service": "set_hvac_mode", "result": "accepted"}
+    # heat 0-6 min, off, heat again at 9 min (restart), off at 15, heat again at 40 (not one)
+    plan = [(0, "heat"), (360, "off"), (540, "heat"), (900, "off"), (2400, "heat"), (2700, "off")]
+    events = [{**cmd, "t": t0 + at, "data": {"hvac_mode": mode}} for at, mode in plan]
+    run_data = RunData(None, scn, [], [], events, t0 + 86400, {})  # type: ignore[arg-type]
+    m = _device_metrics(run_data, "climate.d", 24.0)
+    assert m["commanded_runs"] == 3
+    assert m["restarts_10min"] == 1

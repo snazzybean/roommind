@@ -219,6 +219,8 @@ HEATING_SYSTEM_RADIATOR = "radiator"
 # runs on TRVs with boosted setpoints) released 8-25x the profile's heat after a stop,
 # mostly because the heating rate learned during a short run trails the radiator.
 RESIDUAL_LEARN_WINDOW_MINUTES = 60.0
+# Largest sensor reporting step the plan bridges after a radiator stop (AfterglowReading)
+AFTERGLOW_READING_MAX_STEP_K = 0.5
 RESIDUAL_LEARN_MIN_MINUTES = 15.0
 RESIDUAL_LEARN_MIN_EXPECTED_K = 0.03  # profile-predicted rise below this carries no signal
 RESIDUAL_SCALE_MIN = 0.0

@@ -1404,6 +1404,7 @@ class MPCController:
         previous_heat_sources: str = "none",
         head_offsets: HeadOffsetTracker | None = None,
         price_level: str | None = None,
+        planning_temp: float | None = None,
     ) -> None:
         self.hass = hass
         self.room_config = room_config
@@ -1442,6 +1443,9 @@ class MPCController:
         # Learned decay time of that afterglow (minutes); None uses the profile's
         self._residual_tau = residual_tau
         self._heat_run = heat_run
+        # Room temperature the plan starts from while the sensor lags a radiator's afterglow
+        # (AfterglowReading); None plans from the reading
+        self._planning_temp = planning_temp
         # Heating system whose run rules apply this cycle (see _resolve_run_system)
         self._run_system = heating_system_type
         self._previous_heat_sources = previous_heat_sources
@@ -1540,7 +1544,10 @@ class MPCController:
             q_occupancy=self.q_occupancy,
         )
         if pred_std < MPC_MAX_PREDICTION_STD and self._has_enough_data(can_heat, can_cool):
-            return self._evaluate_mpc(current_temp, targets)
+            plan_from = (
+                self._planning_temp if self._planning_temp is not None and current_temp is not None else current_temp
+            )
+            return self._evaluate_mpc(plan_from, targets)
         # Bang-bang fallback: binary control (1.0 power) for fast EKF learning
         mode = self._evaluate_bangbang(current_temp, targets)
         return mode, 1.0 if mode != MODE_IDLE else 0.0

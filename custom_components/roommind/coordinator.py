@@ -92,7 +92,12 @@ from .managers.heat_source_orchestrator import HeatSourcePlan, evaluate_heat_sou
 from .managers.mold_manager import MoldManager
 from .managers.price_manager import PriceManager
 from .managers.recent_temps import RECENT_WINDOW_S, RecentTemps
-from .managers.residual_heat_tracker import AcReboundTracker, ResidualHeatLearner, ResidualHeatTracker
+from .managers.residual_heat_tracker import (
+    AcReboundTracker,
+    AfterglowReading,
+    ResidualHeatLearner,
+    ResidualHeatTracker,
+)
 from .managers.valve_manager import ValveManager
 from .managers.weather_manager import WeatherManager
 from .managers.window_manager import WindowManager
@@ -270,6 +275,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         self._price_manager = PriceManager(hass)
         # Residual heat tracking (heating → idle transition)
         self._residual_tracker = ResidualHeatTracker()
+        self._afterglow_reading = AfterglowReading()
         # Learns each room's residual scale from the afterglow after every run
         self._residual_learner = ResidualHeatLearner()
         # AC rebound charge (air pulled below the building mass while cooling)
@@ -1063,6 +1069,12 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             else None
         )
         q_rebound = self._rebound_tracker.get_charge(area_id)
+        previous_mode = self._previous_modes.get(area_id, MODE_IDLE)
+        planning_temp = None
+        if radiator and current_temp is not None:
+            self._afterglow_reading.observe(area_id, current_temp)
+            if previous_mode != MODE_HEATING:
+                planning_temp = self._afterglow_reading.estimate(area_id, current_temp)
 
         # Read current cover positions for shading factor
         cover_eids: list[str] = room.get("covers", [])
@@ -1107,8 +1119,16 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             previous_heat_sources=self._heat_source_states.get(area_id, "none"),
             head_offsets=self._head_offsets,
             price_level=self._price_level_for(room),
+            planning_temp=planning_temp,
         )
         mode, power_fraction = await controller.async_evaluate(current_temp, targets)
+        if radiator:
+            if mode == MODE_HEATING:
+                self._afterglow_reading.clear(area_id)
+            elif previous_mode == MODE_HEATING and controller.last_plan is not None and current_temp is not None:
+                self._afterglow_reading.note_stop(
+                    area_id, current_temp, controller.last_plan.temperatures, controller.last_plan.dt_minutes
+                )
 
         # Compute effective single target_temp for display/history (mode + climate_mode aware)
         climate_mode = room.get("climate_mode", "auto")
@@ -2940,6 +2960,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         self._pending_predictions.pop(area_id, None)
         self._model_inputs.pop(area_id, None)
         self._residual_tracker.remove_room(area_id)
+        self._afterglow_reading.remove_room(area_id)
         self._residual_learner.remove_room(area_id)
         self._rebound_tracker.remove_room(area_id)
         self._cover_orchestrator.remove_room(area_id)
@@ -3012,6 +3033,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         self._ekf_training.last_temps.pop(area_id, None)
         self._residual_tracker.clear_room(area_id)
         self._residual_learner.remove_room(area_id)
+        self._afterglow_reading.remove_room(area_id)
 
     def reset_thermal_all(self) -> list[str]:
         """Reset all thermal models. Returns list of affected room IDs."""
@@ -3022,6 +3044,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         self._ekf_training.last_temps.clear()
         self._residual_tracker.clear_all()
         self._residual_learner.clear_all()
+        self._afterglow_reading = AfterglowReading()
         return room_ids
 
     def boost_learning(self, area_id: str) -> int | None:

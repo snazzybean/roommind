@@ -443,6 +443,39 @@ class TestResidualHeatLearning:
         assert result["rooms"][aid]["q_residual"] > 0.0
 
     @pytest.mark.asyncio
+    async def test_plan_stop_lets_the_next_cycles_plan_past_the_lagging_reading(self, hass, mock_config_entry):
+        """After the plan stops a radiator run, the controller plans from the stopping plan's
+        temperature (at most one sensor step above the reading); a new run forgets it."""
+        from custom_components.roommind.control.mpc_optimizer import MPCPlan
+
+        coordinator, aid = self._radiator_coordinator(hass, mock_config_entry)
+        await coordinator._async_update_data()
+        assert coordinator._previous_modes.get(aid) == "heating"
+
+        async def stop(self, current_temp, targets=None, **_kw):
+            self.last_plan = MPCPlan(
+                actions=["idle"] * 3, temperatures=[18.0, 18.5, 19.0, 19.5], dt_minutes=5, power_fractions=[0.0] * 3
+            )
+            return "idle", 0.0
+
+        with patch.object(MPCController, "async_evaluate", autospec=True, side_effect=stop):
+            await coordinator._async_update_data()
+        assert coordinator._previous_modes.get(aid) == "idle"
+        coordinator._afterglow_reading._step[aid] = 0.2
+        stopped_at = coordinator._afterglow_reading._stops[aid][0]
+        with (
+            patch("custom_components.roommind.managers.residual_heat_tracker.time.time", return_value=stopped_at + 300),
+            patch("custom_components.roommind.coordinator.MPCController", wraps=MPCController) as ctrl,
+        ):
+            await coordinator._async_update_data()
+        assert ctrl.call_args.kwargs["planning_temp"] == pytest.approx(18.2)
+        # The controller heated again (18 °C under a 21 °C target): the stop is forgotten
+        assert coordinator._previous_modes.get(aid) == "heating"
+        assert aid not in coordinator._afterglow_reading._stops
+        coordinator.reset_thermal_room(aid)
+        coordinator.reset_thermal_all()
+
+    @pytest.mark.asyncio
     async def test_underfloor_room_neither_learns_nor_stops_early(self, hass, mock_config_entry):
         coordinator, aid = self._radiator_coordinator(hass, mock_config_entry)
         room = coordinator.hass.data["roommind"]["store"].get_rooms.return_value[aid]
