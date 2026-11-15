@@ -55,8 +55,8 @@ from .utils.device_utils import get_ac_eids, get_trv_eids
 from .utils.schedule_utils import (
     band_in_force,
     mask_override_band,
-    override_hold_until,
     override_preset_band,
+    override_until_for_room,
     without_temporary_shifts,
 )
 
@@ -351,8 +351,9 @@ class RoomMindOverrideClimate(CoordinatorEntity, ClimateEntity):
 class RoomMindRoomClimate(CoordinatorEntity, ClimateEntity):
     """The room as one thermostat: mode, presets, target band and what RoomMind is doing (#238).
 
-    Changing the target or picking a preset sets an override that holds until the
-    active schedule's next change, like a thermostat's temporary hold.
+    Changing the target or picking a preset sets an override that holds for the room's
+    override duration: by default until the active schedule's next change, like a
+    thermostat's temporary hold.
     """
 
     _attr_has_entity_name = True
@@ -551,7 +552,7 @@ class RoomMindRoomClimate(CoordinatorEntity, ClimateEntity):
             {
                 "override_heat": heat,
                 "override_cool": cool,
-                "override_until": override_hold_until(self.coordinator.hass, self._room()),
+                "override_until": override_until_for_room(self.coordinator.hass, self._room()),
                 "override_type": override_type,
             },
         )
@@ -589,7 +590,7 @@ class RoomMindRoomClimate(CoordinatorEntity, ClimateEntity):
         return all(abs(shown(want, PRECISION_TENTHS) - shown(have, precision)) < tolerance for want, have in known)
 
     async def async_set_temperature(self, **kwargs: Any) -> None:
-        """Hold the given target until the schedule changes next."""
+        """Hold the given target for the room's override duration."""
         hvac_mode = kwargs.pop(ATTR_HVAC_MODE, None)
         if hvac_mode is not None:
             # HA passes it through unchecked here, unlike the set_hvac_mode service
@@ -606,7 +607,7 @@ class RoomMindRoomClimate(CoordinatorEntity, ClimateEntity):
             await self._async_set_override(*band, OVERRIDE_CUSTOM)
 
     async def async_set_preset_mode(self, preset_mode: str) -> None:
-        """Comfort/eco hold until the next schedule change, manual holds the band in force, none returns to the schedule."""
+        """Comfort/eco hold for the override duration, manual holds the band in force, none returns to the schedule."""
         if preset_mode == PRESET_MANUAL:
             heat, cool = self._band()
             if self.preset_mode != PRESET_MANUAL and (heat is not None or cool is not None):

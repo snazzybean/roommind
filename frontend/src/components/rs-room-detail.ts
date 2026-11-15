@@ -10,6 +10,7 @@ import type {
   DeviceConfig,
   DeviceType,
   DeviceRole,
+  OverrideDurationMode,
 } from "../types";
 import "./room-detail/rs-room-hero";
 import "./rs-schedule-settings";
@@ -27,6 +28,8 @@ import "./shared/rs-confirm-dialog";
 import "./shared/rs-list-card";
 import "./shared/rs-list-row";
 import "./shared/rs-segmented";
+import "./shared/rs-field";
+import "./shared/rs-number-field";
 import {
   coversHelp,
   devicesHelp,
@@ -112,6 +115,14 @@ const ROOM_FIELDS: [string, RoomFieldSync][] = [
   ["voc_threshold", plain("_vocThreshold", (c) => c?.voc_threshold ?? null)],
   ["ventilation_entity", plain("_ventilationEntity", (c) => c?.ventilation_entity ?? "")],
   ["preheat_enabled", plain("_preheatEnabled", (c) => c?.preheat_enabled ?? true)],
+  [
+    "override_duration_mode",
+    plain("_overrideDurationMode", (c) => c?.override_duration_mode ?? "schedule"),
+  ],
+  [
+    "override_duration_minutes",
+    plain("_overrideDurationMinutes", (c) => c?.override_duration_minutes ?? 120),
+  ],
   [
     "follow_device_setpoint",
     plain("_followDeviceSetpoint", (c) => c?.follow_device_setpoint ?? false),
@@ -246,6 +257,8 @@ export class RsRoomDetail extends LitElement {
   @state() private _occupancyEcoEnabled = false;
   @state() private _preheatEnabled = true;
   @state() private _followDeviceSetpoint = false;
+  @state() private _overrideDurationMode: OverrideDurationMode = "schedule";
+  @state() private _overrideDurationMinutes = 120;
   @state() private _priceShift = 0;
   @state() private _heatSourcePriceAware = false;
   @state() private _occupancyEcoDelay = DEFAULT_OCCUPANCY_ECO_DELAY;
@@ -666,6 +679,8 @@ export class RsRoomDetail extends LitElement {
           .scheduleTempWarnings=${live?.schedule_temp_warnings ?? []}
           .preheatEnabled=${this._preheatEnabled}
           .followDeviceSetpoint=${this._followDeviceSetpoint}
+          .overrideDurationMode=${this._overrideDurationMode}
+          .overrideDurationMinutes=${this._overrideDurationMinutes}
           .priceShift=${this._priceShift}
           .priceConfigured=${this.priceConfigured}
           .preheatSides=${this._preheatSides()}
@@ -931,6 +946,52 @@ export class RsRoomDetail extends LitElement {
             .shiftCool=${this.config?.live?.price_shift_cool ?? 0}
             @price-shift-changed=${this._onPriceShiftChanged}
           ></rs-price-shift>
+        </rs-edit-dialog>`;
+      case "manual":
+        return html`<rs-edit-dialog
+          open
+          icon="mdi:hand-back-right-outline"
+          .heading=${localize("schedule.manual_title", lang)}
+          .error=${this._error}
+          @rs-dialog-closed=${this._closeEdit}
+        >
+          <rs-field
+            .label=${localize("schedule.manual_duration_label", lang)}
+            .hint=${localize("schedule.manual_hint", lang)}
+          >
+            <rs-segmented
+              wrap
+              .label=${localize("schedule.manual_duration_label", lang)}
+              .options=${(["schedule", "minutes", "permanent"] as const).map((v) => ({
+                value: v,
+                label: localize(`schedule.manual_duration_${v}`, lang),
+              }))}
+              .value=${this._overrideDurationMode}
+              @value-changed=${(e: CustomEvent<{ value: string }>) => {
+                const v = e.detail.value as OverrideDurationMode;
+                if (!v || v === this._overrideDurationMode) return;
+                this._overrideDurationMode = v;
+                this._autoSave();
+              }}
+            ></rs-segmented>
+          </rs-field>
+          ${
+            this._overrideDurationMode === "minutes"
+              ? html`<rs-number-field
+                  style="margin-top: 16px"
+                  .label=${localize("schedule.manual_minutes_label", lang)}
+                  suffix="min"
+                  .min=${5}
+                  .max=${1440}
+                  .step=${5}
+                  .value=${this._overrideDurationMinutes}
+                  @value-changed=${(e: CustomEvent<{ value: number }>) => {
+                    this._overrideDurationMinutes = e.detail.value;
+                    this._autoSave();
+                  }}
+                ></rs-number-field>`
+              : nothing
+          }
         </rs-edit-dialog>`;
       case "devices":
         return html`<rs-edit-dialog
