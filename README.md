@@ -6,7 +6,7 @@
 |------------------------------------------------------------------- | -------: | -------: | ------: | --------: |
 | custom\_components/roommind/\_\_init\_\_.py                        |      150 |       90 |     40% |41-43, 49-76, 99-100, 106-144, 149-160, 176-199, 226-264 |
 | custom\_components/roommind/binary\_sensor.py                      |       66 |        0 |    100% |           |
-| custom\_components/roommind/climate.py                             |      410 |        0 |    100% |           |
+| custom\_components/roommind/climate.py                             |      411 |        0 |    100% |           |
 | custom\_components/roommind/config\_flow.py                        |       11 |       11 |      0% |      3-23 |
 | custom\_components/roommind/const.py                               |      185 |        0 |    100% |           |
 | custom\_components/roommind/control/\_\_init\_\_.py                |        0 |        0 |    100% |           |
@@ -38,7 +38,7 @@
 | custom\_components/roommind/managers/weather\_manager.py           |       59 |        0 |    100% |           |
 | custom\_components/roommind/managers/window\_manager.py            |       93 |        0 |    100% |           |
 | custom\_components/roommind/repairs.py                             |       15 |        0 |    100% |           |
-| custom\_components/roommind/sensor.py                              |       55 |        0 |    100% |           |
+| custom\_components/roommind/sensor.py                              |       56 |        0 |    100% |           |
 | custom\_components/roommind/services/\_\_init\_\_.py               |        0 |        0 |    100% |           |
 | custom\_components/roommind/services/analytics\_service.py         |      223 |        0 |    100% |           |
 | custom\_components/roommind/services/analytics\_stats.py           |      205 |        4 |     98% |80, 109, 117, 159 |
@@ -57,7 +57,7 @@
 | custom\_components/roommind/utils/sensor\_utils.py                 |       29 |        1 |     97% |        25 |
 | custom\_components/roommind/utils/temp\_utils.py                   |       26 |        0 |    100% |           |
 | custom\_components/roommind/websocket\_api.py                      |      365 |        3 |     99% |676, 915-920 |
-| **TOTAL**                                                          | **10075** |  **200** | **98%** |           |
+| **TOTAL**                                                          | **10077** |  **200** | **98%** |           |
 
 
 ## Setup coverage badge
