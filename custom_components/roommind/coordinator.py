@@ -301,6 +301,8 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         self._heat_source_states: dict[str, str] = {}
         # Track which rooms already have entity platform entities registered
         self._entity_areas: set[str] = set()
+        # Global tariff sensors are created when Time-of-Use is first enabled
+        self._tou_entities_added: bool = False
         # Min-run enforcement: timestamp when current non-idle mode started
         self._mode_on_since: dict[str, float] = {}
         # When the room last went idle; a setback device stays on for a while after it (#255)
@@ -602,7 +604,17 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         tou_snapshot = self._tou_manager.snapshot()
         if tou_snapshot.get("enabled"):
             data["tou"] = tou_snapshot
+            self._maybe_add_tou_entities()
         return data
+
+    def _maybe_add_tou_entities(self) -> None:
+        """Create the global tariff sensors the first time TOU reports enabled."""
+        if self._tou_entities_added or self.async_add_entities is None:
+            return
+        from .sensor import _create_global_entities
+
+        self.async_add_entities(_create_global_entities(self))
+        self._tou_entities_added = True
 
     def _read_room_sensors(
         self,

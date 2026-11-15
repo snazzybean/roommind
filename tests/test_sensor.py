@@ -150,3 +150,92 @@ def test_sensor_entity_id():
     mode_sensor = RoomMindModeSensor(coordinator, "room_a")
     assert temp_sensor.entity_id == f"sensor.{DOMAIN}_room_a_target_temp"
     assert mode_sensor.entity_id == f"sensor.{DOMAIN}_room_a_mode"
+
+
+# ---------------------------------------------------------------------------
+# Global Time-of-Use sensors
+# ---------------------------------------------------------------------------
+
+
+def _tou_coordinator(tou=None):
+    coordinator = _make_coordinator()
+    coordinator.data = {"rooms": {}, "tou": tou} if tou is not None else {"rooms": {}}
+    return coordinator
+
+
+def test_create_global_entities():
+    """_create_global_entities returns the three tariff sensors."""
+    from custom_components.roommind.sensor import _create_global_entities
+
+    entities = _create_global_entities(_tou_coordinator())
+    assert len(entities) == 3
+
+
+@pytest.mark.asyncio
+async def test_setup_entry_adds_globals_when_tou_enabled(hass, mock_config_entry, store):
+    """Enabling Time-of-Use at setup registers the tariff sensors."""
+    await store.async_load()
+    await store.async_save_settings({"tou_enabled": True})
+
+    coordinator = _make_coordinator()
+    hass.data[DOMAIN] = {
+        mock_config_entry.entry_id: coordinator,
+        "store": store,
+    }
+    add_entities = MagicMock()
+
+    await async_setup_entry(hass, mock_config_entry, add_entities)
+
+    entities = add_entities.call_args[0][0]
+    assert len(entities) == 3
+    assert coordinator._tou_entities_added is True
+
+
+def test_energy_rate_sensor_value():
+    coordinator = _tou_coordinator({"enabled": True, "tier": "peak", "rate": 0.146, "rate_unit": "CAD/kWh"})
+    from custom_components.roommind.sensor import RoomMindEnergyRateSensor
+
+    sensor = RoomMindEnergyRateSensor(coordinator)
+    assert sensor.native_value == 0.146
+    assert sensor.native_unit_of_measurement == "CAD/kWh"
+    assert sensor.entity_id == f"sensor.{DOMAIN}_energy_rate"
+
+
+def test_energy_rate_sensor_disabled():
+    from custom_components.roommind.sensor import RoomMindEnergyRateSensor
+
+    sensor = RoomMindEnergyRateSensor(_tou_coordinator())
+    assert sensor.native_value is None
+    assert sensor.native_unit_of_measurement is None
+
+
+def test_energy_period_sensor_value_and_unknown():
+    from custom_components.roommind.sensor import RoomMindEnergyPeriodSensor
+
+    coordinator = _tou_coordinator({"enabled": True, "tier": "ultra_low", "rate": None})
+    assert RoomMindEnergyPeriodSensor(coordinator).native_value == "ultra_low"
+
+    unknown = _tou_coordinator({"enabled": True, "tier": "unknown", "rate": None})
+    assert RoomMindEnergyPeriodSensor(unknown).native_value is None
+
+
+def test_energy_next_change_sensor_value():
+    from custom_components.roommind.sensor import RoomMindEnergyNextChangeSensor
+
+    ts = 1_794_000_000.0
+    coordinator = _tou_coordinator(
+        {"enabled": True, "tier": "mid", "rate": None, "next_change": ts, "next_tier": "peak"}
+    )
+    sensor = RoomMindEnergyNextChangeSensor(coordinator)
+    value = sensor.native_value
+    assert value is not None
+    assert abs(value.timestamp() - ts) < 2
+    assert sensor.extra_state_attributes == {"next_tier": "peak"}
+
+
+def test_energy_next_change_sensor_none():
+    from custom_components.roommind.sensor import RoomMindEnergyNextChangeSensor
+
+    sensor = RoomMindEnergyNextChangeSensor(_tou_coordinator())
+    assert sensor.native_value is None
+    assert sensor.extra_state_attributes == {}
