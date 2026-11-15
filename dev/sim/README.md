@@ -2,7 +2,7 @@
 
 A real Home Assistant instance with a simulated house and a controllable clock, for
 reproducing issues and verifying fixes by behaviour instead of mocks alone. Not part of
-the integration: HACS ships only `custom_components/roommind`.
+the integration: the Marketplace (formerly HACS) ships only `custom_components/roommind`.
 
 - **One engine.** Every simulation is a real HA process (default 2026.10) with the
   RoomMind code of the checkout you call `sim` from. A virtual clock is installed before
