@@ -3821,3 +3821,34 @@ async def test_list_rooms_omits_tou_snapshot_when_disabled(ws_hass, store, conne
 
     payload = connection.send_result.call_args[0][1]
     assert "tou" not in payload
+    assert "tou_tier_info" not in payload
+
+
+@pytest.mark.asyncio
+async def test_list_rooms_carries_tier_info_when_tou_enabled(ws_hass, store, connection):
+    """rooms/list ships the tier dictionary beside the snapshot when TOU is on."""
+    await store.async_load()
+    await store.async_save_settings({"tou_enabled": True, "tou_mid_threshold": 0.10})
+
+    from custom_components.roommind.managers.tou_manager import TouManager
+
+    manager = TouManager(ws_hass)
+    await manager.async_build_timeline(store.get_settings())
+    mock_coordinator = MagicMock()
+    mock_coordinator.rooms = {}
+    mock_coordinator.async_request_refresh = AsyncMock()
+    mock_coordinator.outdoor_temp_effective = None
+    mock_coordinator.outdoor_humidity = None
+    mock_coordinator.data = {"rooms": {}, "tou": manager.snapshot()}
+    mock_coordinator._tou_manager = manager
+    ws_hass.data[DOMAIN]["coordinator"] = mock_coordinator
+
+    await _list_rooms(ws_hass, connection, {"id": 98, "type": "roommind/rooms/list"})
+
+    payload = connection.send_result.call_args[0][1]
+    assert payload["tou"]["enabled"] is True
+    info = payload["tou_tier_info"]
+    # No live readings on this bed: the configured cutoff is what the
+    # dictionary can honestly show, marked as such.
+    assert info["tiers"]["mid"]["rate"] == 0.10 and info["tiers"]["mid"]["kind"] == "cutoff"
+    assert info["current"] is None

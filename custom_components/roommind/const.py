@@ -7,7 +7,7 @@ from homeassistant.const import Platform
 from homeassistant.core import Context
 
 DOMAIN = "roommind"
-VERSION = "2.0.2-beta.1"
+VERSION = "2.0.3-beta.1"
 
 # Platforms
 PLATFORMS = [Platform.SENSOR, Platform.SWITCH, Platform.BINARY_SENSOR, Platform.CLIMATE]
@@ -348,6 +348,18 @@ TOU_LOOKAHEADS = ["auto", "calendar", "next_change_rate", "next_change", "none"]
 
 # Canonical weekday names for manual tariff windows (date.weekday() order).
 TOU_WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+
+# Grace window for classifying the tier from the LAST KNOWN valid cost when the
+# cost sensor itself is momentarily gone: a flaky provider integration must not
+# silently blind tariff shaping, but a stale price must not guess a tier either.
+# Display falls back to the last known price far longer than this does.
+TOU_LAST_RATE_TIER_MAX_AGE_S = 3600.0
+# Rolling window for the per-tier price history min/max; an observation past
+# the window starts a fresh one (seasons change prices; ranges must follow).
+TOU_PRICE_HISTORY_WINDOW_S = 14 * 24 * 3600.0
+# Minimum spacing between price-history store writes (observations are every
+# cycle; the write only matters on values, not ticks).
+TOU_PRICE_HISTORY_SAVE_MIN_INTERVAL_S = 60.0
 
 # How far ahead the tariff timeline is built (minutes). Covers the MPC's
 # longest pre-heat lead (12 h) plus margin.

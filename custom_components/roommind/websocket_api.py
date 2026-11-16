@@ -393,6 +393,11 @@ async def websocket_list_rooms(
     # so the payload is byte-identical to the pre-TOU base when disabled).
     coordinator_data = getattr(coordinator, "data", None) if coordinator else None
     tou_snapshot = coordinator_data.get("tou") if isinstance(coordinator_data, dict) else None
+    tou_tier_info = None
+    if tou_snapshot:
+        manager = getattr(coordinator, "_tou_manager", None)
+        info = manager.tier_info(settings) if manager is not None else None
+        tou_tier_info = info if isinstance(info, dict) else None
 
     connection.send_result(
         msg["id"],
@@ -433,6 +438,9 @@ async def websocket_list_rooms(
             "coil_dry_drain_minutes": settings.get("coil_dry_drain_minutes", DEFAULT_COIL_DRY_DRAIN_MINUTES),
             "compressor_groups": settings.get("compressor_groups", []),
             **({"tou": tou_snapshot} if tou_snapshot else {}),
+            # Tier dictionary: what the bound sources actually feed (prices,
+            # vocabulary, unmapped strings) for the settings panel.
+            **({"tou_tier_info": tou_tier_info} if tou_tier_info else {}),
         },
     )
 
