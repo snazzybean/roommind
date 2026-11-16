@@ -1,0 +1,56 @@
+name: set-override-until-next-change
+description: >
+  roommind.set_override from an automation on the room climate entity. With
+  until_next_change the override ends at whatever comes first, the next schedule
+  change or presence switching between home and away; with a duration it ends after
+  that time and presence does not touch it.
+tags: [entities, override, schedule, presence]
+start: 2026-01-12T00:00
+duration: 2d
+location: {latitude: 52.5, longitude: 13.4, time_zone: Europe/Berlin}
+weather: {profile: temperate}
+house:
+  building: bestand_teilsaniert
+  outdoor: {sensors: {temperature: sensor.aussen_temp}}
+  rooms:
+    wohnzimmer:
+      floor_area_m2: 22
+      initial: {temperature: 19.0}
+      devices: [{entity_id: climate.wz_trv, profile: generic_trv}]
+      sensors: {temperature: {entity_id: sensor.wz_temp}}
+people:
+  - {id: anna, profile: commuter, rooms: {living: wohnzimmer}}   # weekdays away 07:30-17:30
+helpers:
+  schedule:
+    plan_wohnen: {weekdays: ["06:00-08:00", "16:30-22:30"], weekend: ["07:30-23:00"]}
+roommind:
+  settings:
+    outdoor_temp_sensor: sensor.aussen_temp
+    presence_enabled: true
+    presence_persons: [person.anna]
+  rooms:
+    wohnzimmer:
+      devices: [{entity_id: climate.wz_trv, type: trv, heating_system_type: radiator}]
+      temperature_sensor: sensor.wz_temp
+      climate_mode: heat_only
+      schedules: [{entity_id: schedule.plan_wohnen}]
+      comfort_temp: 21.0
+      eco_temp: 18.0
+timeline:
+  # home, schedule changes at 08:00: leaving at 07:30 comes first
+  - {at: "+0d06h30m", do: ha.service, service: roommind.set_override, data: {entity_id: climate.roommind_wohnzimmer, temperature: 23.0, until_next_change: true}}
+  # away, coming home at 17:30: the schedule change at 16:30 comes first
+  - {at: "+0d10h", do: ha.service, service: roommind.set_override, data: {entity_id: climate.roommind_wohnzimmer, temperature: 22.5, until_next_change: true}}
+  # away in the comfort block, schedule changes at 22:30: coming home at 17:30 comes first
+  - {at: "+0d17h", do: ha.service, service: roommind.set_override, data: {entity_id: climate.roommind_wohnzimmer, preset: eco, until_next_change: true}}
+  # a duration holds across leaving at 07:30
+  - {at: "+1d07h", do: ha.service, service: roommind.set_override, data: {entity_id: climate.roommind_wohnzimmer, temperature: 22.0, duration: "01:30:00"}}
+expect:
+  - {check: "room.wohnzimmer.override_active == true and room.wohnzimmer.heat_target == 23.0 and room.wohnzimmer.override_ends_on_presence == true", at: "+0d07h25m", label: held while at home}
+  - {check: "room.wohnzimmer.override_active == false and room.wohnzimmer.presence_away == true", at: "+0d07h35m", label: leaving ends it}
+  - {check: "room.wohnzimmer.override_active == true and room.wohnzimmer.heat_target == 22.5", at: "+0d16h25m", label: held while away until the schedule changes}
+  - {check: "room.wohnzimmer.override_active == false", at: "+0d16h35m", label: schedule change ends it}
+  - {check: "room.wohnzimmer.override_active == true and room.wohnzimmer.heat_target == 18.0", at: "+0d17h25m", label: eco held during the comfort block}
+  - {check: "room.wohnzimmer.override_active == false and room.wohnzimmer.heat_target == 21.0", at: "+0d17h35m", label: coming home ends it}
+  - {check: "room.wohnzimmer.override_active == true and room.wohnzimmer.heat_target == 22.0", at: "+1d08h25m", label: duration holds across leaving}
+  - {check: "room.wohnzimmer.override_active == false", at: "+1d08h35m", label: duration ends it}

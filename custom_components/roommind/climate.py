@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable
+from datetime import datetime, timedelta
 from typing import Any, cast
 
+import voluptuous as vol
 from homeassistant.components.climate import (
     ATTR_HVAC_MODE,
     ATTR_TARGET_TEMP_HIGH,
@@ -20,13 +22,16 @@ from homeassistant.components.climate import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import ATTR_TEMPERATURE, PRECISION_TENTHS, UnitOfTemperature
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.exceptions import ServiceValidationError
+from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import entity_platform
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.temperature import display_temp
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
+from homeassistant.util.unit_conversion import TemperatureConverter
 
 from .const import (
     CLIMATE_MODE_AUTO,
@@ -50,6 +55,7 @@ from .coordinator import RoomMindCoordinator, _get_area_name
 from .deprecation import warn_deprecated_use
 from .utils.area_utils import assign_area_once, rooms_with_area
 from .utils.device_utils import get_ac_eids, get_trv_eids
+from .utils.override_end_utils import override_presence_binding
 from .utils.schedule_utils import (
     band_in_force,
     mask_override_band,
@@ -72,6 +78,22 @@ _OVERRIDE_TO_PRESET: dict[str, str] = {
     OVERRIDE_CUSTOM: PRESET_MANUAL,
 }
 _PRESET_TO_OVERRIDE: dict[str, str] = {PRESET_COMFORT: OVERRIDE_BOOST, PRESET_ECO: OVERRIDE_ECO}
+
+# Action for automations: an override on the room climate entity with a chosen end
+SERVICE_SET_OVERRIDE = "set_override"
+ATTR_PRESET = "preset"
+ATTR_DURATION = "duration"
+ATTR_UNTIL = "until"
+ATTR_UNTIL_NEXT_CHANGE = "until_next_change"
+SET_OVERRIDE_SCHEMA: dict[Any, Any] = {
+    vol.Optional(ATTR_PRESET): vol.In([PRESET_COMFORT, PRESET_ECO]),
+    vol.Optional(ATTR_TEMPERATURE): vol.Coerce(float),
+    vol.Optional(ATTR_TARGET_TEMP_LOW): vol.Coerce(float),
+    vol.Optional(ATTR_TARGET_TEMP_HIGH): vol.Coerce(float),
+    vol.Exclusive(ATTR_DURATION, "override_end"): cv.positive_time_period,
+    vol.Exclusive(ATTR_UNTIL, "override_end"): cv.datetime,
+    vol.Exclusive(ATTR_UNTIL_NEXT_CHANGE, "override_end"): cv.boolean,
+}
 
 
 def _create_room_climates(
@@ -98,6 +120,16 @@ async def async_setup_entry(
         coordinator._climate_entity_areas.add(area_id)
     if entities:
         async_add_entities(entities)
+
+    platform = entity_platform.async_get_current_platform()
+    platform.async_register_entity_service(SERVICE_SET_OVERRIDE, SET_OVERRIDE_SCHEMA, _async_handle_set_override)
+
+
+async def _async_handle_set_override(entity: ClimateEntity, call: ServiceCall) -> None:
+    """Route roommind.set_override to the room climate entity, the old override entity has no such action."""
+    if not isinstance(entity, RoomMindRoomClimate):
+        raise ServiceValidationError(f"{entity.entity_id} does not support roommind.{SERVICE_SET_OVERRIDE}")
+    await entity.async_set_override_with_end(dict(call.data))
 
 
 def _current_band(coordinator: RoomMindCoordinator, area_id: str, room: dict) -> tuple[float | None, float | None]:
@@ -533,18 +565,20 @@ class RoomMindRoomClimate(CoordinatorEntity, ClimateEntity):
             "price_level": live.get("price_level"),
         }
 
-    async def _async_set_override(self, heat: float | None, cool: float | None, override_type: str) -> None:
+    async def _async_set_override(
+        self, heat: float | None, cool: float | None, override_type: str, end: dict | None = None
+    ) -> None:
+        """Store the override; *end* sets override_until/override_presence_away, default the next schedule change."""
         heat, cool = mask_override_band(heat, cool, self._climate_mode())
+        if end is None:
+            # Ends at the schedule change only, a presence binding from before is dropped
+            end = {
+                "override_until": override_hold_until(self.coordinator.hass, self._room()),
+                "override_presence_away": None,
+            }
         await self._store().async_update_room(
             self._area_id,
-            {
-                "override_heat": heat,
-                "override_cool": cool,
-                "override_until": override_hold_until(self.coordinator.hass, self._room()),
-                "override_type": override_type,
-                # Ends at the schedule change only, a presence binding from before is dropped
-                "override_presence_away": None,
-            },
+            {"override_heat": heat, "override_cool": cool, "override_type": override_type, **end},
         )
         self.coordinator.clear_override_seed(self._area_id)
         self.async_write_ha_state()
@@ -620,6 +654,76 @@ class RoomMindRoomClimate(CoordinatorEntity, ClimateEntity):
         self.coordinator.clear_override_seed(self._area_id)
         self.async_write_ha_state()
         await self.coordinator.async_request_refresh()
+
+    def _override_end_from_call(self, data: dict[str, Any]) -> dict | None:
+        """Turn the end of a set_override call into store fields, None = the room's default end."""
+        hass = self.coordinator.hass
+        room = self._room()
+        if data.get(ATTR_UNTIL_NEXT_CHANGE):
+            return {
+                "override_until": override_hold_until(hass, room),
+                "override_presence_away": override_presence_binding(hass, room, self._store().get_settings()),
+            }
+        duration: timedelta | None = data.get(ATTR_DURATION)
+        if duration is not None:
+            if duration.total_seconds() <= 0:
+                raise ServiceValidationError("duration must be longer than zero")
+            return {"override_until": time.time() + duration.total_seconds(), "override_presence_away": None}
+        until: datetime | None = data.get(ATTR_UNTIL)
+        if until is not None:
+            if until.tzinfo is None:
+                until = until.replace(tzinfo=dt_util.get_default_time_zone())
+            ts = until.timestamp()
+            if ts <= time.time():
+                raise ServiceValidationError("until must lie in the future")
+            return {"override_until": ts, "override_presence_away": None}
+        return None
+
+    async def async_set_override_with_end(self, data: dict[str, Any]) -> None:
+        """Set an override from an automation with its own end (roommind.set_override).
+
+        Targets come from a preset, from temperatures like set_temperature, or, with
+        neither, the band in force is held (an active override keeps its type), so a
+        call with only an end extends or shortens what is running. The end is a
+        duration, a point in time or the next automatic change (schedule change or
+        presence switch); without one the room's default end applies.
+        """
+        room = self._room()
+        if room.get("is_outdoor", False):
+            raise ServiceValidationError(f"{self.entity_id} is an outdoor room without control")
+        preset = data.get(ATTR_PRESET)
+        # Given in the HA unit system like climate.set_temperature, stored in °C
+        ha_unit = self.coordinator.hass.config.units.temperature_unit
+        temps = {
+            k: TemperatureConverter.convert(data[k], ha_unit, UnitOfTemperature.CELSIUS)
+            for k in (ATTR_TEMPERATURE, ATTR_TARGET_TEMP_LOW, ATTR_TARGET_TEMP_HIGH)
+            if k in data
+        }
+        if preset is not None and temps:
+            raise ServiceValidationError("set either a preset or temperatures, not both")
+        end = self._override_end_from_call(data)
+        heat: float | None
+        cool: float | None
+        if preset is not None:
+            override_type = _PRESET_TO_OVERRIDE[preset]
+            heat, cool = override_preset_band(room, override_type)
+        elif temps:
+            band = _band_from_temperature_call(
+                temps, self._climate_mode(), lambda: _current_band(self.coordinator, self._area_id, room), room
+            )
+            if band is None:
+                raise ServiceValidationError(f"{self.entity_id} cannot take these temperatures in its climate mode")
+            heat, cool = band
+            override_type = OVERRIDE_CUSTOM
+        else:
+            heat, cool = self._band()
+            if heat is None and cool is None:
+                raise ServiceValidationError(f"{self.entity_id} has no target in force to hold")
+            override_type = (room.get("override_type") if self._override_in_force() else None) or OVERRIDE_CUSTOM
+        heat, cool = mask_override_band(heat, cool, self._climate_mode())
+        if heat is not None and cool is not None and cool < heat:
+            raise ServiceValidationError("the cooling target must be at least the heating target")
+        await self._async_set_override(heat, cool, override_type, end)
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Off switches the room's devices off and stops control; heat/cool/heat_cool pick the climate mode."""

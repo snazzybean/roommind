@@ -488,7 +488,9 @@ async def test_async_setup_entry_creates_entities_for_all_rooms():
 
     async_add_entities = MagicMock()
 
-    await async_setup_entry(hass, entry, async_add_entities)
+    with patch("custom_components.roommind.climate.entity_platform.async_get_current_platform") as platform:
+        await async_setup_entry(hass, entry, async_add_entities)
+    platform.return_value.async_register_entity_service.assert_called_once()
 
     assert coordinator.async_add_climate_entities is async_add_entities
     async_add_entities.assert_called_once()
@@ -516,7 +518,9 @@ async def test_async_setup_entry_no_rooms():
 
     async_add_entities = MagicMock()
 
-    await async_setup_entry(hass, entry, async_add_entities)
+    with patch("custom_components.roommind.climate.entity_platform.async_get_current_platform") as platform:
+        await async_setup_entry(hass, entry, async_add_entities)
+    platform.return_value.async_register_entity_service.assert_called_once()
 
     async_add_entities.assert_not_called()
 
