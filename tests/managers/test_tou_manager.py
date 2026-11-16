@@ -1324,3 +1324,805 @@ def test_price_builder_gating() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Tariff rule library: rows -> records -> windows
+# ---------------------------------------------------------------------------
+
+
+def _room_schedule(*defs: dict, enabled: bool = True) -> tuple[dict, dict]:
+    """(room, settings) pair wiring card-style references to a shared library.
+
+    Each definition becomes a ``tou_rules`` entry (id ``rl{i}``) and one
+    ``tou_overrides`` row referencing it; the room's schedule section is on
+    unless ``enabled`` says otherwise.
+    """
+    rules = [{"id": f"rl{i}", "name": f"rule {i}", **d} for i, d in enumerate(defs)]
+    rows = [{"id": f"row{i}", "rule_id": f"rl{i}", "enabled": True} for i in range(len(defs))]
+    room = _room(tou_schedule_enabled=enabled, tou_overrides=rows)
+    return room, {"tou_rules": rules}
+
+
+def _two_tier_timeline(first_tier: str, boundary_offset: float = 30.0) -> TouTimeline:
+    """One short segment now, then a tier that runs to the horizon's end."""
+    boundary = time.time() + boundary_offset
+    return TouTimeline(
+        [
+            TouSegment(start=time.time(), end=boundary, tier=first_tier),
+            TouSegment(start=boundary, end=time.time() + 16 * 3600.0, tier=TOU_TIER_PEAK),
+        ],
+        current_tier=first_tier,
+        current_rate=None,
+    )
+
+
+def test_row_window_duration_end() -> None:
+    mgr = TouManager(_make_hass({}))
+    boundary = time.time() + 30.0
+    mgr._timeline = TouTimeline(
+        [
+            TouSegment(start=time.time(), end=boundary, tier=TOU_TIER_OFF),
+            TouSegment(start=boundary, end=boundary + 3600, tier=TOU_TIER_PEAK),
+            TouSegment(start=boundary + 3600, end=time.time() + 16 * 3600, tier=TOU_TIER_OFF),
+        ],
+        current_tier=TOU_TIER_OFF,
+        current_rate=None,
+    )
+    room, settings = _room_schedule(
+        {
+            "tier": "peak",
+            "edge": "start",
+            "action": "set",
+            "heat": 19.0,
+            "cool": None,
+            "until": "minutes",
+            "minutes": 30,
+        }
+    )
+    adjust = mgr.make_adjuster(room, settings)
+    assert adjust is not None
+    # Inside the row window: the rule's temperature replaces the schedule.
+    inside = adjust(boundary + 120, TargetTemps(heat=21.0, cool=24.0))
+    assert inside.heat == 19.0
+    # Blank cool side: the rule skips cooling; the plain target stands.
+    assert inside.cool == 24.0
+    # After the 30-minute hold (still inside the peak segment): schedule resumes.
+    assert adjust(boundary + 31 * 60, TargetTemps(heat=21.0, cool=24.0)).heat == 21.0
+
+
+def test_record_tier_change_end_with_cap() -> None:
+    mgr = TouManager(_make_hass({}))
+    boundary = time.time() + 30.0
+    # A peak that never ends within the horizon: the tier-change end falls back to the cap.
+    mgr._timeline = TouTimeline(
+        [
+            TouSegment(start=time.time(), end=boundary, tier=TOU_TIER_ULTRA_LOW),
+            TouSegment(start=boundary, end=time.time() + 16 * 3600, tier=TOU_TIER_PEAK),
+        ],
+        current_tier=TOU_TIER_ULTRA_LOW,
+        current_rate=None,
+    )
+    settings = {
+        "tou_coast_max_minutes": 90,
+        "tou_schedules": [
+            {
+                "id": "r1-heat",
+                "name": "hold to cheap",
+                "enabled": True,
+                "rooms": ["living"],
+                "side": "heat",
+                "tier": "peak",
+                "edge": "start",
+                "phase": "after",
+                "until": "next_tier_change",
+                "until_tier": "ultra_low",
+                "value": {"mode": "set", "temp": 19.0},
+            }
+        ],
+    }
+    adjust = mgr.make_adjuster(_room(), settings)
+    assert adjust is not None
+    assert adjust(boundary + 120, TargetTemps(heat=21.0, cool=24.0)).heat == 19.0
+    assert adjust(boundary + 91 * 60, TargetTemps(heat=21.0, cool=24.0)).heat == 21.0
+
+
+def test_row_side_blanks_skip_per_mode() -> None:
+    """A blank rule side skips that mode; plain shaping applies there."""
+    mgr = TouManager(_make_hass({}))
+    boundary = time.time() + 30.0
+    mgr._timeline = _two_tier_timeline(TOU_TIER_ULTRA_LOW)
+
+    def row(**extra: object) -> dict:
+        base: dict = {
+            "tier": "peak",
+            "edge": "start",
+            "action": "set",
+            "until": "minutes",
+            "minutes": 120,
+        }
+        base.update(extra)
+        return base
+
+    # Both sides set: each gets its own value within the same window.
+    room, settings = _room_schedule(row(heat=18.5, cool=26.0))
+    adjust = mgr.make_adjuster(room, settings)
+    assert adjust is not None
+    out = adjust(boundary + 60.0, TargetTemps(heat=21.0, cool=24.0))
+    assert out.heat == 18.5
+    assert out.cool == 26.0
+
+    # Heating blank: the rule is skipped there (plain target stands), cooling holds.
+    room, settings = _room_schedule(row(heat=None, cool=26.0))
+    adjust = mgr.make_adjuster(room, settings)
+    assert adjust is not None
+    out = adjust(boundary + 60.0, TargetTemps(heat=21.0, cool=24.0))
+    assert out.heat == 21.0
+    assert out.cool == 26.0
+
+    # Both blank: no window at all — with no store layer there is nothing
+    # for the adjuster to do.
+    room, settings = _room_schedule(row(heat=None, cool=None))
+    assert mgr.make_adjuster(room, settings) is None
+
+
+def test_row_window_ends_at_next_boundary() -> None:
+    """A tier-window end closes the row window at the next tier change."""
+    mgr = TouManager(_make_hass({}))
+    now = time.time()
+    b1 = now + 60.0
+    b2 = now + 120.0
+    mgr._timeline = TouTimeline(
+        [
+            TouSegment(start=now, end=b1, tier=TOU_TIER_OFF),
+            TouSegment(start=b1, end=b2, tier=TOU_TIER_PEAK),
+            TouSegment(start=b2, end=now + 16 * 3600.0, tier=TOU_TIER_OFF),
+        ],
+        current_tier=TOU_TIER_OFF,
+        current_rate=None,
+    )
+    room, settings = _room_schedule(
+        {"tier": "peak", "edge": "start", "action": "set", "heat": 19.0, "until": "tier_window"}
+    )
+    adjust = mgr.make_adjuster(room, settings)
+    assert adjust is not None
+    assert adjust(b1 + 5.0, TargetTemps(heat=21.0, cool=24.0)).heat == 19.0
+    # After the peak->off boundary the schedule target returns untouched.
+    assert adjust(b2 + 5.0, TargetTemps(heat=21.0, cool=24.0)).heat == 21.0
+
+
+def test_row_records_expansion() -> None:
+    """Referenced shared rules fan out into one engine record per set side."""
+    rules = TouManager.rule_library(
+        {
+            "tou_rules": [
+                {
+                    "id": "d",
+                    "name": "mid-peak relax",
+                    "tier": "mid",
+                    "edge": "start",
+                    "action": "raise",
+                    "heat": 2.0,
+                    "cool": 3.0,
+                    "until": "minutes",
+                    "minutes": 90,
+                    "days": ["monday"],
+                    "between": {"from": "17:00", "to": "22:00"},
+                },
+                {
+                    "id": "a2",
+                    "name": "warm by nine",
+                    "tier": "ultra_low",
+                    "edge": "end",
+                    "action": "arrive",
+                    "heat": 20.0,
+                    "cool": None,
+                    "clock": "09:00",
+                },
+                {"id": "l", "name": "lower", "tier": "any", "edge": "start", "action": "lower", "heat": -2.0},
+            ]
+        }
+    )
+    room = _room(
+        tou_schedule_enabled=True,
+        tou_overrides=[
+            {"id": "r1", "rule_id": "d", "enabled": True},
+            {"id": "r2", "rule_id": "a2", "enabled": True},
+            {"id": "r3", "rule_id": "l", "enabled": True},
+        ],
+    )
+    recs = TouManager.row_records(room, rules)
+    by_id = {r["id"]: r for r in recs}
+    assert len(recs) == 4
+    heat = by_id["d-heat"]
+    assert heat["side"] == "heat" and heat["rooms"] == ["living"]
+    assert heat["value"] == {"mode": "shift", "direction": "raise", "delta": 2.0}
+    assert heat["until"] == "minutes" and heat["minutes"] == 90
+    assert heat["days"] == ["monday"] and heat["between"] == {"from": "17:00", "to": "22:00"}
+    assert by_id["d-cool"]["value"]["delta"] == 3.0
+    arrive = by_id["a2-heat"]
+    assert arrive["value"] == {"mode": "arrive", "temp": 20.0}
+    assert arrive["until"] == "clock" and arrive["clock"] == "09:00"
+    assert arrive["tier"] == "ultra_low" and arrive["edge"] == "end" and arrive["phase"] == "after"
+    lower = by_id["l-heat"]
+    assert lower["value"] == {"mode": "shift", "direction": "lower", "delta": 2.0}
+
+
+def test_row_records_ignores_broken_references() -> None:
+    """Dangling, disabled, non-dict and legacy inline rows compile to nothing."""
+    rules = TouManager.rule_library(
+        {
+            "tou_rules": [
+                {"id": "ok", "name": "n", "tier": "peak", "edge": "start", "action": "sundial", "heat": 19.0},
+            ]
+        }
+    )
+    room = _room(
+        tou_schedule_enabled=True,
+        tou_overrides=[
+            "not-a-dict",
+            {"id": "legacy", "tier": "peak", "action": "set", "heat": 19.0},  # inline format: no rule_id
+            {"id": "dangling", "rule_id": "gone", "enabled": True},
+            {"id": "off", "rule_id": "ok", "enabled": False},
+        ],
+    )
+    assert TouManager.row_records(room, rules) == []
+    # The rule with the unknown action compiles to nothing even when referenced.
+    live = _room(tou_schedule_enabled=True, tou_overrides=[{"id": "r", "rule_id": "ok", "enabled": True}])
+    assert TouManager.row_records(live, rules) == []
+
+
+def test_row_named_target_tracks_room() -> None:
+    """ "set to comfort" resolves against the room's own configured target."""
+    mgr = TouManager(_make_hass({}))
+    mgr._timeline = _two_tier_timeline(TOU_TIER_OFF)
+    room, settings = _room_schedule(
+        {"tier": "peak", "edge": "start", "action": "set", "heat": "comfort", "until": "tier_window"}
+    )
+    adjust = mgr.make_adjuster(room, settings)
+    assert adjust is not None
+    boundary = mgr._timeline.segments[1].start
+    # _room()comfort_heat is 21.0: the rule tracks the room, not the schedule target.
+    out = adjust(boundary + 60.0, TargetTemps(heat=22.5, cool=None))
+    assert out.heat == 21.0
+
+
+def test_rules_anchor_on_running_period_in_progress() -> None:
+    """A rule on the period already holding fires now (in-progress anchor).
+
+    The horizon opens inside peak — there is no future "peak starts"
+    transition, yet "Peak · starts" describes being *in* peak. The opening
+    segment seeds an in-progress boundary so the rule applies immediately;
+    a rule anchored on the END of that same period must not fire (it has not
+    ended), and the period's expiry still ends the window.
+    """
+    mgr = TouManager(_make_hass({}))
+    now = time.time()
+    mgr._timeline = TouTimeline(
+        [
+            TouSegment(start=now, end=now + 4 * 3600.0, tier=TOU_TIER_PEAK),
+            TouSegment(start=now + 4 * 3600.0, end=now + 16 * 3600.0, tier=TOU_TIER_OFF),
+        ],
+        current_tier=TOU_TIER_PEAK,
+        current_rate=None,
+    )
+    room, settings = _room_schedule(
+        {"tier": "peak", "edge": "start", "action": "set", "heat": 18.0, "until": "tier_window"}
+    )
+    adjust = mgr.make_adjuster(room, settings)
+    assert adjust is not None
+    # Fires immediately inside the already-running period...
+    assert adjust(now + 60.0, TargetTemps(heat=21.0, cool=None)).heat == 18.0
+    # ...and ends with the period: off tier resumes the schedule.
+    assert adjust(now + 5 * 3600.0, TargetTemps(heat=21.0, cool=None)).heat == 21.0
+
+    # The same anchored at the period END does not fire while the period runs.
+    room_end, settings_end = _room_schedule(
+        {"tier": "peak", "edge": "end", "action": "set", "heat": 18.0, "until": "minutes", "minutes": 60}
+    )
+    adjust_end = mgr.make_adjuster(room_end, settings_end)
+    assert adjust_end is not None
+    assert adjust_end(now + 60.0, TargetTemps(heat=21.0, cool=None)).heat == 21.0
+
+
+def test_row_arrive_curve_derives_boundary_temperature() -> None:
+    """The contributor scenario: 20 °C at the arrival time, heating off since
+    the ultra-low boundary — the floor slides down the model's decay curve."""
+    mgr = TouManager(_make_hass({}))
+    now = time.time()
+    b = now + 3600.0
+    mgr._timeline = TouTimeline(
+        [
+            TouSegment(start=now, end=b, tier=TOU_TIER_ULTRA_LOW),
+            TouSegment(start=b, end=now + 16 * 3600, tier=TOU_TIER_OFF),
+        ],
+        current_tier=TOU_TIER_ULTRA_LOW,
+        current_rate=None,
+    )
+    settings = {
+        "tou_schedules": [
+            {
+                "id": "a",
+                "name": "20 by nine",
+                "enabled": True,
+                "rooms": ["living"],
+                "side": "heat",
+                "tier": "ultra_low",
+                "edge": "end",
+                "phase": "after",
+                "until": "minutes",
+                "minutes": 120,
+                "value": {"mode": "arrive", "temp": 20.0},
+            }
+        ]
+    }
+    room = _room()
+    adjust = mgr.make_adjuster(room, settings, decay=(0.1, 10.0))
+    assert adjust is not None
+
+    def expected(ts: float) -> float:
+        dt_hours = (b + 120 * 60.0 - ts) / 3600.0
+        return 10.0 + (20.0 - 10.0) * math.exp(0.1 * dt_hours)
+
+    # Before the boundary: plain schedule target, the MPC plans the pre-charge.
+    assert adjust(b - 60.0, TargetTemps(heat=21.0, cool=None)).heat == 21.0
+    # At the boundary the derived (indirect) target is above the arrival temp.
+    at_boundary = adjust(b, TargetTemps(heat=21.0, cool=None)).heat
+    assert at_boundary == pytest.approx(expected(b))
+    assert at_boundary > 20.0
+    # Mid-window the floor has slid partway down...
+    mid = adjust(b + 3600.0, TargetTemps(heat=21.0, cool=None)).heat
+    assert mid == pytest.approx(expected(b + 3600.0))
+    assert mid < at_boundary
+    # ...and it lands exactly on the arrival temperature at the window end.
+    assert adjust(b + 120 * 60.0 - 1.0, TargetTemps(heat=21.0, cool=None)).heat == pytest.approx(20.0, abs=0.01)
+    # After the window the schedule stands again.
+    assert adjust(b + 121 * 60.0, TargetTemps(heat=21.0, cool=None)).heat == 21.0
+
+
+def test_row_arrive_clock_infers_time_mode() -> None:
+    """An arrive rule carrying a clock is time-mode regardless of ``edge``
+    echo (the card hides that field): the anchor flips to the period's end."""
+    room, settings = _room_schedule(
+        {"tier": "ultra_low", "edge": "start", "action": "arrive", "heat": 20.0, "clock": "09:00"}
+    )
+    (rec,) = TouManager.row_records(room, TouManager.rule_library(settings))
+    assert rec["until"] == "clock" and rec["clock"] == "09:00"
+    assert rec["edge"] == "end" and rec["tier"] == "ultra_low"
+    assert rec["value"] == {"mode": "arrive", "temp": 20.0}
+
+
+def test_row_arrive_coast_through_lands_at_period_end() -> None:
+    """A clock-less arrive rule coasts through the anchored period: the window
+    is the period itself and the decay curve lands the target at its end."""
+    mgr = TouManager(_make_hass({}))
+    now = time.time()
+    b = now + 3600.0  # peak starts in one hour, runs four
+    mgr._timeline = TouTimeline(
+        [
+            TouSegment(start=now, end=b, tier=TOU_TIER_MID),
+            TouSegment(start=b, end=b + 4 * 3600.0, tier=TOU_TIER_PEAK),
+            TouSegment(start=b + 4 * 3600.0, end=now + 16 * 3600, tier=TOU_TIER_OFF),
+        ],
+        current_tier=TOU_TIER_MID,
+        current_rate=None,
+    )
+    room, settings = _room_schedule(
+        {"tier": "peak", "edge": "end", "action": "arrive", "heat": 19.0, "until": "tier_window", "clock": ""}
+    )
+    (rec,) = TouManager.row_records(room, TouManager.rule_library(settings))
+    assert rec["until"] == "window"
+    assert rec["edge"] == "start"  # forced: the coast begins when the period starts
+    assert rec["value"] == {"mode": "arrive", "temp": 19.0}
+
+    adjust = mgr.make_adjuster({**room, "tou_schedule_enabled": False}, settings)
+    assert adjust is None  # store off and the section gated: nothing participates
+    adjust = mgr.make_adjuster({**room, "tou_schedule_enabled": True}, settings, decay=(0.1, 10.0))
+    assert adjust is not None
+
+    def expected(ts: float) -> float:
+        dt_hours = (b + 4 * 3600.0 - ts) / 3600.0
+        return 10.0 + (19.0 - 10.0) * math.exp(0.1 * dt_hours)
+
+    # Inside the coast: the derived floor slides down the decay curve...
+    at_start = adjust(b, TargetTemps(heat=21.0, cool=None)).heat
+    assert at_start == pytest.approx(expected(b))
+    assert at_start > 19.0
+    mid = adjust(b + 2 * 3600.0, TargetTemps(heat=21.0, cool=None)).heat
+    assert mid == pytest.approx(expected(b + 2 * 3600.0)) and mid < at_start
+    # ...landing exactly on the arrival temperature as the period ends.
+    assert adjust(b + 4 * 3600.0 - 1.0, TargetTemps(heat=21.0, cool=None)).heat == pytest.approx(19.0, abs=0.02)
+    # Before and after the period the row keeps its hands off; with the store
+    # layer off, the plain schedule stands on both sides.
+    assert adjust(b - 60.0, TargetTemps(heat=21.0, cool=None)).heat == 21.0
+    assert adjust(b + 4 * 3600.0 + 60.0, TargetTemps(heat=21.0, cool=None)).heat == 21.0
+
+
+def test_row_arrive_fallbacks_flat() -> None:
+    """Immature model or wrong drift direction: hold the flat target (coast)."""
+    mgr = TouManager(_make_hass({}))
+    now = time.time()
+    b = now + 3600.0
+    mgr._timeline = TouTimeline(
+        [
+            TouSegment(start=now, end=b, tier=TOU_TIER_ULTRA_LOW),
+            TouSegment(start=b, end=now + 16 * 3600, tier=TOU_TIER_OFF),
+        ],
+        current_tier=TOU_TIER_ULTRA_LOW,
+        current_rate=None,
+    )
+    rec = {
+        "id": "a",
+        "name": "20 by nine",
+        "enabled": True,
+        "rooms": ["living"],
+        "side": "heat",
+        "tier": "ultra_low",
+        "edge": "end",
+        "phase": "after",
+        "until": "minutes",
+        "minutes": 120,
+        "value": {"mode": "arrive", "temp": 20.0},
+    }
+    settings = {"tou_schedules": [rec]}
+    room = _room()
+
+    # No learned model yet: flat 20 across the window.
+    adjust = mgr.make_adjuster(room, settings)
+    assert adjust is not None
+    assert adjust(b + 60.0, TargetTemps(heat=21.0, cool=None)).heat == 20.0
+    assert adjust(b + 60 * 60.0, TargetTemps(heat=21.0, cool=None)).heat == 20.0
+
+    # Outdoor warmer than the heating target: drift goes the wrong way, flat.
+    adjust = mgr.make_adjuster(room, settings, decay=(0.1, 22.0))
+    assert adjust is not None
+    assert adjust(b + 60.0, TargetTemps(heat=21.0, cool=None)).heat == 20.0
+
+
+def test_row_arrive_clamped_by_band() -> None:
+    """An aggressive derived curve never demands more than the clamp band."""
+    mgr = TouManager(_make_hass({}))
+    now = time.time()
+    b = now + 3600.0
+    mgr._timeline = TouTimeline(
+        [
+            TouSegment(start=now, end=b, tier=TOU_TIER_ULTRA_LOW),
+            TouSegment(start=b, end=now + 16 * 3600, tier=TOU_TIER_OFF),
+        ],
+        current_tier=TOU_TIER_ULTRA_LOW,
+        current_rate=None,
+    )
+    settings = {
+        "tou_schedules": [
+            {
+                "id": "a",
+                "name": "x",
+                "enabled": True,
+                "rooms": ["living"],
+                "side": "heat",
+                "tier": "ultra_low",
+                "edge": "end",
+                "phase": "after",
+                "until": "minutes",
+                "minutes": 120,
+                "value": {"mode": "arrive", "temp": 20.0},
+            }
+        ]
+    }
+    adjust = mgr.make_adjuster(_room(), settings, decay=(1.0, -20.0))
+    assert adjust is not None
+    assert adjust(b, TargetTemps(heat=21.0, cool=None)).heat == 28.0  # heat band ceiling
+
+
+def test_rows_days_filter() -> None:
+    """Days on a shared rule restrict which tier boundaries its rows fire on."""
+    mgr = TouManager(_make_hass({}))
+    now = time.time()
+    b = now + 60.0
+    mgr._timeline = TouTimeline(
+        [
+            TouSegment(start=now, end=b, tier=TOU_TIER_ULTRA_LOW),
+            TouSegment(start=b, end=now + 16 * 3600, tier=TOU_TIER_OFF),
+        ],
+        current_tier=TOU_TIER_ULTRA_LOW,
+        current_rate=None,
+    )
+    weekday = TOU_WEEKDAYS[dt_util.as_local(dt_util.utc_from_timestamp(b)).weekday()]
+    other = next(d for d in TOU_WEEKDAYS if d != weekday)
+
+    def adjust_for(days: list[str]):
+        room, settings = _room_schedule(
+            {
+                "tier": "off",
+                "edge": "start",
+                "action": "set",
+                "heat": 19.0,
+                "until": "tier_window",
+                "days": days,
+            }
+        )
+        return mgr.make_adjuster(room, settings)
+
+    assert adjust_for([weekday])(b + 5.0, TargetTemps(heat=21.0, cool=None)).heat == 19.0
+    assert adjust_for([other])(b + 5.0, TargetTemps(heat=21.0, cool=None)).heat == 21.0
+    assert adjust_for([])(b + 5.0, TargetTemps(heat=21.0, cool=None)).heat == 19.0
+
+
+def test_preview_includes_room_rows() -> None:
+    mgr = TouManager(_make_hass({}))
+    now = time.time()
+    b = now + 3600.0
+    mgr._timeline = TouTimeline(
+        [
+            TouSegment(start=now, end=b, tier=TOU_TIER_OFF),
+            TouSegment(start=b, end=now + 16 * 3600, tier=TOU_TIER_PEAK),
+        ],
+        current_tier=TOU_TIER_OFF,
+        current_rate=None,
+    )
+    rooms = {
+        "living": {
+            "area_id": "living",
+            "tou_schedule_enabled": True,
+            "tou_overrides": [{"id": "r1", "rule_id": "shared1", "enabled": True}],
+        }
+    }
+    settings = {
+        "tou_enabled": True,
+        "tou_rules": [
+            {
+                "id": "shared1",
+                "name": "x",
+                "tier": "peak",
+                "edge": "start",
+                "action": "set",
+                "heat": 19.0,
+                "until": "tier_window",
+            }
+        ],
+    }
+    out = mgr.preview(settings, None, rooms)
+    assert out is not None
+    assert out["areas"]["living"], "the room row window must show up in the preview"
+    assert "shared1-heat" in out["records"]
+    # Gated off: no preview at all.
+    assert mgr.preview({"tou_enabled": False}, None, rooms) is None
+
+
+def test_schedule_arrive_then_coast_chain() -> None:
+    """The contributor scenario: reach 23 by the peak, then coast to an 18 floor."""
+    mgr = TouManager(_make_hass({}))
+    b = time.time() + 3600.0
+    mgr._timeline = TouTimeline(
+        [
+            TouSegment(start=time.time(), end=b, tier=TOU_TIER_OFF),
+            TouSegment(start=b, end=time.time() + 16 * 3600, tier=TOU_TIER_PEAK),
+        ],
+        current_tier=TOU_TIER_OFF,
+        current_rate=None,
+    )
+    settings = {
+        "tou_schedules": [
+            {
+                "id": "arrival",
+                "name": "warm by peak",
+                "enabled": True,
+                "rooms": ["living"],
+                "side": "heat",
+                "tier": "peak",
+                "edge": "start",
+                "phase": "before",
+                "minutes": 40,
+                "until": "window",
+                "value": {"mode": "set", "temp": 23.0},
+            },
+            {
+                "id": "peakfloor",
+                "name": "coast peak",
+                "enabled": True,
+                "rooms": ["living"],
+                "side": "heat",
+                "tier": "peak",
+                "edge": "start",
+                "phase": "after",
+                "until": "window",
+                "value": {"mode": "set", "temp": 18.0},
+            },
+        ]
+    }
+    adjust = mgr.make_adjuster(_room(), settings)
+    assert adjust is not None
+    # lead window [b-40m, b): floor raised to 23 so the MPC pre-heats,
+    # despite the plain peak shaping wanting to cap heat at 18.
+    assert adjust(b - 1800.0, TargetTemps(heat=21.0, cool=None)).heat == 23.0
+    # at the boundary the arrival record ends and the coast floor applies.
+    assert adjust(b + 60.0, TargetTemps(heat=21.0, cool=None)).heat == 18.0
+    # before the lead, plain tier shaping (off -> no peak cap yet: schedule).
+    assert adjust(b - 3600.0, TargetTemps(heat=21.0, cool=None)).heat == 21.0
+
+
+def test_schedule_fires_every_occurrence_and_shift_is_plain_relative() -> None:
+    """Two peaks in the horizon both get the window; shift bases on the schedule."""
+    mgr = TouManager(_make_hass({}))
+    b1 = time.time() + 1800.0
+    b2 = b1 + 3600.0
+    mgr._timeline = TouTimeline(
+        [
+            TouSegment(start=time.time(), end=b1, tier=TOU_TIER_OFF),
+            TouSegment(start=b1, end=b2, tier=TOU_TIER_PEAK),
+            TouSegment(start=b2, end=b2 + 1800.0, tier=TOU_TIER_OFF),
+            TouSegment(start=b2 + 1800.0, end=time.time() + 16 * 3600, tier=TOU_TIER_PEAK),
+        ],
+        current_tier=TOU_TIER_OFF,
+        current_rate=None,
+    )
+    settings = {
+        "tou_schedules": [
+            {
+                "id": "relax",
+                "name": "relax",
+                "enabled": True,
+                "rooms": ["living"],
+                "side": "cool",
+                "tier": "peak",
+                "edge": "start",
+                "phase": "after",
+                "until": "window",
+                "value": {"mode": "shift", "direction": "raise", "delta": 1.5},
+            }
+        ]
+    }
+    adjust = mgr.make_adjuster(_room(), settings)
+    assert adjust is not None
+    # every peak gets it: +1.5 on the plain schedule cool, not on the peak-shaped value
+    assert adjust(b1 + 60.0, TargetTemps(heat=None, cool=24.0)).cool == 25.5
+    assert adjust(b2 + 1860.0, TargetTemps(heat=None, cool=24.0)).cool == 25.5
+    # off tier between peaks: schedule untouched
+    assert adjust(b2 + 60.0, TargetTemps(heat=None, cool=24.0)).cool == 24.0
+
+
+def test_record_requires_matching_room_and_enabled() -> None:
+    mgr = TouManager(_make_hass({}))
+    boundary = time.time() + 30.0
+    mgr._timeline = TouTimeline(
+        [
+            TouSegment(start=time.time(), end=boundary, tier=TOU_TIER_OFF),
+            TouSegment(start=boundary, end=time.time() + 16 * 3600, tier=TOU_TIER_PEAK),
+        ],
+        current_tier=TOU_TIER_OFF,
+        current_rate=None,
+    )
+    rec = {
+        "id": "r1-heat",
+        "name": "x",
+        "enabled": True,
+        "rooms": ["other"],
+        "side": "heat",
+        "tier": "peak",
+        "edge": "start",
+        "phase": "after",
+        "until": "minutes",
+        "minutes": 60,
+        "value": {"mode": "set", "temp": 19.0},
+    }
+    adjust = mgr.make_adjuster(_room(), {"tou_schedules": [rec]})
+    assert adjust is not None
+    assert adjust(boundary + 120, TargetTemps(heat=21.0, cool=24.0)).heat == 21.0
+
+    disabled = {**rec, "rooms": ["living"], "enabled": False}
+    adjust2 = mgr.make_adjuster(_room(), {"tou_schedules": [disabled]})
+    assert adjust2 is not None
+    assert adjust2(boundary + 120, TargetTemps(heat=21.0, cool=24.0)).heat == 21.0
+
+    # A row is scoped to its own room by construction: it compiles for "living".
+    row_room, row_settings = _room_schedule(
+        {"tier": "peak", "edge": "start", "action": "set", "heat": 19.0, "until": "minutes", "minutes": 60}
+    )
+    row_adjust = mgr.make_adjuster(row_room, row_settings)
+    assert row_adjust is not None
+    assert row_adjust(boundary + 120, TargetTemps(heat=21.0, cool=24.0)).heat == 19.0
+
+
+def test_record_clock_end_rolls_to_next_day() -> None:
+    mgr = TouManager(_make_hass({}))
+    now = time.time()
+    boundary = now + 30.0
+    mgr._timeline = TouTimeline(
+        [
+            TouSegment(start=now, end=boundary, tier=TOU_TIER_OFF),
+            TouSegment(start=boundary, end=now + 16 * 3600, tier=TOU_TIER_PEAK),
+        ],
+        current_tier=TOU_TIER_OFF,
+        current_rate=None,
+    )
+    # A clock twelve wall-clock hours behind "now": its next occurrence is
+    # always ~12 h ahead (inside the horizon), and past midday it can only be
+    # reached after midnight — the roll this guards.
+    local = dt_util.as_local(dt_util.utc_from_timestamp(now))
+    rolled = (local.hour * 60 + local.minute + 720) % 1440
+    settings = {
+        "tou_schedules": [
+            {
+                "id": "r1-heat",
+                "name": "x",
+                "enabled": True,
+                "rooms": ["living"],
+                "side": "heat",
+                "tier": "peak",
+                "edge": "start",
+                "phase": "after",
+                "until": "clock",
+                "clock": f"{rolled // 60:02d}:{rolled % 60:02d}",
+                "value": {"mode": "set", "temp": 19.0},
+            }
+        ]
+    }
+    adjust = mgr.make_adjuster(_room(), settings)
+    assert adjust is not None
+    assert adjust(boundary + 120, TargetTemps(heat=21.0, cool=24.0)).heat == 19.0
+
+
+def test_record_next_change_holds_until_boundary() -> None:
+    mgr = TouManager(_make_hass({}))
+    now = time.time()
+    b1 = now + 30.0
+    b2 = now + 4 * 3600.0
+    mgr._timeline = TouTimeline(
+        [
+            TouSegment(start=now, end=b1, tier=TOU_TIER_OFF),
+            TouSegment(start=b1, end=b2, tier=TOU_TIER_PEAK),
+            TouSegment(start=b2, end=now + 16 * 3600, tier=TOU_TIER_ULTRA_LOW),
+        ],
+        current_tier=TOU_TIER_OFF,
+        current_rate=None,
+    )
+    settings = {
+        "tou_schedules": [
+            {
+                "id": "r1-heat",
+                "name": "x",
+                "enabled": True,
+                "rooms": ["living"],
+                "side": "heat",
+                "tier": "peak",
+                "edge": "start",
+                "phase": "after",
+                "until": "next_change",
+                "value": {"mode": "set", "temp": 19.0},
+            }
+        ]
+    }
+    adjust = mgr.make_adjuster(_room(), settings)
+    assert adjust is not None
+    # The hold runs until the next tier boundary...
+    assert adjust(b1 + 1800, TargetTemps(heat=21.0, cool=24.0)).heat == 19.0
+    # ...and the schedule stands after it.
+    assert adjust(b2 + 60, TargetTemps(heat=21.0, cool=24.0)).heat == 21.0
+
+
+def test_rules_ignore_malformed_entries() -> None:
+    """Malformed library rules referenced by rows compile to nothing."""
+    mgr = TouManager(_make_hass({}))
+    room, settings = _room_schedule(
+        {"action": "sundial", "heat": 19.0},  # unknown action
+        {"action": "arrive", "heat": 20.0, "clock": "", "until": "clock"},  # by-time without a time
+        {"action": "set", "heat": None, "cool": None},  # no side to apply
+    )
+    assert TouManager.row_records(room, TouManager.rule_library(settings)) == []
+    # Nothing to compile and no store layer: the room does not participate.
+    assert mgr.make_adjuster(room, settings) is None
+
+
+def test_rows_gated_by_schedule_section() -> None:
+    """The per-room toggle disables the rows but keeps them (no data loss)."""
+    mgr = TouManager(_make_hass({}))
+    mgr._timeline = _two_tier_timeline(TOU_TIER_OFF)
+    room, settings = _room_schedule(
+        {"tier": "peak", "edge": "start", "action": "set", "heat": 19.0, "until": "tier_window"},
+        enabled=False,
+    )
+    assert TouManager.row_records(room, TouManager.rule_library(settings)) == []
+    assert mgr.make_adjuster(room, settings) is None
+    # Flipping the section back on brings the same rules with it.
+    room["tou_schedule_enabled"] = True
+    adjust = mgr.make_adjuster(room, settings)
+    assert adjust is not None
+    boundary = mgr._timeline.segments[1].start
+    assert adjust(boundary + 60.0, TargetTemps(heat=21.0, cool=None)).heat == 19.0

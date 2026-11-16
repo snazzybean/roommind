@@ -7,7 +7,7 @@ from homeassistant.const import Platform
 from homeassistant.core import Context
 
 DOMAIN = "roommind"
-VERSION = "2.0.4-beta.3"
+VERSION = "2.0.5-beta.1"
 
 # Platforms
 PLATFORMS = [Platform.SENSOR, Platform.SWITCH, Platform.BINARY_SENSOR, Platform.CLIMATE]
@@ -347,6 +347,32 @@ TOU_TIERS = [TOU_TIER_PEAK, TOU_TIER_MID, TOU_TIER_OFF, TOU_TIER_ULTRA_LOW]
 TOU_TIER_SOURCES = ["auto", "period", "rate", "relative", "flags"]
 TOU_LOOKAHEADS = ["auto", "calendar", "next_change_rate", "next_change", "none"]
 
+# Tariff rule library + the engine's native advanced schedule records
+# (settings["tou_rules"] / settings["tou_schedules"], see
+# managers/tou_manager.py::_rule_records / _compile_schedules). A rule row
+# (tier, edge) -> (action, heat, cool, end); a blank side skips that mode.
+TOU_SIDES = ["heat", "cool"]
+TOU_EDGES = ["start", "end"]
+TOU_PHASES = ["before", "after"]
+TOU_UNTILS = ["minutes", "window", "next_change", "clock", "next_tier_change"]
+# "comfort"/"eco" name the room's own configured targets — plain values any
+# record may aim at (resolved at apply time per side).
+TOU_VALUE_MODES = ["set", "shift", "arrive", "comfort", "eco"]
+TOU_SHIFT_DIRECTIONS = ["raise", "lower"]
+TOU_SCHEDULE_MINUTES_MIN = 5
+TOU_SCHEDULE_MINUTES_MAX = 720
+TOU_SCHEDULE_SHIFT_MIN = 0.5
+TOU_SCHEDULE_SHIFT_MAX = 8.0
+TOU_SCHEDULE_TEMP_MIN = 5.0
+TOU_SCHEDULE_TEMP_MAX = 40.0
+
+# Room tariff-rule rows (device card): one row anchors an action to a tier
+# boundary; "arrive" is the decay-derived action, and a blank side skips that
+# mode. End modes for card rows: the anchored period, a fixed duration, or a
+# wall clock.
+TOU_ROW_ACTIONS = ["set", "raise", "lower", "arrive"]
+TOU_ROW_UNTILS = ["tier_window", "minutes", "clock"]
+
 # Canonical weekday names for manual tariff windows (date.weekday() order).
 TOU_WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
 
@@ -388,6 +414,7 @@ DEFAULT_TOU_COOL_MIN = 18.0
 DEFAULT_TOU_COOL_MAX = 30.0
 DEFAULT_TOU_SWING = 3.0  # max auto deviation from the scheduled target, °C
 DEFAULT_TOU_STORE_GAP = 1.0  # min expensive/cheap price multiplier ratio
+DEFAULT_TOU_COAST_MAX_MINUTES = 480  # cap when a tier_window end is not in the timeline
 
 # Per-block energy-price multipliers when only the tier is known. Scales the
 # MPC's w_energy term; off-peak is the 1.0 reference. (Energy tiers with a

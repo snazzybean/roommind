@@ -47,8 +47,11 @@ from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
 from ..const import (
+    DEFAULT_COMFORT_COOL,
+    DEFAULT_COMFORT_HEAT,
     DEFAULT_ECO_COOL,
     DEFAULT_ECO_HEAT,
+    DEFAULT_TOU_COAST_MAX_MINUTES,
     DEFAULT_TOU_COOL_MAX,
     DEFAULT_TOU_COOL_MIN,
     DEFAULT_TOU_HEAT_MAX,
@@ -122,6 +125,139 @@ def normalize_period_state(state: str) -> str:
     if "peak" in s or "high" in s or s in ("on", "expensive"):
         return TOU_TIER_PEAK
     return TOU_TIER_UNKNOWN
+
+
+def _hhmm_to_minutes(raw: Any) -> int | None:
+    """Parse ``HH:MM`` into minutes past local midnight, or None."""
+    parts = str(raw or "").split(":")
+    if len(parts) < 2:
+        return None
+    try:
+        hour, minute = int(parts[0]), int(parts[1])
+    except ValueError:
+        return None
+    if not (0 <= hour <= 23 and 0 <= minute <= 59):
+        return None
+    return hour * 60 + minute
+
+
+def _value_candidate(value: Any, plain: float, comfort: float | None = None, eco: float | None = None) -> float | None:
+    """Resolve a record value against the plain schedule target.
+
+    "comfort" and "eco" name the room's own configured targets (the same
+    values the schedule section edits), so a rule tracks the room instead of
+    freezing a number; the caller passes the side-appropriate pair.
+    """
+    if not isinstance(value, dict):
+        return None
+    mode = str(value.get("mode") or "set")
+    try:
+        if mode == "shift":
+            delta = abs(float(value.get("delta")))  # type: ignore[arg-type]
+            if str(value.get("direction") or "raise") == "lower":
+                delta = -delta
+            return plain + delta
+        if mode in ("comfort", "eco"):
+            base = comfort if mode == "comfort" else eco
+            return None if base is None else float(base)
+        return float(value.get("temp"))  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+
+
+def _arrive_candidate(
+    value: Any,
+    window: dict[str, Any],
+    ts: float,
+    decay: DecayFn | None,
+    is_heat: bool,
+    comfort: float | None = None,
+    eco: float | None = None,
+) -> float | None:
+    """Decay-derived floor for an ``arrive`` record at *ts*.
+
+    The promise is a temperature *at* the window's end. A room cooling
+    toward it loses heat exponentially (Newton): the floor now is the end
+    temperature grown backwards along the curve, so heating stops when the
+    derived floor meets the room and the drift alone lands exactly on the
+    promise. Without a learned model (or when the drift points the wrong
+    way) this degrades to the flat target — classic coast behavior.
+    """
+    if not isinstance(value, dict) or str(value.get("mode")) != "arrive":
+        return None
+    named = str(value.get("to") or "")
+    if named in ("comfort", "eco"):
+        temp = comfort if named == "comfort" else eco
+    else:
+        try:
+            temp = float(value.get("temp"))  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            return None
+    if temp is None:
+        return None
+    if decay is None:
+        return temp
+    alpha, t_out = decay
+    if is_heat and t_out >= temp:
+        return temp
+    if not is_heat and t_out <= temp:
+        return temp
+    dt_hours = max(window["end"] - ts, 0.0) / 3600.0
+    exponent = min(max(alpha * dt_hours, 0.0), TOU_ARRIVAL_EXPONENT_CAP)
+    return t_out + (temp - t_out) * math.exp(exponent)
+
+
+def _active_window(windows: list[dict[str, Any]], ts: float) -> dict[str, Any] | None:
+    found: dict[str, Any] | None = None
+    for w in windows:
+        if w["start"] <= ts < w["end"]:
+            found = w  # list order = priority: the later record wins
+    return found
+
+
+def _heat_guarded(cand: float, shaped: float, plain: float, mold_active: bool, vacation_now: bool) -> bool:
+    """True when a heating-side candidate must be rejected (safety wins)."""
+    return (mold_active and cand < shaped) or (vacation_now and cand > plain)
+
+
+def _apply_tariff_windows(
+    windows: list[dict[str, Any]],
+    ts: float,
+    plain: float | None,
+    shaped: float,
+    clamp_min: float,
+    clamp_max: float,
+    mold_active: bool,
+    vacation_now: bool,
+    is_heat: bool,
+    decay: DecayFn | None = None,
+    comfort: float | None = None,
+    eco: float | None = None,
+) -> float | None:
+    """Tariff schedule records replace tier shaping on their side (chain step 4)."""
+    if plain is None:
+        return None  # off stays off: no tariff record activates a side
+    active = _active_window(windows, ts)
+    if active is None:
+        return shaped
+    rec = active["rec"]
+    value = rec.get("value")
+    cand = _arrive_candidate(value, active, ts, decay, is_heat, comfort, eco)
+    if cand is None:
+        cand = _value_candidate(value, plain, comfort, eco)
+    if cand is None:
+        return shaped
+
+    if rec.get("guard"):
+        # Migrated legacy coast: one-way drift versus the schedule, shaping
+        # bypassed — exactly the old coast-window semantics.
+        if is_heat:
+            return cand if cand < plain else plain
+        return cand if cand > plain else plain
+    cand = min(max(cand, clamp_min), clamp_max)
+    if is_heat and _heat_guarded(cand, shaped, plain, mold_active, vacation_now):
+        return shaped
+    return cand
 
 
 @dataclass
@@ -1114,6 +1250,307 @@ class TouManager:
     # Target adjustment: the store layer (the resolver wrapper)
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def schedules(settings: dict[str, Any]) -> list[dict[str, Any]]:
+        """Tariff schedule records from global settings (advanced/API authoring)."""
+        records = settings.get("tou_schedules")
+        if isinstance(records, list):
+            return [r for r in records if isinstance(r, dict)]
+        return []
+
+    @staticmethod
+    def rule_library(settings: dict[str, Any]) -> dict[str, dict[str, Any]]:
+        """Shared tariff rule definitions (``settings["tou_rules"]``) keyed by id."""
+        out: dict[str, dict[str, Any]] = {}
+        for rule in settings.get("tou_rules") or []:
+            if isinstance(rule, dict) and rule.get("id"):
+                out[str(rule["id"])] = rule
+        return out
+
+    @staticmethod
+    def row_records(room: dict[str, Any], rules: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+        """Expand a room's schedule rows into engine records via the shared library.
+
+        Rows are thin references ``{id, rule_id, enabled}``; the definition
+        lives once in ``settings["tou_rules"]``, so editing a rule propagates
+        to every room that references it — same name, same rule everywhere.
+        A row with no rule (dangling reference, or the ignored pre-release
+        inline format lacking a rule_id) compiles to nothing. The per-room
+        ``tou_schedule_enabled`` toggle gates the whole schedule: a disabled
+        section cannot steer the room, but its rows stay in place, so
+        switching it back on brings the rules with it (temporary measures
+        never lose data).
+        """
+        if not room.get("tou_schedule_enabled", False):
+            return []
+        area_id = str(room.get("area_id", ""))
+        out: list[dict[str, Any]] = []
+        for row in room.get("tou_overrides") or []:
+            if not isinstance(row, dict) or not row.get("enabled", True):
+                continue
+            rule = rules.get(str(row.get("rule_id") or ""))
+            if rule is None:
+                continue
+            out.extend(TouManager._rule_records(rule, area_id))
+        return out
+
+    @staticmethod
+    def _rule_records(rule: dict[str, Any], area_id: str) -> list[dict[str, Any]]:
+        """Fan one library rule out into at most one engine record per side.
+
+        A blank side skips the rule in that mode entirely, so a heating
+        adjustment can never command cooling. "arrive" schedules the
+        decay-derived action in two modes: by a wall-clock time (window runs
+        from the charge period's end to the clock) or coasting through the
+        anchored period (window = the period itself, arrival at its end).
+        Both hold the flat temp until the learned model can derive the
+        boundary temperature.
+        """
+        action = str(rule.get("action") or "")
+        if action not in ("set", "raise", "lower", "arrive"):
+            return []
+        until = str(rule.get("until") or "tier_window")
+        edge = str(rule.get("edge") or "start")
+        if action == "arrive":
+            # Two arrival modes share the decay curve, keyed by whether an
+            # arrival clock exists: "reach by HH:MM" coasts from the charge
+            # period's end to that time (anchor = the period ending — heating
+            # stops at the boundary and stored heat carries the room), while a
+            # period-end arrival rides the whole anchored period and lands at
+            # the next change. A fixed duration is meaningless for an arrival
+            # promise, and an empty "clock" end has nothing to reach.
+            rec_clock = str(rule.get("clock") or "")
+            if rec_clock:
+                rec_until, rec_minutes = "clock", 0
+                edge = "end"
+            elif until == "tier_window":
+                rec_until, rec_clock, rec_minutes = "window", "", 0
+                edge = "start"
+            else:
+                return []
+        elif until == "minutes":
+            rec_until, rec_clock, rec_minutes = "minutes", "", rule.get("minutes") or 0
+        elif until == "clock":
+            rec_until, rec_clock, rec_minutes = "clock", str(rule.get("clock") or ""), 0
+        else:
+            rec_until, rec_clock, rec_minutes = "window", "", 0
+        rid = str(rule.get("id") or "r")
+        out: list[dict[str, Any]] = []
+        for side in ("heat", "cool"):
+            temp = rule.get(side)
+            named = temp if isinstance(temp, str) and temp in ("comfort", "eco") else None
+            if named is not None:
+                # A named target tracks the room's own configured temperature
+                # (resolved at apply time, so settings changes heal next cycle).
+                if action == "set":
+                    value: dict[str, Any] = {"mode": named}
+                elif action == "arrive":
+                    value = {"mode": "arrive", "to": named}
+                else:
+                    continue  # raise/lower are deltas; a named value cannot express one
+            elif not isinstance(temp, (int, float)) or isinstance(temp, bool):
+                continue  # blank side: the rule skips this mode
+            elif action == "set":
+                value = {"mode": "set", "temp": float(temp)}
+            elif action == "arrive":
+                value = {"mode": "arrive", "temp": float(temp)}
+            else:
+                value = {
+                    "mode": "shift",
+                    "direction": "raise" if action == "raise" else "lower",
+                    "delta": abs(float(temp)),
+                }
+            out.append(
+                {
+                    "id": f"{rid}-{side}",
+                    "name": str(rule.get("name") or ""),
+                    "enabled": True,
+                    "rooms": [area_id],
+                    "side": side,
+                    "tier": str(rule.get("tier") or "any"),
+                    "from_tier": "",
+                    "edge": edge,
+                    "phase": "after",
+                    "minutes": rec_minutes,
+                    "until": rec_until,
+                    "until_tier": "",
+                    "clock": rec_clock,
+                    "between": rule.get("between"),
+                    "days": [d for d in (rule.get("days") or []) if isinstance(d, str)],
+                    "guard": False,
+                    "value": value,
+                }
+            )
+        return out
+
+    def _compile_schedules(
+        self,
+        area_id: str,
+        settings: dict[str, Any],
+        timeline: TouTimeline,
+        records: list[dict[str, Any]],
+    ) -> dict[str, list[dict[str, Any]]]:
+        """Expand records into per-side [start, end) windows; list order = priority."""
+        cap = float(settings.get("tou_coast_max_minutes", DEFAULT_TOU_COAST_MAX_MINUTES))
+        horizon_end = timeline.segments[-1].end if timeline.segments else time.time()
+        out: dict[str, list[dict[str, Any]]] = {"heat": [], "cool": []}
+        boundaries = timeline.boundaries()
+        # An in-progress anchor: a period already running when the horizon opens
+        # has no start transition in the segments — yet "Peak · starts" describes
+        # being *in* peak, not just watching it begin. Seed an anchor at the
+        # horizon edge so rules fire while their period is active — and so
+        # sensor-driven extras (a generator that is already running) work at
+        # all: their "starts" moment is exactly the moment they are observed.
+        # The from-tier of an in-progress anchor is unknown, so it equals the
+        # tier and only "starts" matching may read it.
+        first = timeline.segments[0] if timeline.segments else None
+        if first is not None and first.tier != TOU_TIER_UNKNOWN:
+            boundaries = [(first.start, first.tier, first.tier), *boundaries]
+        for rec in records:
+            if not rec.get("enabled", True) or area_id not in (rec.get("rooms") or []):
+                continue
+            side = str(rec.get("side") or "")
+            if side not in out:
+                continue
+            tier = str(rec.get("tier") or "any")
+            from_tier = str(rec.get("from_tier") or "")
+            edge = str(rec.get("edge") or "start")
+            phase = str(rec.get("phase") or "after")
+            days = [d for d in (rec.get("days") or []) if isinstance(d, str)]
+            try:
+                minutes = float(rec.get("minutes") or 0)
+            except (TypeError, ValueError):
+                continue
+            for b_ts, b_from, b_to in boundaries:
+                if b_from == b_to and edge == "end":
+                    continue  # in-progress seed: a period has not ended at "now"
+                if tier != "any" and (b_to if edge == "start" else b_from) != tier:
+                    continue
+                if edge == "start" and from_tier and b_from != from_tier:
+                    continue
+                if days and TOU_WEEKDAYS[dt_util.as_local(dt_util.utc_from_timestamp(b_ts)).weekday()] not in days:
+                    continue
+                if not self._between_ok(b_ts, rec.get("between")):
+                    continue
+
+                if phase == "before":
+                    if minutes <= 0:
+                        continue
+                    start, end = b_ts - minutes * 60.0, b_ts
+                else:
+                    end = self._schedule_end(  # type: ignore[assignment]
+                        rec, b_ts, minutes, timeline, cap, horizon_end
+                    )
+                    if end is None:
+                        continue
+                    start = b_ts
+                if start < horizon_end and end > start:
+                    out[side].append({"rec": rec, "start": start, "end": min(end, horizon_end)})
+        return out
+
+    def _schedule_end(
+        self,
+        rec: dict[str, Any],
+        b_ts: float,
+        minutes: float,
+        timeline: TouTimeline,
+        cap: float,
+        horizon_end: float,
+    ) -> float | None:
+        """End of an after-phase record: fixed minutes, window, clock, or tier."""
+        until = str(rec.get("until") or "window")
+        if until == "minutes":
+            return b_ts + minutes * 60.0 if minutes > 0 else None
+        if until in ("window", "next_change"):
+            nxt = timeline.next_boundary_after(b_ts)
+            return nxt if nxt is not None else horizon_end
+        if until == "clock":
+            return self._next_clock_ts(b_ts, str(rec.get("clock") or ""))
+        if until == "next_tier_change":
+            tier = str(rec.get("until_tier") or "")
+            if not tier:
+                return None
+            nxt = timeline.next_boundary_after(b_ts, tier)
+            return nxt if nxt is not None else min(b_ts + cap * 60.0, horizon_end)
+        return None
+
+    @staticmethod
+    def _between_ok(b_ts: float, between: Any) -> bool:
+        """True when *b_ts* (UTC epoch) falls inside a local HH:MM range."""
+        if not isinstance(between, dict):
+            return True
+        frm = _hhmm_to_minutes(between.get("from"))
+        to = _hhmm_to_minutes(between.get("to"))
+        if frm is None or to is None or frm == to:
+            return True
+        local = dt_util.as_local(dt_util.utc_from_timestamp(b_ts))
+        now_min = int(local.hour) * 60 + int(local.minute)
+        if frm < to:
+            return frm <= now_min < to
+        return now_min >= frm or now_min < to
+
+    @staticmethod
+    def _next_clock_ts(after_ts: float, clock: str) -> float | None:
+        """First occurrence of a local HH:MM at or after *after_ts* (rolls to tomorrow)."""
+        minutes = _hhmm_to_minutes(clock)
+        if minutes is None:
+            return None
+        local = dt_util.as_local(dt_util.utc_from_timestamp(after_ts))
+        candidate = local.replace(hour=minutes // 60, minute=minutes % 60, second=0, microsecond=0)
+        ts = float(candidate.timestamp())
+        if ts < after_ts:
+            ts += 86400.0
+        return ts
+
+    def preview(
+        self,
+        settings: dict[str, Any],
+        area_id: str | None = None,
+        rooms: dict[str, Any] | None = None,
+    ) -> dict[str, Any] | None:
+        """Tier segments + compiled tariff windows + per-record fire counts.
+
+        *rooms* (the store's room map) adds the per-card ``tou_overrides``
+        rows to the preview, mirroring what ``make_adjuster`` compiles.
+        """
+        timeline = self._timeline
+        if timeline is None or not settings.get("tou_enabled", False):
+            return None
+        global_records = self.schedules(settings)
+        rooms = rooms or {}
+        rules = self.rule_library(settings)
+        if area_id is None:
+            areas = sorted(
+                {str(a) for rec in global_records for a in (rec.get("rooms") or []) if str(a)}
+                | {aid for aid, room in rooms.items() if isinstance(room, dict) and room.get("tou_overrides")}
+            )
+        else:
+            areas = [area_id]
+        areas_out: dict[str, Any] = {}
+        fire_stats: dict[str, dict[str, Any]] = {}
+        for area in areas:
+            room = rooms.get(area)
+            records = global_records + (self.row_records(room, rules) if isinstance(room, dict) else [])
+            windows = self._compile_schedules(area, settings, timeline, records)
+
+            rows: list[dict[str, Any]] = []
+            for side in ("heat", "cool"):
+                for w in windows[side]:
+                    rec = w["rec"]
+                    rid = str(rec.get("id", ""))
+                    rows.append({"start": round(w["start"], 1), "end": round(w["end"], 1), "side": side, "id": rid})
+                    stat = fire_stats.setdefault(rid, {"count": 0, "first": None})
+                    stat["count"] += 1
+                    if stat["first"] is None or w["start"] < stat["first"]:
+                        stat["first"] = round(w["start"], 1)
+            areas_out[area] = rows
+        return {
+            "now": round(time.time(), 1),
+            "segments": [[round(s.start, 1), round(s.end, 1), s.tier] for s in timeline.segments],
+            "areas": areas_out,
+            "records": fire_stats,
+        }
+
     def make_adjuster(
         self,
         room: dict[str, Any],
@@ -1124,26 +1561,32 @@ class TouManager:
         mold_active: bool = False,
         decay: DecayFn | None = None,
     ) -> AdjustFn | None:
-        """Build the per-room store adjuster, or None when the room does not
+        """Build the per-room adjuster, or None when the room does not
         participate.
 
-        Participation means: the store toggle is on (tariff rows and the
-        rule library join this entry point in a follow-up PR). The returned
-        callable maps (timestamp, resolved targets) to TOU-adjusted targets
-        and is composed into the schedule target resolver, so the whole MPC
-        horizon — and the bang-bang "now" target — become tariff-aware.
+        Participation means: the store toggle is on, or the room's tariff
+        rows compile to at least one record (or the advanced global records
+        do). The returned callable maps (timestamp, resolved targets) to
+        TOU-adjusted targets and is composed into the schedule target
+        resolver, so the whole MPC horizon — and the bang-bang "now" target
+        — become tariff-aware.
 
         ``decay`` is the room's learned (alpha, outdoor_temp) pair when the
         thermal model is confident enough to derive coast curves; None keeps
-        the pre-charge at its flat target (classic coast behavior).
+        the store layer's pre-charge and "arrive" records at their flat
+        target (classic coast behavior).
         """
         timeline = self._timeline
         if timeline is None:
             return None
-        if not room.get("tou_store_enabled", False):
+        store_enabled = bool(room.get("tou_store_enabled", False))
+        area_id = str(room.get("area_id", ""))
+        records = self.schedules(settings) + self.row_records(room, self.rule_library(settings))
+        if not store_enabled and not records:
             return None
         if timeline.current_tier == TOU_TIER_UNKNOWN and not self._has_tiered_events(timeline):
             return None
+        tariff_windows = self._compile_schedules(area_id, settings, timeline, records)
 
         def _num(value: Any, fallback: float) -> float:
             if isinstance(value, bool) or not isinstance(value, (int, float, str)):
@@ -1163,7 +1606,11 @@ class TouManager:
         gap = max(1.0, _num(room.get("tou_store_gap"), _num(settings.get("tou_store_gap"), DEFAULT_TOU_STORE_GAP)))
         eco_heat = _num(room.get("eco_heat", room.get("eco_temp")), DEFAULT_ECO_HEAT)
         eco_cool = _num(room.get("eco_cool"), DEFAULT_ECO_COOL)
-        store_runs = self._store_runs(timeline, gap, settings)
+        # Named-value resolution ("set to Comfort/Eco"): the room's own
+        # configured targets, the same sources the schedule resolver reads.
+        comfort_heat = _num(room.get("comfort_heat", room.get("comfort_temp")), DEFAULT_COMFORT_HEAT)
+        comfort_cool = _num(room.get("comfort_cool"), DEFAULT_COMFORT_COOL)
+        store_runs = self._store_runs(timeline, gap, settings) if store_enabled else []
 
         override_heat = room.get("override_heat")
         override_cool = room.get("override_cool")
@@ -1218,7 +1665,35 @@ class TouManager:
                             exponent = min(alpha * (run_next[1] - ts) / 3600.0, TOU_ARRIVAL_EXPONENT_CAP)
                             needed = t_out + (ceil_end - t_out) * math.exp(exponent)
                             shaped_cool = max(min(needed, cool), cool - swing, cool_min)
-            return TargetTemps(heat=shaped_heat, cool=shaped_cool)
+            heat = _apply_tariff_windows(
+                tariff_windows["heat"],
+                ts,
+                targets.heat,
+                shaped_heat,  # type: ignore[arg-type]
+                heat_min,
+                heat_max,
+                mold_active,
+                vacation_now,
+                True,
+                decay,
+                comfort_heat,
+                eco_heat,
+            )
+            cool = _apply_tariff_windows(
+                tariff_windows["cool"],
+                ts,
+                targets.cool,
+                shaped_cool,  # type: ignore[arg-type]
+                cool_min,
+                cool_max,
+                mold_active,
+                vacation_now,
+                False,
+                decay,
+                comfort_cool,
+                eco_cool,
+            )
+            return TargetTemps(heat=heat, cool=cool)
 
         return adjust
 

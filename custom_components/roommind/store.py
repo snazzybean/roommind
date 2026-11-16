@@ -278,6 +278,10 @@ class RoomMindStore:
             "tou_cool_max": config.get("tou_cool_max", None),
             "tou_swing": config.get("tou_swing", None),
             "tou_store_gap": config.get("tou_store_gap", None),
+            # Tariff rule rows (thin references into settings["tou_rules"])
+            # and the per-room schedule-section gate.
+            "tou_overrides": config.get("tou_overrides", []),
+            "tou_schedule_enabled": config.get("tou_schedule_enabled", False),
             "follow_device_setpoint": config.get("follow_device_setpoint", False),
             "climate_mode": config.get("climate_mode", "auto"),
             "schedules": config.get("schedules", []),
