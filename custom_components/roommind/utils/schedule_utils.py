@@ -233,10 +233,12 @@ def resolve_target_at_time(
     block_temp_converter: Callable[[float], float] | None = None,
     presence_away_action: str = "eco",
     schedule_off_action: str = "eco",
+    away_temp: float | None = None,
 ) -> float | None:
     """Resolve what the target temp would be at a specific timestamp.
 
     Returns None when the action is "off" (devices should be turned off).
+    With presence_away_action "away", nobody home uses away_temp (eco when unset).
     """
     # 1. Override
     if override_temp is not None and (override_until is None or ts < override_until):
@@ -248,6 +250,8 @@ def resolve_target_at_time(
     if presence_away:
         if presence_away_action == "off":
             return None
+        if presence_away_action == "away" and away_temp is not None:
+            return float(away_temp)
         return eco_temp
     # 3. Schedule blocks
     if schedule_blocks is None:
@@ -284,11 +288,14 @@ def resolve_targets_at_time(
     schedule_off_action: str = "eco",
     presence_clears_override: bool = False,
     room_vacant: bool = False,
+    away_heat: float | None = None,
+    away_cool: float | None = None,
 ) -> TargetTemps:
     """Resolve dual heat/cool target temps at a specific timestamp.
 
     Returns TargetTemps(heat, cool). None values mean "force off".
     ``room_vacant`` caps the schedule result at eco (occupancy eco, #180).
+    With presence_away_action "away", nobody home uses away_heat/away_cool (eco when unset).
     """
     # 1. Override — split heat/cool dead-band (skipped when presence-away suppresses it)
     if (override_heat is not None or override_cool is not None) and (override_until is None or ts < override_until):
@@ -302,12 +309,24 @@ def resolve_targets_at_time(
     if presence_away:
         if presence_away_action == "off":
             return TargetTemps(heat=None, cool=None)
+        if presence_away_action == "away":
+            return away_target_temps(away_heat, away_cool, eco_heat, eco_cool)
         return TargetTemps(heat=eco_heat, cool=eco_cool)
     # 3. Schedule blocks
     targets = _schedule_targets_at_time(
         ts, schedule_blocks, comfort_heat, comfort_cool, eco_heat, eco_cool, block_temp_converter, schedule_off_action
     )
     return cap_to_eco(targets, eco_heat, eco_cool) if room_vacant else targets
+
+
+def away_target_temps(
+    away_heat: float | None, away_cool: float | None, eco_heat: float, eco_cool: float
+) -> TargetTemps:
+    """Targets while nobody is home with presence_away_action "away": the room's away levels, eco where unset."""
+    return TargetTemps(
+        heat=eco_heat if away_heat is None else float(away_heat),
+        cool=eco_cool if away_cool is None else float(away_cool),
+    )
 
 
 def cap_to_eco(targets: TargetTemps, eco_heat: float, eco_cool: float) -> TargetTemps:
@@ -603,6 +622,8 @@ def make_target_resolver(
             schedule_off_action=schedule_off_action,
             presence_clears_override=presence_clears_override,
             room_vacant=room_vacant,
+            away_heat=room.get("away_heat"),
+            away_cool=room.get("away_cool"),
         )
         if targets.heat is None and targets.cool is None:
             return targets

@@ -1,6 +1,12 @@
 import { LitElement, html, css, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
-import type { HomeAssistant, PriceStatus, RoomConfig, RoomWithoutArea } from "./types";
+import type {
+  HomeAssistant,
+  PriceStatus,
+  RoomConfig,
+  RoomWithoutArea,
+  PresenceAwayAction,
+} from "./types";
 import { loadHaElements } from "./load-ha-elements";
 import { noteServerTime } from "./utils/server-clock";
 import { localize } from "./utils/localize";
@@ -83,7 +89,7 @@ export class RoomMindPanel extends LitElement {
   @state() private _coilDryFanMode = "low";
   @state() private _anyoneHome = true;
   @state() private _presencePersons: string[] = [];
-  @state() private _presenceAwayAction: "eco" | "off" = "eco";
+  @state() private _presenceAwayAction: PresenceAwayAction = "eco";
   @state() private _saveStatus: "idle" | "saving" | "saved" | "error" = "idle";
   @state() private _roomOrder: string[] = [];
   @state() private _groupByFloor = false;
@@ -685,7 +691,7 @@ export class RoomMindPanel extends LitElement {
         price_status?: PriceStatus | null;
         anyone_home: boolean;
         presence_persons: string[];
-        presence_away_action: "eco" | "off";
+        presence_away_action: PresenceAwayAction;
         schedule_off_action: "eco" | "off";
         valve_protection_enabled: boolean;
         coil_dry_enabled: boolean;

@@ -9,8 +9,9 @@ import "../shared/rs-info-icon";
 
 /**
  * Comfort and eco targets of a room (content of the temperatures dialog): a level each, with
- * the heat and/or cool side the climate mode uses. Fires `comfort-heat-changed`,
- * `comfort-cool-changed`, `eco-heat-changed`, `eco-cool-changed` with `{ value }` in °C.
+ * the heat and/or cool side the climate mode uses, plus the away level when presence uses one.
+ * Fires `comfort-heat-changed`, `comfort-cool-changed`, `eco-heat-changed`, `eco-cool-changed`,
+ * `away-heat-changed`, `away-cool-changed` with `{ value }` in °C.
  */
 @customElement("rs-target-temps")
 export class RsTargetTemps extends LitElement {
@@ -19,6 +20,10 @@ export class RsTargetTemps extends LitElement {
   @property({ type: Number }) public comfortCool = 24.0;
   @property({ type: Number }) public ecoHeat = 17.0;
   @property({ type: Number }) public ecoCool = 27.0;
+  /** Show the away level (presence_away_action "away"); unset sides show eco. */
+  @property({ type: Boolean }) public showAway = false;
+  @property({ attribute: false }) public awayHeat: number | null = null;
+  @property({ attribute: false }) public awayCool: number | null = null;
   @property({ type: String }) public climateMode: ClimateMode = "auto";
 
   static styles = [
@@ -95,6 +100,18 @@ export class RsTargetTemps extends LitElement {
         this._onEcoHeat,
         this._onEcoCool,
       )}
+      ${
+        this.showAway
+          ? level(
+              localize("override.away", l),
+              localize("schedule.away_hint", l),
+              this.awayHeat ?? this.ecoHeat,
+              this.awayCool ?? this.ecoCool,
+              this._onAwayHeat,
+              this._onAwayCool,
+            )
+          : nothing
+      }
     `;
   }
 
@@ -120,6 +137,16 @@ export class RsTargetTemps extends LitElement {
   private _onEcoCool = (val: number) => {
     this._fire("eco-cool-changed", val);
     if (this.ecoHeat > val) this._fire("eco-heat-changed", val);
+  };
+
+  private _onAwayHeat = (val: number) => {
+    this._fire("away-heat-changed", val);
+    if ((this.awayCool ?? this.ecoCool) < val) this._fire("away-cool-changed", val);
+  };
+
+  private _onAwayCool = (val: number) => {
+    this._fire("away-cool-changed", val);
+    if ((this.awayHeat ?? this.ecoHeat) > val) this._fire("away-heat-changed", val);
   };
 }
 

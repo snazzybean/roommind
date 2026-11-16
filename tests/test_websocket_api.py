@@ -3835,3 +3835,30 @@ def test_custom_override_stays_within_the_climate_entity_limits(side):
         with pytest.raises(vol.Invalid):
             schema({**base, side: value})
     assert schema({**base, side: 5})[side] == 5.0
+
+
+@pytest.mark.asyncio
+async def test_away_temperature_schema():
+    """presence_away_action accepts "away"; a room takes away levels in range, or null for eco."""
+    import voluptuous as vol
+
+    settings = websocket_save_settings._ws_schema
+    assert (
+        settings({"id": 1, "type": "roommind/settings/save", "presence_away_action": "away"})["presence_away_action"]
+        == "away"
+    )
+    room = websocket_save_room._ws_schema
+    base = {"id": 1, "type": "roommind/rooms/save", "area_id": "lr"}
+    assert room({**base, "away_heat": "16"})["away_heat"] == 16.0
+    assert room({**base, "away_heat": None, "away_cool": None})["away_cool"] is None
+    with pytest.raises(vol.Invalid):
+        room({**base, "away_heat": float("nan")})
+
+
+@pytest.mark.asyncio
+async def test_save_room_stores_away_levels(ws_hass, store, connection):
+    await store.async_load()
+    await _save_room(ws_hass, connection, {"id": 1, "type": "roommind/rooms/save", "area_id": "lr", "away_heat": 16.0})
+    assert store.get_room("lr")["away_heat"] == 16.0
+    await _save_room(ws_hass, connection, {"id": 2, "type": "roommind/rooms/save", "area_id": "lr", "away_heat": None})
+    assert store.get_room("lr")["away_heat"] is None

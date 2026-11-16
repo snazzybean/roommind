@@ -139,6 +139,9 @@ export interface CompressorGroup {
   enforce_uniform_mode: boolean;
 }
 
+/** What a room does when nobody is home: eco, devices off, or its own away level. */
+export type PresenceAwayAction = "eco" | "off" | "away";
+
 export interface RoomConfig {
   area_id: string;
   thermostats: string[];
@@ -173,6 +176,9 @@ export interface RoomConfig {
   comfort_cool: number;
   eco_heat: number;
   eco_cool: number;
+  /** Levels while nobody is home with presence_away_action "away"; unset or null = eco. */
+  away_heat?: number | null;
+  away_cool?: number | null;
   override_heat?: number | null;
   override_cool?: number | null;
   override_until?: number | null;
@@ -239,7 +245,7 @@ export interface GlobalSettings {
   vacation_until?: number | null;
   presence_enabled?: boolean;
   presence_persons?: string[];
-  presence_away_action?: "eco" | "off";
+  presence_away_action?: PresenceAwayAction;
   presence_clears_override?: boolean;
   schedule_off_action?: "eco" | "off";
   valve_protection_enabled?: boolean;

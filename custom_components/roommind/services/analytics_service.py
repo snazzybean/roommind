@@ -220,6 +220,8 @@ async def _compute_target_forecast(
             schedule_off_action=settings.get("schedule_off_action", "eco"),
             presence_clears_override=bool(settings.get("presence_clears_override", False)),
             room_vacant=room_vacant,
+            away_heat=room.get("away_heat"),
+            away_cool=room.get("away_cool"),
         )
         targets, (shift_heat, shift_cool) = price_shifted(
             targets, ts, room, settings, price_signal, presence_away=presence_away, room_vacant=room_vacant

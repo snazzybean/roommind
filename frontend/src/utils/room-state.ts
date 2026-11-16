@@ -9,6 +9,7 @@ import type {
   RoomConfig,
   RoomLiveData,
   RoomMode,
+  PresenceAwayAction,
 } from "../types";
 import { localize, type TranslationKey } from "./localize";
 import type { EffectiveOverride } from "./override";
@@ -482,6 +483,8 @@ export interface TargetReasonContext {
   states: Record<string, HassEntity> | undefined;
   vacationActive: boolean;
   vacationUntil: number | null;
+  /** Global presence_away_action, to name what applies when nobody is home. */
+  presenceAwayAction?: PresenceAwayAction;
   now?: number;
 }
 
@@ -546,7 +549,14 @@ export function targetReason(
         ? localize("card.hint.override_paused", l, {
             type: localize(OVERRIDE_TYPE_KEYS[live.override_type ?? "custom"], l),
           })
-        : localize(devicesOff ? "detail.reason.nobody_home_off" : "detail.reason.nobody_home", l),
+        : localize(
+            devicesOff
+              ? "detail.reason.nobody_home_off"
+              : ctx.presenceAwayAction === "away"
+                ? "detail.reason.nobody_home_away"
+                : "detail.reason.nobody_home",
+            l,
+          ),
     };
   }
   const eid = activeScheduleEntity(config);
