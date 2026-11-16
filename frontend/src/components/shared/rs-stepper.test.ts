@@ -157,6 +157,84 @@ test.each(["40.9", "95.1"])("rejects Fahrenheit outside range %s", async (text) 
   expect(input.value).toBe("71,06");
 });
 
+test.each([
+  [34.7, 1, 35],
+  [5.2, 0, 5],
+])("editable boundary step from %s clamps to the endpoint", async (start, index, end) => {
+  const { stepper, changes } = await row("°C", start);
+  const button = stepper.shadowRoot!.querySelectorAll("button")[index];
+  expect(button.getAttribute("aria-disabled")).toBe("false");
+  button.focus();
+  button.click();
+  expect(changes).toEqual([end]);
+  stepper.value = end;
+  await stepper.updateComplete;
+  expect(button.getAttribute("aria-disabled")).toBe("true");
+  expect(button.disabled).toBe(false);
+  expect(stepper.shadowRoot!.activeElement).toBe(button);
+  button.click();
+  expect(changes).toEqual([end]);
+});
+
+test.each([
+  ["°C", "22,2 °C"],
+  ["°F", "72,06 °F"],
+])("editable %s changes have one polite announcement without moving focus", async (unit, text) => {
+  const { stepper } = await row(unit);
+  const root = stepper.shadowRoot!;
+  const regions = root.querySelectorAll('[aria-live="polite"]');
+  expect(regions).toHaveLength(1);
+  const region = regions[0];
+  expect(region.getAttribute("aria-hidden")).not.toBe("true");
+  expect(region.classList.contains("sr-only")).toBe(true);
+  expect(RsStepper.elementStyles.map(String).join("\n")).toContain(".sr-only");
+  expect(region.getAttribute("aria-atomic")).toBe("true");
+  expect(root.querySelector("input")!.hasAttribute("aria-live")).toBe(false);
+  expect(root.querySelector("input")!.getAttribute("aria-label")).toBe(`Comfort (${unit})`);
+  expect(root.querySelector("span[aria-hidden='true']")!.textContent).toBe(unit);
+  const button = root.querySelectorAll("button")[1];
+  stepper.addEventListener("value-changed", (e) => {
+    stepper.value = (e as CustomEvent).detail.value;
+  });
+  button.focus();
+  button.click();
+  await stepper.updateComplete;
+  expect(root.querySelector('[aria-live="polite"]')).toBe(region);
+  expect(region.textContent!.trim()).toBe(text);
+  expect(root.activeElement).toBe(button);
+});
+
+test.each([
+  [34.7, 1],
+  [5.2, 0],
+])("non-editable boundary guard at %s still rejects a crossing step", async (value, index) => {
+  const stepper = new RsStepper();
+  Object.assign(stepper, { value, min: 5, max: 35, step: 0.5, display: `${value} °C` });
+  document.body.append(stepper);
+  await stepper.updateComplete;
+  const changes: number[] = [];
+  stepper.addEventListener("value-changed", (e) => changes.push((e as CustomEvent).detail.value));
+  const button = stepper.shadowRoot!.querySelectorAll("button")[index];
+  expect(button.getAttribute("aria-disabled")).toBe("true");
+  button.click();
+  expect(changes).toEqual([]);
+  const regions = stepper.shadowRoot!.querySelectorAll('[aria-live="polite"]');
+  expect(regions).toHaveLength(1);
+  expect(regions[0].tagName).toBe("OUTPUT");
+  expect(regions[0].textContent).toBe(`${value} °C`);
+});
+
+test.each([34.7, 5.2])("disabled editable boundary at %s cannot emit", async (value) => {
+  const { stepper, changes } = await row("°C", value);
+  stepper.disabled = true;
+  await stepper.updateComplete;
+  for (const button of stepper.shadowRoot!.querySelectorAll("button")) {
+    expect(button.disabled).toBe(true);
+    button.dispatchEvent(new MouseEvent("click"));
+  }
+  expect(changes).toEqual([]);
+});
+
 test("minus preserves the fractional target", async () => {
   const { stepper, changes } = await row();
   stepper.shadowRoot!.querySelectorAll("button")[0].click();

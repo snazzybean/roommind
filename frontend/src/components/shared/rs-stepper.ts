@@ -1,6 +1,6 @@
 import { LitElement, html, css } from "lit";
 import { customElement, property } from "lit/decorators.js";
-import { tokens } from "../../styles/tokens";
+import { tokens, srOnly } from "../../styles/tokens";
 import { localize, uiLanguage } from "../../utils/localize";
 
 /**
@@ -27,6 +27,7 @@ export class RsStepper extends LitElement {
 
   static styles = [
     tokens,
+    srOnly,
     css`
       :host {
         display: inline-flex;
@@ -95,11 +96,11 @@ export class RsStepper extends LitElement {
   ];
 
   private get _atMin(): boolean {
-    return this.value - this.step < this.min - 1e-9;
+    return this.editable ? this.value <= this.min : this.value - this.step < this.min - 1e-9;
   }
 
   private get _atMax(): boolean {
-    return this.value + this.step > this.max + 1e-9;
+    return this.editable ? this.value >= this.max : this.value + this.step > this.max + 1e-9;
   }
 
   /**
@@ -129,7 +130,10 @@ export class RsStepper extends LitElement {
                 @focus=${(e: FocusEvent) => (e.target as HTMLInputElement).select()}
                 @blur=${this._commit}
                 @keydown=${this._onKeydown}
-              /><span aria-hidden="true">${this.unit}</span>`
+              /><span aria-hidden="true">${this.unit}</span>
+              <span class="sr-only" aria-live="polite" aria-atomic="true"
+                >${this._formattedValue()} ${this.unit}</span
+              >`
           : html`<output aria-live="polite">${this.display || String(this.value)}</output>`
       }
       <button
