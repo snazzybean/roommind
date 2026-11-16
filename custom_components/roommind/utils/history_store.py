@@ -63,11 +63,21 @@ class HistoryStore:
     def _ensure_dir(self) -> None:
         os.makedirs(self._base_dir, exist_ok=True)
 
+    @staticmethod
+    def _is_safe_id(area_id: str) -> bool:
+        """True when the id cannot point outside the history directory ('../x', absolute paths)."""
+        return bool(area_id) and os.path.basename(area_id) == area_id and "\0" not in area_id
+
+    def _room_path(self, area_id: str, kind: str) -> str:
+        if not self._is_safe_id(area_id):
+            raise ValueError(f"Unsafe room id for history files: {area_id!r}")
+        return os.path.join(self._base_dir, f"{area_id}_{kind}.csv")
+
     def _detail_path(self, area_id: str) -> str:
-        return os.path.join(self._base_dir, f"{area_id}_detail.csv")
+        return self._room_path(area_id, "detail")
 
     def _history_path(self, area_id: str) -> str:
-        return os.path.join(self._base_dir, f"{area_id}_history.csv")
+        return self._room_path(area_id, "history")
 
     @staticmethod
     def _migrate_header(path: str) -> None:
@@ -142,6 +152,8 @@ class HistoryStore:
         end_ts: float | None = None,
     ) -> list[dict]:
         """Read detail CSV rows, optionally filtered by age or timestamp range."""
+        if not self._is_safe_id(area_id):
+            return []
         return self._read_csv(self._detail_path(area_id), max_age, start_ts, end_ts)
 
     def read_history(
@@ -152,6 +164,8 @@ class HistoryStore:
         end_ts: float | None = None,
     ) -> list[dict]:
         """Read history CSV rows."""
+        if not self._is_safe_id(area_id):
+            return []
         return self._read_csv(self._history_path(area_id), max_age, start_ts, end_ts)
 
     def _read_csv(
@@ -223,6 +237,8 @@ class HistoryStore:
     def remove_room(self, area_id: str) -> None:
         """Delete all history files for a room."""
         self._last_mode.pop(area_id, None)
+        if not self._is_safe_id(area_id):
+            return
         for path in (self._detail_path(area_id), self._history_path(area_id)):
             if os.path.isfile(path):
                 os.remove(path)

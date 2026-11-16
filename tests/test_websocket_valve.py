@@ -16,7 +16,7 @@ from custom_components.roommind.websocket_api import (
 )
 
 _save_room = websocket_save_room.__wrapped__
-_delete_room = websocket_delete_room.__wrapped__
+_delete_room = websocket_delete_room.__wrapped__.__wrapped__
 
 OPEN = "number.trv_valve_opening_degree"
 CLOSE = "number.trv_valve_closing_degree"

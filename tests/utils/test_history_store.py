@@ -757,3 +757,22 @@ def test_rows_without_model_inputs_leave_the_columns_empty(history_dir):
     store = HistoryStore(history_dir)
     store.record("room_a", {"mode": "idle"}, 600)
     assert store.read_detail("room_a")[0]["model_power"] == ""
+
+
+@pytest.mark.parametrize("area_id", ["../outside", "../../x", "/abs/outside", "sub/room", ""])
+def test_room_ids_cannot_leave_the_history_directory(tmp_path, area_id):
+    """An id with a path in it never reads, deletes or writes a file outside the directory."""
+    history_dir = tmp_path / "a" / "history"
+    victim = tmp_path / "a" / "outside_detail.csv"
+    victim.parent.mkdir(parents=True)
+    victim.write_text("timestamp,room_temp\n1,20\n")
+    store = HistoryStore(str(history_dir))
+
+    assert store.read_detail(area_id) == []
+    assert store.read_history(area_id) == []
+    store.remove_room(area_id)
+    assert victim.exists()
+    with pytest.raises(ValueError):
+        store.record(area_id, {"room_temp": 20.0})
+    with pytest.raises(ValueError):
+        store.rotate(area_id)

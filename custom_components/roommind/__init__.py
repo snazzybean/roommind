@@ -248,6 +248,7 @@ async def _async_register_panel(hass: HomeAssistant) -> None:
             sidebar_title="RoomMind",
             sidebar_icon="mdi:home-thermometer",
             frontend_url_path="roommind",
+            require_admin=True,
             config={
                 "_panel_custom": {
                     "name": "roommind-panel",
