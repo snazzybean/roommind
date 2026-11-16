@@ -4,7 +4,7 @@
 
 | Name                                                               |    Stmts |     Miss |   Cover |   Missing |
 |------------------------------------------------------------------- | -------: | -------: | ------: | --------: |
-| custom\_components/roommind/\_\_init\_\_.py                        |      150 |       81 |     46% |41-43, 49-76, 99-100, 106-144, 149-160, 176-199, 227, 231-235, 241-242, 261-262 |
+| custom\_components/roommind/\_\_init\_\_.py                        |      150 |       81 |     46% |41-43, 49-76, 99-100, 106-144, 149-160, 176-199, 230, 234-238, 244-245, 264-265 |
 | custom\_components/roommind/binary\_sensor.py                      |       66 |        0 |    100% |           |
 | custom\_components/roommind/climate.py                             |      411 |        0 |    100% |           |
 | custom\_components/roommind/config\_flow.py                        |       11 |       11 |      0% |      3-23 |
