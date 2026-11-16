@@ -55,6 +55,8 @@ interface Tile {
   tone?: "heat" | "cool";
   value: string | null;
   detail?: string;
+  /** Line shown under the value (detail only shows in the info tooltip). */
+  sub?: string;
   /** Info text key when it is not analytics.info.<id>. */
   info?: TranslationKey;
 }
@@ -470,7 +472,8 @@ export class RsAnalyticsModel extends LitElement {
         id: "power_gain",
         icon: "mdi:flash",
         value: `${delta(model.Q_power ?? 0, 1)} ${unit}/h·kW`,
-        detail:
+        // What the devices running now add, visible like before 2.0
+        sub:
           m.power_now_kw != null && m.power_gain_now != null
             ? localize("analytics.power_gain_sub", l, {
                 power: `${formatNumber(Math.round(m.power_now_kw * 1000), this.hass)} W`,
@@ -528,6 +531,7 @@ export class RsAnalyticsModel extends LitElement {
       .tone=${t.tone ?? "default"}
       .label=${localize(`analytics.${t.id}` as TranslationKey, l)}
       .value=${t.value ?? PENDING}
+      .sub=${t.sub ?? ""}
       ?pending=${t.value == null}
       .info=${localize(t.info ?? (`analytics.info.${t.id}` as TranslationKey), l, {
         threshold: this._delta(MPC_MAX_PREDICTION_STD),
