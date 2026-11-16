@@ -25,6 +25,10 @@
     "deprecated_entities": {
       "title": "RoomMind entities to replace",
       "description": "Each room now has one climate entity (`climate.roommind_` plus the room ID) that shows and controls the room: target temperature, comfort/eco presets, mode and what RoomMind is doing right now. The old per-room entities keep working for now but will be removed in a future release. These are still referenced directly by automations or scripts:\n\n{entities}\n\nWhat to use instead:\n- target temperature sensor → the target temperature of the climate entity\n- mode sensor → its `hvac_action`\n- override entity → `climate.set_temperature` or a preset on the climate entity (holds until the next schedule change, preset Schedule (`none`) returns to the schedule)\n\nThis notice goes away once nothing uses them any more (checked when Home Assistant starts)."
+    },
+    "energy_price_replaced": {
+      "title": "Electricity price is now Time-of-Use",
+      "description": "The electricity price feature became part of Time-of-Use: your bound price source ({entity}) was carried over to the tariff settings, where it now drives the same price-aware heating and cooling — plus period names, calendars and manual tariff windows. Review the entries under Settings -> Time-of-Use; nothing else changed. This notice can be dismissed."
     }
   },
   "entity": {

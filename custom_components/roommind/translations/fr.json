@@ -25,6 +25,10 @@
     "deprecated_entities": {
       "title": "Entités RoomMind à remplacer",
       "description": "Chaque pièce a maintenant une entité climat (`climate.roommind_` suivi de l’ID de la pièce) qui affiche et pilote la pièce : température cible, préréglages confort/éco, mode et ce que fait RoomMind en ce moment. Les anciennes entités par pièce fonctionnent encore, mais seront supprimées dans une prochaine version. Elles sont encore utilisées directement par des automatisations ou des scripts :\n\n{entities}\n\nÀ utiliser à la place :\n- capteur de température cible → température cible de l’entité climat\n- capteur de mode → son `hvac_action`\n- entité de dérogation → `climate.set_temperature` ou un préréglage de l’entité climat (valable jusqu’au prochain changement de planification, le préréglage Planification (`none`) revient à la planification)\n\nCet avis disparaît dès que plus rien ne les utilise (vérifié au démarrage de Home Assistant)."
+    },
+    "energy_price_replaced": {
+      "title": "Le prix de l'électricité fait désormais partie des heures pleines / creuses",
+      "description": "La fonction prix de l'électricité est intégrée aux heures pleines / creuses : votre capteur de prix ({entity}) a été repris dans les paramètres tarifaires et pilote la même logique chauffage/refroidissement sensible au prix — désormais avec noms de périodes, calendriers et créneaux tarifaires manuels. Vérifiez les entrées sous Paramètres -> Heures pleines / creuses ; rien d'autre n'a changé. Cet avis peut être ignoré."
     }
   },
   "entity": {

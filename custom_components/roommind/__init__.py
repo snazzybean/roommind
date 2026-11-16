@@ -53,6 +53,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await store.async_load()
         hass.data[DOMAIN]["store"] = store
 
+    # One-time notice after the electricity-price supersession: the stored
+    # price source now drives the Time-of-Use engine (D1 replacement).
+    if getattr(store, "migrated_price_source", ""):
+        ir.async_create_issue(
+            hass,
+            DOMAIN,
+            "energy_price_replaced",
+            is_fixable=False,
+            is_persistent=True,
+            severity=ir.IssueSeverity.WARNING,
+            translation_key="energy_price_replaced",
+            translation_placeholders={"entity": store.migrated_price_source},
+        )
+
     clear_valve_cache()  # after an unload, which stopped valve control
     coordinator = RoomMindCoordinator(hass, entry)
     # Before the first refresh: its commands are what later setpoint changes are judged against (#259)

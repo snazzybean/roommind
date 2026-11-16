@@ -1097,3 +1097,55 @@ async def test_calendar_and_windows_beat_the_forecast() -> None:
     # curve.
     assert timeline.tier_at(now + 3600.0) == TOU_TIER_MID  # inside the calendar window
     assert timeline.tier_at(now + 3 * 3600.0) == TOU_TIER_OFF
+
+
+# ---------------------------------------------------------------------------
+# Electricity-price adapter (D1 supersession)
+# ---------------------------------------------------------------------------
+
+
+def test_price_signal_maps_tiers_to_levels() -> None:
+    """The surviving price consumers read the tariff through the old signal
+    interface: levels from the tier ladder, charge direction from the coming
+    expensive stretch, and per-tier last-known costs behind the live hour."""
+    mgr = TouManager(_make_hass({}))
+    now = time.time()
+    mgr._timeline = TouTimeline(
+        [TouSegment(now, now + 3600.0, TOU_TIER_OFF), TouSegment(now + 3600.0, now + 2 * 3600.0, TOU_TIER_PEAK)],
+        current_tier=TOU_TIER_OFF,
+        current_rate=0.05,
+    )
+    mgr._price_history = {
+        TOU_TIER_PEAK: {"rate": 0.42, "unit": "EUR/kWh", "ts": now, "count": 3, "min": 0.4, "max": 0.44}
+    }
+    sig = mgr.price_signal()
+    assert sig is not None
+    assert sig.current_level == "cheap"
+    assert sig.level_at(now + 1.5 * 3600.0) == "expensive"
+    assert sig.direction_at(now) == 1  # cheap now, an expensive hour follows at once
+    assert sig.direction_at(now + 1.5 * 3600.0) == -1
+    assert sig.price_at(now) == 0.05  # the live reading covers the current hour
+    assert sig.price_at(now + 1.5 * 3600.0) == 0.42  # the peak tier's known cost
+
+    mgr._timeline = None
+    assert mgr.price_signal() is None  # before the first cycle: no signal, shifts off
+
+
+def test_price_signal_flat_horizon_behaves_like_the_base_without_forecast() -> None:
+    """One segment is the base's no-forecast case: cheap charges ahead
+    regardless, an unknown tariff says nothing and shifts nothing."""
+    mgr = TouManager(_make_hass({}))
+    now = time.time()
+    mgr._timeline = TouTimeline(
+        [TouSegment(now, now + 3600.0, TOU_TIER_OFF)], current_tier=TOU_TIER_OFF, current_rate=0.05
+    )
+    sig = mgr.price_signal()
+    assert sig.direction_at(now) == 1
+    assert sig.has_forecast is False
+
+    mgr._timeline = TouTimeline(
+        [TouSegment(now, now + 3600.0, TOU_TIER_UNKNOWN)], current_tier=TOU_TIER_UNKNOWN, current_rate=None
+    )
+    sig2 = mgr.price_signal()
+    assert sig2.current_level is None
+    assert sig2.direction_at(now) == 0

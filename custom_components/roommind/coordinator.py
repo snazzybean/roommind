@@ -90,7 +90,6 @@ from .managers.ekf_training_manager import EkfTrainingManager
 from .managers.head_offset_tracker import HeadOffsetTracker
 from .managers.heat_source_orchestrator import HeatSourcePlan, evaluate_heat_sources
 from .managers.mold_manager import MoldManager
-from .managers.price_manager import PriceManager
 from .managers.recent_temps import RECENT_WINDOW_S, RecentTemps
 from .managers.residual_heat_tracker import AcReboundTracker, ResidualHeatLearner, ResidualHeatTracker
 from .managers.tou_manager import TouManager
@@ -270,7 +269,6 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         self._valve_manager = ValveManager(hass)
         # Mold risk tracking
         self._mold_manager = MoldManager(hass)
-        self._price_manager = PriceManager(hass)
         # Residual heat tracking (heating → idle transition)
         self._residual_tracker = ResidualHeatTracker()
         # Learns each room's residual scale from the afterglow after every run
@@ -405,9 +403,8 @@ class RoomMindCoordinator(DataUpdateCoordinator):
 
         room_states: dict[str, dict] = {}
 
-        # Read weather forecast and electricity price once for all rooms
+        # Read the weather forecast once for all rooms (electricity prices: see the TOU timeline)
         outdoor_forecast = await self._weather_manager.async_read_forecast(settings)
-        await self._price_manager.async_update(settings, self._async_load_price_history)
 
         # Update cover orchestrator with cloud forecast for solar trajectory prediction
         self._cover_orchestrator.set_cloud_series(WeatherManager.extract_cloud_series(outdoor_forecast))
@@ -465,7 +462,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         if self._history_write_count >= HISTORY_WRITE_CYCLES and self._history_store:
             self._history_write_count = 0
             # From the forecast slot where there is one: an Octopus event entity's state is a time
-            price_now = self._price_manager.signal.price_at(time.time()) if self._price_manager.signal else None
+            price_now = self.price_signal.price_at(time.time()) if self.price_signal else None
             for area_id, rs in room_states.items():
                 if area_id in learning_disabled:
                     continue
@@ -989,7 +986,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 time.time(),
                 room,
                 settings,
-                self._price_manager.signal,
+                self.price_signal,
                 presence_away=False,
                 room_vacant=occupancy_vacant,
             )
@@ -1023,7 +1020,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             presence_away=presence_away,
             mold_prevention_delta=mold_prevention_temp_delta,
             room_vacant=occupancy_vacant,
-            price_signal=self._price_manager.signal,
+            price_signal=self.price_signal,
         )
         # The pre-heat deadline only pre-heats for a rise of the schedule, not for the
         # target moving with the price (feature-details "Electricity Price")
@@ -1037,7 +1034,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 mold_prevention_delta=mold_prevention_temp_delta,
                 room_vacant=occupancy_vacant,
             )
-            if self._price_manager.signal is not None and float(room.get("price_shift") or 0.0) > 0
+            if self.price_signal is not None and float(room.get("price_shift") or 0.0) > 0
             else None
         )
 
@@ -2045,7 +2042,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             "mold_boost": mold_boost,
             "price_shift_heat": price_shift[0],
             "price_shift_cool": price_shift[1],
-            "price_level": self._price_manager.signal.current_level if self._price_manager.signal else None,
+            "price_level": self.price_signal.current_level if self.price_signal else None,
             "shading_factor": shading_factor,
             "q_occupancy": q_occupancy,
             "q_residual": q_residual,
@@ -2407,15 +2404,14 @@ class RoomMindCoordinator(DataUpdateCoordinator):
 
     @property
     def price_signal(self) -> PriceSignal | None:
-        """The electricity price signal of the current cycle, None without a price source."""
-        return self._price_manager.signal
-
-    def price_status(self) -> dict | None:
-        return self._price_manager.status()
+        """The electricity price signal of the current cycle, served by the
+        Time-of-Use engine (tier levels over the tariff horizon). None before
+        the first cycle ran or while no tariff source answers."""
+        return self._tou_manager.price_signal()
 
     def _price_level_for(self, room: dict) -> str | None:
         """Price level the heat source orchestration may follow (opt-in per room)."""
-        signal = self._price_manager.signal
+        signal = self.price_signal
         if signal is None or not room.get("heat_source_price_aware", False):
             return None
         return signal.current_level

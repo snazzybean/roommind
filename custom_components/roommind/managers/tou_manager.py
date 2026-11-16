@@ -38,7 +38,7 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -70,7 +70,9 @@ from ..utils.price_utils import (
     LEVEL_EXPENSIVE,
     LEVEL_NORMAL,
     MIN_HISTORY_HOURS,
+    PRICE_LOOKAHEAD_H,
     SWITCH_DOMAINS,
+    PriceSignal,
     PriceSlot,
     hourly,
     level_of,
@@ -144,6 +146,78 @@ class TouTimeline:
             if b_ts > ts and (to_tier is None or tier_after == to_tier):
                 return b_ts
         return None
+
+
+#: The ladder seen through electricity-price eyes: what the surviving price
+#: consumers (target shift, heat-source choice, analytics levels) read from
+#: the tariff timeline. ultra_low is cheap too — the deep trough just ranks
+#: further below.
+_TIER_TO_LEVEL: dict[str, str] = {
+    TOU_TIER_PEAK: LEVEL_EXPENSIVE,
+    TOU_TIER_MID: LEVEL_NORMAL,
+    TOU_TIER_OFF: LEVEL_CHEAP,
+    TOU_TIER_ULTRA_LOW: LEVEL_CHEAP,
+}
+
+
+@dataclass
+class TouPriceSignal(PriceSignal):
+    """The tariff timeline served through the electricity-price interface.
+
+    The price consumers of the base feature keep reading the exact signal
+    they always did — ``level_at``, ``direction_at``, ``price_at`` — but the
+    answers come from the TOU engine: levels from the tier ladder, directions
+    from the future segments of the horizon, prices from the live reading in
+    the current hour and the persisted last-known cost of a tier elsewhere.
+    This is what lets one tariff brain serve both vocabularies.
+    """
+
+    segments: list[TouSegment] = field(default_factory=list)
+    tier_prices: dict[str, float] = field(default_factory=dict)
+
+    @property
+    def has_forecast(self) -> bool:
+        return len(self.segments) > 1
+
+    def forecast_hours(self) -> float:
+        return sum(max(s.end - max(s.start, self.now), 0.0) for s in self.segments) / 3600.0
+
+    def _tier_at(self, ts: float) -> str:
+        for seg in self.segments:
+            if seg.start <= ts < seg.end:
+                return seg.tier
+        if not self.segments:
+            return TOU_TIER_UNKNOWN
+        if ts < self.segments[0].start:
+            return self.segments[0].tier
+        return self.segments[-1].tier
+
+    def level_at(self, ts: float) -> str | None:
+        if not self.segments:
+            return self.current_level
+        return _TIER_TO_LEVEL.get(self._tier_at(ts))
+
+    def price_at(self, ts: float) -> float | None:
+        if self._is_current(ts) and self.current_price is not None:
+            return self.current_price
+        return self.tier_prices.get(self._tier_at(ts))
+
+    def direction_at(self, ts: float) -> int:
+        """+1 charge while cheap (an expensive stretch follows, or nothing is
+        known about the future), -1 coast while expensive, 0 leave alone —
+        the base semantics, answered from the tier horizon."""
+        level = self.level_at(ts)
+        if level == LEVEL_EXPENSIVE:
+            return -1
+        if level != LEVEL_CHEAP:
+            return 0
+        if len(self.segments) <= 1:
+            return 1  # no future to check: like the base without a forecast
+        horizon = ts + PRICE_LOOKAHEAD_H * 3600.0
+        for seg in self.segments:
+            if seg.start > ts and seg.start < horizon and _TIER_TO_LEVEL.get(seg.tier) == LEVEL_EXPENSIVE:
+                return 1
+        return 0
 
 
 class TouManager:
@@ -729,7 +803,10 @@ class TouManager:
             return None
         domain = entity_id.split(".", 1)[0]
         if domain in SWITCH_DOMAINS:
-            return (TOU_TIER_OFF if state.state == "on" else TOU_TIER_MID), None, ""
+            raw = TOU_TIER_OFF if state.state == "on" else TOU_TIER_MID
+            # Same flicker guard the base manager held its switch level to:
+            # clouds flip a surplus flag every minutes; the tariff may not.
+            return self._steady_tier(raw, now), None, ""
         slots = hourly(parse_price_forecast(dict(state.attributes)))
         if not slots:
             return None
@@ -987,3 +1064,28 @@ class TouManager:
             if b_ts > now:
                 return b_ts, tier_after
         return None, None
+
+    def price_signal(self) -> TouPriceSignal | None:
+        """The current timeline as an electricity-price signal (D1
+        replacement): the surviving price consumers read the tariff brain
+        through this adapter. None before the first cycle built a timeline;
+        an unknown tariff reads as level None, which shifts nothing."""
+        timeline = self._timeline
+        if timeline is None:
+            return None
+        rate = timeline.current_rate
+        if rate is None:
+            found = self._last_known_rate()
+            rate = found[0] if found else None
+        tier_prices: dict[str, float] = {}
+        for tier, entry in self._price_history.items():
+            if isinstance(entry, dict) and isinstance(entry.get("rate"), (int, float)):
+                tier_prices[tier] = float(entry["rate"])
+        level = _TIER_TO_LEVEL.get(timeline.current_tier)
+        return TouPriceSignal(
+            current_price=rate,
+            current_level=level,
+            now=time.time(),
+            segments=list(timeline.segments),
+            tier_prices=tier_prices,
+        )

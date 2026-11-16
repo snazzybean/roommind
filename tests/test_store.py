@@ -738,3 +738,44 @@ async def test_migration_override_temp_on_load(store):
     assert "override_temp" not in room
     assert room["override_heat"] == 21.0
     assert room["override_cool"] == 24.0
+
+
+@pytest.mark.asyncio
+async def test_price_entity_migrates_to_the_tou_engine(store):
+    """D1 supersession: a stored legacy price source is carried over to the
+    tariff settings (engine on — that is what the old feature was), the old
+    key is pruned and persisted pruned, and the migration is remembered."""
+    store._store.async_load = AsyncMock(
+        return_value={"rooms": {}, "settings": {"price_entity": "sensor.strompreis", "comfort_weight": 70}}
+    )
+    await store.async_load()
+
+    settings = store.get_settings()
+    assert settings["tou_rate_entity"] == "sensor.strompreis"
+    assert settings["tou_enabled"] is True
+    assert "price_entity" not in settings
+    assert settings["comfort_weight"] == 70
+    assert store.migrated_price_source == "sensor.strompreis"
+    saved_data = store._store.async_save.call_args[0][0]
+    assert "price_entity" not in saved_data["settings"]
+
+
+@pytest.mark.asyncio
+async def test_price_entity_migration_keeps_an_existing_tariff_source(store):
+    """An already-bound tariff rate entity is never overwritten; the stale
+    price key is still pruned and the notice still fires."""
+    store._store.async_load = AsyncMock(
+        return_value={"rooms": {}, "settings": {"price_entity": "sensor.old", "tou_rate_entity": "sensor.new"}}
+    )
+    await store.async_load()
+
+    settings = store.get_settings()
+    assert settings["tou_rate_entity"] == "sensor.new"
+    assert "price_entity" not in settings
+    assert store.migrated_price_source == "sensor.old"
+
+
+@pytest.mark.asyncio
+async def test_price_migration_silent_without_legacy_source(store):
+    await store.async_load()
+    assert store.migrated_price_source == ""

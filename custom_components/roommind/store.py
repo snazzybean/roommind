@@ -92,7 +92,7 @@ def _migrate_room(room: dict) -> dict:
     return room
 
 
-_ORPHAN_SETTINGS_KEYS = ("heating_threshold", "cooling_threshold")
+_ORPHAN_SETTINGS_KEYS = ("heating_threshold", "cooling_threshold", "price_entity")
 
 
 class RoomMindStore:
@@ -104,6 +104,9 @@ class RoomMindStore:
         self._data: dict[str, dict] = {}
         self._settings: dict = {}
         self._thermal_data: dict = {}
+        # Set by async_load when a legacy price_entity was carried over to the
+        # Time-of-Use settings; startup surfaces a one-time notice when set.
+        self.migrated_price_source: str = ""
 
     async def async_load(self) -> None:
         """Load room data from the HA store."""
@@ -133,6 +136,18 @@ class RoomMindStore:
                 _migrate_room_temps(room)
                 _migrate_override_fields(room)
                 override_migrated += 1
+        # D1 supersession: the electricity price feature is served by the TOU
+        # engine now. Carry a bound legacy price source over to the tariff
+        # settings — and switch the engine on, that is what the old feature
+        # *was* — before the orphan pass prunes the key; keep the value so
+        # startup can surface a one-time notice.
+        legacy_price = self._settings.get("price_entity")
+        if isinstance(legacy_price, str) and legacy_price:
+            self.migrated_price_source = legacy_price
+            if not self._settings.get("tou_rate_entity"):
+                self._settings["tou_rate_entity"] = legacy_price
+            if not self._settings.get("tou_enabled"):
+                self._settings["tou_enabled"] = True
         orphan_settings_removed = [k for k in _ORPHAN_SETTINGS_KEYS if self._settings.pop(k, None) is not None]
         if device_migrated or hp_migrated or override_migrated or orphan_settings_removed:
             await self._async_save()

@@ -13,7 +13,8 @@ helpers:
     pv_ueberschuss: {name: PV-Überschuss}
 roommind:
   settings:
-    price_entity: input_boolean.pv_ueberschuss
+    tou_enabled: true
+    tou_rate_entity: input_boolean.pv_ueberschuss
   rooms:
     schlafzimmer:
       price_shift: 1.0

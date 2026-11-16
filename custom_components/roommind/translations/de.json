@@ -25,6 +25,10 @@
     "deprecated_entities": {
       "title": "RoomMind-Entitäten ersetzen",
       "description": "Jeder Raum hat jetzt eine Klima-Entität (`climate.roommind_` plus Raum-ID), die den Raum anzeigt und steuert: Zieltemperatur, Komfort/Eco-Presets, Modus und was RoomMind gerade tut. Die alten Entitäten pro Raum funktionieren vorerst weiter, werden aber in einer künftigen Version entfernt. Diese werden noch direkt in Automationen oder Skripten verwendet:\n\n{entities}\n\nWas stattdessen:\n- Sensor Zieltemperatur → Zieltemperatur der Klima-Entität\n- Sensor Modus → deren `hvac_action`\n- Override-Entität → `climate.set_temperature` oder ein Preset der Klima-Entität (gilt bis zum nächsten Zeitplanwechsel, Preset Zeitplan (`none`) kehrt zum Zeitplan zurück)\n\nDieser Hinweis verschwindet, sobald nichts mehr darauf zugreift (geprüft beim Start von Home Assistant)."
+    },
+    "energy_price_replaced": {
+      "title": "Strompreis gehört jetzt zu Zeitliche Tarife",
+      "description": "Die Strompreis-Funktion ist Teil von Zeitliche Tarife geworden: Dein gebundener Preis-Sensor ({entity}) wurde in die Tarif-Einstellungen übernommen und steuert dieselbe preis-bewusste Heizungs- und Kühllogik — jetzt zusätzlich mit Periodennamen, Kalendern und manuellen Tariffenstern. Prüfe die Einträge unter Einstellungen -> Zeitliche Tarife; sonst hat sich nichts geändert. Dieser Hinweis kann verworfen werden."
     }
   },
   "entity": {

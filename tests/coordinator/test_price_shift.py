@@ -17,9 +17,13 @@ AREA = "living_room_abc12345"
 OVERRIDE = {"override_heat": 23.0, "override_cool": 25.0, "override_until": None, "override_type": "custom"}
 
 
-async def _cycle(hass, entry, room, price=("38", None), settings=None):
+async def _cycle(hass, entry, room, price=("off", None), settings=None):
     store = _make_store_mock({AREA: room})
-    store.get_settings.return_value = {"price_entity": "binary_sensor.cheap", **(settings or {})}
+    store.get_settings.return_value = {
+        "tou_enabled": True,
+        "tou_rate_entity": "binary_sensor.cheap",
+        **(settings or {}),
+    }
     hass.data = {"roommind": {"store": store}}
     hass.states.get = MagicMock(
         side_effect=make_mock_states_get(schedule_state="on", extra={"binary_sensor.cheap": price})
@@ -56,8 +60,9 @@ async def test_override_is_not_shifted(hass, mock_config_entry):
 
 @pytest.mark.asyncio
 async def test_status_and_orchestration_level(hass, mock_config_entry):
-    coordinator, _ = await _cycle(hass, mock_config_entry, SAMPLE_ROOM, ("on", None))
-    assert coordinator.price_status()["kind"] == "switch"
+    coordinator, state = await _cycle(hass, mock_config_entry, SAMPLE_ROOM, ("on", None))
+    # The switch source reads off-peak and the price consumers see it as cheap.
+    assert coordinator._tou_manager.snapshot()["tier"] == "off"
     assert coordinator.price_signal.current_level == "cheap"
     assert coordinator._price_level_for({"heat_source_price_aware": True}) == "cheap"
     assert coordinator._price_level_for({}) is None

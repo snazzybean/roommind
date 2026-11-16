@@ -34,7 +34,8 @@ helpers:
               {% endfor %}{{ ns.out }}
 roommind:
   settings:
-    price_entity: sensor.strompreis
+    tou_enabled: true
+    tou_rate_entity: sensor.strompreis
   rooms:
     schlafzimmer:
       price_shift: 1.0
