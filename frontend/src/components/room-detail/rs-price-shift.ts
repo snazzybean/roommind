@@ -33,6 +33,9 @@ export class RsPriceShift extends LitElement {
   /** Shift applied in this cycle per side (K, signed), from the room's live data. */
   @property({ type: Number }) public shiftHeat = 0;
   @property({ type: Number }) public shiftCool = 0;
+  /** Global master switch (D8): the store opt-in renders only while on. */
+  @property({ type: Boolean }) public touEnabled = false;
+  @property({ type: Boolean }) public touStore = false;
 
   static styles = [
     tokens,
@@ -88,6 +91,21 @@ export class RsPriceShift extends LitElement {
                 .heading=${localize("detail.price.shift_now", l)}
                 .value=${this._shiftNowText()}
               ></rs-list-row>`
+            : nothing
+        }
+        ${
+          this.touEnabled
+            ? html`<rs-list-row
+                switch
+                wrap
+                .heading=${localize("detail.energy.store_label", l)}
+                .checked=${this.touStore}
+                @toggle-changed=${(e: CustomEvent<boolean>) =>
+                  this.dispatchEvent(
+                    new CustomEvent("tou-store-changed", { detail: { value: e.detail } }),
+                  )}
+              ></rs-list-row>
+              <p class="intro">${localize("detail.energy.store_hint", l)}</p>`
             : nothing
         }
       </div>

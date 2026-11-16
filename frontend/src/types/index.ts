@@ -206,24 +206,77 @@ export interface RoomConfig {
   /** Orchestration: expensive electricity prefers the primary source, cheap the AC. */
   heat_source_price_aware?: boolean;
   climate_control_enabled?: boolean;
+  tou_store_enabled?: boolean;
+  tou_heat_min?: number | null;
+  tou_heat_max?: number | null;
+  tou_cool_min?: number | null;
+  tou_cool_max?: number | null;
+  tou_swing?: number | null;
+  tou_store_gap?: number | null;
   live?: RoomLiveData;
 }
 
-/** What RoomMind reads from the price source (rooms/list ``price_status``). */
-export interface PriceStatus {
+/** Normalized tariff tier used by the Time-of-Use module. */
+export type TouTier = "peak" | "mid" | "off" | "ultra_low";
+
+/** Which source class answers the current tier ("auto" = legacy cascade). */
+export type TouTierSource = "auto" | "period" | "rate" | "flags";
+
+/** Which source provides the future-tier timeline ("auto" = calendars, then
+ * next-change; "next_change_rate" = classify the provider's next-period rate
+ * with the cost thresholds; "none" = shape only, no pre-conditioning/coasting
+ * planning). */
+export type TouLookahead = "auto" | "calendar" | "next_change_rate" | "next_change" | "none";
+
+/** Binding of one tariff calendar: which calendar entity carries which tier. */
+export interface TouCalendarBinding {
   entity_id: string;
-  readable: boolean;
-  kind: "forecast" | "history" | "switch" | null;
-  price: number | null;
-  level: "cheap" | "normal" | "expensive" | null;
-  forecast_hours: number;
-  history_hours: number;
-  history_needed: number;
+  tier: TouTier;
+}
+
+/** Manual tariff-window row: a rate applied between two wall-clock times on
+ * the chosen weekdays. Empty days list = every day; an end not after the
+ * start wraps past midnight. Maps to a tier through the cost thresholds. */
+export interface TouRateWindow {
+  id: string;
+  rate: number;
+  start: string;
+  end: string;
+  days: string[];
+}
+
+/** Per-tier confirmation data from the bound tariff sources (see
+ * TouManager.tier_info): the price the sources know for that tier and the
+ * raw period vocabulary that resolves to it. Kind marks where the number
+ * came from: live now, provider's next-period price, persisted last known
+ * (source currently down), manual window, or configured cutoff. */
+export interface TouTierInfoTier {
+  rate: number | null;
+  kind: "live" | "next" | "last" | "window" | "cutoff" | "source" | null;
+  min?: number | null;
+  max?: number | null;
+  count?: number;
+  ts?: number | null;
+  /** Display name of an extra tier; null on the grid four (i18n names). */
+  label?: string | null;
+  names: string[];
+  current: boolean;
+}
+
+export interface TouTierInfo {
+  unit: string;
+  tiers: Record<string, TouTierInfoTier>;
+  unmapped: { state: string; count: number }[];
+  current: { tier: TouTier; rate: number; stale: boolean } | null;
+  next: { ts: number | null; tier: TouTier; rate: number | null; stale: boolean } | null;
+  /** Why the future view is incomplete while its sensors are bound:
+   * "no_tier" (nothing says which period follows), "no_time" (the change
+   * sensor is not a timestamp), "no_price" (no price for the coming tier). */
+  next_hint?: "no_tier" | "no_time" | "no_price" | "";
 }
 
 export interface GlobalSettings {
   outdoor_temp_sensor: string;
-  price_entity?: string;
   outdoor_humidity_sensor: string;
   outdoor_cooling_min?: number;
   outdoor_heating_max?: number;
@@ -265,6 +318,31 @@ export interface GlobalSettings {
   room_order?: string[];
   group_by_floor?: boolean;
   boost_applied_at?: Record<string, number>;
+  /** Time-of-Use tariff awareness (managers/tou_manager.py). */
+  tou_enabled?: boolean;
+  tou_tier_source?: TouTierSource;
+  tou_lookahead?: TouLookahead;
+  tou_rate_entity?: string;
+  tou_period_entity?: string;
+  tou_next_change_entity?: string;
+  tou_next_rate_entity?: string;
+  tou_next_period_entity?: string;
+  tou_next_change_tier?: TouTier | "";
+  tou_calendar_entities?: TouCalendarBinding[];
+  tou_rate_windows?: TouRateWindow[];
+  tou_flag_entities?: Partial<Record<TouTier, string>>;
+  tou_price_weighting?: boolean;
+  tou_peak_threshold?: number | null;
+  tou_mid_threshold?: number | null;
+  tou_ultra_threshold?: number | null;
+  tou_heat_min?: number;
+  tou_heat_max?: number;
+  tou_cool_min?: number;
+  tou_cool_max?: number;
+  tou_swing?: number;
+  tou_store_gap?: number;
+  tou_coast_max_minutes?: number;
+  tou_period_aliases?: Record<string, string>;
 }
 
 // HA types for panel integration

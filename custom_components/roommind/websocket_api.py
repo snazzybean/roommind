@@ -441,6 +441,8 @@ async def websocket_list_rooms(
             ),
             "coil_dry_drain_minutes": settings.get("coil_dry_drain_minutes", DEFAULT_COIL_DRY_DRAIN_MINUTES),
             "compressor_groups": settings.get("compressor_groups", []),
+            # The global master switch gates the room cards' energy-price box (D8).
+            "tou_enabled": bool(settings.get("tou_enabled", False)),
             **({"tou": tou_snapshot} if tou_snapshot else {}),
             # Tier dictionary: what the bound sources actually feed (prices,
             # vocabulary, unmapped strings) for the settings panel.

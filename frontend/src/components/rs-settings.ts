@@ -14,7 +14,12 @@ import type {
   NotificationTarget,
   CompressorGroup,
   RoomWithoutArea,
-  PriceStatus,
+  TouCalendarBinding,
+  TouLookahead,
+  TouRateWindow,
+  TouTier,
+  TouTierInfo,
+  TouTierSource,
 } from "../types";
 import { localize } from "../utils/localize";
 import { errorText } from "../utils/errors";
@@ -23,7 +28,6 @@ import { VACATION_SENTINEL } from "../utils/constants";
 import { formatMinutes, formatNumber, formatPercent } from "../utils/format";
 import { learningRoomIds } from "../utils/learning";
 import { formatTempLocale, tempUnit, toDisplayDelta } from "../utils/temperature";
-import { describePriceStatus } from "../utils/price-status";
 import { fanModeLabel, type FanModeOption } from "../utils/device-utils";
 import { tokens, alertStyles } from "../styles/tokens";
 import {
@@ -36,7 +40,7 @@ import "./shared/rs-list-row";
 import "./shared/rs-badge";
 import "./settings/rs-settings-general";
 import "./settings/rs-settings-sensors";
-import "./settings/rs-settings-price";
+import "./settings/rs-settings-tou";
 import "./settings/rs-settings-control";
 import "./settings/rs-settings-presence";
 import "./settings/rs-settings-vacation";
@@ -87,7 +91,6 @@ const SETTINGS: [keyof GlobalSettings, SettingSync][] = [
   ["climate_control_active", plain("climateControlActive", true)],
   ["learning_disabled_rooms", plain("learningDisabledRooms", [])],
   ["outdoor_temp_sensor", plain("outdoorTempSensor", "")],
-  ["price_entity", plain("priceEntity", "")],
   ["outdoor_humidity_sensor", plain("outdoorHumiditySensor", "")],
   ["outdoor_cooling_min", plain("outdoorCoolingMin", 16)],
   ["outdoor_heating_max", plain("outdoorHeatingMax", 22)],
@@ -174,6 +177,22 @@ const SETTINGS: [keyof GlobalSettings, SettingSync][] = [
       write: (v) => (v.moldPreventionNotify ? filledTargets(v) : []),
     },
   ],
+  ["tou_enabled", plain("touEnabled", false)],
+  ["tou_tier_source", plain("touTierSource", "auto")],
+  ["tou_lookahead", plain("touLookahead", "auto")],
+  ["tou_rate_entity", plain("touRateEntity", "")],
+  ["tou_period_entity", plain("touPeriodEntity", "")],
+  ["tou_next_change_entity", plain("touNextChangeEntity", "")],
+  ["tou_next_rate_entity", plain("touNextRateEntity", "")],
+  ["tou_next_period_entity", plain("touNextPeriodEntity", "")],
+  ["tou_next_change_tier", plain("touNextChangeTier", "")],
+  ["tou_calendar_entities", plain("touCalendarEntities", [])],
+  ["tou_rate_windows", plain("touRateWindows", [])],
+  ["tou_flag_entities", plain("touFlagEntities", {})],
+  ["tou_peak_threshold", plain("touPeakThreshold", null)],
+  ["tou_mid_threshold", plain("touMidThreshold", null)],
+  ["tou_ultra_threshold", plain("touUltraThreshold", null)],
+  ["tou_period_aliases", plain("touPeriodAliases", {})],
 ];
 
 const SETTING_FIELDS = [...new Set(SETTINGS.flatMap(([, sync]) => sync.fields))];
@@ -188,7 +207,8 @@ export class RsSettings extends LitElement {
   @property({ attribute: false }) public hass!: HomeAssistant;
   @property({ attribute: false }) public rooms: Record<string, RoomConfig> = {};
   @property({ attribute: false }) public roomsWithoutArea: RoomWithoutArea[] = [];
-  @property({ attribute: false }) public priceStatus: PriceStatus | null = null;
+  /** Tier dictionary from the last rooms/list answer (null while TOU never ran). */
+  @property({ attribute: false }) public touTierInfo: TouTierInfo | null = null;
   /** Requested category (from the URL); unknown or unavailable ones fall back. */
   @property({ type: String }) public category = "";
   /** List and panel side by side; otherwise list, then the panel as a subpage. */
@@ -199,7 +219,22 @@ export class RsSettings extends LitElement {
   @state() private _climateControlActive = true;
   @state() private _learningDisabledRooms: string[] = [];
   @state() private _outdoorTempSensor = "";
-  @state() private _priceEntity = "";
+  @state() private _touEnabled = false;
+  @state() private _touTierSource: TouTierSource = "auto";
+  @state() private _touLookahead: TouLookahead = "auto";
+  @state() private _touRateEntity = "";
+  @state() private _touPeriodEntity = "";
+  @state() private _touNextChangeEntity = "";
+  @state() private _touNextRateEntity = "";
+  @state() private _touNextPeriodEntity = "";
+  @state() private _touNextChangeTier: TouTier | "" = "";
+  @state() private _touCalendarEntities: TouCalendarBinding[] = [];
+  @state() private _touRateWindows: TouRateWindow[] = [];
+  @state() private _touFlagEntities: Partial<Record<TouTier, string>> = {};
+  @state() private _touPeakThreshold: number | null = null;
+  @state() private _touMidThreshold: number | null = null;
+  @state() private _touUltraThreshold: number | null = null;
+  @state() private _touPeriodAliases: Record<string, string> = {};
   @state() private _outdoorHumiditySensor = "";
   @state() private _outdoorCoolingMin = 16;
   @state() private _outdoorHeatingMax = 22;
@@ -486,12 +521,27 @@ export class RsSettings extends LitElement {
           @setting-changed=${this._onSettingChanged}
         ></rs-settings-sensors>`;
       case "price":
-        return html`<rs-settings-price
+        return html`<rs-settings-tou
           .hass=${this.hass}
-          .priceEntity=${this._priceEntity}
-          .status=${this.priceStatus}
+          .touEnabled=${this._touEnabled}
+          .touTierSource=${this._touTierSource}
+          .touLookahead=${this._touLookahead}
+          .touRateEntity=${this._touRateEntity}
+          .touPeriodEntity=${this._touPeriodEntity}
+          .touNextChangeEntity=${this._touNextChangeEntity}
+          .touNextRateEntity=${this._touNextRateEntity}
+          .touNextPeriodEntity=${this._touNextPeriodEntity}
+          .touNextChangeTier=${this._touNextChangeTier}
+          .touCalendarEntities=${this._touCalendarEntities}
+          .touRateWindows=${this._touRateWindows}
+          .touFlagEntities=${this._touFlagEntities}
+          .touPeakThreshold=${this._touPeakThreshold}
+          .touMidThreshold=${this._touMidThreshold}
+          .touUltraThreshold=${this._touUltraThreshold}
+          .touPeriodAliases=${this._touPeriodAliases}
+          .touTierInfo=${this.touTierInfo}
           @setting-changed=${this._onSettingChanged}
-        ></rs-settings-price>`;
+        ></rs-settings-tou>`;
       case "control":
         return html`<rs-settings-control
           .hass=${this.hass}
@@ -689,13 +739,14 @@ export class RsSettings extends LitElement {
         };
       }
       case "price": {
-        if (!this._priceEntity) return { text: localize("settings.summary.not_set_up", l) };
-        const s = describePriceStatus(this.priceStatus, this._priceEntity, l);
-        if (s.state === "waiting") return { text: localize("settings.price_waiting", l) };
-        if (s.state === "unreadable") {
-          return { text: localize("settings.summary.price_unreadable", l) };
-        }
-        return { text: `${localize("settings.price_now", l, { level: s.level })} · ${s.detail}` };
+        if (!this._touEnabled) return { text: off, on: false };
+        const cur = this.touTierInfo?.current;
+        const text = cur
+          ? `${localize(`tou.tier.${cur.tier}`, l)} · ${formatNumber(cur.rate, this.hass)}${
+              this.touTierInfo?.unit ? ` ${this.touTierInfo.unit}` : ""
+            }`
+          : localize("settings.summary.tou_enabled", l);
+        return { text, on: true };
       }
       case "learning": {
         const ids = learningRoomIds(this.rooms);

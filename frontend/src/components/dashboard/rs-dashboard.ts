@@ -1,7 +1,7 @@
 import { LitElement, html, nothing } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import { repeat } from "lit/directives/repeat.js";
-import type { HomeAssistant, PriceStatus } from "../../types";
+import type { HomeAssistant } from "../../types";
 import { floorGroups, type AreaInfo } from "../../utils/dashboard";
 import { hasDevices } from "../../utils/room-state";
 import { localize, type TranslationKey } from "../../utils/localize";
@@ -18,8 +18,7 @@ export interface HouseSummary {
   presenceEnabled: boolean;
   anyoneHome: boolean;
   outdoorTemp: number | null;
-  priceEntity: string;
-  priceStatus: PriceStatus | null;
+  touLevel: "cheap" | "normal" | "expensive" | null;
 }
 
 const PRICE_LEVEL_KEYS: Record<"cheap" | "normal" | "expensive", TranslationKey> = {
@@ -103,7 +102,7 @@ export class RsDashboard extends LitElement {
         i.config?.live?.mold_risk_level === "warning" ||
         i.config?.live?.mold_risk_level === "critical",
     ).length;
-    const level = s.priceEntity ? s.priceStatus?.level : null;
+    const level = s.touLevel;
     const vacationUntil =
       s.vacationActive && s.vacationUntil && s.vacationUntil < VACATION_SENTINEL
         ? new Intl.DateTimeFormat(l, { day: "numeric", month: "short" }).format(

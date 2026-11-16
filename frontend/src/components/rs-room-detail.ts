@@ -117,6 +117,7 @@ const ROOM_FIELDS: [string, RoomFieldSync][] = [
     plain("_followDeviceSetpoint", (c) => c?.follow_device_setpoint ?? false),
   ],
   ["price_shift", plain("_priceShift", (c) => c?.price_shift ?? 0)],
+  ["tou_store_enabled", plain("_touStoreEnabled", (c) => c?.tou_store_enabled ?? false)],
   ["window_sensors", asSet("_selectedWindowSensors", (c) => c?.window_sensors ?? [])],
   ["window_open_delay", plain("_windowOpenDelay", (c) => c?.window_open_delay ?? 0)],
   ["window_close_delay", plain("_windowCloseDelay", (c) => c?.window_close_delay ?? 0)],
@@ -223,6 +224,8 @@ export class RsRoomDetail extends LitElement {
   @property({ type: Boolean }) public presenceEnabled = false;
   /** A price source is set in the settings: shows the per-room price options. */
   @property({ type: Boolean }) public priceConfigured = false;
+  /** Global Energy price master switch; gates the room's store option (D8). */
+  @property({ type: Boolean }) public touEnabled = false;
   @property({ attribute: false }) public presencePersons: string[] = [];
   @property({ type: Boolean }) public climateControlActive = true;
   /** Global: what rooms do while their schedule is off / everybody is away. */
@@ -247,6 +250,7 @@ export class RsRoomDetail extends LitElement {
   @state() private _preheatEnabled = true;
   @state() private _followDeviceSetpoint = false;
   @state() private _priceShift = 0;
+  @state() private _touStoreEnabled = false;
   @state() private _heatSourcePriceAware = false;
   @state() private _occupancyEcoDelay = DEFAULT_OCCUPANCY_ECO_DELAY;
   @state() private _co2Sensor = "";
@@ -929,7 +933,10 @@ export class RsRoomDetail extends LitElement {
             .priceLevel=${this.config?.live?.price_level ?? null}
             .shiftHeat=${this.config?.live?.price_shift_heat ?? 0}
             .shiftCool=${this.config?.live?.price_shift_cool ?? 0}
+            .touEnabled=${this.touEnabled}
+            .touStore=${this._touStoreEnabled}
             @price-shift-changed=${this._onPriceShiftChanged}
+            @tou-store-changed=${this._onTouStoreChanged}
           ></rs-price-shift>
         </rs-edit-dialog>`;
       case "devices":
@@ -1226,6 +1233,11 @@ export class RsRoomDetail extends LitElement {
 
   private _onPriceShiftChanged(e: CustomEvent<{ value: number }>) {
     this._priceShift = e.detail.value;
+    this._autoSave();
+  }
+
+  private _onTouStoreChanged(e: CustomEvent<{ value: boolean }>) {
+    this._touStoreEnabled = e.detail.value;
     this._autoSave();
   }
 

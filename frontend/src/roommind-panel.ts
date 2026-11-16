@@ -1,6 +1,6 @@
 import { LitElement, html, css, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
-import type { HomeAssistant, PriceStatus, RoomConfig, RoomWithoutArea } from "./types";
+import type { HomeAssistant, RoomConfig, RoomWithoutArea, TouTierInfo } from "./types";
 import { loadHaElements } from "./load-ha-elements";
 import { noteServerTime } from "./utils/server-clock";
 import { localize } from "./utils/localize";
@@ -74,8 +74,8 @@ export class RoomMindPanel extends LitElement {
   @state() private _controlMode: "mpc" | "bangbang" = "mpc";
   @state() private _climateControlActive = true;
   @state() private _presenceEnabled = false;
-  @state() private _priceEntity = "";
-  @state() private _priceStatus: PriceStatus | null = null;
+  @state() private _touEnabled = false;
+  @state() private _touTierInfo: TouTierInfo | null = null;
   @state() private _valveProtectionEnabled = false;
   @state() private _coilDryEnabled = false;
   @state() private _coilDryMinutes = 20;
@@ -535,7 +535,8 @@ export class RoomMindPanel extends LitElement {
             .rooms=${this._rooms}
             .hass=${this.hass}
             .presenceEnabled=${this._presenceEnabled}
-            .priceConfigured=${!!this._priceEntity}
+            .priceConfigured=${this._touEnabled}
+            .touEnabled=${this._touEnabled}
             .presencePersons=${this._presencePersons}
             .climateControlActive=${this._climateControlActive}
             .scheduleOffAction=${this._scheduleOffAction}
@@ -588,8 +589,7 @@ export class RoomMindPanel extends LitElement {
       presenceEnabled: this._presenceEnabled,
       anyoneHome: this._anyoneHome,
       outdoorTemp: this._outdoorTemp,
-      priceEntity: this._priceEntity,
-      priceStatus: this._priceStatus,
+      touLevel: this._touLevel(),
     };
     return html`<rs-dashboard
       .hass=${common.hass}
@@ -605,12 +605,21 @@ export class RoomMindPanel extends LitElement {
     ></rs-dashboard>`;
   }
 
+  /** Price level for the dashboard pill, read off the tariff dictionary. */
+  private _touLevel(): "cheap" | "normal" | "expensive" | null {
+    const tier = this._touTierInfo?.current?.tier;
+    if (tier === "peak") return "expensive";
+    if (tier === "mid") return "normal";
+    if (tier === "off" || tier === "ultra_low") return "cheap";
+    return null;
+  }
+
   private _renderSettings() {
     return html`<rs-settings
       .hass=${this.hass}
       .rooms=${this._rooms}
       .roomsWithoutArea=${this._roomsWithoutArea}
-      .priceStatus=${this._priceStatus}
+      .touTierInfo=${this._touTierInfo}
       .category=${this._settingsCategory}
       .wide=${this._wide}
       @settings-category-changed=${this._onSettingsCategoryChanged}
@@ -681,8 +690,8 @@ export class RoomMindPanel extends LitElement {
         control_mode: "mpc" | "bangbang";
         climate_control_active: boolean;
         presence_enabled: boolean;
-        price_entity?: string;
-        price_status?: PriceStatus | null;
+        tou_enabled?: boolean;
+        tou_tier_info?: TouTierInfo | null;
         anyone_home: boolean;
         presence_persons: string[];
         presence_away_action: "eco" | "off";
@@ -714,8 +723,8 @@ export class RoomMindPanel extends LitElement {
       this._controlMode = result.control_mode ?? "mpc";
       this._climateControlActive = result.climate_control_active ?? true;
       this._presenceEnabled = result.presence_enabled ?? false;
-      this._priceEntity = result.price_entity ?? "";
-      this._priceStatus = result.price_status ?? null;
+      this._touEnabled = result.tou_enabled ?? false;
+      this._touTierInfo = result.tou_tier_info ?? null;
       this._valveProtectionEnabled = result.valve_protection_enabled ?? false;
       this._coilDryEnabled = result.coil_dry_enabled ?? false;
       this._coilDryMinutes = result.coil_dry_minutes ?? 20;

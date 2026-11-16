@@ -86,8 +86,8 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
       {
         id: "price",
         icon: "mdi:cash-clock",
-        title: "settings.price_title",
-        intro: "settings.intro.price",
+        title: "settings.tou_title",
+        intro: "settings.intro.tou",
       },
       {
         id: "learning",
