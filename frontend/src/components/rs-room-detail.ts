@@ -555,6 +555,7 @@ export class RsRoomDetail extends LitElement {
                     .ecoCool=${this._ecoCool}
                     .language=${l}
                     .disabled=${!(this.climateControlActive && this._climateControlEnabled)}
+                    .presenceActive=${this._presenceActive()}
                     @override-state=${this._onOverrideState}
                   ></rs-override-section>`
                 : nothing

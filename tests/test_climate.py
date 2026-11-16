@@ -256,6 +256,7 @@ async def test_override_entity_set_range_writes_split(mock_coordinator):
             "override_cool": 25.0,
             "override_until": None,
             "override_type": OVERRIDE_CUSTOM,
+            "override_presence_away": None,
         },
     )
     coordinator.async_request_refresh.assert_awaited_once()
@@ -276,6 +277,7 @@ async def test_set_single_temperature_auto_derives_dead_band(mock_coordinator):
             "override_cool": 24.0,
             "override_until": None,
             "override_type": OVERRIDE_CUSTOM,
+            "override_presence_away": None,
         },
     )
 
@@ -344,6 +346,7 @@ async def test_set_hvac_mode_off_clears_override(mock_coordinator):
             "override_cool": None,
             "override_until": None,
             "override_type": None,
+            "override_presence_away": None,
         },
     )
     coordinator.async_request_refresh.assert_awaited_once()
@@ -370,6 +373,7 @@ async def test_set_hvac_mode_heat_cool_activates_with_comfort_defaults(mock_coor
             "override_cool": DEFAULT_COMFORT_COOL,
             "override_until": None,
             "override_type": OVERRIDE_CUSTOM,
+            "override_presence_away": None,
         },
     )
     coordinator.async_request_refresh.assert_not_awaited()

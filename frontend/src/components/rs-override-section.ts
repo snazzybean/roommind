@@ -48,6 +48,8 @@ export class RsOverrideSection extends LitElement {
   @property() public language = "en";
   /** Climate control is off for this room: RoomMind sends nothing, an override would not act. */
   @property({ type: Boolean }) public disabled = false;
+  /** Presence detection applies to the room: "until the next change" also ends on a presence switch. */
+  @property({ type: Boolean }) public presenceActive = false;
 
   @state() private _overridePending: OverrideType | null = null;
   @state() private _overrideCustomHeat = 21;
@@ -174,8 +176,16 @@ export class RsOverrideSection extends LitElement {
     if (next != null) {
       options.push({
         value: UNTIL_CHANGE,
-        label: localize("detail.override.until_change", l, { time: formatClock(next, l) }),
+        label: localize(
+          this.presenceActive
+            ? "detail.override.until_change_or_presence"
+            : "detail.override.until_change",
+          l,
+          { time: formatClock(next, l) },
+        ),
       });
+    } else if (this.presenceActive) {
+      options.push({ value: UNTIL_CHANGE, label: localize("hero.until_presence_change", l) });
     }
     options.push({ value: PERMANENT, label: localize("hero.permanent", l) });
     return html`
@@ -276,7 +286,9 @@ export class RsOverrideSection extends LitElement {
     }
     const nowS = serverNow() / 1000;
     const next = untilScheduleChange ? this._nextChange() : null;
-    const until = next ?? (hours > 0 ? nowS + hours * 3600 : null);
+    // Without a schedule change ahead, presence alone ends it where it applies (no end time)
+    const presenceOnly = untilScheduleChange && next == null && this.presenceActive;
+    const until = next ?? (hours > 0 && !presenceOnly ? nowS + hours * 3600 : null);
     const previous = this._optimisticOverride;
     this._optimisticOverride = { type: pendingType, heat, cool, until };
     this._optimisticSince = Date.now();

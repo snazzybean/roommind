@@ -379,4 +379,5 @@ def build_override_live(room: dict, suppressed: bool = False) -> dict:
         "override_cool": room.get("override_cool") if active else None,
         "override_until": room.get("override_until") if active else None,
         "override_suppressed": active and suppressed,
+        "override_ends_on_presence": active and room.get("override_presence_away") is not None,
     }

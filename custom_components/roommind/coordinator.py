@@ -116,6 +116,7 @@ from .utils.device_utils import (
     room_contributes_to_group,
 )
 from .utils.history_store import HistoryStore
+from .utils.override_end_utils import override_ended_by_presence, room_presence_away
 from .utils.presence_utils import is_room_vacant
 from .utils.price_utils import PriceSignal
 from .utils.schedule_utils import (
@@ -848,6 +849,8 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             "override_cool": band[1],
             "override_until": override_hold_until(self.hass, room),
             "override_type": OVERRIDE_CUSTOM,
+            # Holds until the schedule changes, not until presence switches
+            "override_presence_away": None,
         }
         _LOGGER.info(
             "Room '%s': setpoint changed on %s, holding %s/%s until the schedule changes",
@@ -876,9 +879,31 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         default = 1.0 if ha_temp_unit_str(self.hass) == "°F" else 0.5
         return default / 2, default
 
+    def _end_override_on_presence_change(self, room: dict, settings: dict) -> dict:
+        """End an override held until the next change once presence switched between home and away.
+
+        Returns *room* without the override for this cycle, the store is cleared in the background.
+        """
+        if room.get("override_presence_away") is None or not is_override_active(room):
+            return room
+        if not override_ended_by_presence(room, room_presence_away(self.hass, room, settings)):
+            return room
+        area_id = room.get("area_id", "unknown")
+        _LOGGER.debug("Room '%s': presence changed, override held until the next change ends", area_id)
+        cleared = {
+            "override_heat": None,
+            "override_cool": None,
+            "override_until": None,
+            "override_type": None,
+            "override_presence_away": None,
+        }
+        self.hass.async_create_task(self.hass.data[DOMAIN]["store"].async_update_room(area_id, dict(cleared)))
+        return {**room, **cleared}
+
     async def _async_process_room(self, room: dict, settings: dict, outdoor_forecast: list[dict]) -> dict:
         """Process a single room: read sensor, evaluate schedule, apply control."""
         room = self._without_pending_override_seed(room)
+        room = self._end_override_on_presence_change(room, settings)
         area_id = room.get("area_id", "unknown")
         self._model_inputs.pop(area_id, None)
         if not room.get("is_outdoor", False):
@@ -907,6 +932,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 "override_cool": None,
                 "override_until": None,
                 "override_suppressed": False,
+                "override_ends_on_presence": False,
                 "active_schedule_index": -1,
                 "confidence": None,
                 "mpc_active": False,
@@ -2559,6 +2585,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                             "override_cool": None,
                             "override_until": None,
                             "override_type": None,
+                            "override_presence_away": None,
                         },
                     )
                 )

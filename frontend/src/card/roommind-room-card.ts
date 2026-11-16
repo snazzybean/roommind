@@ -391,7 +391,9 @@ export class RoomMindRoomCard extends LitElement {
         ? localize("hero.remaining", l, {
             time: formatRemaining(ov.until, l, this._now) || formatMinutes(0, l),
           })
-        : localize("hero.permanent", l);
+        : live.override_ends_on_presence
+          ? localize("hero.until_presence_change", l)
+          : localize("hero.permanent", l);
     }
     return html`
       <div class="temps">

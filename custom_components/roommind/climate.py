@@ -297,6 +297,7 @@ class RoomMindOverrideClimate(CoordinatorEntity, ClimateEntity):
                 "override_cool": cool,
                 "override_until": None,
                 "override_type": OVERRIDE_CUSTOM,
+                "override_presence_away": None,
             },
         )
         await self._request_refresh()
@@ -313,6 +314,7 @@ class RoomMindOverrideClimate(CoordinatorEntity, ClimateEntity):
                     "override_cool": None,
                     "override_until": None,
                     "override_type": None,
+                    "override_presence_away": None,
                 },
             )
         elif not self._is_override_active():
@@ -326,6 +328,7 @@ class RoomMindOverrideClimate(CoordinatorEntity, ClimateEntity):
                     "override_cool": cool,
                     "override_until": None,
                     "override_type": OVERRIDE_CUSTOM,
+                    "override_presence_away": None,
                 },
             )
             # The seed only exists so the entity reads as on. Callers switch it on and
@@ -521,6 +524,7 @@ class RoomMindRoomClimate(CoordinatorEntity, ClimateEntity):
         vacation_until = self._store().get_settings().get("vacation_until")
         return {
             "override_until": dt_util.utc_from_timestamp(until).isoformat() if until else None,
+            "override_ends_on_presence": self._override_in_force() and room.get("override_presence_away") is not None,
             "window_open": bool(live.get("window_open", False)),
             "presence_away": bool(live.get("presence_away", False)),
             "occupancy_vacant": bool(live.get("occupancy_vacant", False)),
@@ -538,6 +542,8 @@ class RoomMindRoomClimate(CoordinatorEntity, ClimateEntity):
                 "override_cool": cool,
                 "override_until": override_hold_until(self.coordinator.hass, self._room()),
                 "override_type": override_type,
+                # Ends at the schedule change only, a presence binding from before is dropped
+                "override_presence_away": None,
             },
         )
         self.coordinator.clear_override_seed(self._area_id)
@@ -603,7 +609,13 @@ class RoomMindRoomClimate(CoordinatorEntity, ClimateEntity):
             return
         await self._store().async_update_room(
             self._area_id,
-            {"override_heat": None, "override_cool": None, "override_until": None, "override_type": None},
+            {
+                "override_heat": None,
+                "override_cool": None,
+                "override_until": None,
+                "override_type": None,
+                "override_presence_away": None,
+            },
         )
         self.coordinator.clear_override_seed(self._area_id)
         self.async_write_ha_state()

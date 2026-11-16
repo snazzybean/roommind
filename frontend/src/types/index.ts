@@ -38,6 +38,8 @@ export interface RoomLiveData {
   override_cool: number | null;
   override_until: number | null;
   override_suppressed: boolean;
+  /** Held until the next automatic change: also ends when presence switches */
+  override_ends_on_presence?: boolean;
   active_schedule_index: number;
   window_open: boolean;
   confidence: number | null;

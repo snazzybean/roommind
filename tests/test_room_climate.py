@@ -258,6 +258,7 @@ def test_extra_attributes(setup):
     )
     assert entity.extra_state_attributes == {
         "override_until": NEXT_EVENT.isoformat(),
+        "override_ends_on_presence": False,
         "window_open": True,
         "presence_away": True,
         "occupancy_vacant": False,
@@ -277,6 +278,7 @@ async def test_set_temperature_holds_until_next_schedule_change(setup):
         "override_cool": 25.0,
         "override_until": NEXT_EVENT.timestamp(),
         "override_type": "custom",
+        "override_presence_away": None,
     }
     coordinator.clear_override_seed.assert_called_once_with("living_room")
     coordinator.async_request_refresh.assert_awaited_once()
@@ -349,6 +351,7 @@ async def test_preset_sets_override_until_next_change(setup, preset, override_ty
         "override_cool": band[1],
         "override_until": NEXT_EVENT.timestamp(),
         "override_type": override_type,
+        "override_presence_away": None,
     }
 
 
@@ -369,6 +372,7 @@ async def test_preset_none_returns_to_schedule(setup):
         "override_cool": None,
         "override_until": None,
         "override_type": None,
+        "override_presence_away": None,
     }
     coordinator.clear_override_seed.assert_called_once_with("living_room")
     coordinator.async_request_refresh.assert_awaited_once()
@@ -549,6 +553,7 @@ async def test_manual_preset_holds_the_band_in_force(setup):
         "override_cool": 25.0,
         "override_until": NEXT_EVENT.timestamp(),
         "override_type": "custom",
+        "override_presence_away": None,
     }
 
 
