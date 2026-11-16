@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from datetime import UTC
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -3688,3 +3688,67 @@ async def test_list_rooms_forwards_air_quality(ws_hass, store, connection):
         "air_quality_reason": "co2",
         "ventilation_active": True,
     }
+
+
+@pytest.mark.asyncio
+async def test_override_set_until_next_change(ws_hass, store, connection):
+    """until_schedule_change holds until the schedule's next change and, with presence, remembers it."""
+    await store.async_load()
+    next_event = datetime.now(UTC).replace(microsecond=0) + timedelta(hours=3)
+    schedule = MagicMock(state="on", attributes={"next_event": next_event.isoformat()})
+    person = MagicMock(state="home", attributes={})
+    ws_hass.states.get = {"schedule.office": schedule, "person.anna": person}.get
+    await store.async_save_settings({"presence_enabled": True, "presence_persons": ["person.anna"]})
+    await _save_room(
+        ws_hass,
+        connection,
+        {"id": 2, "type": "roommind/rooms/save", "area_id": "office", "schedules": [{"entity_id": "schedule.office"}]},
+    )
+    connection.send_result.reset_mock()
+
+    msg = {
+        "id": 3,
+        "type": "roommind/override/set",
+        "area_id": "office",
+        "override_type": "eco",
+        "duration": 4,
+        "until_schedule_change": True,
+    }
+    await _override_set(ws_hass, connection, msg)
+
+    connection.send_result.assert_called_once_with(3, {"success": True})
+    room = store.get_room("office")
+    assert room["override_until"] == next_event.timestamp()
+    assert room["override_presence_away"] is False
+
+    # A timed override afterwards must not inherit the presence binding
+    msg = {"id": 4, "type": "roommind/override/set", "area_id": "office", "override_type": "eco", "duration": 1}
+    await _override_set(ws_hass, connection, msg)
+    assert store.get_room("office")["override_presence_away"] is None
+
+
+@pytest.mark.asyncio
+async def test_override_set_until_next_change_without_schedule(ws_hass, store, connection):
+    """Without a schedule presence alone ends it (no end time); without presence the duration applies."""
+    await store.async_load()
+    person = MagicMock(state="home", attributes={})
+    ws_hass.states.get = {"person.anna": person}.get
+    await _save_room(ws_hass, connection, {"id": 2, "type": "roommind/rooms/save", "area_id": "den"})
+    msg = {
+        "id": 3,
+        "type": "roommind/override/set",
+        "area_id": "den",
+        "override_type": "boost",
+        "duration": 4,
+        "until_schedule_change": True,
+    }
+    await _override_set(ws_hass, connection, msg)
+    room = store.get_room("den")
+    assert room["override_until"] > time.time() + 3 * 3600
+    assert room["override_presence_away"] is None
+
+    await store.async_save_settings({"presence_enabled": True, "presence_persons": ["person.anna"]})
+    await _override_set(ws_hass, connection, {**msg, "id": 4})
+    room = store.get_room("den")
+    assert room["override_until"] is None
+    assert room["override_presence_away"] is False

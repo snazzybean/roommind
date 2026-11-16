@@ -256,6 +256,7 @@ async def test_override_entity_set_range_writes_split(mock_coordinator):
             "override_cool": 25.0,
             "override_until": None,
             "override_type": OVERRIDE_CUSTOM,
+            "override_presence_away": None,
         },
     )
     coordinator.async_request_refresh.assert_awaited_once()
@@ -276,6 +277,7 @@ async def test_set_single_temperature_auto_derives_dead_band(mock_coordinator):
             "override_cool": 24.0,
             "override_until": None,
             "override_type": OVERRIDE_CUSTOM,
+            "override_presence_away": None,
         },
     )
 
@@ -344,6 +346,7 @@ async def test_set_hvac_mode_off_clears_override(mock_coordinator):
             "override_cool": None,
             "override_until": None,
             "override_type": None,
+            "override_presence_away": None,
         },
     )
     coordinator.async_request_refresh.assert_awaited_once()
@@ -370,6 +373,7 @@ async def test_set_hvac_mode_heat_cool_activates_with_comfort_defaults(mock_coor
             "override_cool": DEFAULT_COMFORT_COOL,
             "override_until": None,
             "override_type": OVERRIDE_CUSTOM,
+            "override_presence_away": None,
         },
     )
     coordinator.async_request_refresh.assert_not_awaited()
@@ -484,7 +488,9 @@ async def test_async_setup_entry_creates_entities_for_all_rooms():
 
     async_add_entities = MagicMock()
 
-    await async_setup_entry(hass, entry, async_add_entities)
+    with patch("custom_components.roommind.climate.entity_platform.async_get_current_platform") as platform:
+        await async_setup_entry(hass, entry, async_add_entities)
+    platform.return_value.async_register_entity_service.assert_called_once()
 
     assert coordinator.async_add_climate_entities is async_add_entities
     async_add_entities.assert_called_once()
@@ -512,7 +518,9 @@ async def test_async_setup_entry_no_rooms():
 
     async_add_entities = MagicMock()
 
-    await async_setup_entry(hass, entry, async_add_entities)
+    with patch("custom_components.roommind.climate.entity_platform.async_get_current_platform") as platform:
+        await async_setup_entry(hass, entry, async_add_entities)
+    platform.return_value.async_register_entity_service.assert_called_once()
 
     async_add_entities.assert_not_called()
 

@@ -152,3 +152,38 @@ describe("roomHints air quality (#267)", () => {
     expect(hints.map((h) => h.id)).not.toContain("air_quality");
   });
 });
+
+describe("roomHints override until the next change", () => {
+  const base = {
+    override_active: true,
+    override_type: "boost" as const,
+    override_suppressed: false,
+  };
+
+  test("names the presence switch next to the schedule change", () => {
+    const hints = roomHints(
+      room({ ...base, override_until: sixAm, override_ends_on_presence: true }),
+      "controlled",
+      ctx,
+    );
+    expect(hints.find((h) => h.id === "override")?.key).toBe(
+      "card.hint.override_until_or_presence",
+    );
+  });
+
+  test("without a schedule change it holds until presence changes, not permanently", () => {
+    const hints = roomHints(
+      room({ ...base, override_until: null, override_ends_on_presence: true }),
+      "controlled",
+      ctx,
+    );
+    expect(hints.find((h) => h.id === "override")?.key).toBe("card.hint.override_presence");
+  });
+
+  test("a plain override keeps its texts", () => {
+    const timed = roomHints(room({ ...base, override_until: sixAm }), "controlled", ctx);
+    expect(timed.find((h) => h.id === "override")?.key).toBe("card.hint.override_until");
+    const permanent = roomHints(room({ ...base, override_until: null }), "controlled", ctx);
+    expect(permanent.find((h) => h.id === "override")?.key).toBe("card.hint.override_permanent");
+  });
+});

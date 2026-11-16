@@ -276,8 +276,18 @@ export function roomHints(
         id: "override",
         icon,
         severity: "info",
-        key: "card.hint.override_until",
+        key: live.override_ends_on_presence
+          ? "card.hint.override_until_or_presence"
+          : "card.hint.override_until",
         params: { type, time: formatClock(live.override_until, ctx.language, ctx.now) },
+      });
+    } else if (live.override_ends_on_presence) {
+      hints.push({
+        id: "override",
+        icon,
+        severity: "info",
+        key: "card.hint.override_presence",
+        params: { type },
       });
     } else {
       hints.push({

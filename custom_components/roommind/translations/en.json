@@ -45,5 +45,49 @@
         "name": "{room} air quality poor"
       }
     }
+  },
+  "services": {
+    "set_override": {
+      "name": "Set override",
+      "description": "Holds a temperature or preset on a RoomMind room with an end you choose. Without targets it holds the band in force, so it can also extend or shorten a running override.",
+      "fields": {
+        "preset": {
+          "name": "Preset",
+          "description": "Comfort or eco targets of the room. Leave empty to set temperatures or hold what is in force."
+        },
+        "temperature": {
+          "name": "Temperature",
+          "description": "Target in Heat only or Cool only. In Auto it sets the heating side."
+        },
+        "target_temp_low": {
+          "name": "Heat to",
+          "description": "Heating target of the band (Auto)."
+        },
+        "target_temp_high": {
+          "name": "Cool above",
+          "description": "Cooling target of the band (Auto)."
+        },
+        "duration": {
+          "name": "Duration",
+          "description": "How long the override holds."
+        },
+        "until": {
+          "name": "Until",
+          "description": "When the override ends."
+        },
+        "until_next_change": {
+          "name": "Until the next automatic change",
+          "description": "Hold until the active schedule changes next or presence switches between home and away, whichever comes first."
+        }
+      }
+    }
+  },
+  "selector": {
+    "override_preset": {
+      "options": {
+        "comfort": "Comfort",
+        "eco": "Eco"
+      }
+    }
   }
 }

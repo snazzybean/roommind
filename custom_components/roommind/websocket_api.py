@@ -54,6 +54,7 @@ from .utils.device_utils import (
     ValveEntities,
     get_valve_entities,
 )
+from .utils.override_end_utils import override_presence_binding
 from .utils.schedule_utils import mask_override_band, next_schedule_change, override_preset_band
 
 _LOGGER = logging.getLogger(__name__)
@@ -730,10 +731,16 @@ async def websocket_override_set(
         return
 
     override_until = (time.time() + duration_hours * 3600) if duration_hours else None
+    presence_away_at = None
     if msg.get("until_schedule_change"):
         next_change = next_schedule_change(hass, room)
+        # Where presence applies to the room, a switch between home and away ends it too
+        presence_away_at = override_presence_binding(hass, room, store.get_settings())
         if next_change is not None and next_change > time.time():
             override_until = next_change
+        elif presence_away_at is not None:
+            # No schedule change ahead: presence alone ends it, not the fallback duration
+            override_until = None
 
     await store.async_update_room(
         area_id,
@@ -742,6 +749,7 @@ async def websocket_override_set(
             "override_cool": cool,
             "override_until": override_until,
             "override_type": override_type,
+            "override_presence_away": presence_away_at,
         },
     )
 
@@ -786,6 +794,7 @@ async def websocket_override_clear(
             "override_cool": None,
             "override_until": None,
             "override_type": None,
+            "override_presence_away": None,
         },
     )
 
