@@ -6,8 +6,8 @@ import { localize, uiLanguage } from "../../utils/localize";
 /**
  * Number stepper: minus, value, plus. Native buttons with 44 px targets, the value is announced
  * politely. `display` is the formatted value (unit included). Fires `value-changed` with
- * `{ value }`. Buttons clamp to min/max; only output-only steppers snap to the step.
- * Editable steppers accept exact in-range decimals on Enter/blur; Escape cancels.
+ * `{ value }`. Buttons clamp to min/max and move to the next point of the step grid.
+ * Editable steppers accept exact in-range decimals on Enter/blur; Escape resets a changed entry.
  */
 @customElement("rs-stepper")
 export class RsStepper extends LitElement {
@@ -59,13 +59,27 @@ export class RsStepper extends LitElement {
         background: var(--rs-fill);
       }
 
+      .entry {
+        display: inline-flex;
+        align-items: baseline;
+        justify-content: center;
+        gap: 2px;
+        min-width: 76px;
+        font-size: var(--rs-font-md);
+      }
+
+      /* 16 px keeps iOS Safari from zooming in on focus. */
       input {
-        width: 76px;
+        width: 5ch;
         min-height: var(--rs-touch);
+        padding: 0;
         border: none;
         background: transparent;
         color: var(--primary-text-color);
         font-family: inherit;
+        font-size: 16px;
+        font-variant-numeric: tabular-nums;
+        text-align: end;
       }
 
       input:disabled {
@@ -84,8 +98,7 @@ export class RsStepper extends LitElement {
         cursor: default;
       }
 
-      output,
-      input {
+      output {
         min-width: 64px;
         text-align: center;
         font-size: var(--rs-font-md);
@@ -121,17 +134,20 @@ export class RsStepper extends LitElement {
       </button>
       ${
         this.editable
-          ? html`<input
-                type="text"
-                inputmode="decimal"
-                aria-label=${`${this.label} (${this.unit})`}
-                .value=${this._formattedValue()}
-                ?disabled=${this.disabled}
-                @focus=${(e: FocusEvent) => (e.target as HTMLInputElement).select()}
-                @blur=${this._commit}
-                @keydown=${this._onKeydown}
-              /><span aria-hidden="true">${this.unit}</span>
-              <span class="sr-only" aria-live="polite" aria-atomic="true"
+          ? html`<label class="entry"
+                ><input
+                  type="text"
+                  inputmode="decimal"
+                  enterkeyhint="done"
+                  autocomplete="off"
+                  aria-label=${`${this.label} (${this.unit})`}
+                  .value=${this._formattedValue()}
+                  ?disabled=${this.disabled}
+                  @focus=${this._selectAll}
+                  @blur=${this._commit}
+                  @keydown=${this._onKeydown}
+                /><span aria-hidden="true">${this.unit}</span></label
+              ><span class="sr-only" aria-live="polite" aria-atomic="true"
                 >${this._formattedValue()} ${this.unit}</span
               >`
           : html`<output aria-live="polite">${this.display || String(this.value)}</output>`
@@ -151,8 +167,14 @@ export class RsStepper extends LitElement {
   private _formattedValue(): string {
     return new Intl.NumberFormat(this.language || uiLanguage(), {
       useGrouping: false,
-      maximumFractionDigits: 12,
+      maximumFractionDigits: 2,
     }).format(this.value);
+  }
+
+  private _selectAll(e: FocusEvent) {
+    const input = e.target as HTMLInputElement;
+    // Safari drops a selection made on focus when the tap or click ends; select once it has.
+    requestAnimationFrame(() => input.setSelectionRange(0, input.value.length));
   }
 
   private _commit(e: Event) {
@@ -179,17 +201,24 @@ export class RsStepper extends LitElement {
       this._commit(e);
       (e.target as HTMLInputElement).blur();
     } else if (e.key === "Escape") {
+      const input = e.target as HTMLInputElement;
+      // An unchanged field lets Escape close the dialog; a changed one is only reset first.
+      if (input.value === this._formattedValue()) return;
       e.preventDefault();
-      (e.target as HTMLInputElement).value = this._formattedValue();
-      (e.target as HTMLInputElement).blur();
+      e.stopPropagation();
+      input.value = this._formattedValue();
+      input.select();
     }
   }
 
   private _step(direction: 1 | -1) {
     if (this.disabled || (direction < 0 ? this._atMin : this._atMax)) return;
     const raw = this.value + direction * this.step;
+    // An exact value off the grid moves to the next grid point, as on the dashboard card.
+    const grid = this.value / this.step;
+    const index = direction > 0 ? Math.floor(grid + 1e-6) + 1 : Math.ceil(grid - 1e-6) - 1;
     const rounded = this.editable
-      ? Number(raw.toFixed(12))
+      ? Number((index * this.step).toFixed(10))
       : Number((Math.round(raw / this.step) * this.step).toFixed(2));
     const value = Math.min(this.max, Math.max(this.min, rounded));
     if (value === this.value) return;

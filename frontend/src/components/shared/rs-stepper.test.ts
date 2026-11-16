@@ -35,10 +35,10 @@ test("temperature row preserves saved precision and enables exact entry", async 
   expect(input.getAttribute("aria-label")).toContain("Comfort");
 });
 
-test("editable plus preserves the fractional target instead of snapping", async () => {
+test("editable plus moves an exact target to the next grid point", async () => {
   const { stepper, changes } = await row();
   stepper.shadowRoot!.querySelectorAll("button")[1].click();
-  expect(changes).toEqual([22.2]);
+  expect(changes).toEqual([22]);
 });
 
 test.each(["Enter", "blur"])("comma decimal commits once on %s", async (action) => {
@@ -96,7 +96,7 @@ test("Fahrenheit preserves precision and converts typed targets to Celsius", asy
   input.dispatchEvent(new Event("blur"));
   expect(changes[0]).toBeCloseTo(22.5);
   stepper.shadowRoot!.querySelectorAll("button")[1].click();
-  expect(changes[1]).toBeCloseTo(22.2555555556);
+  expect(changes[1]).toBeCloseTo(22.2222222222);
 });
 
 test("disabled entry and buttons cannot emit", async () => {
@@ -177,8 +177,8 @@ test.each([
 });
 
 test.each([
-  ["°C", "22,2 °C"],
-  ["°F", "72,06 °F"],
+  ["°C", "22 °C"],
+  ["°F", "72 °F"],
 ])("editable %s changes have one polite announcement without moving focus", async (unit, text) => {
   const { stepper } = await row(unit);
   const root = stepper.shadowRoot!;
@@ -235,8 +235,36 @@ test.each([34.7, 5.2])("disabled editable boundary at %s cannot emit", async (va
   expect(changes).toEqual([]);
 });
 
-test("minus preserves the fractional target", async () => {
+test("minus moves an exact target to the previous grid point", async () => {
   const { stepper, changes } = await row();
   stepper.shadowRoot!.querySelectorAll("button")[0].click();
-  expect(changes).toEqual([21.2]);
+  expect(changes).toEqual([21.5]);
+});
+
+test("Escape in a changed entry resets it and keeps the dialog open", async () => {
+  const { stepper, changes } = await row();
+  const input = stepper.shadowRoot!.querySelector("input")!;
+  const reachedWindow: string[] = [];
+  const listener = (e: KeyboardEvent) => reachedWindow.push(e.key);
+  window.addEventListener("keydown", listener);
+  input.value = "25";
+  input.dispatchEvent(
+    new KeyboardEvent("keydown", { key: "Escape", bubbles: true, composed: true }),
+  );
+  expect(input.value).toBe("21,7");
+  expect(reachedWindow).toEqual([]);
+  input.dispatchEvent(
+    new KeyboardEvent("keydown", { key: "Escape", bubbles: true, composed: true }),
+  );
+  expect(reachedWindow).toEqual(["Escape"]);
+  window.removeEventListener("keydown", listener);
+  expect(changes).toEqual([]);
+});
+
+test("an exact value shows at most two decimals and is not written back", async () => {
+  const { stepper, changes } = await row("°C", 21.666666666666668);
+  const input = stepper.shadowRoot!.querySelector("input")!;
+  expect(input.value).toBe("21,67");
+  input.dispatchEvent(new Event("blur"));
+  expect(changes).toEqual([]);
 });
