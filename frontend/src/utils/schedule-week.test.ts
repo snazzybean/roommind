@@ -1,5 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
+  blockPreheat,
+  withPreheat,
   dayTimes,
   copyDay,
   dayIsValid,
@@ -239,5 +241,38 @@ describe("dayTimes", () => {
     });
     expect(dayTimes(week[0])).toBe("06:00–08:00, 16:30–24:00");
     expect(dayTimes(week[1])).toBe("");
+  });
+});
+
+describe("block pre-heating", () => {
+  const block = (data?: Record<string, string | number | boolean>) => ({
+    start: 360,
+    end: 480,
+    ...(data ? { data } : {}),
+  });
+
+  test("reads the preheat key like the backend", () => {
+    expect(blockPreheat(block())).toBe("room");
+    expect(blockPreheat(block({ preheat: true }))).toBe("on");
+    expect(blockPreheat(block({ preheat: false }))).toBe("off");
+    expect(blockPreheat(block({ preheat: 0 }))).toBe("off");
+    expect(blockPreheat(block({ preheat: 45 }))).toBe(45);
+    expect(blockPreheat(block({ preheat: "45" }))).toBe(45);
+    expect(blockPreheat(block({ preheat: "On" }))).toBe("on");
+    expect(blockPreheat(block({ preheat: "no" }))).toBe("off");
+    expect(blockPreheat(block({ preheat: "soon" }))).toBe("room");
+  });
+
+  test("writes the key and keeps the other data", () => {
+    expect(withPreheat({ temperature: 21 }, "on")).toEqual({ temperature: 21, preheat: true });
+    expect(withPreheat({ temperature: 21 }, "off")).toEqual({ temperature: 21, preheat: false });
+    expect(withPreheat({ temperature: 21 }, 45)).toEqual({ temperature: 21, preheat: 45 });
+    expect(withPreheat({ temperature: 21, preheat: 45 }, "room")).toEqual({ temperature: 21 });
+  });
+
+  test("room without other data leaves no data, minutes are clamped", () => {
+    expect(withPreheat({ preheat: true }, "room")).toBeUndefined();
+    expect(withPreheat(undefined, 5000)).toEqual({ preheat: 720 });
+    expect(withPreheat(undefined, 0.2)).toEqual({ preheat: 1 });
   });
 });
