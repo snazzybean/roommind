@@ -222,7 +222,10 @@ async def _async_register_card(hass: HomeAssistant) -> None:
 
 
 async def _async_register_panel(hass: HomeAssistant) -> None:
-    """Register the RoomMind custom panel in the sidebar."""
+    """Register the RoomMind custom panel in the sidebar.
+
+    The version query makes browsers fetch the new panel after an update instead of a cached one.
+    """
     if hass.data[DOMAIN].get("panel_registered"):
         return
 
@@ -254,7 +257,7 @@ async def _async_register_panel(hass: HomeAssistant) -> None:
                     "name": "roommind-panel",
                     "embed_iframe": False,
                     "trust_external": False,
-                    "js_url": "/roommind/roommind-panel.js",
+                    "js_url": f"/roommind/roommind-panel.js?v={VERSION}",
                 }
             },
         )

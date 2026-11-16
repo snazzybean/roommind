@@ -251,7 +251,7 @@ If you changed insulation or radiators or moved sensors, use "Re-learn faster" i
 <details>
 <summary><b>The panel does not update after an update</b></summary>
 
-Hard-refresh the browser: **Cmd+Shift+R** (Mac) or **Ctrl+Shift+R** (Windows/Linux).
+Restart Home Assistant after the update, then reload the browser tab. If it still shows the old version (before 2.0.1, or files copied in by hand without a new version number), hard-refresh: **Cmd+Shift+R** (Mac) or **Ctrl+Shift+R** (Windows/Linux).
 
 </details>
 
