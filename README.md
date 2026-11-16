@@ -193,7 +193,9 @@ An Extended Kalman Filter watches the room temperature and learns each room's he
 | `hvac_action` | What RoomMind is doing: `heating`, `cooling`, `idle` or `off` |
 | Current temperature and humidity | The room's readings |
 
-Attributes: `override_until`, `window_open`, `presence_away`, `occupancy_vacant`, `vacation`. An open window shows as `idle` with `window_open: true`.
+Attributes: `override_until`, `override_ends_on_presence` (the override also ends when presence switches, see below), `window_open`, `presence_away`, `occupancy_vacant`, `vacation`. An open window shows as `idle` with `window_open: true`.
+
+The choice "Until 22:30" (the next schedule change) of the temporary override on the room page and the dashboard card's quick choices also end when presence switches between home and away, where presence applies to the room ("Until 22:30 or presence change"). Without a schedule change ahead, presence alone ends them.
 
 The entity is placed in the room's area once when it is created, so it shows up on area cards and Assist finds it by the area ("set the temperature in the living room to 22"). An area you change or remove later is kept. For voice control, hide the room's own thermostats and ACs from Assist (Settings → Voice assistants → Expose), otherwise Assist finds several climate entities in the room and cannot pick one.
 

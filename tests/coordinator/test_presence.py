@@ -489,3 +489,74 @@ class TestPresenceDetection:
         room = data["rooms"]["living_room_abc12345"]
         assert room["target_temp"] == 25.0  # override wins
         assert room["force_off"] is False
+
+
+class TestOverrideUntilNextChange:
+    """An override held until the next change ends once presence switches (home <-> away)."""
+
+    @staticmethod
+    def _room(presence_away_at_set):
+        return {
+            **SAMPLE_ROOM,
+            "override_heat": 25.0,
+            "override_cool": 25.0,
+            "override_until": time.time() + 3600,
+            "override_type": "boost",
+            "override_presence_away": presence_away_at_set,
+        }
+
+    async def _run(self, hass, mock_config_entry, room, *persons_home):
+        store = _make_store_mock({"living_room_abc12345": room})
+        store.get_settings.return_value = {"presence_enabled": True, "presence_persons": ["person.kevin"]}
+        store.async_update_room = AsyncMock()
+        hass.data = {"roommind": {"store": store}}
+        hass.states.get = MagicMock(side_effect=_presence_states_get(*persons_home))
+        hass.services.async_call = AsyncMock()
+        coordinator = _create_coordinator(hass, mock_config_entry)
+        data = await coordinator._async_update_data()
+        return data["rooms"]["living_room_abc12345"], store
+
+    @pytest.mark.asyncio
+    async def test_set_at_home_ends_when_everyone_leaves(self, hass, mock_config_entry):
+        live, store = await self._run(hass, mock_config_entry, self._room(False))
+        assert live["target_temp"] == 17.0  # eco: presence away, override gone
+        assert live["override_active"] is False
+        store.async_update_room.assert_any_call(
+            "living_room_abc12345",
+            {
+                "override_heat": None,
+                "override_cool": None,
+                "override_until": None,
+                "override_type": None,
+                "override_presence_away": None,
+            },
+        )
+
+    @pytest.mark.asyncio
+    async def test_set_while_away_ends_when_someone_comes_home(self, hass, mock_config_entry):
+        live, store = await self._run(hass, mock_config_entry, self._room(True), "person.kevin")
+        assert live["target_temp"] == 21.0  # back to the schedule
+        assert live["override_active"] is False
+        store.async_update_room.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_holds_while_presence_stays(self, hass, mock_config_entry):
+        live, store = await self._run(hass, mock_config_entry, self._room(False), "person.kevin")
+        assert live["target_temp"] == 25.0
+        assert live["override_active"] is True
+        assert live["override_ends_on_presence"] is True
+        store.async_update_room.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_timed_override_ignores_presence(self, hass, mock_config_entry):
+        live, store = await self._run(hass, mock_config_entry, self._room(None))
+        assert live["target_temp"] == 25.0  # override beats presence as before
+        assert live["override_ends_on_presence"] is False
+        store.async_update_room.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_room_ignoring_presence_keeps_override(self, hass, mock_config_entry):
+        room = {**self._room(False), "ignore_presence": True}
+        live, store = await self._run(hass, mock_config_entry, room)
+        assert live["target_temp"] == 25.0
+        store.async_update_room.assert_not_called()
