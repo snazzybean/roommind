@@ -9,6 +9,7 @@ sensor-driven energy tiers are follow-up PRs on this engine.
 
 from __future__ import annotations
 
+import math
 import time
 from unittest.mock import AsyncMock, MagicMock
 
@@ -909,3 +910,190 @@ async def test_next_change_guards() -> None:
     )
     assert timeline is not None and len(timeline.segments) == 1
     assert timeline.tier_at(future + 30) == TOU_TIER_OFF
+
+
+# ---------------------------------------------------------------------------
+# Parity sources: forecast curve, relative ranking, switch/event
+# ---------------------------------------------------------------------------
+
+
+def _entity_hass(eid: str, state: str, attributes: dict) -> MagicMock:
+    """A hass whose single entity reports *state* with *attributes*."""
+    hass = _make_hass({})
+    s = MagicMock()
+    s.state = state
+    s.attributes = {"unit_of_measurement": "EUR/kWh", **attributes}
+    hass.states.get = MagicMock(side_effect=lambda wanted, _s=s: _s if wanted == eid else None)
+    return hass
+
+
+def _hourly_items(now: float, prices: list[float]) -> list[dict]:
+    base = math.floor(now / 3600.0) * 3600.0
+    return [
+        {
+            "start_time": dt_util.utc_from_timestamp(base + i * 3600.0).isoformat(),
+            "end_time": dt_util.utc_from_timestamp(base + (i + 1) * 3600.0).isoformat(),
+            "price": p,
+        }
+        for i, p in enumerate(prices)
+    ]
+
+
+@pytest.mark.asyncio
+async def test_forecast_curve_with_thresholds_builds_segments() -> None:
+    """A sensor publishing raw_today is a calendar the utility maintains: its
+    hours land in the timeline, tiered by the configured thresholds."""
+    now = time.time()
+    base = math.floor(now / 3600.0) * 3600.0
+    hass = _entity_hass("sensor.price", "0.10", {"raw_today": _hourly_items(now, [0.10, 0.05, 0.35, 0.05])})
+    mgr = TouManager(hass)
+    timeline = await mgr.async_build_timeline(
+        {"tou_enabled": True, "tou_rate_entity": "sensor.price", "tou_peak_threshold": 0.30, "tou_mid_threshold": 0.09}
+    )
+    assert timeline is not None
+    assert timeline.current_tier == TOU_TIER_MID  # 0.10 >= 0.09 mid
+    assert timeline.tier_at(base + 2 * 3600.0 + 60) == TOU_TIER_PEAK  # the 0.35 hour
+    assert timeline.tier_at(base + 3600.0 + 60) == TOU_TIER_OFF  # between: 0.05
+    snap = mgr.snapshot()
+    assert snap["next_tier"] == TOU_TIER_OFF  # first boundary: the cheap hour
+    # The forecast is the future view: no next-change sensor was bound.
+
+
+@pytest.mark.asyncio
+async def test_forecast_without_thresholds_ranks_own_bands() -> None:
+    """No thresholds: the curve classifies against its own spread (ported
+    price-manager rule) — expensive hours peak, cheap hours off."""
+    now = time.time()
+    base = math.floor(now / 3600.0) * 3600.0
+    prices = [0.30, 0.02, 0.30, 0.10, 0.35, 0.02, 0.20, 0.05]
+    hass = _entity_hass("sensor.price", str(prices[0]), {"raw_today": _hourly_items(now, prices)})
+    mgr = TouManager(hass)
+    timeline = await mgr.async_build_timeline({"tou_enabled": True, "tou_rate_entity": "sensor.price"})
+    assert timeline is not None
+    assert timeline.tier_at(base + 2 * 3600.0 + 60) == TOU_TIER_PEAK  # 0.30 in the top band
+    assert timeline.tier_at(base + 5 * 3600.0 + 60) == TOU_TIER_OFF  # 0.02 bottom band
+
+
+@pytest.mark.asyncio
+async def test_flat_forecast_stays_inert() -> None:
+    """A flat curve has no bands to rank by: no segments are painted — the
+    horizon stays exactly what the current tier is (never a guessed peak)."""
+    now = time.time()
+    hass = _entity_hass("sensor.price", "0.12", {"raw_today": _hourly_items(now, [0.12] * 6)})
+    mgr = TouManager(hass)
+    timeline = await mgr.async_build_timeline({"tou_enabled": True, "tou_rate_entity": "sensor.price"})
+    assert timeline is not None and len(timeline.segments) == 1
+
+
+@pytest.mark.asyncio
+async def test_relative_ranking_from_seeded_history() -> None:
+    """Threshold-free ranking, the base price manager's trick: rank today's
+    price against the observed history — seeded from the recorded history so
+    it works right after a restart, not after 12 h of uptime."""
+    now = time.time()
+    history = [(now - h * 3600.0, 0.05 + (h % 5) * 0.05) for h in range(2, 26)]
+    loader = AsyncMock(return_value=history)
+
+    high = TouManager(_make_hass({"sensor.price": "0.40"}))
+    timeline = await high.async_build_timeline(
+        {"tou_enabled": True, "tou_rate_entity": "sensor.price"}, history_loader=loader
+    )
+    assert timeline is not None and timeline.current_tier == TOU_TIER_PEAK
+
+    low = TouManager(_make_hass({"sensor.price": "0.05"}))
+    timeline2 = await low.async_build_timeline(
+        {"tou_enabled": True, "tou_rate_entity": "sensor.price"}, history_loader=loader
+    )
+    assert timeline2 is not None and timeline2.current_tier == TOU_TIER_OFF
+
+    # Without the seed (fresh process, thin history) ranking cannot answer
+    # honestly, and the legacy no-threshold behaviour keeps the floor: off.
+    bare = TouManager(_make_hass({"sensor.price": "0.40"}))
+    timeline3 = await bare.async_build_timeline({"tou_enabled": True, "tou_rate_entity": "sensor.price"})
+    assert timeline3 is not None and timeline3.current_tier == TOU_TIER_OFF
+
+
+def test_relative_steady_gate_holds_flicker() -> None:
+    """A relative tier change applies only once it held TOU_LEVEL_HOLD_S
+    (ported hysteresis): the first reading is immediate."""
+    mgr = TouManager(_make_hass({}))
+    assert mgr._steady_tier(TOU_TIER_PEAK, 1000.0) == TOU_TIER_PEAK
+    assert mgr._steady_tier(TOU_TIER_OFF, 1100.0) == TOU_TIER_PEAK  # 100 s: still held
+    assert mgr._steady_tier(TOU_TIER_OFF, 2001.0) == TOU_TIER_OFF  # held 901 s ≥ 900
+
+
+@pytest.mark.asyncio
+async def test_switch_rate_source_maps_tiers() -> None:
+    """The base feature accepted a switch that is on while energy is cheap;
+    bound as the rate entity it reads as off-peak, and mid when not on."""
+    on = TouManager(_entity_hass("input_boolean.pv_surplus", "on", {}))
+    timeline = await on.async_build_timeline({"tou_enabled": True, "tou_rate_entity": "input_boolean.pv_surplus"})
+    assert timeline is not None and timeline.current_tier == TOU_TIER_OFF
+
+    off = TouManager(_entity_hass("input_boolean.pv_surplus", "off", {}))
+    timeline2 = await off.async_build_timeline({"tou_enabled": True, "tou_rate_entity": "input_boolean.pv_surplus"})
+    assert timeline2 is not None and timeline2.current_tier == TOU_TIER_MID
+
+
+@pytest.mark.asyncio
+async def test_event_domain_forecast_source() -> None:
+    """Octopus publishes rates on an event entity: the state is a timestamp,
+    the prices sit in the attributes — the current slot gives tier AND price,
+    later slots give the timeline."""
+    now = time.time()
+    base = math.floor(now / 3600.0) * 3600.0
+    items = [
+        {
+            "from": dt_util.utc_from_timestamp(base + i * 3600.0).isoformat(),
+            "to": dt_util.utc_from_timestamp(base + (i + 1) * 3600.0).isoformat(),
+            "value": p,
+        }
+        for i, p in enumerate([0.40, 0.03, 0.28, 0.05])
+    ]
+    hass = _entity_hass("event.octopus_rates", dt_util.utc_from_timestamp(base - 7200.0).isoformat(), {"rates": items})
+    mgr = TouManager(hass)
+    timeline = await mgr.async_build_timeline({"tou_enabled": True, "tou_rate_entity": "event.octopus_rates"})
+    assert timeline is not None
+    assert timeline.current_tier == TOU_TIER_PEAK  # 0.40 tops the curve's bands
+    assert timeline.tier_at(base + 3600.0 + 30) == TOU_TIER_OFF
+    snap = mgr.snapshot()
+    assert snap["rate"] == 0.40  # the event's current slot is a real price
+    assert snap["next_tier"] == TOU_TIER_OFF
+
+
+@pytest.mark.asyncio
+async def test_calendar_and_windows_beat_the_forecast() -> None:
+    """The forecast is the fallback future: bound calendars (or manual
+    windows) own the horizon and the curve is not consulted."""
+    now = time.time()
+    cal_start = dt_util.utc_from_timestamp(now + 1800.0).isoformat()
+    cal_end = dt_util.utc_from_timestamp(now + 2 * 3600.0).isoformat()
+    price_state = MagicMock()
+    price_state.state = "0.10"
+    price_state.attributes = {
+        "unit_of_measurement": "EUR/kWh",
+        "raw_today": _hourly_items(now, [0.10, 0.10, 0.35, 0.35]),
+    }
+    cal_state = MagicMock()
+    cal_state.state = "on"
+    lookup = {"sensor.price": price_state, "calendar.c": cal_state}
+    hass = _make_hass({})
+    hass.states.get = MagicMock(side_effect=lookup.get)
+    hass.services.async_call = AsyncMock(
+        return_value={"calendar.c": {"events": [{"start": {"date_time": cal_start}, "end": {"date_time": cal_end}}]}}
+    )
+    mgr = TouManager(hass)
+    timeline = await mgr.async_build_timeline(
+        {
+            "tou_enabled": True,
+            "tou_rate_entity": "sensor.price",
+            "tou_calendar_entities": [{"entity_id": "calendar.c", "tier": "mid"}],
+        }
+    )
+    assert timeline is not None
+    # The calendar owns the horizon: its mid window paints the hours it
+    # covers, and the forecast's 0.35 peak hours were never consulted —
+    # after the window ends the tier falls back to the current, not to the
+    # curve.
+    assert timeline.tier_at(now + 3600.0) == TOU_TIER_MID  # inside the calendar window
+    assert timeline.tier_at(now + 3 * 3600.0) == TOU_TIER_OFF

@@ -427,7 +427,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         )
 
         # Time-of-Use: build the tariff tier timeline once per cycle for all rooms.
-        await self._tou_manager.async_build_timeline(settings)
+        await self._tou_manager.async_build_timeline(settings, history_loader=self._async_load_price_history)
 
         await self._async_switch_resting_rooms_off(stored_rooms, rooms, settings)
         await self._async_switch_deleted_rooms_off(settings)

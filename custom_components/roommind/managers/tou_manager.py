@@ -24,12 +24,20 @@ Degrade rules (behavioural invariants, kept by the tests):
 * a tier is never guessed past a source's evidence: no cost thresholds means
   manual rate windows cannot classify and stay inert; a future view missing
   its time or tier simply leaves the horizon flat.
+
+Parity sources (porting the base price manager's input side, so it can be
+retired without losing what it could read): when nothing else classifies a
+bound rate, it is ranked *relative* to the observed price history with a
+steady-state gate (quantile bands, unit-agnostic, negative prices fine); and
+a rate entity that carries a forecast attribute array — or an event entity
+publishing rates — contributes real timeline segments for the coming hours.
 """
 
 from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
@@ -40,8 +48,10 @@ from homeassistant.util import dt as dt_util
 from ..const import (
     DOMAIN,
     TOU_LAST_RATE_TIER_MAX_AGE_S,
+    TOU_LEVEL_HOLD_S,
     TOU_PRICE_HISTORY_SAVE_MIN_INTERVAL_S,
     TOU_PRICE_HISTORY_WINDOW_S,
+    TOU_RELATIVE_SAMPLE_S,
     TOU_SOURCE_FLAGS,
     TOU_SOURCE_NONE,
     TOU_SOURCE_PERIOD,
@@ -53,6 +63,19 @@ from ..const import (
     TOU_TIER_UNKNOWN,
     TOU_TIMELINE_HORIZON_MINUTES,
     TOU_WEEKDAYS,
+)
+from ..utils.price_utils import (
+    HISTORY_WINDOW_S,
+    LEVEL_CHEAP,
+    LEVEL_EXPENSIVE,
+    LEVEL_NORMAL,
+    MIN_HISTORY_HOURS,
+    SWITCH_DOMAINS,
+    PriceSlot,
+    hourly,
+    level_of,
+    parse_price_forecast,
+    price_thresholds,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -145,6 +168,14 @@ class TouManager:
         self._history_loaded = False
         self._history_dirty = False
         self._history_saved = 0.0
+        # Relative-classification memory (PR-04a parity with the base price
+        # manager): recent (ts, price) samples for threshold-free ranking,
+        # seeded once from the recorded history, plus the steady gate that
+        # keeps a flickering price from moving the tier.
+        self._observed_prices: list[tuple[float, float]] = []
+        self._observed_seeded = False
+        self._held_tier: str | None = None
+        self._pending_tier: tuple[str, float] | None = None
 
     @property
     def timeline(self) -> TouTimeline | None:
@@ -155,7 +186,12 @@ class TouManager:
     # Timeline construction
     # ------------------------------------------------------------------
 
-    async def async_build_timeline(self, settings: dict[str, Any]) -> TouTimeline | None:
+    async def async_build_timeline(
+        self,
+        settings: dict[str, Any],
+        *,
+        history_loader: Callable[[], Awaitable[list[tuple[float, float]]]] | None = None,
+    ) -> TouTimeline | None:
         """Read the configured sources and build the horizon timeline.
 
         Returns None when the feature is disabled. A missing or unavailable
@@ -163,7 +199,9 @@ class TouManager:
         nothing — behavior is identical to TOU being off. ``tou_lookahead``
         picks which future source counts (calendars, next-change, or none);
         "auto" keeps the legacy order: calendars, with next-change as the
-        fallback when no calendar window covers the horizon.
+        fallback when no calendar window covers the horizon. ``history_loader``
+        (the coordinator's recorded prices) seeds the relative-ranking series
+        once per process so threshold-free classification survives a restart.
         """
         if not settings.get("tou_enabled", False):
             self._timeline = None
@@ -174,6 +212,7 @@ class TouManager:
         horizon = now + TOU_TIMELINE_HORIZON_MINUTES * 60.0
 
         self._load_price_history(settings)
+        await self._load_observed_prices(history_loader)
         current, rate, unit, source = self._resolve_current_tier(settings)
         self._source_kind = source
         self._rate_unit = unit
@@ -190,6 +229,13 @@ class TouManager:
                     events.append((ev_start, ev_end, tier))
             for win_start, win_end, win_tier in self._rate_window_events(settings, now, horizon):
                 events.append((win_start, win_end, win_tier))
+            if not events:
+                # Forecast-curve parity source: a rate entity publishing its
+                # prices as attributes (Nordpool raw_today, EPEX data, Octopus
+                # event rates…) is a calendar the utility already maintains —
+                # read it as one. Explicit calendars and manual windows outrank
+                # it; it never fights them.
+                events.extend(self._forecast_events(settings, now, horizon))
 
         if not events and lookahead in ("auto", "next_change", "next_change_rate"):
             next_ts, next_tier, next_rate, next_unit = self._resolve_next_view(settings, lookahead)
@@ -250,10 +296,29 @@ class TouManager:
                     return str(tier), rate, unit, TOU_SOURCE_FLAGS
 
         rate, unit = self._read_rate(settings)
-        if mode not in ("auto", "rate"):
+        if mode not in ("auto", "rate", "relative"):
             return TOU_TIER_UNKNOWN, rate, unit, TOU_SOURCE_NONE
-        tier = self._tier_from_rate(rate, settings)
-        if tier == TOU_TIER_UNKNOWN and rate is None:
+        now = time.time()
+        if rate is not None:
+            self._observe_price(rate, now)
+
+        # Classification precedence: configured thresholds (unless the user
+        # picked "relative"), then threshold-free relative ranking, then the
+        # grace-window last-known, then the entity's own extras (a "on while
+        # cheap" switch, an event sensor's current slot). A rate with no
+        # thresholds and no history keeps the legacy behaviour: plain "off".
+        tier = TOU_TIER_UNKNOWN
+        rel: str | None = None
+        if rate is not None:
+            if self._thresholds_present(settings):
+                tier = self._tier_from_rate(rate, settings)
+            if tier == TOU_TIER_UNKNOWN and mode in ("auto", "relative"):
+                rel = self._tier_relative(rate)
+            if tier == TOU_TIER_UNKNOWN and rel is None and mode != "relative":
+                tier = self._tier_from_rate(rate, settings)  # legacy off fallback
+        if tier == TOU_TIER_UNKNOWN and rel is not None:
+            tier = self._steady_tier(rel, now)
+        if tier == TOU_TIER_UNKNOWN and rate is None and mode != "relative":
             # Provider blip: keep classifying from the last valid price while
             # it is fresh; beyond the grace window the tariff stays unknown and
             # shapes nothing — a stale price must not guess a tier.
@@ -262,6 +327,14 @@ class TouManager:
                 guessed = self._tier_from_rate(found[0], settings)
                 if guessed != TOU_TIER_UNKNOWN:
                     return guessed, found[0], found[1], TOU_SOURCE_RATE
+        if tier == TOU_TIER_UNKNOWN and rate is None:
+            extra = self._entity_extra_tier(settings, now)
+            if extra is not None:
+                etier, erate, eunit = extra
+                if etier != TOU_TIER_UNKNOWN and erate is not None:
+                    self._observe_rate(etier, erate, eunit)
+                    self._observe_price(erate, now)
+                return etier, erate, eunit, TOU_SOURCE_RATE
         if tier != TOU_TIER_UNKNOWN:
             self._observe_rate(tier, rate, unit)
             return tier, rate, unit, TOU_SOURCE_RATE
@@ -530,6 +603,146 @@ class TouManager:
         if isinstance(ultra, (int, float)) and rate <= float(ultra):
             return TOU_TIER_ULTRA_LOW
         return TOU_TIER_OFF
+
+    # ------------------------------------------------------------------
+    # Parity sources (PR-04a): relative ranking + forecast curve + switch/event
+    # ------------------------------------------------------------------
+
+    def _observe_price(self, price: float, now: float) -> None:
+        """Sample the bound rate for threshold-free ranking (ported from the
+        base price manager): one point per TOU_RELATIVE_SAMPLE_S, pruned to
+        the rolling history window."""
+        if not self._observed_prices or now - self._observed_prices[-1][0] >= TOU_RELATIVE_SAMPLE_S:
+            self._observed_prices.append((now, price))
+        cutoff = now - HISTORY_WINDOW_S
+        if self._observed_prices and self._observed_prices[0][0] < cutoff:
+            self._observed_prices = [p for p in self._observed_prices if p[0] >= cutoff]
+
+    async def _load_observed_prices(
+        self, history_loader: Callable[[], Awaitable[list[tuple[float, float]]]] | None
+    ) -> None:
+        """Seed the observed series once per process from recorded history, so
+        relative ranking resumes immediately after a restart."""
+        if self._observed_seeded or history_loader is None:
+            return
+        self._observed_seeded = True
+        try:
+            rows = await history_loader()
+        except Exception:  # noqa: BLE001
+            return
+        now = time.time()
+        known = {round(ts) for ts, _ in self._observed_prices}
+        older = [(ts, p) for ts, p in rows if now - ts <= HISTORY_WINDOW_S and round(ts) not in known]
+        self._observed_prices = sorted(older + self._observed_prices)
+
+    def _tier_relative(self, rate: float) -> str | None:
+        """Rank *rate* against the observed series. None when history is too
+        short or the tariff is flat — the bands are a floor+ceiling pair, and
+        a spread too small to mean anything says nothing, never a guess."""
+        now = time.time()
+        recent = [p for ts, p in self._observed_prices if now - ts <= HISTORY_WINDOW_S]
+        if len(recent) < MIN_HISTORY_HOURS:
+            return None
+        band = price_thresholds(recent)
+        if band is None:
+            return None
+        return self._tier_for_level(level_of(rate, band))
+
+    @staticmethod
+    def _tier_for_level(level: str | None) -> str | None:
+        """cheap/normal/expensive onto the tier ladder: the bottom third is
+        off-peak, the top third peak, the middle mid — the deep trough of
+        ultra_low needs a real threshold to claim, relative bands stop at
+        "off" honestly."""
+        if level == LEVEL_EXPENSIVE:
+            return TOU_TIER_PEAK
+        if level == LEVEL_CHEAP:
+            return TOU_TIER_OFF
+        if level == LEVEL_NORMAL:
+            return TOU_TIER_MID
+        return None
+
+    def _steady_tier(self, tier: str, now: float) -> str:
+        """Relative-tier changes apply once held TOU_LEVEL_HOLD_S (ported
+        hysteresis): a PV surplus flicking with every cloud must not flap the
+        tariff; the first reading applies at once."""
+        if self._held_tier is None or tier == self._held_tier:
+            self._held_tier = tier
+            self._pending_tier = None
+            return tier
+        if self._pending_tier is None or self._pending_tier[0] != tier:
+            self._pending_tier = (tier, now)
+        if now - self._pending_tier[1] >= TOU_LEVEL_HOLD_S:
+            self._held_tier = tier
+            self._pending_tier = None
+        return self._held_tier
+
+    def _forecast_slots(self, settings: dict[str, Any]) -> list[PriceSlot]:
+        """Hourly price slots from the rate entity's forecast attributes, in
+        any of the common integration shapes (the base price manager's parser,
+        reused as-is). Empty when no entity is bound or it says nothing."""
+        entity_id = str(settings.get("tou_rate_entity") or "")
+        if not entity_id:
+            return []
+        state = self.hass.states.get(entity_id)
+        if state is None:
+            return []
+        return hourly(parse_price_forecast(dict(state.attributes)))
+
+    def _forecast_events(self, settings: dict[str, Any], now: float, horizon: float) -> list[tuple[float, float, str]]:
+        """Timeline events from the rate entity's forecast curve. Slots are
+        tiered by the configured thresholds when present, else by the curve's
+        own quantile bands — the same rule the base price manager applied to
+        its ``direction_at`` lookahead."""
+        slots = self._forecast_slots(settings)
+        if not slots:
+            return []
+        band = None if self._thresholds_present(settings) else price_thresholds([s.price for s in slots])
+        out: list[tuple[float, float, str]] = []
+        for s in slots:
+            if s.start >= horizon:
+                break
+            if s.end <= now:
+                continue
+            if self._thresholds_present(settings):
+                tier = self._tier_from_rate(s.price, settings)
+            elif band is not None:
+                tier = self._tier_for_level(level_of(s.price, band)) or TOU_TIER_UNKNOWN
+            else:
+                continue
+            if tier == TOU_TIER_UNKNOWN:
+                continue
+            out.append((max(s.start, now), min(s.end, horizon), tier))
+        return out
+
+    def _entity_extra_tier(self, settings: dict[str, Any], now: float) -> tuple[str, float | None, str] | None:
+        """Current tier from the rate entity when its state is not a number —
+        ported source shapes the base price manager accepted: a
+        switch/input_boolean/binary_sensor that is ON while energy is cheap
+        (``on`` ⇒ off-peak, otherwise mid), and an event entity (Octopus)
+        whose current price is the forecast slot covering *now*."""
+        entity_id = str(settings.get("tou_rate_entity") or "")
+        if not entity_id:
+            return None
+        state = self.hass.states.get(entity_id)
+        if state is None or state.state in ("unavailable", "unknown", ""):
+            return None
+        domain = entity_id.split(".", 1)[0]
+        if domain in SWITCH_DOMAINS:
+            return (TOU_TIER_OFF if state.state == "on" else TOU_TIER_MID), None, ""
+        slots = hourly(parse_price_forecast(dict(state.attributes)))
+        if not slots:
+            return None
+        unit = str(state.attributes.get("unit_of_measurement", ""))
+        for s in slots:
+            if s.start <= now < s.end:
+                if self._thresholds_present(settings):
+                    tier = self._tier_from_rate(s.price, settings)
+                else:
+                    band = price_thresholds([x.price for x in slots])
+                    tier = self._tier_for_level(level_of(s.price, band)) or TOU_TIER_UNKNOWN
+                return tier, s.price, unit
+        return None
 
     def _resolve_next_view(
         self, settings: dict[str, Any], lookahead: str

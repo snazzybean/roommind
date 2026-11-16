@@ -7,7 +7,7 @@ from homeassistant.const import Platform
 from homeassistant.core import Context
 
 DOMAIN = "roommind"
-VERSION = "2.0.3-beta.1"
+VERSION = "2.0.4-beta.1"
 
 # Platforms
 PLATFORMS = [Platform.SENSOR, Platform.SWITCH, Platform.BINARY_SENSOR, Platform.CLIMATE]
@@ -342,12 +342,24 @@ TOU_TIERS = [TOU_TIER_PEAK, TOU_TIER_MID, TOU_TIER_OFF, TOU_TIER_ULTRA_LOW]
 # Which entity class the panel treats as THE source for the current tier and
 # for future-tier lookahead. "auto" = legacy cascade (period -> flags -> rate;
 # calendars -> next-change) so existing installs are unchanged until the user
-# picks a mode explicitly.
-TOU_TIER_SOURCES = ["auto", "period", "rate", "flags"]
+# picks a mode explicitly. "relative" = rank a bound rate against observed
+# history (the ported price-manager heuristic).
+TOU_TIER_SOURCES = ["auto", "period", "rate", "relative", "flags"]
 TOU_LOOKAHEADS = ["auto", "calendar", "next_change_rate", "next_change", "none"]
 
 # Canonical weekday names for manual tariff windows (date.weekday() order).
 TOU_WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+
+# Parity sources (port of the base price manager, PR-04a): when a rate is
+# bound but nothing classifies it — no thresholds, no period sensor — the
+# tier is ranked RELATIVE to observed history (quantile bands from
+# price_utils: top third peak, bottom third off, middle mid; the unit does
+# not matter and negative prices work). One price sample per this many
+# seconds suffices to rank hours; a change of relative tier applies only once
+# it held this long — a PV surplus flag flickering with every cloud must not
+# flap the tariff state, only a sustained price regime may.
+TOU_RELATIVE_SAMPLE_S = 300.0
+TOU_LEVEL_HOLD_S = 900.0
 
 # Grace window for classifying the tier from the LAST KNOWN valid cost when the
 # cost sensor itself is momentarily gone: a flaky provider integration must not
