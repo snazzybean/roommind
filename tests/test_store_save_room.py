@@ -97,6 +97,7 @@ async def test_create_defaults(store):
     assert room["covers_min_position"] == 0
     assert room["covers_outdoor_min_temp"] == 10.0
     assert room["covers_override_minutes"] == 60
+    assert room["power_sensors"] == []
     assert room["cover_schedules"] == []
     assert room["cover_schedule_selector_entity"] == ""
     assert room["covers_night_close"] is False

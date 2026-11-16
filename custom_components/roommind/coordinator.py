@@ -125,7 +125,7 @@ from .utils.schedule_utils import (
     resolve_schedule_index,
     set_band_sides,
 )
-from .utils.sensor_utils import read_sensor_value
+from .utils.sensor_utils import read_power_kw, read_sensor_value, room_device_ids
 from .utils.temp_utils import celsius_delta_to_ha, ha_temp_to_celsius, ha_temp_unit_str
 
 _LOGGER = logging.getLogger(__name__)
@@ -502,6 +502,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                             "price_shift": (rs.get("price_shift_heat") or -(rs.get("price_shift_cool") or 0.0)) or "",
                             "co2": rs.get("co2"),
                             **self._model_inputs.get(area_id, {}),
+                            "power_kw": rs.get("power_kw"),
                         },
                     )
                 except Exception:  # noqa: BLE001
@@ -536,6 +537,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                                 Q,
                                 3.0,
                                 q_solar=self._current_q_solar * rs.get("shading_factor", 1.0),
+                                q_power=rs.get("power_kw") or 0.0,
                                 q_rebound=mean_rebound(
                                     self._rebound_tracker.get_charge(area_id), model.cooling_drive(Q), 3.0
                                 ),
@@ -909,6 +911,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 "active_cover_schedule_index": -1,
                 "q_occupancy": 0.0,
                 "q_residual": 0.0,
+                "power_kw": None,
                 "active_heat_sources": None,
                 "compressor_protection_active": False,
                 "compressor_protection_reason": None,
@@ -1090,6 +1093,20 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 break
             # unavailable/unknown/off → skip (conservative: no occupancy heat)
 
+        # Heat of the devices on the room's power sensors (kW); None: no sensor or no reading
+        power_sensors = room.get("power_sensors") or []
+        power_kw = (
+            read_power_kw(
+                self.hass,
+                power_sensors,
+                area_id,
+                exclude_device_ids=room_device_ids(self.hass, room.get("devices", [])),
+            )
+            if power_sensors
+            else None
+        )
+        q_power = power_kw or 0.0
+
         # Determine and apply mode with MPC controller
         controller = MPCController(
             self.hass,
@@ -1115,6 +1132,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             heat_run=heat_run,
             shading_factor=shading_factor,
             q_occupancy=q_occupancy,
+            q_power=q_power,
             q_rebound=q_rebound,
             previous_heat_sources=self._heat_source_states.get(area_id, "none"),
             head_offsets=self._head_offsets,
@@ -1358,6 +1376,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             run_power=self._residual_tracker.last_run_power(area_id),
             q_solar=self._current_q_solar * shading_factor,
             q_occupancy=q_occupancy,
+            q_power=q_power,
             # Only an undisturbed afterglow of RoomMind's own run, measured by the room sensor
             disturbed=(
                 window_open
@@ -1566,6 +1585,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             q_residual=q_residual,
             shading_factor=shading_factor,
             q_occupancy=q_occupancy,
+            q_power=q_power,
             q_rebound=q_rebound,
             has_external_sensor=has_external_sensor,
             heat_source_plan=heat_source_plan,
@@ -1624,6 +1644,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 if mode == MODE_HEATING
                 else q_residual
             ),
+            power_kw=power_kw,
             cover_eids=cover_eids,
             cover_result=cover_result,
             mpc_active=mpc_active,
@@ -1676,6 +1697,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         has_external_sensor: bool,
         heat_source_plan: Any | None,
         q_rebound: float | None = None,
+        q_power: float = 0.0,
         climate_active: bool,
         coil_dry_skip_training: bool = False,
         compressor_held: set[str] | None = None,
@@ -1828,6 +1850,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 dt_minutes=UPDATE_INTERVAL / 60.0,
                 q_occupancy=q_occupancy,
                 q_rebound=q_rebound,
+                q_power=q_power,
             )
             self._note_model_inputs(area_id, ekf_mode, ekf_pf, shading_factor, q_residual_training, q_occupancy)
         else:
@@ -1935,6 +1958,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         q_occupancy: float,
         cover_eids: list[str],
         q_residual: float = 0.0,
+        power_kw: float | None = None,
         cover_result: CoverResult,
         mpc_active: bool,
         compressor_protection_reason: str | None = None,
@@ -2047,6 +2071,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             "shading_factor": shading_factor,
             "q_occupancy": q_occupancy,
             "q_residual": q_residual,
+            "power_kw": round(power_kw, 3) if power_kw is not None else None,
             "n_observations": self._model_manager.get_n_observations(area_id),
             "blind_position": (self._cover_orchestrator.get_current_position(area_id) if cover_eids else None),
             "cover_auto_paused": (self._cover_orchestrator.is_user_override_active(area_id) if cover_eids else False),

@@ -88,6 +88,8 @@ class World:
         self.neighbors: list[tuple[str, str, float]] = []
         self.pending: list[dict[str, Any]] = []  # scheduled reverts, persisted
         self.occupancy_force: dict[str, tuple[int, float | None]] = {}
+        # Electrical load of metered devices per room (W, until); all of it ends up as heat in the room
+        self.power_load: dict[str, tuple[float, float | None]] = {}
         self.moisture_events: list[tuple[str, float, float]] = []  # (room, until, kg/s)
         self.marks: list[tuple[float, str]] = []
         anchor = scenario.weather.get("anchor_temperature")
@@ -168,6 +170,9 @@ class World:
                 del self.occupancy_force[room]
             else:
                 occupants[room] = count
+        for room, (_watts, until) in list(self.power_load.items()):
+            if until is not None and now >= until:
+                del self.power_load[room]
         for cover in self.covers.values():
             if cover.step(dt):
                 changed.add(cover.entity_id)
@@ -200,6 +205,10 @@ class World:
             solar = self._solar_w(area, out)
             g.conv_w += solar * 0.3 + occupants[area] * SENSIBLE_W * 0.6
             g.rad_w += solar * 0.7 + occupants[area] * SENSIBLE_W * 0.4
+            # Metered devices (PC, server): mostly warm air from fans and housings
+            load = self.power_w(area)
+            g.conv_w += load * 0.8
+            g.rad_w += load * 0.2
             g.moisture_kg_s += occupants[area] * MOISTURE_KG_S
             for room, until, rate in self.moisture_events:
                 if room == area and now < until:
@@ -232,6 +241,11 @@ class World:
         self.occupants = occupants
         return changed
 
+    def power_w(self, area: str | None) -> float:
+        """Electrical load of the metered devices in *area* now (W)."""
+        load = self.power_load.get(area or "")
+        return load[0] if load else 0.0
+
     def _solar_w(self, area: str, out: Outdoor) -> float:
         total = 0.0
         for w in self.windows[area]:
@@ -255,6 +269,8 @@ class World:
             true = self.zones[sensor.spec.room].t_air
         elif kind == "humidity":
             true = self.zones[sensor.spec.room].rh
+        elif kind == "power":
+            true = self.power_w(sensor.spec.room)
         else:
             return False
         return sensor.update(true, now, self.boot_time)
@@ -302,6 +318,7 @@ class World:
         "person.leave",
         "person.arrive",
         "occupancy.set",
+        "power.set",
         "cover.manual",
         "device.manual",
         "entity.unavailable",
@@ -334,6 +351,11 @@ class World:
             if args["room"] not in self.zones:
                 raise WorldError(f"unknown room {args['room']!r}")
             self.occupancy_force[args["room"]] = (int(args["count"]), until)
+            return set()
+        if action == "power.set":
+            if args["room"] not in self.zones:
+                raise WorldError(f"unknown room {args['room']!r}")
+            self.power_load[args["room"]] = (max(0.0, float(args["watts"])), until)
             return set()
         if action == "cover.manual":
             cover = self.covers.get(eid)
@@ -455,6 +477,7 @@ class World:
                     "rh": round(z.rh, 1),
                     "solar_w": round(self._solar_cache.get(a, 0.0)),
                     "occupants": self.occupants.get(a, 0),
+                    "power_w": round(self.power_w(a)),
                     "windows_open": sum(w.open for w in self.windows[a]),
                 }
                 for a, z in self.zones.items()
@@ -505,6 +528,7 @@ class World:
             "people": {p: s.snapshot() for p, s in self.people.items()},
             "pending": self.pending,
             "occupancy_force": {k: list(v) for k, v in self.occupancy_force.items()},
+            "power_load": {k: list(v) for k, v in self.power_load.items()},
             "moisture_events": [list(e) for e in self.moisture_events],
             "weather_overrides": [[o.start, o.end, o.values] for o in self.weather._overrides],
             "forecast_available": self.weather.forecast_available,
@@ -531,6 +555,7 @@ class World:
                 self.window_sensors[e].unavailable_until = ws.get("unavailable_until", 0.0)
         self.pending = data.get("pending", [])
         self.occupancy_force = {k: (v[0], v[1]) for k, v in data.get("occupancy_force", {}).items()}
+        self.power_load = {k: (v[0], v[1]) for k, v in data.get("power_load", {}).items()}
         self.moisture_events = [tuple(e) for e in data.get("moisture_events", [])]  # type: ignore[misc]
         for start, end, values in data.get("weather_overrides", []):
             self.weather.set_override(start, end, values)

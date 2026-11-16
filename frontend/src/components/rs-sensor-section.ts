@@ -22,7 +22,9 @@ import "./shared/rs-icon-button";
 import "./shared/rs-info-icon";
 import "./shared/rs-list-row";
 
-type SensorKind = "temp" | "humidity" | "occupancy" | "window" | "co2" | "voc" | "ventilation";
+type SensorKind =
+  "temp" | "humidity" | "occupancy" | "window" | "power" | "co2" | "voc" | "ventilation";
+type ListKind = "occupancy" | "window" | "power";
 type SingleKind = "temp" | "humidity" | "co2" | "voc" | "ventilation";
 
 const OCCUPANCY_CLASSES = ["occupancy", "motion", "presence"];
@@ -50,6 +52,8 @@ export class RsSensorSection extends LitElement {
   @property({ attribute: false }) public windowSensors: Set<string> = new Set();
   @property({ type: Number }) public windowOpenDelay = 0;
   @property({ type: Number }) public windowCloseDelay = 0;
+  /** Metered devices whose heat the model learns (device heat), in W or kW. */
+  @property({ attribute: false }) public powerSensors: Set<string> = new Set();
   @property({ type: String }) public co2Sensor = "";
   @property({ type: Number }) public co2Threshold = DEFAULT_CO2_THRESHOLD;
   @property({ type: String }) public vocSensor = "";
@@ -210,6 +214,9 @@ export class RsSensorSection extends LitElement {
           on ? "var(--rs-ok)" : "",
         );
       })}
+      ${[...this.powerSensors].map((id) =>
+        this._row(id, "mdi:flash", localize("detail.sensors.power", l), this._powerValue(id)),
+      )}
     `;
   }
 
@@ -319,6 +326,18 @@ export class RsSensorSection extends LitElement {
       .join("\u00a0");
   }
 
+  /** "350 W" / "1.2 kW", "" without a reading. */
+  private _powerValue(entityId: string): string {
+    const entityState = this.hass.states[entityId];
+    const raw = Number(entityState?.state);
+    if (entityState?.state == null || entityState.state === "" || isNaN(raw)) return "";
+    const unit = entityState.attributes?.unit_of_measurement as string | undefined;
+    const watts = raw * (unit === "kW" ? 1000 : unit === "MW" ? 1e6 : 1);
+    return Math.abs(watts) >= 1000
+      ? `${formatNumber(watts / 1000, this.hass, 1, 2)}\u00a0kW`
+      : `${formatNumber(Math.round(watts), this.hass)}\u00a0W`;
+  }
+
   private _onOffValue(entityId: string): string {
     const state = this.hass.states[entityId]?.state;
     if (state === "on") return localize("detail.on", this.hass.language);
@@ -355,6 +374,7 @@ export class RsSensorSection extends LitElement {
       "humiditySensor",
       "occupancySensors",
       "windowSensors",
+      "powerSensors",
       "co2Sensor",
       "vocSensor",
       "ventilationEntity",
@@ -392,6 +412,8 @@ export class RsSensorSection extends LitElement {
         );
       case "window":
         return domain === "binary_sensor" && WINDOW_CLASSES.includes(dc ?? "");
+      case "power":
+        return domain === "sensor" && dc === "power";
       case "co2":
         return domain === "sensor" && dc === "carbon_dioxide";
       case "voc":
@@ -413,9 +435,17 @@ export class RsSensorSection extends LitElement {
     }[kind];
   }
 
+  private _list(kind: ListKind): Set<string> {
+    return {
+      occupancy: this.occupancySensors,
+      window: this.windowSensors,
+      power: this.powerSensors,
+    }[kind];
+  }
+
   private _assigned(kind: SensorKind): string[] {
-    if (kind === "occupancy" || kind === "window") {
-      return [...(kind === "occupancy" ? this.occupancySensors : this.windowSensors)];
+    if (kind === "occupancy" || kind === "window" || kind === "power") {
+      return [...this._list(kind)];
     }
     const id = this._single(kind);
     return id ? [id] : [];
@@ -448,6 +478,12 @@ export class RsSensorSection extends LitElement {
           ? nothing
           : html`${this._renderKind("window", inArea("window"), this._renderWindowSettings(l))}
             ${this._renderKind("occupancy", inArea("occupancy"), this._renderOccupancySettings(l))}
+            ${this._renderKind(
+              "power",
+              inArea("power"),
+              nothing,
+              html`<p class="note">${localize("sensors.power_note", l)}</p>`,
+            )}
             ${this._renderKind("co2", inArea("co2"), this._renderCo2Settings(l))}
             ${this._renderKind("voc", inArea("voc"), this._renderVocSettings(l))}
             ${
@@ -505,6 +541,12 @@ export class RsSensorSection extends LitElement {
           title: "detail.sensors.occupancy",
           info: "sensors.occupancy_info",
         } as const;
+      case "power":
+        return {
+          icon: "mdi:flash",
+          title: "detail.sensors.power",
+          info: "sensors.power_info",
+        } as const;
       case "co2":
         return {
           icon: "mdi:molecule-co2",
@@ -535,7 +577,7 @@ export class RsSensorSection extends LitElement {
     const l = this.hass.language;
     const meta = this._kindMeta(kind);
     const assigned = this._assigned(kind);
-    const single = kind !== "occupancy" && kind !== "window";
+    const single = kind !== "occupancy" && kind !== "window" && kind !== "power";
     const suggestions = areaCandidates.filter((id) => !assigned.includes(id));
     return html`<section class="group" data-kind=${kind}>
       <h4 class="group-title">
@@ -637,6 +679,7 @@ export class RsSensorSection extends LitElement {
       humidity: ["sensor", "input_number"],
       occupancy: ["binary_sensor", "input_boolean"],
       window: ["binary_sensor"],
+      power: ["sensor"],
       co2: ["sensor"],
       voc: ["sensor"],
       ventilation: VENTILATION_DOMAINS,
@@ -674,6 +717,7 @@ export class RsSensorSection extends LitElement {
     if (kind === "humidity") return this._humidityValue(entityId);
     if (kind === "co2" || kind === "voc") return this._numberValue(entityId);
     if (kind === "ventilation") return this._onOffValue(entityId);
+    if (kind === "power") return this._powerValue(entityId);
     return kind === "window"
       ? this._binaryValue(entityId, "detail.sensors.open", "detail.sensors.closed")
       : this._binaryValue(entityId, "detail.sensors.occupied", "detail.sensors.free");
@@ -766,6 +810,7 @@ export class RsSensorSection extends LitElement {
     this._focusKind = kind;
     if (kind === "occupancy") this._onOccupancyToggle(entityId, true);
     else if (kind === "window") this._onWindowToggle(entityId, true);
+    else if (kind === "power") this._onPowerToggle(entityId, true);
     else this._onSensorSelected(entityId, kind);
   }
 
@@ -773,6 +818,7 @@ export class RsSensorSection extends LitElement {
     this._focusKind = kind;
     if (kind === "occupancy") this._onOccupancyToggle(entityId, false);
     else if (kind === "window") this._onWindowToggle(entityId, false);
+    else if (kind === "power") this._onPowerToggle(entityId, false);
     else this._onSensorSelected("", kind);
   }
 
@@ -781,6 +827,19 @@ export class RsSensorSection extends LitElement {
     this.dispatchEvent(
       new CustomEvent("sensor-changed", {
         detail: { key, value: entityId },
+        bubbles: true,
+        composed: true,
+      }),
+    );
+  }
+
+  private _onPowerToggle(entityId: string, checked: boolean) {
+    const next = new Set(this.powerSensors);
+    if (checked) next.add(entityId);
+    else next.delete(entityId);
+    this.dispatchEvent(
+      new CustomEvent("sensor-changed", {
+        detail: { key: "power_sensors", value: [...next] },
         bubbles: true,
         composed: true,
       }),

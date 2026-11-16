@@ -219,6 +219,11 @@ def _lines(metrics: dict[str, Any], warnings: list[dict[str, Any]]) -> list[str]
                 f"model {area}: alpha learned {m['learned_alpha_per_h']} vs lumped truth {m['truth_alpha_per_h']} 1/h, "
                 f"beta_s learned {m['learned_beta_s']} vs truth {m['truth_beta_s']} K/h per kW/m² ({m['n_updates']} updates)"
             )
+            if m.get("truth_beta_p") is not None:
+                lines.append(
+                    f"model {area}: beta_p learned {m['learned_beta_p']} vs truth {m['truth_beta_p']} K/h per kW "
+                    f"(ratio {m['beta_p_ratio']})"
+                )
             for side in ("h", "c"):
                 if m.get(f"truth_beta_{side}") is not None:
                     lines.append(

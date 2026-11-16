@@ -161,6 +161,7 @@ export interface RoomConfig {
   /** K the schedule target may move with the electricity price, 0 = off. */
   price_shift?: number;
   follow_device_setpoint?: boolean;
+  power_sensors?: string[];
   window_sensors: string[];
   window_open_delay: number;
   window_close_delay: number;
@@ -436,6 +437,7 @@ export interface AnalyticsData {
       Q_solar: number;
       Q_occupancy: number;
       Q_fast?: number;
+      Q_power?: number;
     };
     n_samples: number;
     n_observations: number;
@@ -452,6 +454,9 @@ export interface AnalyticsData {
     /** Sun / occupancy were in the data (variance below its start), else the gain is the start guess */
     solar_learned?: boolean;
     occupancy_learned?: boolean;
+    has_power_sensors?: boolean;
+    power_now_kw?: number | null;
+    power_gain_now?: number;
     solar_gain_now?: number;
     solar_gain_today_max?: number;
     /** Radiator rooms: rise a regular run's stored heat gives after the stop (°C), its decay time */
