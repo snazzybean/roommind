@@ -42,7 +42,7 @@ Independent comfort and eco temperatures for heating and cooling in auto mode, c
 
 ### Manual override
 
-Boost, eco, or custom temperature with configurable duration and instant UI feedback. How long a temperature set on the room climate entity holds (until the next schedule change, a fixed time or until changed back) is set per room, see [Room climate entity](../README.md#room-climate-entity).
+Boost, eco, or custom temperature with configurable duration and instant UI feedback. How long a temperature set on the room climate entity holds (until the next schedule change, a fixed time or until changed back) is set per room, see [Room climate entity](../README.md#room-climate-entity). Automations set an override with its own end (a duration, a point in time or the next schedule change) through the `roommind.set_override` action.
 
 ### Changes made on the device
 
