@@ -45,5 +45,49 @@
         "name": "{room} qualità dell’aria scarsa"
       }
     }
+  },
+  "services": {
+    "set_override": {
+      "name": "Imposta override",
+      "description": "Mantiene una temperatura o un preset in una stanza RoomMind con una fine a scelta. Senza obiettivi mantiene la fascia in vigore, così può anche prolungare o accorciare un override in corso.",
+      "fields": {
+        "preset": {
+          "name": "Preset",
+          "description": "Obiettivi comfort o eco della stanza. Lascia vuoto per impostare temperature o mantenere quelle in vigore."
+        },
+        "temperature": {
+          "name": "Temperatura",
+          "description": "Obiettivo in Solo riscaldamento o Solo raffrescamento. In Auto imposta il lato riscaldamento."
+        },
+        "target_temp_low": {
+          "name": "Riscalda fino a",
+          "description": "Obiettivo di riscaldamento della fascia (Auto)."
+        },
+        "target_temp_high": {
+          "name": "Raffresca sopra",
+          "description": "Obiettivo di raffrescamento della fascia (Auto)."
+        },
+        "duration": {
+          "name": "Durata",
+          "description": "Per quanto tempo vale l'override."
+        },
+        "until": {
+          "name": "Fino a",
+          "description": "Quando termina l'override."
+        },
+        "until_next_change": {
+          "name": "Fino al prossimo cambio automatico",
+          "description": "Mantiene fino al prossimo cambio della programmazione attiva o finché la presenza passa tra casa e fuori casa, a seconda di cosa avviene prima."
+        }
+      }
+    }
+  },
+  "selector": {
+    "override_preset": {
+      "options": {
+        "comfort": "Comfort",
+        "eco": "Eco"
+      }
+    }
   }
 }

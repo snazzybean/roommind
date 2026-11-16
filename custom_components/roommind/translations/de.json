@@ -45,5 +45,49 @@
         "name": "{room} Luftqualität schlecht"
       }
     }
+  },
+  "services": {
+    "set_override": {
+      "name": "Override setzen",
+      "description": "Hält eine Temperatur oder ein Preset in einem RoomMind-Raum mit einem frei gewählten Ende. Ohne Ziele wird das gerade geltende Band gehalten, so lässt sich ein laufender Override auch verlängern oder verkürzen.",
+      "fields": {
+        "preset": {
+          "name": "Preset",
+          "description": "Komfort- oder Eco-Ziele des Raums. Leer lassen, um Temperaturen zu setzen oder das Geltende zu halten."
+        },
+        "temperature": {
+          "name": "Temperatur",
+          "description": "Ziel bei Nur Heizen oder Nur Kühlen. In Auto setzt sie die Heizseite."
+        },
+        "target_temp_low": {
+          "name": "Heizen bis",
+          "description": "Heizziel des Bands (Auto)."
+        },
+        "target_temp_high": {
+          "name": "Kühlen ab",
+          "description": "Kühlziel des Bands (Auto)."
+        },
+        "duration": {
+          "name": "Dauer",
+          "description": "Wie lange der Override gilt."
+        },
+        "until": {
+          "name": "Bis",
+          "description": "Wann der Override endet."
+        },
+        "until_next_change": {
+          "name": "Bis zur nächsten automatischen Änderung",
+          "description": "Gilt bis zum nächsten Wechsel des aktiven Zeitplans oder bis die Anwesenheit zwischen zuhause und abwesend wechselt, je nachdem, was zuerst kommt."
+        }
+      }
+    }
+  },
+  "selector": {
+    "override_preset": {
+      "options": {
+        "comfort": "Komfort",
+        "eco": "Eco"
+      }
+    }
   }
 }

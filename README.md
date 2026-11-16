@@ -203,6 +203,29 @@ Like every override, one set here also lifts the outdoor temperature limits for 
 
 A wall display or a thermostat RoomMind does not control can be linked with an automation: its setpoint → `climate.set_temperature` on the room entity, and the room entity's target → the display, so the display always shows what applies.
 
+#### Action `roommind.set_override`
+
+Sets an override on `climate.roommind_{area_id}` with an end the automation chooses:
+
+| Field | Meaning |
+|---|---|
+| `preset` | `comfort` or `eco`: the room's comfort or eco targets |
+| `temperature`, `target_temp_low`, `target_temp_high` | Targets like `climate.set_temperature` (in the HA unit system). Not together with `preset`. |
+| `duration` | Ends after this time, e.g. `"01:30:00"` or `{minutes: 90}` |
+| `until` | Ends at this date and time |
+| `until_next_change` | `true`: ends at the next automatic change, the active schedule's next change or, where presence applies to the room, presence switching between home and away, whichever comes first. Without a schedule only presence ends it, in a room without presence only the schedule. |
+
+Only one of `duration`, `until` and `until_next_change`. Without any of them the override ends like one set on the entity. Without `preset` and temperatures the targets in force are held, so a call with only an end extends or shortens a running override and keeps its preset.
+
+```yaml
+action: roommind.set_override
+target:
+  entity_id: climate.roommind_living_room
+data:
+  temperature: 22.5
+  until_next_change: true
+```
+
 </details>
 
 <details>
