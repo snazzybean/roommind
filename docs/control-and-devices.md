@@ -23,7 +23,7 @@ When a schedule block raises the target (for example eco 17 °C until 06:00, the
 
 #### Per schedule block
 
-A schedule block can differ from the room's switch with `preheat` in its data, next to `temperature`:
+A schedule block can differ from the room's switch. In RoomMind's schedule editor, open the block and pick under **Pre-heating**: `Like the room`, `On`, `Limited` (with the minutes) or `Off`. The editor stores it as `preheat` in the block's data, next to `temperature`, which can also be set by hand in Home Assistant's schedule helper:
 
 ```yaml
 - from: "06:00:00"
