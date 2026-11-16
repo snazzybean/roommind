@@ -165,6 +165,7 @@ def _check(run: RunData, exp: dict[str, Any]) -> dict[str, Any]:
     sample = run.sample_at(t) or {"rooms": {}, "devices": {}, "outdoor": {}}
     env = {
         "room": _ns(obs["rooms"]),
+        "central": _ns(obs.get("central_heating") or {}),
         "world": _ns(sample),
         "dev": lambda eid: _ns(sample["devices"].get(eid) or {}),
         "cover": lambda eid: _ns(sample.get("covers", {}).get(eid) or {}),

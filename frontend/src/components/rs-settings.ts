@@ -12,6 +12,7 @@ import type {
   GlobalSettings,
   RoomConfig,
   NotificationTarget,
+  CentralHeatingSettings,
   CompressorGroup,
   RoomWithoutArea,
   PriceStatus,
@@ -41,6 +42,7 @@ import "./settings/rs-settings-control";
 import "./settings/rs-settings-presence";
 import "./settings/rs-settings-vacation";
 import "./settings/rs-settings-valve";
+import { DEFAULT_CENTRAL_HEATING } from "./settings/rs-settings-central-heating";
 import { compressorGroupProblem } from "./settings/rs-settings-compressor";
 import "./settings/rs-settings-coil-dry";
 import "./settings/rs-settings-mold";
@@ -151,6 +153,19 @@ const SETTINGS: [keyof GlobalSettings, SettingSync][] = [
       },
     },
   ],
+  [
+    "central_heating",
+    {
+      fields: ["centralHeating"],
+      read: (value) => ({
+        centralHeating: {
+          ...DEFAULT_CENTRAL_HEATING,
+          ...((value as CentralHeatingSettings) ?? {}),
+        },
+      }),
+      write: (v) => v.centralHeating,
+    },
+  ],
   ["coil_dry_enabled", plain("coilDryEnabled", false)],
   ["coil_dry_minutes", plain("coilDryMinutes", 20)],
   ["coil_dry_mode", plain("coilDryMode", "fan_only")],
@@ -229,6 +244,7 @@ export class RsSettings extends LitElement {
   @state() private _moldPreventionIntensity: "light" | "medium" | "strong" = "medium";
   @state() private _moldPreventionNotify = false;
   @state() private _compressorGroups: CompressorGroup[] = [];
+  @state() private _centralHeating: CentralHeatingSettings = DEFAULT_CENTRAL_HEATING;
   @state() private _coilDryEnabled = false;
   @state() private _coilDryMinutes = 20;
   @state() private _coilDryMode: "fan_only" | "dry" = "fan_only";
@@ -527,6 +543,12 @@ export class RsSettings extends LitElement {
           .valveProtectionInterval=${this._valveProtectionInterval}
           @setting-changed=${this._onSettingChanged}
         ></rs-settings-valve>`;
+      case "central_heating":
+        return html`<rs-settings-central-heating
+          .hass=${this.hass}
+          .centralHeating=${this._centralHeating}
+          @setting-changed=${this._onSettingChanged}
+        ></rs-settings-central-heating>`;
       case "compressor":
         return html`<rs-settings-compressor
           .hass=${this.hass}
@@ -748,6 +770,27 @@ export class RsSettings extends LitElement {
               on: true,
             }
           : { text: off, on: false };
+      case "central_heating": {
+        const c = this._centralHeating;
+        if (!c.enabled) return { text: off, on: false };
+        const name = c.entity_id
+          ? ((this.hass.states[c.entity_id]?.attributes?.friendly_name as string | undefined) ??
+            c.entity_id)
+          : localize("settings.summary.central_heating_no_target", l);
+        return {
+          text: [
+            name,
+            localize(
+              c.min_rooms === 1
+                ? "settings.summary.central_heating_rooms_one"
+                : "settings.summary.central_heating_rooms",
+              l,
+              { count: count(c.min_rooms) },
+            ),
+          ].join(" · "),
+          on: true,
+        };
+      }
       case "compressor": {
         const groups = this._compressorGroups.length;
         if (!groups) return { text: localize("settings.summary.compressor_none", l) };

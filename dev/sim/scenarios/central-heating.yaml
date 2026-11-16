@@ -1,0 +1,86 @@
+name: central-heating
+description: >
+  RoomMind switches the gas boiler (central_heating setting) instead of a compressor
+  group: on once two rooms demand heat for 2 minutes, off 10 minutes after fewer do.
+  The guest room heats all day but does not count (central_heating false), so it never
+  keeps the boiler running alone. The radiators only get hot water while the boiler runs.
+tags: [trv, central-heating]
+start: 2026-01-12T00:00
+duration: 3d
+location: {latitude: 52.5, longitude: 13.4, time_zone: Europe/Berlin}
+weather: {profile: temperate}
+house:
+  building: bestand_teilsaniert
+  outdoor: {sensors: {temperature: sensor.aussen_temp}}
+  rooms:
+    wohnzimmer:
+      floor_area_m2: 24
+      initial: {temperature: 19.0}
+      devices:
+        - {entity_id: climate.wz_trv, profile: generic_trv}
+        - {entity_id: climate.kessel, profile: generic_boiler}
+      sensors: {temperature: {entity_id: sensor.wz_temp}}
+    buero:
+      floor_area_m2: 12
+      initial: {temperature: 19.0}
+      devices: [{entity_id: climate.bu_trv, profile: generic_trv}]
+      sensors: {temperature: {entity_id: sensor.bu_temp}}
+    schlafzimmer:
+      floor_area_m2: 14
+      initial: {temperature: 18.0}
+      devices: [{entity_id: climate.sz_trv, profile: generic_trv}]
+      sensors: {temperature: {entity_id: sensor.sz_temp}}
+    gast:
+      floor_area_m2: 10
+      initial: {temperature: 19.0}
+      devices: [{entity_id: climate.ga_trv, profile: generic_trv}]
+      sensors: {temperature: {entity_id: sensor.ga_temp}}
+helpers:
+  schedule:
+    plan_wohnen: {daily: ["06:00-22:00@21"]}
+    plan_buero: {weekdays: ["08:00-17:00@21"], weekend: []}
+    plan_schlafen: {daily: ["20:30-23:00@19"]}
+    plan_gast: {daily: ["00:00-23:59@21"]}
+roommind:
+  settings:
+    outdoor_temp_sensor: sensor.aussen_temp
+    central_heating:
+      enabled: true
+      entity_id: climate.kessel
+      min_rooms: 2
+      start_delay_s: 120
+      stop_delay_s: 600
+  rooms:
+    wohnzimmer:
+      devices: [{entity_id: climate.wz_trv, type: trv, heating_system_type: radiator}]
+      temperature_sensor: sensor.wz_temp
+      climate_mode: heat_only
+      schedules: [{entity_id: schedule.plan_wohnen}]
+      comfort_temp: 21.0
+      eco_temp: 17.0
+    buero:
+      devices: [{entity_id: climate.bu_trv, type: trv, heating_system_type: radiator}]
+      temperature_sensor: sensor.bu_temp
+      climate_mode: heat_only
+      schedules: [{entity_id: schedule.plan_buero}]
+      comfort_temp: 21.0
+      eco_temp: 17.0
+    schlafzimmer:
+      devices: [{entity_id: climate.sz_trv, type: trv, heating_system_type: radiator}]
+      temperature_sensor: sensor.sz_temp
+      climate_mode: heat_only
+      schedules: [{entity_id: schedule.plan_schlafen}]
+      comfort_temp: 19.0
+      eco_temp: 16.0
+    gast:
+      devices: [{entity_id: climate.ga_trv, type: trv, heating_system_type: radiator}]
+      temperature_sensor: sensor.ga_temp
+      climate_mode: heat_only
+      schedules: [{entity_id: schedule.plan_gast}]
+      comfort_temp: 21.0
+      eco_temp: 17.0
+      central_heating: false
+expect:
+  - {invariant: central_heating_rules}
+  - {check: "central.on == true and dev('climate.kessel').mode == 'heat' and 'gast' not in central.demanding_rooms", at: "+1d10h", label: two rooms in comfort run the boiler, the guest room does not count}
+  - {invariant: target_never_empty}

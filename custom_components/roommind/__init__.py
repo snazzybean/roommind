@@ -64,6 +64,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(async_track_area_changes(hass))
+    entry.async_on_unload(coordinator.central_heating.async_stop)
 
     # Clean up orphaned entities (e.g. cover entities for rooms without covers)
     coordinator.cleanup_orphaned_entities()

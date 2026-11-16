@@ -413,6 +413,8 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, config_entry: 
     if coordinator:
         valve = _build_valve_state(coordinator)
 
+    central_heating: dict[str, Any] = coordinator.central_heating.state() if coordinator else {}
+
     return {
         "schema_version": DIAGNOSTICS_SCHEMA_VERSION,
         "integration": {
@@ -433,6 +435,7 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, config_entry: 
         "history_48h": history_48h,
         "compressor_groups": compressor,
         "valve_protection": valve,
+        "central_heating": central_heating,
         "coil_dry_state": (coordinator._coil_dry_manager.get_state() if coordinator is not None else {}),
         # Live AC sensor offsets {entity: {"heat"|"cool"|"idle": [offset K, readings]}}; settings hold the last save
         "ac_head_offsets": (coordinator._head_offsets.get_state() if coordinator is not None else {}),

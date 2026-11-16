@@ -7,6 +7,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from custom_components.roommind.binary_sensor import (
+    RoomMindCentralHeatingSensor,
     RoomMindCoverPausedSensor,
     _create_room_binary_sensors,
     async_setup_entry,
@@ -94,19 +95,20 @@ async def test_async_setup_entry_creates_entities_for_rooms_with_covers():
 
     # Callback stored on coordinator
     assert coordinator.async_add_binary_sensor_entities is async_add_entities
-    # Only living_room has covers, so one entity created
+    # Only living_room has covers, so one room entity plus the central heating sensor
     async_add_entities.assert_called_once()
     entities = async_add_entities.call_args[0][0]
-    assert len(entities) == 1
+    assert len(entities) == 2
     assert isinstance(entities[0], RoomMindCoverPausedSensor)
+    assert isinstance(entities[1], RoomMindCentralHeatingSensor)
     # Area tracked
     assert "living_room" in coordinator._binary_sensor_entity_areas
     assert "bedroom" not in coordinator._binary_sensor_entity_areas
 
 
 @pytest.mark.asyncio
-async def test_async_setup_entry_no_covers_no_entities():
-    """async_setup_entry does not call async_add_entities when no rooms have covers."""
+async def test_async_setup_entry_no_covers_only_central_heating():
+    """Without covers only the global central heating sensor is created."""
     coordinator = MagicMock()
     coordinator._binary_sensor_entity_areas = set()
 
@@ -123,7 +125,9 @@ async def test_async_setup_entry_no_covers_no_entities():
 
     await async_setup_entry(hass, entry, async_add_entities)
 
-    async_add_entities.assert_not_called()
+    entities = async_add_entities.call_args[0][0]
+    assert len(entities) == 1
+    assert isinstance(entities[0], RoomMindCentralHeatingSensor)
 
 
 def _aq_coordinator(live, room=None):
@@ -184,5 +188,37 @@ async def test_async_setup_entry_creates_the_air_quality_sensor_next_to_the_cove
     add = MagicMock()
     await async_setup_entry(hass, entry, add)
     entities = add.call_args[0][0]
-    assert [type(e) for e in entities] == [RoomMindCoverPausedSensor, RoomMindAirQualitySensor]
+    assert [type(e) for e in entities] == [
+        RoomMindCoverPausedSensor,
+        RoomMindAirQualitySensor,
+        RoomMindCentralHeatingSensor,
+    ]
     assert coordinator._air_quality_entity_areas == {"living_room"}
+
+
+def test_central_heating_sensor_reads_coordinator_state():
+    coordinator = MagicMock()
+    coordinator.last_update_success = True
+    coordinator.data = {"rooms": {}, "central_heating": {"enabled": False}}
+    sensor = RoomMindCentralHeatingSensor(coordinator)
+    assert sensor.unique_id == "roommind_central_heating"
+    assert sensor.entity_id == "binary_sensor.roommind_central_heating"
+    assert sensor.available is False
+    coordinator.data = {
+        "rooms": {},
+        "central_heating": {
+            "enabled": True,
+            "on": True,
+            "entity_id": "switch.boiler",
+            "demanding_rooms": ["bad", "buero"],
+            "demanding_count": 2,
+            "min_rooms": 2,
+            "pending": None,
+            "pending_seconds": None,
+        },
+    }
+    assert sensor.available is True
+    assert sensor.is_on is True
+    assert sensor.extra_state_attributes["demanding_rooms"] == ["bad", "buero"]
+    coordinator.data = None
+    assert sensor.is_on is False

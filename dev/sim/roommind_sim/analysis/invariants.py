@@ -463,6 +463,47 @@ def hold_shows_running_unit(run: RunData) -> list[Violation]:
     return out[:20]
 
 
+def central_heating_rules(run: RunData, tolerance_s: float = 45.0) -> list[Violation]:
+    """RoomMind's central heating follows its rules: on only after enough rooms demanded heat
+    for the start delay, off only after too few did for the run-on, and never late by more
+    than a cycle."""
+    config = run.settings().get("central_heating") or {}
+    start_s = float(config.get("start_delay_s", 0))
+    stop_s = float(config.get("stop_delay_s", 0))
+    records = [(o["t"], o["central_heating"]) for o in run.observer if (o.get("central_heating") or {}).get("enabled")]
+    out: list[Violation] = []
+
+    def demand(state: dict[str, Any]) -> bool:
+        return int(state.get("demanding_count", 0)) >= int(state.get("min_rooms", 1))
+
+    for i in range(1, len(records)):
+        t, state = records[i]
+        prev = records[i - 1][1]
+        if state.get("on") == prev.get("on"):
+            continue
+        want = bool(state.get("on"))
+        hold = start_s if want else stop_s
+        window = [s for tt, s in records[: i + 1] if t - hold + tolerance_s <= tt <= t]
+        if any(demand(s) != want for s in window):
+            what = "on before enough rooms demanded heat" if want else "off before the run-on ended"
+            out.append(Violation(t, f"central heating {what} (delay {hold:.0f} s)"))
+    # Never stuck: a condition held well past its delay must have switched
+    since: float | None = None
+    for t, state in records:
+        mismatch = demand(state) != bool(state.get("on"))
+        if not mismatch:
+            since = None
+            continue
+        since = t if since is None else since
+        hold = start_s if demand(state) else stop_s
+        if t - since > hold + 2 * tolerance_s:
+            out.append(
+                Violation(t, f"central heating still {'off' if demand(state) else 'on'} {t - since:.0f} s later")
+            )
+            since = None
+    return out[:20]
+
+
 INVARIANTS: dict[str, Callable[..., list[Violation]]] = {
     f.__name__: f
     for f in (
@@ -481,6 +522,7 @@ INVARIANTS: dict[str, Callable[..., list[Violation]]] = {
         no_heat_and_cool_same_group,
         no_commands_when_climate_off,
         max_commands_per_hour,
+        central_heating_rules,
     )
 }
 DEFAULT_INVARIANTS = (

@@ -68,6 +68,10 @@ Rooms with both TRVs and ACs automatically route heating demand to the most effi
 
 Define groups of climate devices sharing an outdoor compressor. Enforces minimum run and off times to prevent short-cycling. Until `min_run_minutes` has elapsed, a device keeps its last active setpoint, including a boost setpoint, so the room can overshoot its target further than without protection. A target that changes on purpose in the meantime (override, vacation, schedule off, presence) is passed on to the device right away (a device with a single heat/cool setpoint only when that cannot push the room the wrong way).
 
+### Central heating
+
+Switch a boiler or heat pump (a `switch`, `input_boolean` or `climate` thermostat) on while at least a set number of rooms is being heated, with a start delay and a run-on in seconds. A thermostat gets an on and an off temperature; switching it off can keep its heat mode or turn it off. Each room decides in its devices whether it counts (by default rooms with radiator thermostats do). `binary_sensor.roommind_central_heating` shows the state, the demanding rooms and a running delay. See [Central heating](control-and-devices.md#central-heating).
+
 ### Idle modes
 
 AC and heat pump devices can switch to fan-only or setback mode instead of turning off, keeping air circulation or low-load operation active. Optionally, setback turns the device off after a long pause with no demand ahead.

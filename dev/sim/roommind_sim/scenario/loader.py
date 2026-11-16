@@ -388,6 +388,7 @@ def _validate(scn: Scenario) -> None:
         check(settings.get(key), f"roommind.settings.{key}")
     for i, eid in enumerate(settings.get("presence_persons") or []):
         check(eid, f"roommind.settings.presence_persons[{i}]")
+    check((settings.get("central_heating") or {}).get("entity_id"), "roommind.settings.central_heating.entity_id")
     for i, group in enumerate(settings.get("compressor_groups") or []):
         for eid in group.get("members") or []:
             check(eid, f"roommind.settings.compressor_groups[{i}].members")

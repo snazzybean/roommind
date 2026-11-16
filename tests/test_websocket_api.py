@@ -102,6 +102,7 @@ async def test_list_rooms_empty(ws_hass, store, connection):
             "coil_dry_min_cooling_minutes": 10,
             "coil_dry_drain_minutes": 0,
             "compressor_groups": [],
+            "central_heating_enabled": False,
         },
     )
 
@@ -3688,3 +3689,63 @@ async def test_list_rooms_forwards_air_quality(ws_hass, store, connection):
         "air_quality_reason": "co2",
         "ventilation_active": True,
     }
+
+
+async def test_save_settings_central_heating(ws_hass, store, connection):
+    await store.async_load()
+    msg = {
+        "id": 21,
+        "type": "roommind/settings/save",
+        "central_heating": {
+            "enabled": True,
+            "entity_id": "climate.kessel",
+            "min_rooms": 2,
+            "start_delay_s": 120,
+            "stop_delay_s": 600,
+            "on_temperature": 60,
+            "off_temperature": 10,
+            "climate_off_mode": "off",
+        },
+    }
+    validated = websocket_save_settings._ws_schema(msg)
+    await _save_settings(ws_hass, connection, validated)
+    saved = connection.send_result.call_args[0][1]["settings"]["central_heating"]
+    assert saved["entity_id"] == "climate.kessel"
+    assert saved["min_rooms"] == 2
+    assert saved["on_temperature"] == 60.0
+
+
+@pytest.mark.parametrize(
+    "config",
+    [
+        {"entity_id": "light.kessel"},
+        {"min_rooms": 0},
+        {"start_delay_s": 3601},
+        {"stop_delay_s": -1},
+        {"on_temperature": 120},
+        {"climate_off_mode": "pause"},
+    ],
+)
+def test_save_settings_central_heating_invalid(config):
+    import voluptuous as vol
+
+    with pytest.raises(vol.Invalid):
+        websocket_save_settings._ws_schema({"id": 1, "type": "roommind/settings/save", "central_heating": config})
+
+
+def test_save_settings_central_heating_defaults():
+    validated = websocket_save_settings._ws_schema(
+        {"id": 1, "type": "roommind/settings/save", "central_heating": {"enabled": True, "entity_id": "switch.kessel"}}
+    )
+    assert validated["central_heating"]["climate_off_mode"] == "temperature"
+    assert validated["central_heating"]["start_delay_s"] == 0
+
+
+@pytest.mark.asyncio
+async def test_save_room_central_heating_roundtrip(ws_hass, store, connection):
+    await store.async_load()
+    msg = {"id": 2, "type": "roommind/rooms/save", "area_id": "office", "thermostats": ["climate.office"]}
+    await _save_room(ws_hass, connection, msg)
+    assert connection.send_result.call_args[0][1]["room"]["central_heating"] is None
+    await _save_room(ws_hass, connection, {**msg, "central_heating": False})
+    assert connection.send_result.call_args[0][1]["room"]["central_heating"] is False

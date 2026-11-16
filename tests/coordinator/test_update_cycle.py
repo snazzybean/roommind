@@ -140,7 +140,7 @@ class TestRoomMindCoordinator:
         coordinator = _create_coordinator(hass, mock_config_entry)
         data = await coordinator._async_update_data()
 
-        assert data == {"rooms": {}}
+        assert data == {"rooms": {}, "central_heating": {"enabled": False}}
 
     @pytest.mark.asyncio
     async def test_update_climate_service_failure_does_not_crash(self, hass, mock_config_entry):

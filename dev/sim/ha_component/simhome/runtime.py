@@ -265,6 +265,9 @@ class SimRuntime:
             models = model_snapshot(coordinator)
             if models:
                 rec["models"] = models
+        central = (getattr(coordinator, "data", None) or {}).get("central_heating")
+        if central:
+            rec["central_heating"] = central
         self._buffers["observer"].append(json.dumps(rec, separators=(",", ":"), default=str))
 
     @callback

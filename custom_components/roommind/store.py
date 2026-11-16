@@ -303,6 +303,8 @@ class RoomMindStore:
             "voc_sensor": config.get("voc_sensor", ""),
             "voc_threshold": config.get("voc_threshold"),
             "ventilation_entity": config.get("ventilation_entity", ""),
+            # None: automatic, rooms with radiator thermostats count for the central heating
+            "central_heating": config.get("central_heating"),
         }
         _single_temps_to_cool_side(room, config, room["climate_mode"])
         # Directional device sync for new rooms (truthiness check, not just presence)
