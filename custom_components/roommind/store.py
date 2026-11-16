@@ -19,7 +19,9 @@ from .const import (
     DEFAULT_HEAT_SOURCE_OUTDOOR_THRESHOLD,
     DEFAULT_HEAT_SOURCE_PRIMARY_DELTA,
     DEFAULT_OCCUPANCY_ECO_DELAY_MINUTES,
+    DEFAULT_OVERRIDE_DURATION_MINUTES,
     DOMAIN,
+    OVERRIDE_DURATION_SCHEDULE,
 )
 from .utils.device_utils import (
     devices_to_legacy,
@@ -303,6 +305,8 @@ class RoomMindStore:
             "voc_sensor": config.get("voc_sensor", ""),
             "voc_threshold": config.get("voc_threshold"),
             "ventilation_entity": config.get("ventilation_entity", ""),
+            "override_duration_mode": config.get("override_duration_mode", OVERRIDE_DURATION_SCHEDULE),
+            "override_duration_minutes": config.get("override_duration_minutes", DEFAULT_OVERRIDE_DURATION_MINUTES),
         }
         _single_temps_to_cool_side(room, config, room["climate_mode"])
         # Directional device sync for new rooms (truthiness check, not just presence)

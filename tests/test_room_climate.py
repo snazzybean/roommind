@@ -283,6 +283,29 @@ async def test_set_temperature_holds_until_next_schedule_change(setup):
 
 
 @pytest.mark.asyncio
+async def test_set_temperature_holds_for_room_minutes(setup):
+    make, _, store, _ = setup
+    entity = make(_room(override_duration_mode="minutes", override_duration_minutes=30))
+    before = time.time()
+    await entity.async_set_temperature(**{ATTR_TARGET_TEMP_LOW: 22.0, ATTR_TARGET_TEMP_HIGH: 25.0})
+    until = _written(store)["override_until"]
+    assert before + 1800 <= until <= time.time() + 1800
+
+
+@pytest.mark.asyncio
+async def test_preset_permanent_room_holds_until_changed(setup):
+    make, _, store, _ = setup
+    entity = make(_room(override_duration_mode="permanent"))
+    await entity.async_set_preset_mode("eco")
+    assert _written(store) == {
+        "override_heat": 17.0,
+        "override_cool": 27.0,
+        "override_until": None,
+        "override_type": "eco",
+    }
+
+
+@pytest.mark.asyncio
 async def test_set_temperature_without_schedule_holds_until_changed(setup):
     make, _, store, _ = setup
     entity = make(_room(schedules=[]))
