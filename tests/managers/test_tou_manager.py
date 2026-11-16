@@ -4,7 +4,9 @@ Ported from the reference fork (wBrhy2/roommind, tag tou-legacy-beta23).
 Covers the tariff-awareness engine (period normalization, source resolution,
 calendars, windows, the future view, the snapshot) and the tier dictionary
 with its persisted price history. Store-layer shaping, tariff rules and
-sensor-driven energy tiers are follow-up PRs on this engine.
+sensor-driven energy tiers are follow-up PRs on this engine. The store
+layer (consent band, swing, gap, pre-charge) and the electricity-price
+adapter are covered here as well since PR-04b.
 """
 
 from __future__ import annotations
@@ -25,6 +27,7 @@ from custom_components.roommind.const import (
     TOU_TIER_ULTRA_LOW,
     TOU_TIER_UNKNOWN,
     TOU_WEEKDAYS,
+    TargetTemps,
 )
 from custom_components.roommind.managers.tou_manager import (
     TouManager,
@@ -1149,3 +1152,175 @@ def test_price_signal_flat_horizon_behaves_like_the_base_without_forecast() -> N
     sig2 = mgr.price_signal()
     assert sig2.current_level is None
     assert sig2.direction_at(now) == 0
+
+
+# ---------------------------------------------------------------------------
+# Store layer
+# ---------------------------------------------------------------------------
+
+
+def _room(**overrides) -> dict:
+    room = {
+        "area_id": "living",
+        "comfort_heat": 21.0,
+        "comfort_cool": 24.0,
+        "eco_heat": 17.0,
+        "eco_cool": 27.0,
+    }
+    room.update(overrides)
+    return room
+
+
+def test_store_relaxes_expensive_run() -> None:
+    mgr = TouManager(_make_hass({}))
+    mgr._timeline = _timeline((TOU_TIER_OFF, 0), (TOU_TIER_PEAK, 120))
+    adjust = mgr.make_adjuster(_room(tou_store_enabled=True), {"tou_enabled": True})
+    assert adjust is not None
+    ts = time.time() + 60.0
+    result = adjust(ts, TargetTemps(heat=21.0, cool=24.0))
+    assert result.heat == 18.0  # swung down from 21, floor above band & eco
+    assert result.cool == 27.0  # drifts up toward the eco cooling target
+
+
+def test_store_never_raises_a_colder_schedule() -> None:
+    mgr = TouManager(_make_hass({}))
+    mgr._timeline = _timeline((TOU_TIER_OFF, 0), (TOU_TIER_PEAK, 120))
+    adjust = mgr.make_adjuster(_room(tou_store_enabled=True), {})
+    assert adjust is not None
+    result = adjust(time.time() + 60.0, TargetTemps(heat=16.0, cool=20.0))
+    assert result.heat == 16.0  # relaxation only lowers, never raises heat
+    assert result.cool == 23.0  # cooling relaxes upward by the swing
+
+
+def test_store_run_merges_contiguous_expensive_tiers() -> None:
+    """Mid + peak in a row are one coast: relaxation starts at the mid tier."""
+    mgr = TouManager(_make_hass({}))
+    mgr._timeline = _timeline((TOU_TIER_OFF, 0), (TOU_TIER_MID, 60), (TOU_TIER_PEAK, 60))
+    adjust = mgr.make_adjuster(_room(tou_store_enabled=True), {})
+    assert adjust is not None
+    result = adjust(time.time() + 30 * 60, TargetTemps(heat=21.0, cool=24.0))
+    assert result.heat == 18.0
+    assert result.cool == 27.0
+
+
+def test_store_is_quiet_without_a_run() -> None:
+    """Cheap tier, nothing expensive ahead: no relaxation, no pre-charge —
+    even with a learned decay model that could coast somewhere."""
+    mgr = TouManager(_make_hass({}))
+    mgr._timeline = _timeline((TOU_TIER_ULTRA_LOW, 120))
+    adjust = mgr.make_adjuster(_room(tou_store_enabled=True), {}, decay=(0.2, 8.0))
+    assert adjust is not None
+    out = adjust(time.time() + 60.0, TargetTemps(heat=21.0, cool=24.0))
+    assert out.heat == 21.0 and out.cool == 24.0
+
+    off = mgr.make_adjuster(_room(), {}, decay=(0.2, 8.0))
+    assert off is None  # no store: no participation
+    forced_off = adjust(time.time() + 60.0, TargetTemps(heat=None, cool=None))
+    assert forced_off == TargetTemps(heat=None, cool=None)  # off stays off
+
+
+def test_store_precharge_bounds_and_gates() -> None:
+    """Raise toward the coast floor before a run, bounded by the swing and the
+    consent band; skipped for vacation and immature models; presence-blind."""
+    mgr = TouManager(_make_hass({}))
+    b = time.time()
+    mgr._timeline = _timeline((TOU_TIER_ULTRA_LOW, 60), (TOU_TIER_PEAK, 300))
+    ts = b + 30 * 60  # mid cheap window, the (long) peak still ahead
+    decay = (0.2, 10.0)
+    room = _room(tou_store_enabled=True)
+
+    raised = mgr.make_adjuster(room, {}, decay=decay)
+    assert raised is not None
+    # floor_end 18, huge lead -> needed() explodes -> the swing cap rules: 21 + 3.
+    assert raised(ts, TargetTemps(heat=21.0, cool=None)).heat == 24.0
+
+    capped = mgr.make_adjuster({**room, "tou_heat_max": 22.5}, {}, decay=decay)
+    assert capped is not None
+    assert capped(ts, TargetTemps(heat=21.0, cool=None)).heat == 22.5  # the band wins
+
+    vacant = mgr.make_adjuster(room, {}, room_vacant=True, presence_away=True, decay=decay)
+    assert vacant is not None
+    assert vacant(ts, TargetTemps(heat=21.0, cool=None)).heat == 24.0  # economics, not occupancy
+
+    vacation = {"vacation_until": b + 3600.0, "vacation_temp": 15.0}
+    vac = mgr.make_adjuster(room, vacation, decay=decay)
+    assert vac is not None
+    assert vac(ts, TargetTemps(heat=21.0, cool=None)).heat == 21.0  # no pre-charge in vacation
+
+    inside = mgr.make_adjuster(room, {}, decay=decay)
+    assert inside is not None
+    assert inside(b + 90 * 60, TargetTemps(heat=21.0, cool=None)).heat == 18.0  # the run relaxes
+
+    no_model = mgr.make_adjuster(room, {})
+    assert no_model is not None
+    assert no_model(ts, TargetTemps(heat=21.0, cool=None)).heat == 21.0  # nothing to derive from
+
+
+def test_store_prechills_and_relaxes_cooling_run() -> None:
+    """Cooling mirrors heating: drift up toward the eco ceiling during an
+    expensive run, pre-chill within the swing before it, and degrade the
+    same way (no chill without a model, none during vacation)."""
+    mgr = TouManager(_make_hass({}))
+    b = time.time()
+    mgr._timeline = _timeline((TOU_TIER_OFF, 60), (TOU_TIER_PEAK, 600))
+    ts = b + 30 * 60  # inside the off stretch, the (long) peak ahead
+    room = _room(tou_store_enabled=True)
+
+    chilled = mgr.make_adjuster(room, {}, decay=(0.2, 35.0))
+    assert chilled is not None
+    assert chilled(ts, TargetTemps(heat=None, cool=24.0)).cool == 21.0
+
+    inside = mgr.make_adjuster(room, {}, decay=(0.2, 35.0))
+    assert inside is not None
+    assert inside(b + 90 * 60, TargetTemps(heat=None, cool=24.0)).cool == 27.0
+
+    no_model = mgr.make_adjuster(room, {})
+    assert no_model is not None
+    assert no_model(ts, TargetTemps(heat=None, cool=24.0)).cool == 24.0
+
+    vacation = {"vacation_until": b + 3600.0, "vacation_temp": 28.0}
+    vac = mgr.make_adjuster(room, vacation, decay=(0.2, 35.0))
+    assert vac is not None
+    assert vac(ts, TargetTemps(heat=None, cool=24.0)).cool == 24.0
+
+    mild = mgr.make_adjuster(room, {}, decay=(0.2, 20.0))
+    assert mild is not None
+    assert mild(ts, TargetTemps(heat=None, cool=24.0)).cool == 24.0
+
+
+def test_override_never_shaved() -> None:
+    mgr = TouManager(_make_hass({}))
+    mgr._timeline = _timeline((TOU_TIER_PEAK, 120))
+    room = _room(tou_store_enabled=True, override_heat=24.0, override_cool=None, override_until=None)
+    adjust = mgr.make_adjuster(room, {})
+    assert adjust is not None
+    result = adjust(time.time() + 60.0, TargetTemps(heat=24.0, cool=27.0))
+    assert result.heat == 24.0  # the override value passes through untouched
+
+
+def test_mold_active_blocks_heat_relaxation() -> None:
+    mgr = TouManager(_make_hass({}))
+    mgr._timeline = _timeline((TOU_TIER_PEAK, 120))
+    adjust = mgr.make_adjuster(_room(tou_store_enabled=True), {}, mold_active=True)
+    assert adjust is not None
+    result = adjust(time.time() + 60.0, TargetTemps(heat=21.0, cool=24.0))
+    assert result.heat == 21.0  # prevention outranks tariff relaxation
+    assert result.cool == 27.0  # cooling side is unaffected
+
+
+def test_price_builder_gating() -> None:
+    mgr = TouManager(_make_hass({}))
+    mgr._timeline = _timeline((TOU_TIER_OFF, 60), (TOU_TIER_PEAK, 60))
+    builder = mgr.make_price_series_builder(_room(tou_store_enabled=True), {"tou_enabled": True})
+    assert builder is not None
+    # One hour per block: block 0 sits in OFF, the rest land past the +60min boundary.
+    series = builder(time.time(), 4, 60.0)
+    assert series[0] == 1.0  # off
+    assert series[-1] == 3.0  # peak
+    assert mgr.make_price_series_builder(_room(), {}) is None
+    assert mgr.make_price_series_builder(_room(), {"tou_price_weighting": False}) is None
+    no_timeline = TouManager(_make_hass({}))
+    assert no_timeline.make_price_series_builder(_room(), {}) is None
+
+
+# ---------------------------------------------------------------------------

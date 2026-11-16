@@ -557,6 +557,7 @@ def make_target_resolver(
     mold_prevention_delta: float = 0.0,
     room_vacant: bool = False,
     price_signal: PriceSignal | None = None,
+    tou_adjust: Callable[[float, TargetTemps], TargetTemps] | None = None,
 ) -> Callable[[float], TargetTemps]:
     """Create a sync target resolver function (schedule blocks pre-fetched).
 
@@ -609,6 +610,13 @@ def make_target_resolver(
         targets, _ = price_shifted(
             targets, ts, room, settings, price_signal, presence_away=presence_away, room_vacant=room_vacant
         )
+        if tou_adjust is not None:
+            # Time-of-Use shaping (managers/tou_manager.py): composed under the
+            # mold delta and the climate-mode cap, over the schedule/presence
+            # result. A forced "off" pair is already returned above: off stays
+            # off, and a manual override reaching this point passes through the
+            # adjuster's own never-shaved guard.
+            targets = tou_adjust(ts, targets)
         return TargetTemps(
             *cap_cool_only_heat(
                 targets.heat + mold_prevention_delta if targets.heat is not None else None,

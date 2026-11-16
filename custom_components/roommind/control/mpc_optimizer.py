@@ -151,6 +151,7 @@ class MPCOptimizer:
         solar_series: list[float] | None = None,
         residual_series: list[float] | None = None,
         occupancy_series: list[float] | None = None,
+        price_series: list[float] | None = None,
         initial_mode: str = MODE_IDLE,
         rebound_charge: float | None = None,
         heat_run: tuple[float, float] | None = None,
@@ -161,6 +162,14 @@ class MPCOptimizer:
 
         Uses forward simulation with greedy optimization per block,
         considering minimum run time constraints.
+
+        ``price_series`` weights the energy term of the cost function per
+        block (1.0 = the off-peak reference). A run that would burn energy in
+        an expensive block therefore costs more, so the same target plan gets
+        charged earlier in a cheap tier and idles through the expensive one —
+        the room coasts on stored heat and only re-fires when the prediction
+        crosses the target floor. None leaves behavior byte-identical to
+        without tariff awareness.
 
         Accepts dual target series (heat_target_series + cool_target_series)
         for dead-band-aware optimization. If cool_target_series is None,
@@ -223,6 +232,7 @@ class MPCOptimizer:
         q_solar = solar_series or [0.0] * n_blocks
         q_residual = residual_series or [0.0] * n_blocks
         q_occupancy = occupancy_series or [0.0] * n_blocks
+        prices = price_series or []
 
         actions: list[str] = []
         temp_lo, temp_hi = self._temp_bounds(T_room)
@@ -278,6 +288,7 @@ class MPCOptimizer:
                         self._afterglow(glow_elapsed + j * dt_minutes, glow) for j in range(self._lookahead_blocks)
                     ]
                 future_occupancy = q_occupancy[i:] if q_occupancy else None
+                future_prices = prices[i:] if prices else None
                 for action in available:
                     cost = self._evaluate_action(
                         action,
@@ -292,6 +303,7 @@ class MPCOptimizer:
                         future_solar=future_solar,
                         future_residual=future_residual,
                         future_occupancy=future_occupancy,
+                        future_prices=future_prices,
                         rebound_charge=charge,
                         heat_run=run,
                     )
@@ -794,6 +806,7 @@ class MPCOptimizer:
         future_solar: list[float] | None = None,
         future_residual: list[float] | None = None,
         future_occupancy: list[float] | None = None,
+        future_prices: list[float] | None = None,
         rebound_charge: float | None = None,
         heat_run: tuple[float, float] | None = None,
     ) -> float:
@@ -829,6 +842,7 @@ class MPCOptimizer:
         )
         heating_duration_minutes = self.min_run_blocks * dt_minutes
         run_blocks = self._min_run_for(action)
+        prices = future_prices or []
         stop_glow = heat_run if action != MODE_HEATING and self._radiator else None
         if action != MODE_IDLE and not synthesis_enabled:
             Q *= self._hypothesis_power_fraction(
@@ -923,9 +937,11 @@ class MPCOptimizer:
             elif T > c_tgt:
                 total_cost += self.w_comfort * (T - c_tgt) ** 2
             # else: inside dead band, no comfort cost
-            # Energy cost: proportional to HVAC power for min_run blocks
+            # Energy cost: proportional to HVAC power for min_run blocks,
+            # weighted by the tariff price of the block it lands in.
             if j < run_blocks and action != MODE_IDLE:
-                total_cost += self.w_energy * abs(Q) / 1000.0
+                price = prices[j] if j < len(prices) else 1.0
+                total_cost += self.w_energy * price * abs(Q) / 1000.0
 
         return total_cost
 

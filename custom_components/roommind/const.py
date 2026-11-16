@@ -1,13 +1,13 @@
 """Constants for the RoomMind integration."""
 
 import time
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
 from homeassistant.const import Platform
 from homeassistant.core import Context
 
 DOMAIN = "roommind"
-VERSION = "2.0.4-beta.1"
+VERSION = "2.0.4-beta.2"
 
 # Platforms
 PLATFORMS = [Platform.SENSOR, Platform.SWITCH, Platform.BINARY_SENSOR, Platform.CLIMATE]
@@ -376,6 +376,47 @@ TOU_PRICE_HISTORY_SAVE_MIN_INTERVAL_S = 60.0
 # How far ahead the tariff timeline is built (minutes). Covers the MPC's
 # longest pre-heat lead (12 h) plus margin.
 TOU_TIMELINE_HORIZON_MINUTES = 960
+
+# Store-layer consent limits (settings; each value optionally overridden per
+# room, blank = inherit). The band is the hard consent: no tariff machinery
+# commands a target outside it. The swing bounds how far the auto layer moves
+# a room from its scheduled target; the gap is the price ratio that must
+# justify even trying (expensive ÷ cheapest reference).
+DEFAULT_TOU_HEAT_MIN = 17.0
+DEFAULT_TOU_HEAT_MAX = 28.0
+DEFAULT_TOU_COOL_MIN = 18.0
+DEFAULT_TOU_COOL_MAX = 30.0
+DEFAULT_TOU_SWING = 3.0  # max auto deviation from the scheduled target, °C
+DEFAULT_TOU_STORE_GAP = 1.0  # min expensive/cheap price multiplier ratio
+
+# Per-block energy-price multipliers when only the tier is known. Scales the
+# MPC's w_energy term; off-peak is the 1.0 reference. (Energy tiers with a
+# typed cost later price off their own cost against the cheapest grid tier.)
+TOU_PRICE_MULTIPLIERS: dict[str, float] = {
+    TOU_TIER_PEAK: 3.0,
+    TOU_TIER_MID: 1.6,
+    TOU_TIER_OFF: 1.0,
+    TOU_TIER_ULTRA_LOW: 0.8,
+    TOU_TIER_UNKNOWN: 1.0,
+}
+
+# "arrive"/pre-charge curve amplification cap: bounds what an aggressive or
+# not-yet-realistic learned loss rate can demand at the coast boundary; the
+# consent band applies on top.
+TOU_ARRIVAL_EXPONENT_CAP = 3.0
+# Learned-model confidence below which pre-charge holds the flat temperature
+# (classic coast behavior) instead of deriving a boundary temperature.
+TOU_ARRIVAL_MIN_CONFIDENCE = 0.5
+
+
+def tou_price_multiplier(tier: str, settings: dict[str, Any] | None = None) -> float:
+    """Price weight of *tier* for the MPC energy term and store-layer runs.
+
+    Static table for now; the follow-up energy-tiers PR prices user-defined
+    tiers from their typed cost against the cheapest known grid price.
+    """
+    return TOU_PRICE_MULTIPLIERS.get(tier, 1.0)
+
 
 # Tariff source kinds reported in diagnostics/snapshot.
 TOU_SOURCE_PERIOD = "period_sensor"

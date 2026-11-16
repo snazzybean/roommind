@@ -53,6 +53,7 @@ from .const import (
     TARGET_REASON_VACANT,
     TARGET_REASON_VACATION,
     THERMAL_SAVE_CYCLES,
+    TOU_ARRIVAL_MIN_CONFIDENCE,
     UPDATE_INTERVAL,
     TargetTemps,
     build_override_live,
@@ -991,6 +992,21 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 room_vacant=occupancy_vacant,
             )
 
+        # Time-of-Use: store-layer shaping composed into the horizon resolver
+        # below and applied to the "now" targets here, so MPC and bang-bang see
+        # one chain. Presence is judged exactly like the resolver's own pillar.
+        presence_away = not room.get("ignore_presence", False) and self._is_presence_away(room, settings)
+        tou_adjust = self._tou_manager.make_adjuster(
+            room,
+            settings,
+            room_vacant=occupancy_vacant,
+            presence_away=presence_away,
+            mold_active=mold_prevention_active_room and mold_prevention_temp_delta > 0,
+            decay=self._tou_decay_params(area_id),
+        )
+        if tou_adjust is not None:
+            targets = tou_adjust(time.time(), targets)
+
         # Apply mold prevention temperature delta (heating target only).
         # Safety: mold prevention overrides "off" to prevent structural damage.
         force_off = targets.heat is None and targets.cool is None
@@ -1011,7 +1027,6 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                     cool=targets.cool,
                 )
         targets = TargetTemps(*cap_cool_only_heat(targets.heat, targets.cool, room.get("climate_mode", "auto")))
-        presence_away = not room.get("ignore_presence", False) and self._is_presence_away(room, settings)
         target_resolver = make_target_resolver(
             schedule_blocks,
             room,
@@ -1021,6 +1036,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             mold_prevention_delta=mold_prevention_temp_delta,
             room_vacant=occupancy_vacant,
             price_signal=self.price_signal,
+            tou_adjust=tou_adjust,
         )
         # The pre-heat deadline only pre-heats for a rise of the schedule, not for the
         # target moving with the price (feature-details "Electricity Price")
@@ -1111,6 +1127,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             has_external_sensor=has_external_sensor,
             target_resolver=target_resolver,
             schedule_target_resolver=schedule_target_resolver,
+            price_series_builder=self._tou_manager.make_price_series_builder(room, settings),
             q_solar=self._current_q_solar,
             latitude=self.hass.config.latitude,
             longitude=self.hass.config.longitude,
@@ -2372,6 +2389,24 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         from .utils.presence_utils import is_presence_away
 
         return is_presence_away(self.hass, room, settings)  # all tracked persons are away
+
+    def _tou_decay_params(self, area_id: str) -> tuple[float, float] | None:
+        """Return (alpha_per_hour, outdoor_C) for coast curves, or None.
+
+        None while the outdoor temperature is unavailable or the room's
+        thermal model is too young to trust a back-cast; the store layer
+        then holds the flat target (classic coast behavior) instead of
+        deriving the temperature the room must have at the coast boundary.
+        """
+        t_out = self.outdoor_temp_effective
+        if t_out is None:
+            return None
+        if self._model_manager.get_confidence(area_id) < TOU_ARRIVAL_MIN_CONFIDENCE:
+            return None
+        model = self._model_manager.get_model(area_id)
+        if model is None or model.C <= 0:
+            return None
+        return (model.U / model.C, t_out)
 
     def _get_active_schedule_index(self, room: dict) -> int:
         """Return the index of the active schedule in room['schedules'].

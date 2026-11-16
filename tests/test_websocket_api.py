@@ -3850,3 +3850,27 @@ async def test_list_rooms_carries_tier_info_when_tou_enabled(ws_hass, store, con
     # dictionary can honestly show, marked as such.
     assert info["tiers"]["mid"]["rate"] == 0.10 and info["tiers"]["mid"]["kind"] == "cutoff"
     assert info["current"] is None
+
+
+@pytest.mark.asyncio
+async def test_save_room_tou_store_fields_roundtrip(ws_hass, store, connection):
+    """Store participation and consent limits persist through the room save."""
+    await store.async_load()
+
+    msg = {
+        "id": 141,
+        "type": "roommind/rooms/save",
+        "area_id": "living_room_abc12345",
+        "devices": [{"entity_id": "climate.trv", "type": "trv"}],
+        "tou_store_enabled": True,
+        "tou_heat_min": 16.0,
+        "tou_swing": 4.0,
+        "tou_store_gap": None,
+    }
+    await _save_room(ws_hass, connection, msg)
+
+    room = store.get_room("living_room_abc12345")
+    assert room["tou_store_enabled"] is True
+    assert room["tou_heat_min"] == 16.0
+    assert room["tou_swing"] == 4.0
+    assert room["tou_store_gap"] is None

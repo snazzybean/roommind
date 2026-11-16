@@ -36,6 +36,7 @@ publishing rates — contributes real timeline segments for the coming hours.
 from __future__ import annotations
 
 import logging
+import math
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
@@ -46,7 +47,16 @@ from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
 from ..const import (
+    DEFAULT_ECO_COOL,
+    DEFAULT_ECO_HEAT,
+    DEFAULT_TOU_COOL_MAX,
+    DEFAULT_TOU_COOL_MIN,
+    DEFAULT_TOU_HEAT_MAX,
+    DEFAULT_TOU_HEAT_MIN,
+    DEFAULT_TOU_STORE_GAP,
+    DEFAULT_TOU_SWING,
     DOMAIN,
+    TOU_ARRIVAL_EXPONENT_CAP,
     TOU_LAST_RATE_TIER_MAX_AGE_S,
     TOU_LEVEL_HOLD_S,
     TOU_PRICE_HISTORY_SAVE_MIN_INTERVAL_S,
@@ -63,6 +73,8 @@ from ..const import (
     TOU_TIER_UNKNOWN,
     TOU_TIMELINE_HORIZON_MINUTES,
     TOU_WEEKDAYS,
+    TargetTemps,
+    tou_price_multiplier,
 )
 from ..utils.price_utils import (
     HISTORY_WINDOW_S,
@@ -81,6 +93,14 @@ from ..utils.price_utils import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+AdjustFn = Callable[[float, TargetTemps], TargetTemps]
+
+#: (alpha_per_hour, outdoor_temp_C) from the learned room model: enough to
+#: back-cast the temperature a coasting room needs *now* to land on target at
+#: a later time. None while the model is too young (pre-charge then holds the
+#: flat target, the classic coast behavior).
+DecayFn = tuple[float, float]
 
 
 def normalize_period_state(state: str) -> str:
@@ -1089,3 +1109,173 @@ class TouManager:
             segments=list(timeline.segments),
             tier_prices=tier_prices,
         )
+
+    # ------------------------------------------------------------------
+    # Target adjustment: the store layer (the resolver wrapper)
+    # ------------------------------------------------------------------
+
+    def make_adjuster(
+        self,
+        room: dict[str, Any],
+        settings: dict[str, Any],
+        *,
+        room_vacant: bool = False,
+        presence_away: bool = False,
+        mold_active: bool = False,
+        decay: DecayFn | None = None,
+    ) -> AdjustFn | None:
+        """Build the per-room store adjuster, or None when the room does not
+        participate.
+
+        Participation means: the store toggle is on (tariff rows and the
+        rule library join this entry point in a follow-up PR). The returned
+        callable maps (timestamp, resolved targets) to TOU-adjusted targets
+        and is composed into the schedule target resolver, so the whole MPC
+        horizon — and the bang-bang "now" target — become tariff-aware.
+
+        ``decay`` is the room's learned (alpha, outdoor_temp) pair when the
+        thermal model is confident enough to derive coast curves; None keeps
+        the pre-charge at its flat target (classic coast behavior).
+        """
+        timeline = self._timeline
+        if timeline is None:
+            return None
+        if not room.get("tou_store_enabled", False):
+            return None
+        if timeline.current_tier == TOU_TIER_UNKNOWN and not self._has_tiered_events(timeline):
+            return None
+
+        def _num(value: Any, fallback: float) -> float:
+            if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+                return fallback
+            try:
+                return float(value)
+            except ValueError:
+                return fallback
+
+        # Consent band per side plus the auto layer's reach: room overrides
+        # win over the global limits, blanks inherit.
+        heat_min = _num(room.get("tou_heat_min"), _num(settings.get("tou_heat_min"), DEFAULT_TOU_HEAT_MIN))
+        heat_max = _num(room.get("tou_heat_max"), _num(settings.get("tou_heat_max"), DEFAULT_TOU_HEAT_MAX))
+        cool_min = _num(room.get("tou_cool_min"), _num(settings.get("tou_cool_min"), DEFAULT_TOU_COOL_MIN))
+        cool_max = _num(room.get("tou_cool_max"), _num(settings.get("tou_cool_max"), DEFAULT_TOU_COOL_MAX))
+        swing = max(0.0, _num(room.get("tou_swing"), _num(settings.get("tou_swing"), DEFAULT_TOU_SWING)))
+        gap = max(1.0, _num(room.get("tou_store_gap"), _num(settings.get("tou_store_gap"), DEFAULT_TOU_STORE_GAP)))
+        eco_heat = _num(room.get("eco_heat", room.get("eco_temp")), DEFAULT_ECO_HEAT)
+        eco_cool = _num(room.get("eco_cool"), DEFAULT_ECO_COOL)
+        store_runs = self._store_runs(timeline, gap, settings)
+
+        override_heat = room.get("override_heat")
+        override_cool = room.get("override_cool")
+        override_until = room.get("override_until")
+        presence_clears = bool(settings.get("presence_clears_override", False))
+        vacation_until = settings.get("vacation_until")
+        vacation_temp = settings.get("vacation_temp")
+
+        def _heat_floor(plain: float) -> float:
+            # Relaxation bound: swing from the schedule, never below the eco
+            # target, never outside the band, never above a lower plain target.
+            return min(plain, max(plain - swing, heat_min, eco_heat))
+
+        def _cool_ceiling(plain: float) -> float:
+            return max(plain, min(plain + swing, cool_max, eco_cool))
+
+        def adjust(ts: float, targets: TargetTemps) -> TargetTemps:
+            heat, cool = targets.heat, targets.cool
+            if heat is None and cool is None:
+                return targets  # "off" stays off
+            if (override_heat is not None or override_cool is not None) and (
+                override_until is None or ts < override_until
+            ):
+                if not (presence_away and presence_clears):
+                    return targets  # a manual override is never shaved
+            vacation_now = vacation_until is not None and ts < float(vacation_until) and vacation_temp is not None
+            shaped_heat, shaped_cool = heat, cool
+            if store_runs:
+                run_now = next((r for r in store_runs if r[0] <= ts < r[1]), None)
+                run_next = None if run_now is not None else next((r for r in store_runs if r[0] > ts), None)
+                if heat is not None:
+                    if run_now is not None:
+                        if not mold_active:
+                            shaped_heat = _heat_floor(heat)
+                    elif run_next is not None and decay is not None and not vacation_now:
+                        # Pre-charge: the temperature a coasting room needs
+                        # *now* to land on the floor as the run ends — bounded
+                        # by the swing the room consented to.
+                        floor_end = _heat_floor(heat)
+                        alpha, t_out = decay
+                        if t_out < floor_end:
+                            exponent = min(alpha * (run_next[1] - ts) / 3600.0, TOU_ARRIVAL_EXPONENT_CAP)
+                            needed = t_out + (floor_end - t_out) * math.exp(exponent)
+                            shaped_heat = min(max(needed, heat), heat + swing, heat_max)
+                if cool is not None:
+                    if run_now is not None:
+                        shaped_cool = _cool_ceiling(cool)
+                    elif run_next is not None and decay is not None and not vacation_now:
+                        ceil_end = _cool_ceiling(cool)
+                        alpha, t_out = decay
+                        if t_out > ceil_end:
+                            exponent = min(alpha * (run_next[1] - ts) / 3600.0, TOU_ARRIVAL_EXPONENT_CAP)
+                            needed = t_out + (ceil_end - t_out) * math.exp(exponent)
+                            shaped_cool = max(min(needed, cool), cool - swing, cool_min)
+            return TargetTemps(heat=shaped_heat, cool=shaped_cool)
+
+        return adjust
+
+    @staticmethod
+    def _store_runs(
+        timeline: TouTimeline, gap: float, settings: dict[str, Any] | None = None
+    ) -> list[tuple[float, float]]:
+        """Merge future stretches worth arbitraging across the timeline.
+
+        A segment is expensive when it costs above the off-peak reference
+        (multiplier 1.0), a cheaper window exists to arbitrage against, and
+        the ratio clears ``gap``. The reference is the cheapest other segment;
+        with a single-tier horizon (no future view) it falls back to 1.0, so
+        the active expensive tier still relaxes — shaping without lookahead —
+        while nothing gets pre-charged (there is no later boundary to aim at).
+        Contiguous expensive segments merge into one run: the store layer
+        relaxes targets across the whole run and sizes a pre-charge so a
+        coasting room lands on its floor as the run ends.
+        """
+        segs = timeline.segments
+        mults = [tou_price_multiplier(s.tier, settings) for s in segs]
+        runs: list[tuple[float, float]] = []
+        for i, seg in enumerate(segs):
+            m = mults[i]
+            others = mults[:i] + mults[i + 1 :]
+            reference = min(others) if others else 1.0
+            cheaper_exists = reference < m if others else m > 1.0
+            if m > 1.0 and cheaper_exists and m >= gap * reference:
+                if runs and abs(runs[-1][1] - seg.start) < 1.0:
+                    runs[-1] = (runs[-1][0], max(runs[-1][1], seg.end))
+                else:
+                    runs.append((seg.start, seg.end))
+        return runs
+
+    @staticmethod
+    def _has_tiered_events(timeline: TouTimeline) -> bool:
+        tiers = {seg.tier for seg in timeline.segments} - {TOU_TIER_UNKNOWN}
+        return len(tiers) > 1
+
+    def make_price_series_builder(
+        self,
+        room: dict[str, Any],
+        settings: dict[str, Any],
+    ) -> Callable[[float, int, float], list[float]] | None:
+        """Return a (start_ts, n_blocks, dt_minutes) -> multiplier-list builder.
+
+        None when the room does not participate or price weighting is off,
+        leaving the MPC optimizer at its flat ``w_energy`` cost.
+        """
+        timeline = self._timeline
+        if timeline is None or not settings.get("tou_price_weighting", True):
+            return None
+        if not room.get("tou_store_enabled", False):
+            return None
+
+        def build(start_ts: float, n_blocks: int, dt_minutes: float) -> list[float]:
+            step = dt_minutes * 60.0
+            return [tou_price_multiplier(timeline.tier_at(start_ts + i * step), settings) for i in range(n_blocks)]
+
+        return build

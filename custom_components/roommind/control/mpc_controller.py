@@ -1404,6 +1404,7 @@ class MPCController:
         previous_heat_sources: str = "none",
         head_offsets: HeadOffsetTracker | None = None,
         price_level: str | None = None,
+        price_series_builder: Callable[[float, int, float], list[float]] | None = None,
     ) -> None:
         self.hass = hass
         self.room_config = room_config
@@ -1417,6 +1418,7 @@ class MPCController:
         self.outdoor_temp = outdoor_temp
         # Price level the orchestration follows (heat_source_price_aware), same as the coordinator's
         self.price_level = price_level
+        self._price_series_builder = price_series_builder
         self.outdoor_forecast = outdoor_forecast or []
         self.previous_mode = previous_mode
         self.has_external_sensor = has_external_sensor
@@ -1799,6 +1801,12 @@ class MPCController:
                 residual_tau=self._residual_tau,
             )
 
+            # Tariff price series for the energy term (None = flat cost).
+            price_series = (
+                self._price_series_builder(time.time(), len(heat_target_series), PLAN_DT_MINUTES)
+                if self._price_series_builder is not None
+                else None
+            )
             plan = optimizer.optimize(
                 T_room=current_temp,
                 T_outdoor_series=outdoor_series,
@@ -1808,6 +1816,7 @@ class MPCController:
                 solar_series=solar_series,
                 residual_series=residual_series,
                 occupancy_series=occupancy_series,
+                price_series=price_series,
                 initial_mode=self.previous_mode,
                 rebound_charge=self.q_rebound,
                 heat_run=self._heat_run,
