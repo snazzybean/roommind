@@ -6,10 +6,14 @@ import { localize, uiLanguage } from "../../utils/localize";
 /**
  * Number stepper: minus, value, plus. Native buttons with 44 px targets, the value is announced
  * politely. `display` is the formatted value (unit included). Fires `value-changed` with
- * `{ value }`, already clamped to min/max and rounded to the step.
+ * `{ value }`. Buttons clamp to min/max; only output-only steppers snap to the step.
+ * Editable steppers accept exact in-range decimals on Enter/blur; Escape cancels.
  */
 @customElement("rs-stepper")
 export class RsStepper extends LitElement {
+  /** Opt-in exact decimal entry; other steppers retain their output-only behavior. */
+  @property({ type: Boolean }) public editable = false;
+  @property({ type: String }) public unit = "";
   @property({ type: Number }) public value = 0;
   @property({ type: Number }) public min = -Infinity;
   @property({ type: Number }) public max = Infinity;
@@ -54,6 +58,20 @@ export class RsStepper extends LitElement {
         background: var(--rs-fill);
       }
 
+      input {
+        width: 76px;
+        min-height: var(--rs-touch);
+        border: none;
+        background: transparent;
+        color: var(--primary-text-color);
+        font-family: inherit;
+      }
+
+      input:disabled {
+        opacity: 0.35;
+      }
+
+      input:focus-visible,
       button:focus-visible {
         outline: 2px solid var(--primary-color);
         outline-offset: -2px;
@@ -65,7 +83,8 @@ export class RsStepper extends LitElement {
         cursor: default;
       }
 
-      output {
+      output,
+      input {
         min-width: 64px;
         text-align: center;
         font-size: var(--rs-font-md);
@@ -99,7 +118,20 @@ export class RsStepper extends LitElement {
       >
         <ha-icon icon="mdi:minus" aria-hidden="true"></ha-icon>
       </button>
-      <output aria-live="polite">${this.display || String(this.value)}</output>
+      ${
+        this.editable
+          ? html`<input
+                type="text"
+                inputmode="decimal"
+                aria-label=${`${this.label} (${this.unit})`}
+                .value=${this._formattedValue()}
+                ?disabled=${this.disabled}
+                @focus=${(e: FocusEvent) => (e.target as HTMLInputElement).select()}
+                @blur=${this._commit}
+                @keydown=${this._onKeydown}
+              /><span aria-hidden="true">${this.unit}</span>`
+          : html`<output aria-live="polite">${this.display || String(this.value)}</output>`
+      }
       <button
         type="button"
         aria-label=${localize("common.increase", l)}
@@ -112,10 +144,49 @@ export class RsStepper extends LitElement {
     </div>`;
   }
 
+  private _formattedValue(): string {
+    return new Intl.NumberFormat(this.language || uiLanguage(), {
+      useGrouping: false,
+      maximumFractionDigits: 12,
+    }).format(this.value);
+  }
+
+  private _commit(e: Event) {
+    const input = e.target as HTMLInputElement;
+    const text = input.value.trim().replace(",", ".");
+    const value = /^[-+]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(text) ? Number(text) : NaN;
+    // Reject rather than clamp mistyped targets; restore the saved value without emitting.
+    if (
+      !this.disabled &&
+      Number.isFinite(value) &&
+      value >= this.min &&
+      value <= this.max &&
+      input.value !== this._formattedValue() &&
+      value !== this.value
+    ) {
+      this.dispatchEvent(new CustomEvent("value-changed", { detail: { value }, bubbles: true }));
+    }
+    input.value = this._formattedValue();
+  }
+
+  private _onKeydown(e: KeyboardEvent) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      this._commit(e);
+      (e.target as HTMLInputElement).blur();
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      (e.target as HTMLInputElement).value = this._formattedValue();
+      (e.target as HTMLInputElement).blur();
+    }
+  }
+
   private _step(direction: 1 | -1) {
     if (this.disabled || (direction < 0 ? this._atMin : this._atMax)) return;
     const raw = this.value + direction * this.step;
-    const rounded = Number((Math.round(raw / this.step) * this.step).toFixed(2));
+    const rounded = this.editable
+      ? Number(raw.toFixed(12))
+      : Number((Math.round(raw / this.step) * this.step).toFixed(2));
     const value = Math.min(this.max, Math.max(this.min, rounded));
     if (value === this.value) return;
     this.dispatchEvent(new CustomEvent("value-changed", { detail: { value }, bubbles: true }));
