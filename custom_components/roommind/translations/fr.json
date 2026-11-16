@@ -45,5 +45,49 @@
         "name": "{room} qualité de l’air mauvaise"
       }
     }
+  },
+  "services": {
+    "set_override": {
+      "name": "Définir une dérogation",
+      "description": "Maintient une température ou un préréglage dans une pièce RoomMind avec une fin choisie. Sans consigne, la plage en vigueur est maintenue, ce qui permet aussi de prolonger ou raccourcir une dérogation en cours.",
+      "fields": {
+        "preset": {
+          "name": "Préréglage",
+          "description": "Consignes confort ou éco de la pièce. Laisser vide pour définir des températures ou maintenir celles en vigueur."
+        },
+        "temperature": {
+          "name": "Température",
+          "description": "Consigne en Chauffage seul ou Refroidissement seul. En Auto, elle définit le côté chauffage."
+        },
+        "target_temp_low": {
+          "name": "Chauffer jusqu'à",
+          "description": "Consigne de chauffage de la plage (Auto)."
+        },
+        "target_temp_high": {
+          "name": "Refroidir au-dessus de",
+          "description": "Consigne de refroidissement de la plage (Auto)."
+        },
+        "duration": {
+          "name": "Durée",
+          "description": "Durée de la dérogation."
+        },
+        "until": {
+          "name": "Jusqu'à",
+          "description": "Fin de la dérogation."
+        },
+        "until_next_change": {
+          "name": "Jusqu'au prochain changement du planning",
+          "description": "Maintenir jusqu'au prochain changement du planning actif. Sans planning, maintenir jusqu'à modification ; un planning illisible la termine après 6 heures."
+        }
+      }
+    }
+  },
+  "selector": {
+    "override_preset": {
+      "options": {
+        "comfort": "Confort",
+        "eco": "Éco"
+      }
+    }
   }
 }

@@ -45,5 +45,49 @@
         "name": "{room} con mala calidad del aire"
       }
     }
+  },
+  "services": {
+    "set_override": {
+      "name": "Fijar temperatura temporal",
+      "description": "Mantiene una temperatura o un preset en una habitación de RoomMind con un final elegido. Sin objetivos se mantiene la banda vigente, así una llamada solo con un final alarga o acorta una temperatura temporal en curso.",
+      "fields": {
+        "preset": {
+          "name": "Preset",
+          "description": "Objetivos de confort o eco de la habitación. Déjalo vacío para fijar temperaturas o mantener lo vigente."
+        },
+        "temperature": {
+          "name": "Temperatura",
+          "description": "Objetivo en solo calefacción o solo refrigeración. En auto fija el lado de calefacción."
+        },
+        "target_temp_low": {
+          "name": "Calentar hasta",
+          "description": "Objetivo de calefacción de la banda (auto)."
+        },
+        "target_temp_high": {
+          "name": "Enfriar desde",
+          "description": "Objetivo de refrigeración de la banda (auto)."
+        },
+        "duration": {
+          "name": "Duración",
+          "description": "Cuánto tiempo dura la temperatura temporal."
+        },
+        "until": {
+          "name": "Hasta",
+          "description": "Cuándo termina la temperatura temporal."
+        },
+        "until_next_change": {
+          "name": "Hasta el próximo cambio del horario",
+          "description": "Se mantiene hasta el próximo cambio del horario activo. Sin horario se mantiene hasta que se cambie; un horario que no se puede leer la termina tras 6 horas."
+        }
+      }
+    }
+  },
+  "selector": {
+    "override_preset": {
+      "options": {
+        "comfort": "Confort",
+        "eco": "Eco"
+      }
+    }
   }
 }
