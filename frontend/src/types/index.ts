@@ -213,6 +213,10 @@ export interface RoomConfig {
   tou_cool_max?: number | null;
   tou_swing?: number | null;
   tou_store_gap?: number | null;
+  /** Tariff rule rows: thin references into the shared library. */
+  tou_overrides?: TouOverrideRow[];
+  /** Gates the whole tariff schedule section on this room's card. */
+  tou_schedule_enabled?: boolean;
   live?: RoomLiveData;
 }
 
@@ -243,6 +247,47 @@ export interface TouRateWindow {
   start: string;
   end: string;
   days: string[];
+}
+
+/** What a tariff rule row does at its anchor (const.py TOU_ROW_ACTIONS). */
+export type TouOverrideAction = "set" | "raise" | "lower" | "arrive";
+
+/** How long a card row's window stays in force (TOU_ROW_UNTILS). */
+export type TouOverrideUntil = "tier_window" | "minutes" | "clock";
+
+/**
+ * A card-authored rule definition: an action anchored to a tier boundary.
+ * heat/cool hold a °C target for set/arrive and a Δ for raise/lower; a blank
+ * side skips that mode. The library owns ids, so definitions never carry one
+ * (websocket_api._TOU_RULE_DEF_FIELDS mirrors this shape).
+ */
+export interface TouRuleDef {
+  name: string;
+  tier: TouTier | "any";
+  edge: "start" | "end";
+  action: TouOverrideAction;
+  heat?: number | "comfort" | "eco" | null;
+  cool?: number | "comfort" | "eco" | null;
+  until: TouOverrideUntil;
+  minutes?: number;
+  clock?: string;
+  days?: string[];
+  between?: { from: string; to: string } | null;
+}
+
+/** One entry of the shared rule library (settings["tou_rules"]). */
+export type TouRule = TouRuleDef & { id: string };
+
+/**
+ * A tariff row on the room card: a thin reference into the library with a
+ * per-row toggle. `definition` rides along only while the card stages a
+ * create/edit; the server upserts it and stores the reference stripped.
+ */
+export interface TouOverrideRow {
+  id: string;
+  rule_id: string;
+  enabled?: boolean;
+  definition?: TouRuleDef;
 }
 
 /** Per-tier confirmation data from the bound tariff sources (see
@@ -320,6 +365,8 @@ export interface GlobalSettings {
   boost_applied_at?: Record<string, number>;
   /** Time-of-Use tariff awareness (managers/tou_manager.py). */
   tou_enabled?: boolean;
+  /** Shared tariff rule library, so cards resolve row rule_id -> definition. */
+  tou_rules?: TouRule[];
   tou_tier_source?: TouTierSource;
   tou_lookahead?: TouLookahead;
   tou_rate_entity?: string;

@@ -96,16 +96,16 @@ export class RsPriceShift extends LitElement {
         ${
           this.touEnabled
             ? html`<rs-list-row
-                switch
-                wrap
-                .heading=${localize("detail.energy.store_label", l)}
-                .checked=${this.touStore}
-                @toggle-changed=${(e: CustomEvent<boolean>) =>
-                  this.dispatchEvent(
-                    new CustomEvent("tou-store-changed", { detail: { value: e.detail } }),
-                  )}
-              ></rs-list-row>
-              <p class="intro">${localize("detail.energy.store_hint", l)}</p>`
+                  switch
+                  wrap
+                  .heading=${localize("detail.energy.store_label", l)}
+                  .checked=${this.touStore}
+                  @toggle-changed=${(e: CustomEvent<boolean>) =>
+                    this.dispatchEvent(
+                      new CustomEvent("tou-store-changed", { detail: { value: e.detail } }),
+                    )}
+                ></rs-list-row>
+                <p class="intro">${localize("detail.energy.store_hint", l)}</p>`
             : nothing
         }
       </div>

@@ -1,6 +1,6 @@
 import { LitElement, html, css, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
-import type { HomeAssistant, RoomConfig, RoomWithoutArea, TouTierInfo } from "./types";
+import type { HomeAssistant, RoomConfig, RoomWithoutArea, TouRule, TouTierInfo } from "./types";
 import { loadHaElements } from "./load-ha-elements";
 import { noteServerTime } from "./utils/server-clock";
 import { localize } from "./utils/localize";
@@ -75,6 +75,7 @@ export class RoomMindPanel extends LitElement {
   @state() private _climateControlActive = true;
   @state() private _presenceEnabled = false;
   @state() private _touEnabled = false;
+  @state() private _touRules: TouRule[] = [];
   @state() private _touTierInfo: TouTierInfo | null = null;
   @state() private _valveProtectionEnabled = false;
   @state() private _coilDryEnabled = false;
@@ -537,6 +538,7 @@ export class RoomMindPanel extends LitElement {
             .presenceEnabled=${this._presenceEnabled}
             .priceConfigured=${this._touEnabled}
             .touEnabled=${this._touEnabled}
+            .touRules=${this._touRules}
             .presencePersons=${this._presencePersons}
             .climateControlActive=${this._climateControlActive}
             .scheduleOffAction=${this._scheduleOffAction}
@@ -692,6 +694,7 @@ export class RoomMindPanel extends LitElement {
         presence_enabled: boolean;
         tou_enabled?: boolean;
         tou_tier_info?: TouTierInfo | null;
+        tou_rules?: TouRule[];
         anyone_home: boolean;
         presence_persons: string[];
         presence_away_action: "eco" | "off";
@@ -724,6 +727,7 @@ export class RoomMindPanel extends LitElement {
       this._climateControlActive = result.climate_control_active ?? true;
       this._presenceEnabled = result.presence_enabled ?? false;
       this._touEnabled = result.tou_enabled ?? false;
+      this._touRules = result.tou_rules ?? [];
       this._touTierInfo = result.tou_tier_info ?? null;
       this._valveProtectionEnabled = result.valve_protection_enabled ?? false;
       this._coilDryEnabled = result.coil_dry_enabled ?? false;

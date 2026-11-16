@@ -10,12 +10,16 @@ import type {
   DeviceConfig,
   DeviceType,
   DeviceRole,
+  TouOverrideRow,
+  TouRule,
 } from "../types";
 import "./room-detail/rs-room-hero";
 import "./rs-schedule-settings";
 import type { ScheduleCardPart } from "./rs-schedule-settings";
 import "./room-detail/rs-target-temps";
 import "./room-detail/rs-price-shift";
+import "./room-detail/rs-tou-rules";
+import type { RsTouRules } from "./room-detail/rs-tou-rules";
 import "./rs-device-section";
 import "./rs-sensor-section";
 import "./rs-override-section";
@@ -48,7 +52,7 @@ import { NO_OVERRIDE, type EffectiveOverride } from "../utils/override";
 import { tokens } from "../styles/tokens";
 
 type EditableSection =
-  ScheduleCardPart | "devices" | "sensors" | "presence" | "covers" | "heatSource";
+  ScheduleCardPart | "devices" | "sensors" | "presence" | "covers" | "heatSource" | "rules";
 
 type RoomFields = Record<string, unknown>;
 
@@ -118,6 +122,8 @@ const ROOM_FIELDS: [string, RoomFieldSync][] = [
   ],
   ["price_shift", plain("_priceShift", (c) => c?.price_shift ?? 0)],
   ["tou_store_enabled", plain("_touStoreEnabled", (c) => c?.tou_store_enabled ?? false)],
+  ["tou_overrides", plain("_touOverrides", (c) => c?.tou_overrides ?? [])],
+  ["tou_schedule_enabled", plain("_touScheduleEnabled", (c) => c?.tou_schedule_enabled ?? false)],
   ["window_sensors", asSet("_selectedWindowSensors", (c) => c?.window_sensors ?? [])],
   ["window_open_delay", plain("_windowOpenDelay", (c) => c?.window_open_delay ?? 0)],
   ["window_close_delay", plain("_windowCloseDelay", (c) => c?.window_close_delay ?? 0)],
@@ -226,6 +232,8 @@ export class RsRoomDetail extends LitElement {
   @property({ type: Boolean }) public priceConfigured = false;
   /** Global Energy price master switch; gates the room's store option (D8). */
   @property({ type: Boolean }) public touEnabled = false;
+  /** Shared tariff rule library (rooms/list payload): rows resolve rule_id -> definition. */
+  @property({ type: Array }) public touRules: TouRule[] = [];
   @property({ attribute: false }) public presencePersons: string[] = [];
   @property({ type: Boolean }) public climateControlActive = true;
   /** Global: what rooms do while their schedule is off / everybody is away. */
@@ -251,6 +259,8 @@ export class RsRoomDetail extends LitElement {
   @state() private _followDeviceSetpoint = false;
   @state() private _priceShift = 0;
   @state() private _touStoreEnabled = false;
+  @state() private _touOverrides: TouOverrideRow[] = [];
+  @state() private _touScheduleEnabled = false;
   @state() private _heatSourcePriceAware = false;
   @state() private _occupancyEcoDelay = DEFAULT_OCCUPANCY_ECO_DELAY;
   @state() private _co2Sensor = "";
@@ -487,6 +497,12 @@ export class RsRoomDetail extends LitElement {
   }
 
   private _closeEdit = () => {
+    if (this._editing === "rules") {
+      // Rows in flight save (or ask to discard) while the dialog is alive;
+      // choosing to keep editing blocks the close.
+      const el = this.renderRoot.querySelector<RsTouRules>("rs-edit-dialog rs-tou-rules");
+      if (el && !el.flushPending()) return;
+    }
     this._editing = null;
     this._focusDevice = "";
   };
@@ -682,6 +698,26 @@ export class RsRoomDetail extends LitElement {
           @follow-device-setpoint-changed=${this._onFollowDeviceSetpointChanged}
         ></rs-schedule-settings>
       </rs-list-card>
+
+      ${
+        this.touEnabled
+          ? html`<rs-list-card
+              .heading=${localize("tou.schedule_title", l)}
+              @edit-click=${this._openEdit("rules")}
+            >
+              <rs-tou-rules
+                .hass=${this.hass}
+                .editing=${false}
+                .scheduleEnabled=${this._touScheduleEnabled}
+                .rows=${this._touOverrides}
+                .rules=${this.touRules}
+                .allRooms=${this.rooms}
+                .areaId=${this.area.area_id}
+                @tou-setting-changed=${this._onTouSettingChanged}
+              ></rs-tou-rules>
+            </rs-list-card>`
+          : nothing
+      }
 
       <rs-list-card
         .heading=${localize("room.section.devices", l)}
@@ -938,6 +974,25 @@ export class RsRoomDetail extends LitElement {
             @price-shift-changed=${this._onPriceShiftChanged}
             @tou-store-changed=${this._onTouStoreChanged}
           ></rs-price-shift>
+        </rs-edit-dialog>`;
+      case "rules":
+        return html`<rs-edit-dialog
+          open
+          icon="mdi:bolt"
+          .heading=${localize("tou.schedule_title", lang)}
+          .error=${this._error}
+          @rs-dialog-closed=${this._closeEdit}
+        >
+          <rs-tou-rules
+            .hass=${this.hass}
+            .editing=${true}
+            .scheduleEnabled=${this._touScheduleEnabled}
+            .rows=${this._touOverrides}
+            .rules=${this.touRules}
+            .allRooms=${this.rooms}
+            .areaId=${this.area.area_id}
+            @tou-setting-changed=${this._onTouSettingChanged}
+          ></rs-tou-rules>
         </rs-edit-dialog>`;
       case "devices":
         return html`<rs-edit-dialog
@@ -1238,6 +1293,18 @@ export class RsRoomDetail extends LitElement {
 
   private _onTouStoreChanged(e: CustomEvent<{ value: boolean }>) {
     this._touStoreEnabled = e.detail.value;
+    this._autoSave();
+  }
+
+  /**
+   * rs-tou-rules commits: {key, value} over the room's tariff fields. The
+   * rows already carry their staged definitions (wire shape: utils/tou-rows);
+   * the server upserts the library and stores the references stripped.
+   */
+  private _onTouSettingChanged(e: CustomEvent<{ key: string; value: unknown }>) {
+    const { key, value } = e.detail;
+    if (key === "tou_overrides") this._touOverrides = value as TouOverrideRow[];
+    else if (key === "tou_schedule_enabled") this._touScheduleEnabled = value as boolean;
     this._autoSave();
   }
 
