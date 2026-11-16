@@ -5,7 +5,7 @@
 If you discover a security vulnerability in RoomMind, please report it responsibly:
 
 1. **Do not** open a public GitHub issue
-2. Send an email to the maintainers or use [GitHub's private vulnerability reporting](https://github.com/snazzybean/roommind/security/advisories/new)
+2. Report it through [GitHub's private vulnerability reporting](https://github.com/snazzybean/roommind/security/advisories/new)
 3. Include a description of the vulnerability and steps to reproduce it
 
 We will acknowledge your report within 48 hours and work on a fix as soon as possible.
@@ -22,5 +22,5 @@ RoomMind runs entirely locally within your Home Assistant instance. It does not 
 
 | Version | Supported |
 |---------|-----------|
-| 1.x     | Yes       |
-| < 1.0   | No        |
+| 2.x     | Yes       |
+| < 2.0   | No        |
