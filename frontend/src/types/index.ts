@@ -271,6 +271,27 @@ export interface TouLimits {
  */
 export type TouRoomLimits = Partial<Record<keyof TouLimits, number | null>>;
 
+/**
+ * One sensor-driven energy tier (settings["tou_extra_tiers"]): an on-site
+ * source the grid tariff cannot describe. While its sensor evidence holds,
+ * the tier overrides the grid tariff — state, price and rule anchoring.
+ * List order = priority (the first holding entry wins).
+ */
+export interface TouExtraTier {
+  id: string;
+  name: string;
+  entity_id: string;
+  kind: "binary_on" | "numeric_above" | "numeric_below" | "state";
+  threshold?: number;
+  states?: string[];
+  for_seconds?: number;
+  /** Price per kWh in the household unit: 0 = free (self-consumed solar),
+   * negative = export credit, null/absent = unpriced (economically neutral). */
+  cost?: number | null;
+  unit?: string;
+  enabled?: boolean;
+}
+
 /** What a tariff rule row does at its anchor (const.py TOU_ROW_ACTIONS). */
 export type TouOverrideAction = "set" | "raise" | "lower" | "arrive";
 
@@ -389,6 +410,8 @@ export interface GlobalSettings {
   tou_enabled?: boolean;
   /** Shared tariff rule library, so cards resolve row rule_id -> definition. */
   tou_rules?: TouRule[];
+  /** Sensor-driven energy tier registry (S6): drives the rule tier selects. */
+  tou_extra_tiers?: TouExtraTier[];
   tou_tier_source?: TouTierSource;
   tou_lookahead?: TouLookahead;
   tou_rate_entity?: string;

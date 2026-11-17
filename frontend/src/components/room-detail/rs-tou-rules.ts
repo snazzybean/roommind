@@ -25,6 +25,7 @@ import type {
   HomeAssistant,
   RoomConfig,
   TouOverrideAction,
+  TouExtraTier,
   TouOverrideRow,
   TouOverrideUntil,
   TouRule,
@@ -81,6 +82,9 @@ export class RsTouRules extends LitElement {
   @property({ type: Array }) public rows: TouOverrideRow[] = [];
   /** The shared rule library (the rooms/list payload's tou_rules). */
   @property({ type: Array }) public rules: TouRule[] = [];
+  /** Sensor-driven energy tier registry (rooms/list payload): extra anchors
+   * the tier selects offer alongside the grid ladder (S6). */
+  @property({ type: Array }) public extraTiers: TouExtraTier[] = [];
   /** All rooms, for the copy picker's usage counts. */
   @property({ type: Object }) public allRooms: Record<string, RoomConfig> = {};
   /** This room's area id: usage counts exclude it (its rows are visible). */
@@ -715,7 +719,17 @@ export class RsTouRules extends LitElement {
   }
 
   private _tierOptions(l: string): { value: string; label: string }[] {
-    return TOU_TIERS.map((t) => ({ value: t as string, label: localize(`tou.tier.${t}`, l) }));
+    return [
+      ...TOU_TIERS.map((t) => ({ value: t as string, label: localize(`tou.tier.${t}`, l) })),
+      ...this.extraTiers.map((t) => ({ value: t.id, label: t.name || t.id })),
+    ];
+  }
+
+  /** Registry name for an extra tier, else the localized grid label. */
+  private _tierLabel(tier: string, l: string): string {
+    const extra = this.extraTiers.find((t) => t.id === tier);
+    if (extra) return extra.name || extra.id;
+    return localize(`tou.tier.${tier}` as TranslationKey, l);
   }
 
   // ---- Reordering ----
@@ -1039,9 +1053,7 @@ export class RsTouRules extends LitElement {
   /** Compact one-line description of a rule, display units. */
   private _summarize(rule: TouRuleDef, l: string): string {
     const tier =
-      rule.tier === TIER_ANY
-        ? localize("tou.tier_any", l)
-        : localize(`tou.tier.${rule.tier}` as TranslationKey, l);
+      rule.tier === TIER_ANY ? localize("tou.tier_any", l) : this._tierLabel(rule.tier, l);
     const edge = localize(
       `tou.override_edge.${rule.edge === "end" ? "end" : "start"}` as TranslationKey,
       l,

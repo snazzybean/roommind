@@ -10,6 +10,7 @@ import type {
   DeviceConfig,
   DeviceType,
   DeviceRole,
+  TouExtraTier,
   TouLimits,
   TouOverrideRow,
   TouRoomLimits,
@@ -246,6 +247,9 @@ export class RsRoomDetail extends LitElement {
   /** Global store limits in force (rooms/list `tou_limits` view): what an
    * empty per-room override inherits. */
   @property({ attribute: false }) public touLimits: TouLimits = DEFAULT_TOU_LIMITS;
+  /** Sensor-driven energy tier registry (S6): extra anchors the rule
+   * editor's tier selects offer alongside the grid ladder. */
+  @property({ type: Array }) public extraTiers: TouExtraTier[] = [];
   @property({ attribute: false }) public presencePersons: string[] = [];
   @property({ type: Boolean }) public climateControlActive = true;
   /** Global: what rooms do while their schedule is off / everybody is away. */
@@ -729,6 +733,7 @@ export class RsRoomDetail extends LitElement {
                 .scheduleEnabled=${this._touScheduleEnabled}
                 .rows=${this._touOverrides}
                 .rules=${this.touRules}
+                .extraTiers=${this.extraTiers}
                 .allRooms=${this.rooms}
                 .areaId=${this.area.area_id}
                 @tou-setting-changed=${this._onTouSettingChanged}
@@ -1010,6 +1015,7 @@ export class RsRoomDetail extends LitElement {
             .scheduleEnabled=${this._touScheduleEnabled}
             .rows=${this._touOverrides}
             .rules=${this.touRules}
+            .extraTiers=${this.extraTiers}
             .allRooms=${this.rooms}
             .areaId=${this.area.area_id}
             @tou-setting-changed=${this._onTouSettingChanged}

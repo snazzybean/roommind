@@ -15,6 +15,7 @@ import type {
   CompressorGroup,
   RoomWithoutArea,
   TouCalendarBinding,
+  TouExtraTier,
   TouLookahead,
   TouRateWindow,
   TouTier,
@@ -200,6 +201,7 @@ const SETTINGS: [keyof GlobalSettings, SettingSync][] = [
   ["tou_swing", plain("touSwing", 3)],
   ["tou_store_gap", plain("touStoreGap", 1)],
   ["tou_price_weighting", plain("touPriceWeighting", true)],
+  ["tou_extra_tiers", plain("touExtraTiers", [])],
 ];
 
 const SETTING_FIELDS = [...new Set(SETTINGS.flatMap(([, sync]) => sync.fields))];
@@ -249,6 +251,7 @@ export class RsSettings extends LitElement {
   @state() private _touSwing = 3;
   @state() private _touStoreGap = 1;
   @state() private _touPriceWeighting = true;
+  @state() private _touExtraTiers: TouExtraTier[] = [];
   @state() private _outdoorHumiditySensor = "";
   @state() private _outdoorCoolingMin = 16;
   @state() private _outdoorHeatingMax = 22;
@@ -560,6 +563,7 @@ export class RsSettings extends LitElement {
           .touSwing=${this._touSwing}
           .touStoreGap=${this._touStoreGap}
           .touPriceWeighting=${this._touPriceWeighting}
+          .touExtraTiers=${this._touExtraTiers}
           .touTierInfo=${this.touTierInfo}
           @setting-changed=${this._onSettingChanged}
         ></rs-settings-tou>`;

@@ -24,6 +24,7 @@ import { customElement, property, state } from "lit/decorators.js";
 import type {
   HomeAssistant,
   TouCalendarBinding,
+  TouExtraTier,
   TouLookahead,
   TouRateWindow,
   TouTier,
@@ -57,6 +58,8 @@ const WEEKDAYS = [
 ] as const;
 const CLOSE_ICON =
   "M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z";
+const CHEVRON_UP = "M7.41,15.41L12,10.83L16.59,15.41L18,14L12,8L6,14L7.41,15.41Z";
+const CHEVRON_DOWN = "M7.41,8.58L12,13.17L16.59,8.58L18,10L12,16L6,10L7.41,8.58Z";
 
 @customElement("rs-settings-tou")
 export class RsSettingsTou extends RsSettingsBase {
@@ -80,6 +83,8 @@ export class RsSettingsTou extends RsSettingsBase {
   @property({ attribute: false }) public touTierInfo: TouTierInfo | null = null;
   /** User-assigned period vocabulary: raw lower-cased state -> tier. */
   @property({ attribute: false }) public touPeriodAliases: Record<string, string> = {};
+  /** Sensor-driven energy tier registry (S6), edited by _renderExtraTiers. */
+  @property({ type: Array }) public touExtraTiers: TouExtraTier[] = [];
   /**
    * Global store limits (defaults mirror const.py DEFAULT_TOU_*). Shown in
    * the fine-tune section; per-room overrides on the room card win per key.
@@ -275,6 +280,25 @@ export class RsSettingsTou extends RsSettingsBase {
       .picker-row ha-entity-picker {
         flex: 1;
         min-width: 0;
+      }
+      .source-row {
+        align-items: center;
+      }
+      .source-row .source-del {
+        justify-self: end;
+      }
+      .source-tools {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 4px;
+      }
+      .source-enabled {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 13px;
+        cursor: pointer;
       }
       .window-row {
         display: flex;
@@ -545,7 +569,7 @@ export class RsSettingsTou extends RsSettingsBase {
                 }
               </div>
 
-              ${this._renderTierDictionary(l)}
+              ${this._renderExtraTiers(l)} ${this._renderTierDictionary(l)}
 
               <div class="fine-tune-row" @click=${() => (this._fineTuneOpen = !this._fineTuneOpen)}>
                 <ha-icon
@@ -926,7 +950,7 @@ export class RsSettingsTou extends RsSettingsBase {
       const unit = info.unit ? ` ${info.unit}` : "";
       const stale = info.current.stale ? ` (${localize("tou.dic_last_known", l)})` : "";
       parts.push(
-        `${localize("tou.dic_now_label", l)} ${localize(`tou.tier.${info.current.tier}`, l)} · ${this._num(info.current.rate)}${unit}${stale}`,
+        `${localize("tou.dic_now_label", l)} ${this._tierName(info.current.tier, info, l)} · ${this._num(info.current.rate)}${unit}${stale}`,
       );
     }
     if (info.next) {
@@ -937,7 +961,7 @@ export class RsSettingsTou extends RsSettingsBase {
       const stale = info.next.stale ? ` (${localize("tou.dic_last_known", l)})` : "";
       const clock = info.next.ts != null ? ` ${this._clock(info.next.ts)}` : "";
       parts.push(
-        `${localize("tou.dic_next_label", l)} ${localize(`tou.tier.${info.next.tier}`, l)}${clock}${price}${stale}`,
+        `${localize("tou.dic_next_label", l)} ${this._tierName(info.next.tier, info, l)}${clock}${price}${stale}`,
       );
     }
     const hint = info.next_hint ? localize(`tou.dic_next_hint_${info.next_hint}`, l) : "";
@@ -952,6 +976,187 @@ export class RsSettingsTou extends RsSettingsBase {
     if (tier === "") delete next[state];
     else next[state] = tier;
     this._fire("touPeriodAliases", next);
+  }
+
+  /** Registry name for an extra tier, else the localized grid label. The
+   * dictionary may hold ids the tou.tier.* table never knew (S6). */
+  private _tierName(tier: string, info: TouTierInfo, l: string): string {
+    return info.tiers[tier]?.label ?? localize(`tou.tier.${tier}` as TranslationKey, l);
+  }
+
+  /**
+   * Sensor-driven energy tiers (S6): on-site sources the grid tariff cannot
+   * describe — a generator burning gas, solar production, export credit.
+   * Each row binds a sensor: a flag or switch (binary_on), a number compared
+   * in an explicit direction (providers' meter signs differ; RoomMind never
+   * guesses), or a text/select state set. "Sustained for" debounces the ON
+   * transition; OFF is instant. Cost is the typed price per kWh — 0 free
+   * solar, negative credit, blank unpriced. Listed order = priority, and the
+   * grid tariff keeps being tracked underneath while a tier holds.
+   */
+  private _renderExtraTiers(l: string) {
+    const tiers = this.touExtraTiers ?? [];
+    const set = (i: number, patch: Partial<TouExtraTier>) =>
+      this._fire(
+        "touExtraTiers",
+        tiers.map((t, j) => (j === i ? { ...t, ...patch } : t)),
+      );
+    const remove = (i: number) =>
+      this._fire(
+        "touExtraTiers",
+        tiers.filter((_, j) => j !== i),
+      );
+    /** List order IS priority (the first holding entry wins): reorder matters. */
+    const move = (i: number, delta: number) => {
+      const to = i + delta;
+      if (to < 0 || to >= tiers.length) return;
+      const next = [...tiers];
+      const [entry] = next.splice(i, 1);
+      next.splice(to, 0, entry);
+      this._fire("touExtraTiers", next);
+    };
+    const add = () =>
+      this._fire("touExtraTiers", [
+        ...tiers,
+        {
+          id: `x${Date.now().toString(36)}`,
+          name: localize("tou.source_default_name", l),
+          entity_id: "",
+          kind: "binary_on" as const,
+          for_seconds: 300,
+          cost: null,
+          enabled: true,
+        },
+      ]);
+    return html`
+      <div class="section-label">${localize("tou.sources_title", l)}</div>
+      <div class="hint">${localize("tou.sources_hint", l)}</div>
+      ${tiers.map(
+        (t, i) =>
+          html`<div class="tier-grid source-row">
+            <ha-textfield
+              .label=${localize("tou.source_name", l)}
+              .value=${t.name ?? ""}
+              @change=${(e: Event) => set(i, { name: (e.target as HTMLInputElement).value.trim() })}
+            ></ha-textfield>
+            <div class="picker-row">
+              <ha-entity-picker
+                .hass=${this.hass}
+                .value=${t.entity_id ?? ""}
+                .includeDomains=${[
+                  "sensor",
+                  "binary_sensor",
+                  "select",
+                  "input_boolean",
+                  "input_select",
+                  "input_number",
+                ]}
+                .label=${localize("tou.source_entity", l)}
+                @value-changed=${(e: CustomEvent) => set(i, { entity_id: (e.detail?.value as string) ?? "" })}
+              ></ha-entity-picker>
+              <ha-icon-button
+                class="source-del"
+                .path=${CLOSE_ICON}
+                .label=${localize("tou.source_delete", l)}
+                @click=${() => remove(i)}
+              ></ha-icon-button>
+            </div>
+            <ha-select
+              .label=${localize("tou.source_kind", l)}
+              .value=${t.kind ?? "binary_on"}
+              .options=${[
+                { value: "binary_on", label: localize("tou.source_kind.binary_on", l) },
+                { value: "numeric_above", label: localize("tou.source_kind.numeric_above", l) },
+                { value: "numeric_below", label: localize("tou.source_kind.numeric_below", l) },
+                { value: "state", label: localize("tou.source_kind.state", l) },
+              ]}
+              @selected=${(e: Event) => {
+                const v = getSelectValue(e);
+                if (
+                  v === "binary_on" ||
+                  v === "numeric_above" ||
+                  v === "numeric_below" ||
+                  v === "state"
+                )
+                  set(i, { kind: v });
+              }}
+              @closed=${(e: Event) => e.stopPropagation()}
+              fixedMenuPosition
+            ></ha-select>
+            ${
+              t.kind === "numeric_above" || t.kind === "numeric_below"
+                ? html`<ha-textfield
+                    type="number"
+                    .label=${localize("tou.source_threshold", l)}
+                    .value=${String(t.threshold ?? 0)}
+                    @change=${(e: Event) =>
+                      set(i, { threshold: parseFloat((e.target as HTMLInputElement).value) || 0 })}
+                  ></ha-textfield>`
+                : t.kind === "state"
+                  ? html`<ha-textfield
+                      .label=${localize("tou.source_states", l)}
+                      .value=${(t.states ?? []).join(", ")}
+                      @change=${(e: Event) =>
+                        set(i, {
+                          states: (e.target as HTMLInputElement).value
+                            .split(",")
+                            .map((s) => s.trim())
+                            .filter((s) => s),
+                        })}
+                    ></ha-textfield>`
+                  : html`<div></div>`
+            }
+            <ha-textfield
+              type="number"
+              .label=${localize("tou.source_for", l)}
+              .value=${String(t.for_seconds ?? 300)}
+              min="0"
+              step="30"
+              @change=${(e: Event) =>
+                set(i, {
+                  for_seconds: Math.max(0, parseInt((e.target as HTMLInputElement).value, 10) || 0),
+                })}
+            ></ha-textfield>
+            <ha-textfield
+              type="number"
+              .label=${localize("tou.source_cost", l)}
+              .value=${t.cost == null ? "" : String(t.cost)}
+              step="0.001"
+              @change=${(e: Event) => {
+                const raw = (e.target as HTMLInputElement).value.trim();
+                set(i, { cost: raw === "" ? null : parseFloat(raw) });
+              }}
+            ></ha-textfield>
+            <div class="source-tools">
+              <label class="source-enabled">
+                <input
+                  type="checkbox"
+                  .checked=${t.enabled !== false}
+                  @change=${(e: Event) => set(i, { enabled: (e.target as HTMLInputElement).checked })}
+                />
+                <span>${localize("tou.source_enabled", l)}</span>
+              </label>
+              <ha-icon-button
+                .path=${CHEVRON_UP}
+                .label=${localize("tou.row_up", l)}
+                .disabled=${i === 0}
+                @click=${() => move(i, -1)}
+              ></ha-icon-button>
+              <ha-icon-button
+                .path=${CHEVRON_DOWN}
+                .label=${localize("tou.row_down", l)}
+                .disabled=${i >= tiers.length - 1}
+                @click=${() => move(i, 1)}
+              ></ha-icon-button>
+            </div>
+          </div>`,
+      )}
+      ${tiers.length > 0 ? html`<div class="hint">${localize("tou.sources_cost_hint", l)}</div>` : nothing}
+      <div class="window-row window-row--add" @click=${add}>
+        <ha-icon icon="mdi:plus"></ha-icon>
+        <span>${localize("tou.source_add", l)}</span>
+      </div>
+    `;
   }
 
   private _renderTierDictionary(l: string) {
