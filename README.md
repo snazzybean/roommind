@@ -31,7 +31,7 @@
 - **Mold Risk Detection & Prevention** - Surface humidity estimation using the DIN 4108-2 method. Configurable notifications and automatic temperature raise to prevent mold growth.
 - **Automatic Blind/Cover Shading** - Smart cover deployment based on predicted solar overheating. Includes night close, manual override detection, cover schedules, and an optional per-room hold that keeps covers up while a window is open (checked every 30 s, a cover already moving is not stopped).
 - **Valve Protection** - Periodic cycling of idle TRV valves to prevent seizing and calcification.
-- **Electricity Price** - Optional. Pick a price source (Tibber, Nordpool, EPEX Spot, aWATTar, ENTSO-e, Octopus, a template, or a switch that is on during PV surplus or off-peak) and let chosen rooms move their schedule target by up to 2 °C: a little warmer while it is cheap before expensive hours, a little cooler while it is expensive (cooling the other way round). Overrides, vacation and absence are never shifted. Rooms with radiators on gas next to an AC can also pick the heat source by price. The analytics page shows the price and how many heating hours fell into cheap and expensive times.
+- **Time-of-Use** - Optional. Bind your tariff (a cost sensor with thresholds, a period sensor that names the tier, or per-tier flags) and, with a future view, let rooms charge the cheap hours and coast the expensive ones on stored heat: per-room consent band and swing, tariff rules anchored on period boundaries with shared rules across rooms, a `Reach target temperature by time` action that derives the pre-charge from the learned decay model, and sensor-driven energy tiers that promote a generator, solar production or export credit to a first-class tariff period. The MPC's planning is price-weighted, the dashboard and sensors read the tier back, analytics keeps the price line and the cheap/expensive heating-hours breakdown. Manual overrides, vacation and every safety limit keep priority. See the [Time-of-Use Guide](docs/tou-preconditioning.md).
 - **Heat Source Orchestration** - Rooms with both TRVs and ACs automatically route heating demand to the most efficient device based on temperature gap and outdoor conditions.
 - **Compressor Group Protection** - Define groups of climate devices sharing an outdoor compressor. Enforces minimum run and off times to prevent short-cycling. Until `min_run_minutes` has elapsed, a device keeps its last active setpoint, including a boost setpoint, so the room can overshoot its target further than without protection. A target that changes on purpose in the meantime (override, vacation, schedule off, presence) is passed on to the device right away (a device with a single heat/cool setpoint only when that cannot push the room the wrong way).
 - **Fan-only & Setback Idle Modes** - AC and heat pump devices can switch to fan-only or setback mode instead of turning off, keeping air circulation or low-load operation active. Optionally, setback turns the device off after a long pause with no demand ahead.
@@ -143,6 +143,8 @@ Until calibrated (~60 idle + ~20 active samples), RoomMind falls back to simple 
 
 For a more detailed explanation of the `Priority` slider, device types, setpoint modes, idle behavior, and smart source selection, see the [Control and Device Guide](docs/control-and-devices.md).
 
+Time-of-use behavior — tariff sources, storing, tariff rules, and sensor-driven energy tiers — is covered in the [Time-of-Use Guide](docs/tou-preconditioning.md).
+
 ## Entities Created
 
 | Entity | Description |
@@ -153,6 +155,9 @@ For a more detailed explanation of the `Priority` slider, device types, setpoint
 | `switch.roommind_{area_id}_cover_auto` | Per-room automatic cover control toggle |
 | `binary_sensor.roommind_{area_id}_cover_paused` | On when manual cover override is detected |
 | `binary_sensor.roommind_{area_id}_air_quality` | On while the room's CO₂ or VOC is past its threshold (rooms with an air quality sensor); attributes `co2`, `voc`, `reason`, `ventilation_active` |
+| `sensor.roommind_energy_rate` | The current energy cost per kWh as the tariff sources feed it (added while Time-of-Use is enabled) |
+| `sensor.roommind_energy_period` | The current tariff tier: `peak`, `mid`, `off` or `ultra_low` (added while Time-of-Use is enabled) |
+| `sensor.roommind_energy_next_change` | The next tariff change the future view can see (added while Time-of-Use is enabled) |
 
 These can be used in HA automations, dashboards, or other integrations.
 
