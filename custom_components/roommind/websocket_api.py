@@ -1502,6 +1502,11 @@ async def websocket_save_settings(
                         f"'{mode}' needs a temp {TOU_SCHEDULE_TEMP_MIN:g}-{TOU_SCHEDULE_TEMP_MAX:g}",
                     )
                     return
+            elif mode in ("comfort", "eco"):
+                # Named targets (PR-06 / S7): no payload of their own — they
+                # resolve against each room's configured values at apply
+                # time, exactly like the card-authored rule sides do.
+                pass
             else:
                 delta = value.get("delta")
                 if (

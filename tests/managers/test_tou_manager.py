@@ -2126,3 +2126,111 @@ def test_rows_gated_by_schedule_section() -> None:
     assert adjust is not None
     boundary = mgr._timeline.segments[1].start
     assert adjust(boundary + 60.0, TargetTemps(heat=21.0, cool=None)).heat == 19.0
+
+
+# ---------------------------------------------------------------------------
+# PR-06: named comfort/eco targets (verbatim fork ports + raw-record path)
+# ---------------------------------------------------------------------------
+
+
+def test_named_values_track_the_room_targets() -> None:
+    """Rule values "comfort"/"eco" aim at the room's own schedule targets.
+
+    Resolution happens at apply time, so retuning Comfort in the room card
+    moves every named rule with it — the settings-change-heals promise for
+    rule values, and the tie-in the schedule section expects.
+    """
+    mgr = TouManager(_make_hass({}))
+    boundary = time.time() + 30.0
+    mgr._timeline = TouTimeline(
+        [
+            TouSegment(start=time.time(), end=boundary, tier=TOU_TIER_OFF),
+            TouSegment(start=boundary, end=time.time() + 16 * 3600.0, tier=TOU_TIER_PEAK),
+        ],
+        current_tier=TOU_TIER_OFF,
+        current_rate=None,
+    )
+    room, settings = _room_schedule(
+        {
+            "tier": "peak",
+            "edge": "start",
+            "action": "set",
+            "heat": "comfort",
+            "cool": "eco",
+            "until": "tier_window",
+        }
+    )
+    adjust = mgr.make_adjuster(room, settings)
+    assert adjust is not None
+    inside = adjust(boundary + 120, TargetTemps(heat=19.0, cool=26.0))
+    assert inside.heat == 21.0  # the room's comfort_heat
+    assert inside.cool == 27.0  # the room's eco_cool
+    # Retune the room: the named rule follows on the next compile.
+    room["comfort_heat"] = 22.5
+    adjust2 = mgr.make_adjuster(room, settings)
+    assert adjust2 is not None
+    assert adjust2(boundary + 120, TargetTemps(heat=19.0, cool=26.0)).heat == 22.5
+    # Outside the anchored window the plain schedule stands untouched.
+    assert adjust(time.time() + 10.0, TargetTemps(heat=19.0, cool=26.0)).heat == 19.0
+
+
+def test_named_arrive_aims_at_the_room_target() -> None:
+    """Arrive to Comfort: flat comfort value without a learned model, decay
+    curve derived from it once the model is confident."""
+    mgr = TouManager(_make_hass({}))
+    b = time.time() + 30.0
+    mgr._timeline = TouTimeline(
+        [
+            TouSegment(start=time.time(), end=b, tier=TOU_TIER_ULTRA_LOW),
+            TouSegment(start=b, end=time.time() + 16 * 3600.0, tier=TOU_TIER_PEAK),
+        ],
+        current_tier=TOU_TIER_ULTRA_LOW,
+        current_rate=None,
+    )
+    room, settings = _room_schedule(
+        {"tier": "peak", "edge": "start", "action": "arrive", "heat": "comfort", "until": "tier_window"}
+    )
+    adjust = mgr.make_adjuster(room, settings)
+    assert adjust is not None
+    assert adjust(b + 60, TargetTemps(heat=18.0, cool=None)).heat == 21.0  # flat comfort
+    with_model = mgr.make_adjuster(room, settings, decay=(0.3, 10.0))
+    assert with_model is not None
+    assert with_model(b + 60, TargetTemps(heat=18.0, cool=None)).heat > 21.0  # pre-shoot to coast down
+    # A delta action cannot carry a named value: the side expands to nothing.
+    delta_room, delta_settings = _room_schedule(
+        {"tier": "peak", "edge": "start", "action": "raise", "heat": "comfort", "until": "tier_window"}
+    )
+    assert TouManager.row_records(delta_room, TouManager.rule_library(delta_settings)) == []
+
+
+def test_raw_record_named_values_apply_to_room_targets() -> None:
+    """A hand-authored record value {"mode": "eco"} resolves like a named side."""
+    mgr = TouManager(_make_hass({}))
+    boundary = time.time() + 30.0
+    mgr._timeline = TouTimeline(
+        [
+            TouSegment(start=time.time(), end=boundary, tier=TOU_TIER_OFF),
+            TouSegment(start=boundary, end=time.time() + 16 * 3600.0, tier=TOU_TIER_PEAK),
+        ],
+        current_tier=TOU_TIER_OFF,
+        current_rate=None,
+    )
+    settings = {
+        "tou_schedules": [
+            {
+                "id": "r1-heat",
+                "name": "eco hold",
+                "enabled": True,
+                "rooms": ["living"],
+                "side": "heat",
+                "tier": "peak",
+                "edge": "start",
+                "phase": "after",
+                "until": "window",
+                "value": {"mode": "eco"},
+            }
+        ]
+    }
+    adjust = mgr.make_adjuster(_room(), settings)
+    assert adjust is not None
+    assert adjust(boundary + 120, TargetTemps(heat=21.0, cool=None)).heat == 17.0  # the room's eco_heat

@@ -4399,3 +4399,80 @@ async def test_list_rooms_tou_limits_view(ws_hass, store, connection):
     assert limits["cool_min"] == 18.0
     assert limits["cool_max"] == 30.0
     assert limits["store_gap"] == 1.0
+
+
+@pytest.mark.asyncio
+async def test_save_room_tou_named_target_round_trip(ws_hass, store, connection):
+    """heat: "comfort" survives the card upsert as a library string."""
+    await store.async_load()
+    named = {
+        "id": "row-eco",
+        "rule_id": "rl-comfort",
+        "enabled": True,
+        "definition": {
+            "name": "comfort during mid",
+            "tier": "mid",
+            "edge": "start",
+            "action": "set",
+            "heat": "comfort",
+            "cool": None,
+            "until": "minutes",
+            "minutes": 90,
+        },
+    }
+    await _save_room(ws_hass, connection, _override_msg(130, "living_room_abc12345", [named]))
+
+    connection.send_result.assert_called_once()
+    library = store.get_settings()["tou_rules"]
+    assert library[0]["heat"] == "comfort"
+    # The room keeps only the thin reference; the definition is library state.
+    stored = store.get_room("living_room_abc12345")["tou_overrides"][0]
+    assert "definition" not in stored
+
+
+@pytest.mark.asyncio
+async def test_save_room_tou_delta_named_rejected(ws_hass, store, connection):
+    """raise/lower are deltas: a named value cannot express one."""
+    await store.async_load()
+    bad = {
+        "id": "r",
+        "rule_id": "x",
+        "enabled": True,
+        "definition": {
+            "name": "n",
+            "tier": "peak",
+            "edge": "start",
+            "action": "raise",
+            "heat": "comfort",
+        },
+    }
+    await _save_room(ws_hass, connection, _override_msg(131, "living_room_abc12345", [bad]))
+
+    assert connection.send_error.call_args[0][1] == "invalid_tou_override"
+    code = str(connection.send_error.call_args[0][2])
+    assert "named" in code.lower()
+
+
+@pytest.mark.asyncio
+async def test_save_settings_tou_schedules_named_valid(ws_hass, store, connection):
+    """PR-06 opened the advanced record path for comfort/eco values."""
+    await store.async_load()
+    rec = {
+        "id": "s1",
+        "name": "eco hold",
+        "rooms": ["living_room_abc12345"],
+        "side": "heat",
+        "tier": "peak",
+        "edge": "start",
+        "phase": "after",
+        "until": "window",
+        "value": {"mode": "comfort"},
+    }
+    await _save_settings(ws_hass, connection, {"id": 132, "type": "roommind/settings/save", "tou_schedules": [rec]})
+    connection.send_result.assert_called_once()
+    assert store.get_settings()["tou_schedules"][0]["value"] == {"mode": "comfort"}
+
+    # An unknown mode still fails validation (the delta branch cannot read it).
+    bogus = {**rec, "id": "s2", "value": {"mode": "wild"}}
+    await _save_settings(ws_hass, connection, {"id": 133, "type": "roommind/settings/save", "tou_schedules": [bogus]})
+    assert connection.send_error.call_args[0][1] == "invalid_tou_schedule"
