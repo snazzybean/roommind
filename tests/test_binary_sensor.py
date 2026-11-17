@@ -195,7 +195,8 @@ def test_air_quality_sensor_name_follows_a_renamed_room():
     room = {"display_name": "Schlafzimmer"}
     coordinator = _aq_coordinator({}, room)
     sensor = RoomMindAirQualitySensor(coordinator, "bed")
-    sensor.platform_data = MagicMock(
+    # CI's older HA reads the translation key through ``platform``, newer ones through ``platform_data``
+    sensor.platform = sensor.platform_data = MagicMock(
         platform_name=DOMAIN,
         domain="binary_sensor",
         platform_translations={f"component.{DOMAIN}.entity.binary_sensor.air_quality.name": "{room} air quality poor"},
@@ -203,8 +204,7 @@ def test_air_quality_sensor_name_follows_a_renamed_room():
     assert sensor.name == "Schlafzimmer air quality poor"
     room["display_name"] = "Kinderzimmer"
     assert sensor.name == "Kinderzimmer air quality poor"
-    sensor.platform_data = None
-    assert sensor.name is UNDEFINED
+    assert RoomMindAirQualitySensor(coordinator, "bed").name is UNDEFINED
 
 
 def test_air_quality_sensor_falls_back_to_the_area_name():

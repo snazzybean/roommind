@@ -6,7 +6,7 @@ from homeassistant.components.binary_sensor import BinarySensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.typing import UndefinedType
+from homeassistant.helpers.typing import UNDEFINED, UndefinedType
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
@@ -91,8 +91,10 @@ class RoomMindAirQualitySensor(CoordinatorEntity, BinarySensorEntity):
     @property
     def name(self) -> str | UndefinedType | None:
         # HA caches the name; built on every write so a renamed room shows without a restart
-        translations = self.platform_data.platform_translations if self.platform_data else {}
-        return self._name_internal(None, translations)
+        platform_data = getattr(self, "platform_data", None)
+        if platform_data is None:
+            return UNDEFINED
+        return self._name_internal(None, platform_data.platform_translations)
 
     def _live(self) -> dict:
         live: dict = ((self.coordinator.data or {}).get("rooms") or {}).get(self._area_id) or {}
