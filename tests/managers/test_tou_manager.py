@@ -2234,3 +2234,168 @@ def test_raw_record_named_values_apply_to_room_targets() -> None:
     adjust = mgr.make_adjuster(_room(), settings)
     assert adjust is not None
     assert adjust(boundary + 120, TargetTemps(heat=21.0, cool=None)).heat == 17.0  # the room's eco_heat
+
+
+# ---------------------------------------------------------------------------
+# PR-07: sensor-driven extra tiers (generator, solar, export credit)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_extra_tiers_override_the_grid_tariff() -> None:
+    """A holding extra tier (generator) replaces the grid tier for the cycle
+    and keeps the grid reading visible underneath."""
+    states = {
+        "sensor.period": "ulo_off_peak",
+        "sensor.rate": "0.0638",
+        "binary_sensor.gen_running": "on",
+    }
+    hass = _make_hass(states)
+    mgr = TouManager(hass)
+    settings = {
+        "tou_enabled": True,
+        "tou_period_entity": "sensor.period",
+        "tou_rate_entity": "sensor.rate",
+        "tou_extra_tiers": [
+            {
+                "id": "gen",
+                "name": "Generator",
+                "entity_id": "binary_sensor.gen_running",
+                "kind": "binary_on",
+                "cost": 0.31,
+            }
+        ],
+    }
+    timeline = await mgr.async_build_timeline(settings)
+    assert timeline is not None
+    assert timeline.current_tier == "gen"
+    snap = mgr.snapshot()
+    assert snap["tier"] == "gen" and snap["rate"] == 0.31 and snap["source"] == "extra_tiers"
+    assert snap["grid_tier"] == TOU_TIER_OFF and snap["grid_rate"] == 0.0638
+    # The dictionary carries the extra as its own row, priced and labelled.
+    info = mgr.tier_info(settings)
+    gen = info["tiers"]["gen"]
+    assert gen["rate"] == 0.31 and gen["kind"] == "source" and gen["current"] is True
+    assert gen["label"] == "Generator"
+    assert info["current"] == {"tier": "gen", "rate": 0.31, "stale": False}
+
+    # Flag drops: grid tier resumes exactly where it was.
+    hass.states.get = MagicMock(
+        side_effect={**{k: _state(v) for k, v in states.items()}, "binary_sensor.gen_running": _state("off")}.get
+    )
+    timeline2 = await mgr.async_build_timeline(settings)
+    assert timeline2 is not None and timeline2.current_tier == TOU_TIER_OFF
+
+
+@pytest.mark.asyncio
+async def test_extra_tier_activation_shapes_and_debounce() -> None:
+    """State lists (Generac wording) and numeric thresholds (solar watts)
+    activate tiers; a short-lived flip is smoothed by ``for_seconds``."""
+    states = {
+        "sensor.status": "Ready",
+        "sensor.solar": "2500",
+    }
+    hass = _make_hass(states)
+    mgr = TouManager(hass)
+    settings = {
+        "tou_enabled": True,
+        "tou_extra_tiers": [
+            {
+                "id": "gen",
+                "name": "Generator",
+                "entity_id": "sensor.status",
+                "kind": "state",
+                "states": ["Running", "Exercising"],
+                "for_seconds": 300,
+                "cost": 0.42,
+            },
+            {
+                "id": "solar",
+                "name": "Solar",
+                "entity_id": "sensor.solar",
+                "kind": "numeric_above",
+                "threshold": 500,
+                "cost": 0.0,
+            },
+        ],
+    }
+
+    async def build() -> TouTimeline:
+        return await mgr.async_build_timeline(settings)
+
+    # Ready: generator off; solar above threshold: on (and cheaper than nothing).
+    timeline = await build()
+    assert timeline is not None and timeline.current_tier == "solar"
+
+    # Generator flips to Running: first cycle only starts the hold clock.
+    hass.states.get = MagicMock(
+        side_effect={**{k: _state(v) for k, v in states.items()}, "sensor.status": _state("Running")}.get
+    )
+    timeline = await build()
+    assert timeline is not None and timeline.current_tier == "solar"  # gen still debouncing
+    mgr._tier_edges["gen"] = time.time() - 400.0  # sustained long enough
+    timeline = await build()
+    assert timeline is not None and timeline.current_tier == "gen"  # higher priority (listed first)
+    # Generator stops: off is instant.
+    hass.states.get = MagicMock(
+        side_effect={**{k: _state(v) for k, v in states.items()}, "sensor.status": _state("Ready")}.get
+    )
+    timeline = await build()
+    assert timeline is not None and timeline.current_tier == "solar"
+
+
+@pytest.mark.asyncio
+async def test_rules_anchor_on_extra_tier_boundaries() -> None:
+    """A rule anchored to "Generator · starts" fires while the generator tier
+    holds — the same window machinery, a dynamic source."""
+    states = {
+        "sensor.period": "ulo_off_peak",
+        "binary_sensor.gen": "on",
+    }
+    hass = _make_hass(states)
+    mgr = TouManager(hass)
+    now = time.time()
+    settings = {
+        "tou_enabled": True,
+        "tou_period_entity": "sensor.period",
+        "tou_extra_tiers": [
+            {"id": "gen", "name": "Generator", "entity_id": "binary_sensor.gen", "kind": "binary_on", "cost": 0.4}
+        ],
+        "tou_rules": [
+            {
+                "id": "rlshed",
+                "name": "shed load",
+                "tier": "gen",
+                "edge": "start",
+                "action": "set",
+                "heat": "eco",
+                "until": "tier_window",
+            }
+        ],
+    }
+    await mgr.async_build_timeline(settings)
+    room = _room(tou_schedule_enabled=True, tou_overrides=[{"id": "row1", "rule_id": "rlshed", "enabled": True}])
+    room_settings = {"tou_rules": settings["tou_rules"]}
+    adjust = mgr.make_adjuster(room, room_settings)
+    assert adjust is not None
+    # Inside the generator window (painted from now to the horizon): eco heat.
+    assert adjust(now + 60.0, TargetTemps(heat=21.0, cool=24.0)).heat == 17.0
+
+
+def test_price_multipliers_follow_costs_against_the_reference() -> None:
+    from custom_components.roommind.const import tou_price_multiplier
+
+    # Static table remains the fallback without a reference price.
+    assert tou_price_multiplier(TOU_TIER_PEAK) == 3.0
+    settings = {"tou_price_history": {TOU_TIER_ULTRA_LOW: {"rate": 0.037}}}
+    # An extra tier priced against the reference: gas at ~3x off-peak.
+    settings["tou_extra_tiers"] = [{"id": "gen", "name": "Gen", "entity_id": "binary_sensor.g", "cost": 0.111}]
+    assert abs(tou_price_multiplier("gen", settings) - 3.0) < 1e-9
+    # Free solar sits on the floor, never inverted; credit too.
+    settings["tou_extra_tiers"].append({"id": "sol", "name": "Sol", "entity_id": "sensor.s", "cost": 0.0})
+    settings["tou_extra_tiers"].append({"id": "export", "name": "X", "entity_id": "sensor.x", "cost": -0.09})
+    floor = tou_price_multiplier("sol", settings)
+    assert floor == tou_price_multiplier("export", settings) == 0.05
+    # An extra without a cost is neutral.
+    settings["tou_extra_tiers"].append({"id": "nocost", "name": "N", "entity_id": "sensor.n", "cost": None})
+    assert tou_price_multiplier("nocost", settings) == 1.0

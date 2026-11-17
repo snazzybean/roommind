@@ -7,7 +7,7 @@ from homeassistant.const import Platform
 from homeassistant.core import Context
 
 DOMAIN = "roommind"
-VERSION = "2.0.6-beta.1"
+VERSION = "2.0.7-beta.1"
 
 # Platforms
 PLATFORMS = [Platform.SENSOR, Platform.SWITCH, Platform.BINARY_SENSOR, Platform.CLIMATE]
@@ -436,13 +436,77 @@ TOU_ARRIVAL_EXPONENT_CAP = 3.0
 TOU_ARRIVAL_MIN_CONFIDENCE = 0.5
 
 
-def tou_price_multiplier(tier: str, settings: dict[str, Any] | None = None) -> float:
-    """Price weight of *tier* for the MPC energy term and store-layer runs.
+def tier_entry(settings: dict[str, Any], tier: str) -> dict[str, Any] | None:
+    for entry in settings.get("tou_extra_tiers") or []:
+        if isinstance(entry, dict) and str(entry.get("id") or "") == tier:
+            return entry
+    return None
 
-    Static table for now; the follow-up energy-tiers PR prices user-defined
-    tiers from their typed cost against the cheapest known grid price.
+
+def tou_price_multiplier(tier: str, settings: dict[str, Any] | None = None) -> float:
+    """Energy-cost weight the MPC applies to a block in *tier*.
+
+    The grid four keep the static table unless a price reference exists
+    (history or the bound cost sensor), in which case every tier — grid or
+    extra — is weighted by cost relative to that reference. An extra tier's
+    own cost therefore means something: gas at three times the off-peak
+    price behaves like a very expensive period, free solar like the cheapest
+    one, and a feed-in credit lands on the floor (never inverted, never
+    infinite). With no reference, an extra tier is economically neutral —
+    it still anchors rules and paints the timeline.
     """
+    if settings is not None:
+        entry = tier_entry(settings, tier)
+        reference = grid_reference_price(settings)
+        if entry is not None:
+            cost = entry.get("cost")
+            if isinstance(cost, (int, float)) and not isinstance(cost, bool) and reference is not None:
+                return min(max(float(cost) / reference, TOU_MULTIPLIER_FLOOR), TOU_MULTIPLIER_CAP)
+            return 1.0
+        if reference is not None:
+            observed = _observed_grid_price(settings, tier)
+            if observed is not None:
+                return min(max(observed / reference, TOU_MULTIPLIER_FLOOR), TOU_MULTIPLIER_CAP)
     return TOU_PRICE_MULTIPLIERS.get(tier, 1.0)
+
+
+def grid_reference_price(settings: dict[str, Any]) -> float | None:
+    """Cheapest known grid-tier price — the arbitrage baseline extra tiers'
+    costs are weighed against (history first, then the bound cutoffs)."""
+    history = settings.get("tou_price_history")
+    best: float | None = None
+    if isinstance(history, dict):
+        for tier in TOU_TIERS:
+            entry = history.get(tier)
+            if (
+                isinstance(entry, dict)
+                and isinstance(entry.get("rate"), (int, float))
+                and not isinstance(entry.get("rate"), bool)
+            ):
+                rate = float(entry["rate"])
+                if rate > 0 and (best is None or rate < best):
+                    best = rate
+    if best is not None:
+        return best
+    for key in ("tou_ultra_threshold", "tou_mid_threshold", "tou_peak_threshold"):
+        value = settings.get(key)
+        if isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0:
+            return float(value)
+    return None
+
+
+def _observed_grid_price(settings: dict[str, Any], tier: str) -> float | None:
+    history = settings.get("tou_price_history")
+    if isinstance(history, dict):
+        entry = history.get(tier)
+        if (
+            isinstance(entry, dict)
+            and isinstance(entry.get("rate"), (int, float))
+            and not isinstance(entry.get("rate"), bool)
+        ):
+            rate = float(entry["rate"])
+            return rate if rate > 0 else None
+    return None
 
 
 # Tariff source kinds reported in diagnostics/snapshot.
@@ -450,6 +514,23 @@ TOU_SOURCE_PERIOD = "period_sensor"
 TOU_SOURCE_FLAGS = "flags"
 TOU_SOURCE_RATE = "rate_thresholds"
 TOU_SOURCE_NONE = "none"
+TOU_SOURCE_EXTRA = "extra_tiers"
+
+
+#: Extra tariff tiers the user defines (settings["tou_extra_tiers"]): on-site
+#: energy sources the grid tariff cannot describe — a generator burning gas,
+#: solar production, export credit. Sensor-driven (no calendar, no schedule):
+#: they simply are active when their sensor says so, and while active they
+#: outrank the grid tier. Each carries its own cost per kWh, which may be 0
+#: (self-consumed solar) or negative (feed-in credit).
+TOU_EXTRA_TIER_KINDS = ["binary_on", "numeric_above", "numeric_below", "state"]
+TOU_EXTRA_TIER_ID_CHARS = set("abcdefghijklmnopqrstuvwxyz0123456789_")
+
+#: Floor for price-derived MPC weighting: a zero or negative cost (free solar,
+#: export credit) must read as "as cheap as it gets", never as a division
+#: hazard or a reward an optimizer can chase to infinity.
+TOU_MULTIPLIER_FLOOR = 0.05
+TOU_MULTIPLIER_CAP = 8.0
 
 
 # Far-future sentinel: vacation active indefinitely (year 2999)

@@ -34,6 +34,8 @@ from .const import (
     OVERRIDE_CUSTOM,
     OVERRIDE_TYPES,
     TOU_EDGES,
+    TOU_EXTRA_TIER_ID_CHARS,
+    TOU_EXTRA_TIER_KINDS,
     TOU_LOOKAHEADS,
     TOU_PHASES,
     TOU_ROW_ACTIONS,
@@ -47,6 +49,7 @@ from .const import (
     TOU_SHIFT_DIRECTIONS,
     TOU_SIDES,
     TOU_TIER_SOURCES,
+    TOU_TIER_UNKNOWN,
     TOU_TIERS,
     TOU_UNTILS,
     TOU_VALUE_MODES,
@@ -275,6 +278,7 @@ _SETTINGS_SAVE_FIELDS = (
     "tou_coast_max_minutes",
     "tou_schedules",
     "tou_rules",
+    "tou_extra_tiers",
 )
 
 
@@ -337,6 +341,41 @@ _TOU_RULE_DEF_FIELDS = {
         {vol.Required("from"): str, vol.Required("to"): str},
     ),
 }
+
+
+def _extra_tier_ids(settings: dict) -> tuple[str, ...]:
+    """Tier ids the extra-tier registry currently defines (for rule anchors)."""
+    out: list[str] = []
+    for entry in settings.get("tou_extra_tiers") or []:
+        if isinstance(entry, dict) and entry.get("id"):
+            out.append(str(entry["id"]))
+    return tuple(out)
+
+
+def _tou_extra_tiers_error(entries: list) -> str | None:
+    """Message for the extra-tier registry, or None when coherent."""
+    seen: set[str] = set()
+    for entry in entries:
+        tid = str(entry.get("id") or "")
+        if (
+            not tid
+            or len(tid) > 32
+            or tid in TOU_TIERS
+            or tid in (TOU_TIER_UNKNOWN, "any")
+            or not all(c in TOU_EXTRA_TIER_ID_CHARS for c in tid)
+        ):
+            return f"Invalid extra tier id '{tid}'"
+        if tid in seen:
+            return "Extra tier IDs must be unique"
+        seen.add(tid)
+        if not str(entry.get("name") or "").strip():
+            return "Extra tiers need a name"
+        if not str(entry.get("entity_id") or ""):
+            return f"Tier '{tid}' needs a sensing entity"
+        kind = str(entry.get("kind") or "binary_on")
+        if kind == "state" and not [str(s) for s in entry.get("states") or [] if str(s).strip()]:
+            return f"Tier '{tid}': state activation needs at least one state"
+    return None
 
 
 def _tou_rule_def_error(defn: dict, allowed_tiers: tuple[str, ...] = ()) -> str | None:
@@ -657,6 +696,9 @@ async def websocket_list_rooms(
             "compressor_groups": settings.get("compressor_groups", []),
             # Shared tariff rule library: cards resolve row rule_id -> definition.
             "tou_rules": settings.get("tou_rules", []),
+            # The registry itself, so cards can anchor rules on it (and PR-08
+            # renders it) without a second round-trip.
+            "tou_extra_tiers": settings.get("tou_extra_tiers", []),
             # Effective store limits, so room cards can state what an empty
             # per-room override inherits (managers/tou_manager.py make_adjuster).
             "tou_limits": {
@@ -854,7 +896,9 @@ async def websocket_save_room(
         for r in overrides:
             defn = r.get("definition")
             if defn is not None:
-                err = _tou_rule_def_error(defn)
+                # Anchors may name an extra tier from the registry as well as
+                # a grid period: validate against the live registry.
+                err = _tou_rule_def_error(defn, _extra_tier_ids(store.get_settings()))
                 if err:
                     connection.send_error(msg["id"], "invalid_tou_override", err)
                     return
@@ -1264,6 +1308,24 @@ async def websocket_get_settings(
         vol.Optional("tou_flag_entities"): {vol.In(TOU_TIERS): str},
         # User-assigned period vocabulary: raw state (lower-cased) -> tier.
         # Consulted by TouManager._normalize_period before word recognition.
+        # Sensor-driven extra tiers (S6): on-site energy sources the grid
+        # tariff cannot describe. List order = priority; an active tier
+        # overrides the grid tier while its sensor holds. Registry shape is
+        # checked here, coherence (reserved ids, state-kind) in the handler.
+        vol.Optional("tou_extra_tiers"): [
+            {
+                vol.Required("id"): str,
+                vol.Required("name"): str,
+                vol.Required("entity_id"): str,
+                vol.Optional("kind", default="binary_on"): vol.In(TOU_EXTRA_TIER_KINDS),
+                vol.Optional("threshold", default=0.0): vol.Coerce(float),
+                vol.Optional("states", default=[]): [str],
+                vol.Optional("for_seconds", default=120): vol.All(vol.Coerce(int), vol.Range(min=0, max=3600)),
+                vol.Optional("cost"): vol.Any(None, vol.Coerce(float)),
+                vol.Optional("unit", default=""): str,
+                vol.Optional("enabled", default=True): bool,
+            }
+        ],
         vol.Optional("tou_period_aliases"): {
             vol.All(str, vol.Length(min=1, max=64)): vol.In(TOU_TIERS),
         },
@@ -1329,6 +1391,7 @@ async def websocket_save_settings(
 ) -> None:
     """Save global settings (partial merge)."""
     store = hass.data[DOMAIN]["store"]
+    settings = store.get_settings()
     changes: dict = {}
     for key in _SETTINGS_SAVE_FIELDS:
         if key in msg:
@@ -1441,6 +1504,15 @@ async def websocket_save_settings(
                 )
                 return
 
+    # The extra-tier registry first: whenever it is saved, rules anchoring
+    # on its ids must validate against the incoming list, not the old one.
+    extras = changes.get("tou_extra_tiers")
+    if extras is not None:
+        extras_err = _tou_extra_tiers_error(extras)
+        if extras_err:
+            connection.send_error(msg["id"], "invalid_tou_extra_tier", extras_err)
+            return
+
     # Shared tariff rule library direct edit: unique ids and names, coherent
     # definitions. Pruning stays on the room channels, so rules pre-seeded
     # through this path survive until the first card save claims (or drops) them.
@@ -1455,7 +1527,10 @@ async def websocket_save_settings(
             connection.send_error(msg["id"], "duplicate_tou_rule_name", "Tariff rule names must be unique")
             return
         for r in rules:
-            err = _tou_rule_def_error(r)
+            # Anchors may name an extra tier: validate against the registry
+            # the very request is writing (a save that fixes both at once
+            # must not be rejected by the old registry).
+            err = _tou_rule_def_error(r, _extra_tier_ids({**settings, **changes}))
             if err:
                 connection.send_error(msg["id"], "invalid_tou_rule", err)
                 return

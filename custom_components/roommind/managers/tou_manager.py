@@ -65,6 +65,7 @@ from ..const import (
     TOU_PRICE_HISTORY_SAVE_MIN_INTERVAL_S,
     TOU_PRICE_HISTORY_WINDOW_S,
     TOU_RELATIVE_SAMPLE_S,
+    TOU_SOURCE_EXTRA,
     TOU_SOURCE_FLAGS,
     TOU_SOURCE_NONE,
     TOU_SOURCE_PERIOD,
@@ -74,9 +75,11 @@ from ..const import (
     TOU_TIER_PEAK,
     TOU_TIER_ULTRA_LOW,
     TOU_TIER_UNKNOWN,
+    TOU_TIERS,
     TOU_TIMELINE_HORIZON_MINUTES,
     TOU_WEEKDAYS,
     TargetTemps,
+    tier_entry,
     tou_price_multiplier,
 )
 from ..utils.price_utils import (
@@ -384,6 +387,12 @@ class TouManager:
         self._timeline: TouTimeline | None = None
         self._source_kind: str = TOU_SOURCE_NONE
         self._rate_unit: str = ""
+        # Extra-tier debounce: tier id -> when its sensor first read active.
+        # Plus the grid tariff underneath any holding extra tier, so a
+        # dropped generator flag resumes exactly where the grid left off.
+        self._tier_edges: dict[str, float] = {}
+        self._grid_tier: str = TOU_TIER_UNKNOWN
+        self._grid_rate: float | None = None
         # Tier-dictionary observations (in-memory, rebuilt as cycles read the
         # sources): raw period states -> what they mapped to. They feed the
         # settings panel's "tiers as your source feeds them" block; a restart
@@ -444,6 +453,12 @@ class TouManager:
         self._load_price_history(settings)
         await self._load_observed_prices(history_loader)
         current, rate, unit, source = self._resolve_current_tier(settings)
+        # The grid tariff keeps being tracked underneath; an active extra
+        # tier (generator running, solar producing) overrides it for this
+        # cycle's state, price and rule anchoring — nothing about the grid
+        # reading is lost when the flag drops.
+        self._grid_tier, self._grid_rate = current, rate
+        current, rate, unit, source = self._apply_extra_tiers(settings, current, rate, unit, source, now)
         self._source_kind = source
         self._rate_unit = unit
 
@@ -770,14 +785,42 @@ class TouManager:
                 "current": tier == current,
                 "label": None,
             }
+        # Extra tiers (generator, solar…): the same currency, a different
+        # evidence. Their price is the user's typed cost, their vocabulary is
+        # their sensor — and "current" means they are holding right now.
+        for entry in settings.get("tou_extra_tiers") or []:
+            if not isinstance(entry, dict):
+                continue
+            tid = str(entry.get("id") or "")
+            if not tid or tid in tiers:
+                continue
+            cost = entry.get("cost")
+            rate_e = float(cost) if isinstance(cost, (int, float)) and not isinstance(cost, bool) else None
+            tiers[tid] = {
+                "rate": rate_e,
+                "kind": "source" if rate_e is not None else None,
+                "min": None,
+                "max": None,
+                "count": 0,
+                "ts": None,
+                "names": [],
+                "current": tid == current,
+                "label": str(entry.get("name") or tid),
+            }
         current_block: dict[str, Any] | None = None
         if current in tiers:
-            rate_c: float | None = live_rate
-            if rate_c is None:
-                found_c = self._last_rate_for_tier(current)
-                rate_c = found_c[0] if found_c else None
-            if rate_c is not None:
-                current_block = {"tier": current, "rate": rate_c, "stale": live_rate is None}
+            entry_c = tier_entry(settings, current)
+            cost_c = entry_c.get("cost") if entry_c else None
+            if isinstance(cost_c, (int, float)) and not isinstance(cost_c, bool):
+                # An extra tier holds: its typed cost IS the effective price.
+                current_block = {"tier": current, "rate": float(cost_c), "stale": False}
+            else:
+                rate_c: float | None = live_rate
+                if rate_c is None:
+                    found_c = self._last_rate_for_tier(current)
+                    rate_c = found_c[0] if found_c else None
+                if rate_c is not None:
+                    current_block = {"tier": current, "rate": rate_c, "stale": live_rate is None}
         next_block: dict[str, Any] | None = None
         if next_tier in tiers and (next_ts is not None or next_rate is not None):
             next_block = {
@@ -1208,6 +1251,10 @@ class TouManager:
             "rate_stale": rate_stale,
             "rate_unit": self._rate_unit,
             "source": self._source_kind,
+            # The grid tariff underneath, so a dropped extra tier resumes
+            # exactly where it left off (and the panel can show both).
+            "grid_tier": self._grid_tier,
+            "grid_rate": self._grid_rate,
             "next_change": next_ts,
             "next_tier": next_tier,
             "segments": [[round(s.start, 1), round(s.end, 1), s.tier] for s in timeline.segments],
@@ -1266,6 +1313,86 @@ class TouManager:
             if isinstance(rule, dict) and rule.get("id"):
                 out[str(rule["id"])] = rule
         return out
+
+    # ------------------------------------------------------------------
+    # Extra tiers: on-site energy sources as first-class tariff states
+    # ------------------------------------------------------------------
+
+    def _extra_tier_active(self, entry: dict[str, Any], now: float) -> bool:
+        """Is this extra tier's sensor evidence holding right now?
+
+        ``for_seconds`` debounces by seconds of sustained truth, counted from
+        when the manager last saw it flip — a generator reaching steady
+        speed, a relay chattering at a price boundary, or an inverter
+        hovering at its standby threshold must not strobe the tariff (a
+        flapping state is useless as an indicator, and here it would also
+        anchor phantom rule windows).
+        """
+        entity_id = str(entry.get("entity_id") or "")
+        if not entity_id:
+            return False
+        state = self.hass.states.get(entity_id)
+        if state is None or state.state in ("unavailable", "unknown"):
+            self._tier_edges.pop(str(entry.get("id") or ""), None)
+            return False
+        kind = str(entry.get("kind") or "binary_on")
+        raw_active = False
+        if kind == "state":
+            wanted = {str(s).strip().lower() for s in (entry.get("states") or []) if str(s).strip()}
+            raw_active = bool(wanted) and str(state.state).strip().lower() in wanted
+        elif kind in ("numeric_above", "numeric_below"):
+            try:
+                value = float(state.state)
+            except (TypeError, ValueError):
+                self._tier_edges.pop(str(entry.get("id") or ""), None)
+                return False
+            threshold = entry.get("threshold")
+            if not isinstance(threshold, (int, float)) or isinstance(threshold, bool):
+                return False
+            raw_active = value > float(threshold) if kind == "numeric_above" else value < float(threshold)
+        else:  # binary_on
+            raw_active = state.state in ("on", "true", "1")
+        return self._debounce(str(entry.get("id") or ""), raw_active, float(entry.get("for_seconds") or 0.0), now)
+
+    def _debounce(self, tier: str, raw_active: bool, hold: float, now: float) -> bool:
+        """Smooth a raw truth into a sustained one: on after *hold* seconds
+        of continuous truth; off is instant (stop generating means stop)."""
+        if not raw_active:
+            self._tier_edges.pop(tier, None)
+            return False
+        since = self._tier_edges.get(tier)
+        if since is None:
+            self._tier_edges[tier] = now
+            since = now
+        return hold <= 0.0 or now - since >= hold
+
+    def _apply_extra_tiers(
+        self, settings: dict[str, Any], grid_tier: str, rate: float | None, unit: str, source: str, now: float
+    ) -> tuple[str, float | None, str, str]:
+        """Let a holding extra tier override the grid tier.
+
+        Returns ``(tier, rate, unit, source)``: while an extra tier holds, the
+        tariff state and price are the entry's (its cost is the price the room
+        should optimize against); the grid tier and rate are still reported
+        beside them (snapshot's ``grid_tier``/``grid_rate``) and the grid
+        history keeps recording — a dropped generator flag must resume exactly
+        where the grid tariff left off. An extra tier without a cost is state
+        without economics: the grid rate stays the effective price.
+        """
+        for entry in settings.get("tou_extra_tiers") or []:
+            if not isinstance(entry, dict) or not entry.get("enabled", True):
+                continue
+            tier = str(entry.get("id") or "")
+            if not tier or tier in TOU_TIERS or tier == TOU_TIER_UNKNOWN:
+                continue
+            if not self._extra_tier_active(entry, now):
+                continue
+            cost = entry.get("cost")
+            if isinstance(cost, (int, float)) and not isinstance(cost, bool):
+                entry_unit = str(entry.get("unit") or "") or unit
+                return tier, float(cost), entry_unit, TOU_SOURCE_EXTRA
+            return tier, rate, unit, TOU_SOURCE_EXTRA
+        return grid_tier, rate, unit, source
 
     @staticmethod
     def row_records(room: dict[str, Any], rules: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
