@@ -20,7 +20,7 @@
  * the built-in recognition could not place.
  */
 import { html, css, nothing } from "lit";
-import { customElement, property } from "lit/decorators.js";
+import { customElement, property, state } from "lit/decorators.js";
 import type {
   HomeAssistant,
   TouCalendarBinding,
@@ -33,6 +33,15 @@ import type {
 } from "../../types";
 import { localize, type TranslationKey } from "../../utils/localize";
 import { getSelectValue } from "../../utils/events";
+import {
+  tempRange,
+  tempStep,
+  tempUnit,
+  toCelsius,
+  toCelsiusDelta,
+  toDisplay,
+  toDisplayDelta,
+} from "../../utils/temperature";
 import { RsSettingsBase } from "./rs-settings-base";
 
 const TOU_TIERS: TouTier[] = ["peak", "mid", "off", "ultra_low"];
@@ -71,6 +80,19 @@ export class RsSettingsTou extends RsSettingsBase {
   @property({ attribute: false }) public touTierInfo: TouTierInfo | null = null;
   /** User-assigned period vocabulary: raw lower-cased state -> tier. */
   @property({ attribute: false }) public touPeriodAliases: Record<string, string> = {};
+  /**
+   * Global store limits (defaults mirror const.py DEFAULT_TOU_*). Shown in
+   * the fine-tune section; per-room overrides on the room card win per key.
+   */
+  @property({ type: Number }) public touHeatMin = 17;
+  @property({ type: Number }) public touHeatMax = 28;
+  @property({ type: Number }) public touCoolMin = 18;
+  @property({ type: Number }) public touCoolMax = 30;
+  @property({ type: Number }) public touSwing = 3;
+  @property({ type: Number }) public touStoreGap = 1;
+  /** Price-weighted MPC: energy cost competes with comfort in the plan. */
+  @property({ type: Boolean }) public touPriceWeighting = true;
+  @state() private _fineTuneOpen = false;
 
   static styles = [
     ...RsSettingsBase.settingsBaseStyles,
@@ -167,6 +189,41 @@ export class RsSettingsTou extends RsSettingsBase {
         color: var(--secondary-text-color);
         text-transform: uppercase;
         letter-spacing: 0.4px;
+      }
+      .fine-tune-row {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        margin-top: 16px;
+        padding: 8px 0;
+        cursor: pointer;
+      }
+      .fine-tune-row ha-icon {
+        margin-top: 2px;
+        color: var(--secondary-text-color);
+      }
+      .fine-tune-label {
+        font-size: 14px;
+        font-weight: 500;
+      }
+      .fine-tune-row .hint {
+        margin-bottom: 0;
+      }
+      .shaping-grid {
+        margin-top: 8px;
+      }
+      .col-header {
+        font-size: 12px;
+        font-weight: 500;
+        color: var(--secondary-text-color);
+        text-transform: uppercase;
+        letter-spacing: 0.4px;
+      }
+      .col-span {
+        grid-column: 1 / -1;
+        font-size: 12px;
+        color: var(--secondary-text-color);
+        margin-top: 6px;
       }
       .section-label {
         font-size: 14px;
@@ -489,6 +546,44 @@ export class RsSettingsTou extends RsSettingsBase {
               </div>
 
               ${this._renderTierDictionary(l)}
+
+              <div class="fine-tune-row" @click=${() => (this._fineTuneOpen = !this._fineTuneOpen)}>
+                <ha-icon
+                  icon=${this._fineTuneOpen ? "mdi:chevron-down" : "mdi:chevron-right"}
+                ></ha-icon>
+                <div>
+                  <div class="fine-tune-label">${localize("tou.fine_tune", l)}</div>
+                  <div class="hint">${localize("tou.fine_tune_hint", l)}</div>
+                </div>
+              </div>
+              ${
+                this._fineTuneOpen
+                  ? html`
+                      <div class="section-label">${localize("tou.shaping", l)}</div>
+                      <div class="hint">${localize("tou.shaping_hint", l)}</div>
+                      <div class="tier-grid shaping-grid">
+                        <div class="col-header">${localize("tou.col_heating", l)}</div>
+                        <div class="col-header">${localize("tou.col_cooling", l)}</div>
+                        ${this._tempField("touHeatMin", localize("tou.clamp_min", l), this.touHeatMin, 5, 35)}
+                        ${this._tempField("touCoolMin", localize("tou.clamp_min", l), this.touCoolMin, 5, 35)}
+                        ${this._tempField("touHeatMax", localize("tou.clamp_max", l), this.touHeatMax, 10, 40)}
+                        ${this._tempField("touCoolMax", localize("tou.clamp_max", l), this.touCoolMax, 10, 40)}
+                        <div class="col-span">${localize("tou.both_steps", l)}</div>
+                        ${this._deltaField("touSwing", localize("tou.swing", l), this.touSwing, 0, 10)}
+                        ${this._gapField()}
+                      </div>
+                      <rs-list-row
+                        switch
+                        wrap
+                        .heading=${localize("tou.price_weighting", l)}
+                        .checked=${this.touPriceWeighting}
+                        @toggle-changed=${(e: CustomEvent<boolean>) =>
+                          this._fire("touPriceWeighting", e.detail)}
+                      ></rs-list-row>
+                      <div class="hint">${localize("tou.price_weighting_hint", l)}</div>
+                    `
+                  : nothing
+              }
             `
           : nothing
       }
@@ -602,6 +697,59 @@ export class RsSettingsTou extends RsSettingsBase {
       @closed=${(e: Event) => e.stopPropagation()}
       fixedMenuPosition
     ></ha-select>`;
+  }
+
+  /** Global consent-band bound, edited in the user's unit and stored in °C. */
+  private _tempField(key: string, label: string, valueC: number, minC: number, maxC: number) {
+    const range = tempRange(minC, maxC, this.hass);
+    return html`<ha-textfield
+      type="number"
+      .value=${String(toDisplay(valueC, this.hass))}
+      .label=${label}
+      .suffix=${tempUnit(this.hass)}
+      min=${range.min}
+      max=${range.max}
+      step=${tempStep(this.hass)}
+      @change=${(e: Event) => {
+        const v = parseFloat((e.target as HTMLInputElement).value);
+        if (!isNaN(v)) this._fire(key, toCelsius(v, this.hass));
+      }}
+    ></ha-textfield>`;
+  }
+
+  /** A deviation allowance (swing): a delta, not a point on the scale. */
+  private _deltaField(key: string, label: string, deltaC: number, minC: number, maxC: number) {
+    return html`<ha-textfield
+      type="number"
+      .value=${String(toDisplayDelta(deltaC, this.hass))}
+      .label=${label}
+      .suffix=${`Δ${tempUnit(this.hass)}`}
+      min=${String(toDisplayDelta(minC, this.hass))}
+      max=${String(toDisplayDelta(maxC, this.hass))}
+      step=${tempStep(this.hass)}
+      @change=${(e: Event) => {
+        const v = parseFloat((e.target as HTMLInputElement).value);
+        if (!isNaN(v)) this._fire(key, toCelsiusDelta(v, this.hass));
+      }}
+    ></ha-textfield>`;
+  }
+
+  /** Price ratio, not a temperature: no unit conversion, just a number. */
+  private _gapField() {
+    const l = this.hass.language;
+    return html`<ha-textfield
+      type="number"
+      .value=${String(this.touStoreGap)}
+      .label=${localize("tou.store_gap", l)}
+      .suffix=${"×"}
+      min="1"
+      max="10"
+      step="0.1"
+      @change=${(e: Event) => {
+        const v = parseFloat((e.target as HTMLInputElement).value);
+        if (!isNaN(v)) this._fire("touStoreGap", Math.max(1, v));
+      }}
+    ></ha-textfield>`;
   }
 
   private _thresholdField(field: string, label: string, value: number | null) {

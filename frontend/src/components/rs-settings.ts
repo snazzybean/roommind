@@ -193,6 +193,13 @@ const SETTINGS: [keyof GlobalSettings, SettingSync][] = [
   ["tou_mid_threshold", plain("touMidThreshold", null)],
   ["tou_ultra_threshold", plain("touUltraThreshold", null)],
   ["tou_period_aliases", plain("touPeriodAliases", {})],
+  ["tou_heat_min", plain("touHeatMin", 17)],
+  ["tou_heat_max", plain("touHeatMax", 28)],
+  ["tou_cool_min", plain("touCoolMin", 18)],
+  ["tou_cool_max", plain("touCoolMax", 30)],
+  ["tou_swing", plain("touSwing", 3)],
+  ["tou_store_gap", plain("touStoreGap", 1)],
+  ["tou_price_weighting", plain("touPriceWeighting", true)],
 ];
 
 const SETTING_FIELDS = [...new Set(SETTINGS.flatMap(([, sync]) => sync.fields))];
@@ -235,6 +242,13 @@ export class RsSettings extends LitElement {
   @state() private _touMidThreshold: number | null = null;
   @state() private _touUltraThreshold: number | null = null;
   @state() private _touPeriodAliases: Record<string, string> = {};
+  @state() private _touHeatMin = 17;
+  @state() private _touHeatMax = 28;
+  @state() private _touCoolMin = 18;
+  @state() private _touCoolMax = 30;
+  @state() private _touSwing = 3;
+  @state() private _touStoreGap = 1;
+  @state() private _touPriceWeighting = true;
   @state() private _outdoorHumiditySensor = "";
   @state() private _outdoorCoolingMin = 16;
   @state() private _outdoorHeatingMax = 22;
@@ -539,6 +553,13 @@ export class RsSettings extends LitElement {
           .touMidThreshold=${this._touMidThreshold}
           .touUltraThreshold=${this._touUltraThreshold}
           .touPeriodAliases=${this._touPeriodAliases}
+          .touHeatMin=${this._touHeatMin}
+          .touHeatMax=${this._touHeatMax}
+          .touCoolMin=${this._touCoolMin}
+          .touCoolMax=${this._touCoolMax}
+          .touSwing=${this._touSwing}
+          .touStoreGap=${this._touStoreGap}
+          .touPriceWeighting=${this._touPriceWeighting}
           .touTierInfo=${this.touTierInfo}
           @setting-changed=${this._onSettingChanged}
         ></rs-settings-tou>`;

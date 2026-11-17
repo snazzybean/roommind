@@ -1,8 +1,15 @@
 import { LitElement, html, css, nothing } from "lit";
 import { customElement, property } from "lit/decorators.js";
-import type { HomeAssistant, ClimateMode } from "../../types";
+import type { HomeAssistant, ClimateMode, TouLimits, TouRoomLimits } from "../../types";
 import { localize } from "../../utils/localize";
-import { tempUnit, toDisplayDelta } from "../../utils/temperature";
+import {
+  tempUnit,
+  toCelsius,
+  toCelsiusDelta,
+  toDisplay,
+  toDisplayDelta,
+} from "../../utils/temperature";
+import { DEFAULT_TOU_LIMITS, effectiveLimits } from "../../utils/tou-limits";
 import { tokens } from "../../styles/tokens";
 import "../shared/rs-segmented";
 import "../shared/rs-list-row";
@@ -36,6 +43,10 @@ export class RsPriceShift extends LitElement {
   /** Global master switch (D8): the store opt-in renders only while on. */
   @property({ type: Boolean }) public touEnabled = false;
   @property({ type: Boolean }) public touStore = false;
+  /** Global store limits in force (the rooms/list `tou_limits` view). */
+  @property({ attribute: false }) public globalLimits: TouLimits = DEFAULT_TOU_LIMITS;
+  /** This room's optional overrides; a missing key inherits the global. */
+  @property({ attribute: false }) public roomLimits: TouRoomLimits = {};
 
   static styles = [
     tokens,
@@ -59,6 +70,16 @@ export class RsPriceShift extends LitElement {
       .status {
         margin-top: var(--rs-space-2);
         --rs-list-row-padding: 0;
+      }
+
+      .limits-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: var(--rs-space-3);
+        margin: var(--rs-space-3) 0;
+      }
+      .limits-grid ha-textfield {
+        width: 100%;
       }
     `,
   ];
@@ -105,11 +126,81 @@ export class RsPriceShift extends LitElement {
                       new CustomEvent("tou-store-changed", { detail: { value: e.detail } }),
                     )}
                 ></rs-list-row>
-                <p class="intro">${localize("detail.energy.store_hint", l)}</p>`
+                <p class="intro">${localize("detail.energy.store_hint", l)}</p>
+                ${
+                  this.touStore
+                    ? html`<p class="intro">${this._limitsNote(l)}</p>
+                        <div class="label">${localize("tou.room_limits_title", l)}</div>
+                        <div class="limits-grid">
+                          ${this._limitField("heat_min", localize("tou.limit_heat_min", l), tempUnit(this.hass))}
+                          ${this._limitField("heat_max", localize("tou.limit_heat_max", l), tempUnit(this.hass))}
+                          ${this._limitField("cool_min", localize("tou.limit_cool_min", l), tempUnit(this.hass))}
+                          ${this._limitField("cool_max", localize("tou.limit_cool_max", l), tempUnit(this.hass))}
+                          ${this._limitField("swing", localize("tou.limit_swing", l), `Δ${tempUnit(this.hass)}`)}
+                          ${this._limitField("store_gap", localize("tou.limit_store_gap", l), "×")}
+                        </div>
+                        <p class="intro">${localize("tou.room_limits_hint", l)}</p>`
+                    : nothing
+                }`
             : nothing
         }
       </div>
     `;
+  }
+
+  /** The override value shown in a field: blank means "inherit the global". */
+  private _limitValue(key: keyof TouLimits): string {
+    const v = this.roomLimits[key];
+    if (typeof v !== "number") return "";
+    if (key === "store_gap") return String(v);
+    if (key === "swing") return String(toDisplayDelta(v, this.hass));
+    return String(toDisplay(v, this.hass));
+  }
+
+  /**
+   * One per-room consent override. Clearing the field sends null: the engine
+   * then inherits the global value (blank = inherit, both ways).
+   */
+  private _limitField(key: keyof TouLimits, label: string, unit: string) {
+    return html`<ha-textfield
+      type="number"
+      step=${key === "store_gap" ? "0.1" : "0.5"}
+      .value=${this._limitValue(key)}
+      .label=${label}
+      .suffix=${unit}
+      @change=${(e: Event) => {
+        const raw = (e.target as HTMLInputElement).value.trim();
+        let value: number | null = null;
+        if (raw !== "") {
+          const v = parseFloat(raw);
+          if (isNaN(v)) return;
+          value =
+            key === "store_gap"
+              ? v
+              : key === "swing"
+                ? toCelsiusDelta(v, this.hass)
+                : toCelsius(v, this.hass);
+        }
+        this.dispatchEvent(
+          new CustomEvent("tou-limit-changed", { detail: { key: `tou_${key}`, value } }),
+        );
+      }}
+    ></ha-textfield>`;
+  }
+
+  /** One sentence naming the band, the swing and the price gate the store
+   * works inside — so the toggle is never a magic box. */
+  private _limitsNote(l: string): string {
+    const eff = effectiveLimits(this.globalLimits, this.roomLimits);
+    return localize("tou.limits_note", l, {
+      swing: String(toDisplayDelta(eff.swing, this.hass)),
+      hmin: String(toDisplay(eff.heat_min, this.hass)),
+      hmax: String(toDisplay(eff.heat_max, this.hass)),
+      cmin: String(toDisplay(eff.cool_min, this.hass)),
+      cmax: String(toDisplay(eff.cool_max, this.hass)),
+      gap: String(eff.store_gap),
+      unit: tempUnit(this.hass),
+    });
   }
 
   private _selected(): string {

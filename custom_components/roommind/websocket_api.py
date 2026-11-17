@@ -20,6 +20,12 @@ from .const import (
     DEFAULT_COMPRESSOR_MIN_RUN_MINUTES,
     DEFAULT_CONFLICT_RESOLUTION,
     DEFAULT_CONTROL_MODE,
+    DEFAULT_TOU_COOL_MAX,
+    DEFAULT_TOU_COOL_MIN,
+    DEFAULT_TOU_HEAT_MAX,
+    DEFAULT_TOU_HEAT_MIN,
+    DEFAULT_TOU_STORE_GAP,
+    DEFAULT_TOU_SWING,
     DOMAIN,
     MAX_CO2_THRESHOLD,
     MAX_PRICE_SHIFT_K,
@@ -651,6 +657,16 @@ async def websocket_list_rooms(
             "compressor_groups": settings.get("compressor_groups", []),
             # Shared tariff rule library: cards resolve row rule_id -> definition.
             "tou_rules": settings.get("tou_rules", []),
+            # Effective store limits, so room cards can state what an empty
+            # per-room override inherits (managers/tou_manager.py make_adjuster).
+            "tou_limits": {
+                "heat_min": settings.get("tou_heat_min", DEFAULT_TOU_HEAT_MIN),
+                "heat_max": settings.get("tou_heat_max", DEFAULT_TOU_HEAT_MAX),
+                "cool_min": settings.get("tou_cool_min", DEFAULT_TOU_COOL_MIN),
+                "cool_max": settings.get("tou_cool_max", DEFAULT_TOU_COOL_MAX),
+                "swing": settings.get("tou_swing", DEFAULT_TOU_SWING),
+                "store_gap": settings.get("tou_store_gap", DEFAULT_TOU_STORE_GAP),
+            },
             # The global master switch gates the room cards' energy-price box (D8).
             "tou_enabled": bool(settings.get("tou_enabled", False)),
             **({"tou": tou_snapshot} if tou_snapshot else {}),

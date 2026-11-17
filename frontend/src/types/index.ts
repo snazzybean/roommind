@@ -249,6 +249,28 @@ export interface TouRateWindow {
   days: string[];
 }
 
+/**
+ * Global store limits (Settings -> Energy price fine-tune): the consent band
+ * per side, the max deviation from the schedule and the price-gap ratio that
+ * must justify storing. Effective values reach rooms via the `tou_limits`
+ * view on rooms/list; defaults live in const.py (DEFAULT_TOU_*).
+ */
+export interface TouLimits {
+  heat_min: number;
+  heat_max: number;
+  cool_min: number;
+  cool_max: number;
+  swing: number;
+  store_gap: number;
+}
+
+/**
+ * A room's optional overrides of the global limits. A null/missing key means
+ * "inherit the global value" — the same semantics TouManager.make_adjuster
+ * applies server-side (room value else settings value else default).
+ */
+export type TouRoomLimits = Partial<Record<keyof TouLimits, number | null>>;
+
 /** What a tariff rule row does at its anchor (const.py TOU_ROW_ACTIONS). */
 export type TouOverrideAction = "set" | "raise" | "lower" | "arrive";
 

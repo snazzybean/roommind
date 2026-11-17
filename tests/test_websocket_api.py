@@ -103,6 +103,14 @@ async def test_list_rooms_empty(ws_hass, store, connection):
             "coil_dry_drain_minutes": 0,
             "compressor_groups": [],
             "tou_rules": [],
+            "tou_limits": {
+                "heat_min": 17.0,
+                "heat_max": 28.0,
+                "cool_min": 18.0,
+                "cool_max": 30.0,
+                "swing": 3.0,
+                "store_gap": 1.0,
+            },
             "tou_enabled": False,
         },
     )
@@ -4373,3 +4381,21 @@ async def test_tou_preview_without_coordinator_falls_back(ws_hass, connection):
     """The preview command answers with an empty view when no engine is running."""
     await _tou_preview(ws_hass, connection, {"id": 110, "type": "roommind/tou/preview"})
     connection.send_result.assert_called_once_with(110, {"preview": {"segments": [], "areas": {}, "records": {}}})
+
+
+@pytest.mark.asyncio
+async def test_list_rooms_tou_limits_view(ws_hass, store, connection):
+    """rooms/list ships the effective global store limits the cards inherit."""
+    await store.async_load()
+    await store.async_save_settings({"tou_swing": 4.5, "tou_heat_min": 15.0})
+
+    await _list_rooms(ws_hass, connection, {"id": 111, "type": "roommind/rooms/list"})
+
+    limits = connection.send_result.call_args[0][1]["tou_limits"]
+    assert limits["swing"] == 4.5
+    assert limits["heat_min"] == 15.0
+    # Untouched keys keep the const.py defaults the manager applies.
+    assert limits["heat_max"] == 28.0
+    assert limits["cool_min"] == 18.0
+    assert limits["cool_max"] == 30.0
+    assert limits["store_gap"] == 1.0

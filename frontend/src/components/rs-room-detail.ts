@@ -10,9 +10,12 @@ import type {
   DeviceConfig,
   DeviceType,
   DeviceRole,
+  TouLimits,
   TouOverrideRow,
+  TouRoomLimits,
   TouRule,
 } from "../types";
+import { DEFAULT_TOU_LIMITS } from "../utils/tou-limits";
 import "./room-detail/rs-room-hero";
 import "./rs-schedule-settings";
 import type { ScheduleCardPart } from "./rs-schedule-settings";
@@ -124,6 +127,12 @@ const ROOM_FIELDS: [string, RoomFieldSync][] = [
   ["tou_store_enabled", plain("_touStoreEnabled", (c) => c?.tou_store_enabled ?? false)],
   ["tou_overrides", plain("_touOverrides", (c) => c?.tou_overrides ?? [])],
   ["tou_schedule_enabled", plain("_touScheduleEnabled", (c) => c?.tou_schedule_enabled ?? false)],
+  ["tou_heat_min", plain("_touHeatMin", (c) => c?.tou_heat_min ?? null)],
+  ["tou_heat_max", plain("_touHeatMax", (c) => c?.tou_heat_max ?? null)],
+  ["tou_cool_min", plain("_touCoolMin", (c) => c?.tou_cool_min ?? null)],
+  ["tou_cool_max", plain("_touCoolMax", (c) => c?.tou_cool_max ?? null)],
+  ["tou_swing", plain("_touSwing", (c) => c?.tou_swing ?? null)],
+  ["tou_store_gap", plain("_touStoreGap", (c) => c?.tou_store_gap ?? null)],
   ["window_sensors", asSet("_selectedWindowSensors", (c) => c?.window_sensors ?? [])],
   ["window_open_delay", plain("_windowOpenDelay", (c) => c?.window_open_delay ?? 0)],
   ["window_close_delay", plain("_windowCloseDelay", (c) => c?.window_close_delay ?? 0)],
@@ -234,6 +243,9 @@ export class RsRoomDetail extends LitElement {
   @property({ type: Boolean }) public touEnabled = false;
   /** Shared tariff rule library (rooms/list payload): rows resolve rule_id -> definition. */
   @property({ type: Array }) public touRules: TouRule[] = [];
+  /** Global store limits in force (rooms/list `tou_limits` view): what an
+   * empty per-room override inherits. */
+  @property({ attribute: false }) public touLimits: TouLimits = DEFAULT_TOU_LIMITS;
   @property({ attribute: false }) public presencePersons: string[] = [];
   @property({ type: Boolean }) public climateControlActive = true;
   /** Global: what rooms do while their schedule is off / everybody is away. */
@@ -261,6 +273,12 @@ export class RsRoomDetail extends LitElement {
   @state() private _touStoreEnabled = false;
   @state() private _touOverrides: TouOverrideRow[] = [];
   @state() private _touScheduleEnabled = false;
+  @state() private _touHeatMin: number | null = null;
+  @state() private _touHeatMax: number | null = null;
+  @state() private _touCoolMin: number | null = null;
+  @state() private _touCoolMax: number | null = null;
+  @state() private _touSwing: number | null = null;
+  @state() private _touStoreGap: number | null = null;
   @state() private _heatSourcePriceAware = false;
   @state() private _occupancyEcoDelay = DEFAULT_OCCUPANCY_ECO_DELAY;
   @state() private _co2Sensor = "";
@@ -971,8 +989,11 @@ export class RsRoomDetail extends LitElement {
             .shiftCool=${this.config?.live?.price_shift_cool ?? 0}
             .touEnabled=${this.touEnabled}
             .touStore=${this._touStoreEnabled}
+            .globalLimits=${this.touLimits}
+            .roomLimits=${this._touRoomLimits()}
             @price-shift-changed=${this._onPriceShiftChanged}
             @tou-store-changed=${this._onTouStoreChanged}
+            @tou-limit-changed=${this._onTouLimitChanged}
           ></rs-price-shift>
         </rs-edit-dialog>`;
       case "rules":
@@ -1294,6 +1315,34 @@ export class RsRoomDetail extends LitElement {
   private _onTouStoreChanged(e: CustomEvent<{ value: boolean }>) {
     this._touStoreEnabled = e.detail.value;
     this._autoSave();
+  }
+
+  /**
+   * One per-room consent override from the price dialog (null clears it
+   * back to inheriting the global). The fields are plain ROOM_FIELDS, so
+   * the regular diff-save carries them to rooms/save.
+   */
+  private _onTouLimitChanged(e: CustomEvent<{ key: string; value: number | null }>) {
+    const { key, value } = e.detail;
+    if (key === "tou_heat_min") this._touHeatMin = value;
+    else if (key === "tou_heat_max") this._touHeatMax = value;
+    else if (key === "tou_cool_min") this._touCoolMin = value;
+    else if (key === "tou_cool_max") this._touCoolMax = value;
+    else if (key === "tou_swing") this._touSwing = value;
+    else if (key === "tou_store_gap") this._touStoreGap = value;
+    this._autoSave();
+  }
+
+  /** The six override states as the wire shape rs-price-shift consumes. */
+  private _touRoomLimits(): TouRoomLimits {
+    return {
+      heat_min: this._touHeatMin,
+      heat_max: this._touHeatMax,
+      cool_min: this._touCoolMin,
+      cool_max: this._touCoolMax,
+      swing: this._touSwing,
+      store_gap: this._touStoreGap,
+    };
   }
 
   /**

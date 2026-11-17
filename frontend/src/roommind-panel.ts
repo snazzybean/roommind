@@ -1,6 +1,14 @@
 import { LitElement, html, css, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
-import type { HomeAssistant, RoomConfig, RoomWithoutArea, TouRule, TouTierInfo } from "./types";
+import type {
+  HomeAssistant,
+  RoomConfig,
+  RoomWithoutArea,
+  TouLimits,
+  TouRule,
+  TouTierInfo,
+} from "./types";
+import { DEFAULT_TOU_LIMITS } from "./utils/tou-limits";
 import { loadHaElements } from "./load-ha-elements";
 import { noteServerTime } from "./utils/server-clock";
 import { localize } from "./utils/localize";
@@ -76,6 +84,7 @@ export class RoomMindPanel extends LitElement {
   @state() private _presenceEnabled = false;
   @state() private _touEnabled = false;
   @state() private _touRules: TouRule[] = [];
+  @state() private _touLimits: TouLimits = DEFAULT_TOU_LIMITS;
   @state() private _touTierInfo: TouTierInfo | null = null;
   @state() private _valveProtectionEnabled = false;
   @state() private _coilDryEnabled = false;
@@ -539,6 +548,7 @@ export class RoomMindPanel extends LitElement {
             .priceConfigured=${this._touEnabled}
             .touEnabled=${this._touEnabled}
             .touRules=${this._touRules}
+            .touLimits=${this._touLimits}
             .presencePersons=${this._presencePersons}
             .climateControlActive=${this._climateControlActive}
             .scheduleOffAction=${this._scheduleOffAction}
@@ -695,6 +705,7 @@ export class RoomMindPanel extends LitElement {
         tou_enabled?: boolean;
         tou_tier_info?: TouTierInfo | null;
         tou_rules?: TouRule[];
+        tou_limits?: TouLimits;
         anyone_home: boolean;
         presence_persons: string[];
         presence_away_action: "eco" | "off";
@@ -728,6 +739,7 @@ export class RoomMindPanel extends LitElement {
       this._presenceEnabled = result.presence_enabled ?? false;
       this._touEnabled = result.tou_enabled ?? false;
       this._touRules = result.tou_rules ?? [];
+      this._touLimits = result.tou_limits ?? DEFAULT_TOU_LIMITS;
       this._touTierInfo = result.tou_tier_info ?? null;
       this._valveProtectionEnabled = result.valve_protection_enabled ?? false;
       this._coilDryEnabled = result.coil_dry_enabled ?? false;
