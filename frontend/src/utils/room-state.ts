@@ -166,6 +166,7 @@ export type RoomHintId =
   | "not_controlled"
   | "override"
   | "compressor"
+  | "uniform_mode"
   | "setback"
   | "presence_away"
   | "room_vacant"
@@ -289,7 +290,14 @@ export function roomHints(
       });
     }
   }
-  if (live.compressor_protection_until != null) {
+  if (live.compressor_protection_reason === "uniform_mode") {
+    hints.push({
+      id: "uniform_mode",
+      icon: "mdi:sync",
+      severity: "info",
+      key: uniformModeKey(live.uniform_group_mode),
+    });
+  } else if (live.compressor_protection_until != null) {
     hints.push({
       id: "compressor",
       icon: "mdi:timer-sand",
@@ -577,3 +585,12 @@ const OVERRIDE_ICONS: Record<OverrideType, string> = {
   eco: "mdi:leaf",
   custom: "mdi:thermometer",
 };
+
+/** Hint for a room its "All in the same mode" group holds back: by the way the group runs (#533). */
+export function uniformModeKey(mode: "heat" | "cool" | null | undefined): TranslationKey {
+  return mode === "heat"
+    ? "card.uniform_mode_heat"
+    : mode === "cool"
+      ? "card.uniform_mode_cool"
+      : "card.uniform_mode_switching";
+}

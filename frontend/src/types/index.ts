@@ -77,7 +77,9 @@ export interface RoomLiveData {
   /** `n_observations` when "learn faster" was last used, null if never (counts the fade). */
   boost_applied_at?: number | null;
   compressor_protection_active: boolean;
-  compressor_protection_reason: "min_off" | "min_run" | null;
+  compressor_protection_reason: "min_off" | "min_run" | "uniform_mode" | null;
+  /** While its "All in the same mode" group holds the room: the way the group runs or turns to. */
+  uniform_group_mode?: "heat" | "cool" | null;
   compressor_protection_until: number | null;
   coil_dry_active: boolean;
   coil_dry_phase: "drain" | "blow" | null;

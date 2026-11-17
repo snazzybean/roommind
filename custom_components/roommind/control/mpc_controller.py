@@ -620,9 +620,10 @@ async def async_idle_device(
     ``use_setpoint_offset`` lets the setback keep a direct device's sensor
     offset (#369); the controller turns it off in Managed mode.
 
-    ``release_setback`` lists the hvac modes (``"heat"``/``"cool"``) the MPC plan
-    expects no run of for ``SETBACK_RELEASE_BLOCKS``; a setback device in one of
-    them is turned off instead of being held at the setback target (#255).
+    ``release_setback`` lists hvac modes the device must not stay in: those the MPC
+    plan expects no run of for ``SETBACK_RELEASE_BLOCKS`` (#255) and those its
+    uniform-mode compressor group rules out (#533). A setback device in one of them,
+    and a fan_only device when ``"fan_only"`` is listed, is turned off instead.
 
     ``head_offset`` is the learned offset of an AC's own sensor from the room
     while it is stopped. It moves the setback into the device's frame, so a unit
@@ -760,8 +761,8 @@ async def async_idle_device(
             return False
         return True
 
-    # --- OFF branch ---
-    if idle_action != IDLE_ACTION_FAN_ONLY:
+    # --- OFF branch ---  (fan_only too while the compressor group heats, #533)
+    if idle_action != IDLE_ACTION_FAN_ONLY or "fan_only" in release_setback:
         await async_turn_off_climate(hass, entity_id, area_id=area_id, fallback_setpoint=fallback_temp)
         return False
 
@@ -2052,6 +2053,10 @@ class MPCController:
             return MODE_COOLING
         return MODE_IDLE
 
+    def can_heat_cool(self) -> tuple[bool, bool]:
+        """Whether the room may heat / cool now (climate mode, outdoor limits, override)."""
+        return self._get_can_heat_cool()
+
     def _get_can_heat_cool(self) -> tuple[bool, bool]:
         """Determine whether heating/cooling are allowed based on climate mode."""
         _override = is_override_active(self.room_config)
@@ -2202,6 +2207,7 @@ class MPCController:
         compressor_forced_on: set[str] | None = None,
         compressor_forced_off: set[str] | None = None,
         compressor_conflicting_modes: dict[str, frozenset[str]] | None = None,
+        compressor_group_modes: dict[str, str] | None = None,
         force_off: bool = False,
     ) -> None:
         """Apply the determined mode with proportional valve control.
@@ -2214,6 +2220,8 @@ class MPCController:
         ``compressor_conflicting_modes`` lists per device the hvac modes its
         uniform-mode compressor group runs against; a setback in one of them
         ends in off, else the unit keeps the whole group from switching (#533).
+        ``compressor_group_modes`` gives a Managed auto room's units the group's mode
+        instead of heat_cool (#533).
         """
         _forced_on = compressor_forced_on or set()
         _forced_off = compressor_forced_off or set()
@@ -2232,6 +2240,7 @@ class MPCController:
         self._idle_targets = targets
         self._force_off = force_off
         self._conflicting_modes = compressor_conflicting_modes or {}
+        _group_modes = compressor_group_modes or {}
         self.setback_eids = []
         for eid in self.thermostats + self.acs:
             if eid not in _forced_on:
@@ -2285,6 +2294,11 @@ class MPCController:
             ha_heat_target = celsius_to_ha_temp(self.hass, targets.heat) if targets.heat is not None else None
             ha_cool_target = celsius_to_ha_temp(self.hass, targets.cool) if targets.cool is not None else None
             for eid in thermostats:
+                if eid in _forced_on and eid in _forced_off:
+                    # Held by its uniform-mode group in the old mode: the min run ends there (#533)
+                    if not await self._async_hold_valve(eid, targets):
+                        await self._async_hold_retarget(eid, targets, current_temp)
+                    continue
                 if eid in _forced_off:
                     await async_idle_device(
                         self.hass,
@@ -2307,6 +2321,11 @@ class MPCController:
                 else:
                     await self._call("set_hvac_mode", {"entity_id": eid, "hvac_mode": "off"})
             for eid in acs:
+                if eid in _forced_on and eid in _forced_off:
+                    # Held by its uniform-mode group in the old mode: the min run ends there (#533)
+                    if not await self._async_hold_valve(eid, targets):
+                        await self._async_hold_retarget(eid, targets, current_temp)
+                    continue
                 if eid in _forced_off:
                     await async_idle_device(
                         self.hass,
@@ -2330,6 +2349,20 @@ class MPCController:
                 # on its own limit.
                 ac_target = ha_cool_target if ha_cool_target is not None else ha_heat_target
                 ac_heat_target = ha_heat_target if ha_heat_target is not None else ha_cool_target
+                _group_mode = _group_modes.get(eid)
+                if _group_mode == "off":
+                    # Its group turns to the other way: no direct reversal (#533)
+                    await self._call("set_hvac_mode", {"entity_id": eid, "hvac_mode": "off"})
+                    continue
+                _group_target = ha_heat_target if _group_mode == "heat" else ha_cool_target
+                if _group_mode in ac_modes and _group_target is not None:
+                    await self._call("set_hvac_mode", {"entity_id": eid, "hvac_mode": _group_mode})
+                    await self._call(
+                        "set_temperature",
+                        {"entity_id": eid, "temperature": _group_target, "hvac_mode": _group_mode},
+                        temp_intent=_group_mode,
+                    )
+                    continue
                 _both_targets = ha_heat_target is not None and ha_cool_target is not None
                 _known_range = bool(ac_state and ac_state.attributes.get("target_temp_low") is not None)
                 if ac_target is None:
@@ -2408,7 +2441,7 @@ class MPCController:
             for cmd in heat_source_plan.commands:
                 if cmd.entity_id in _exclude:
                     continue
-                if cmd.entity_id in _forced_on and not cmd.active:
+                if cmd.entity_id in _forced_on and (not cmd.active or cmd.entity_id in _forced_off):
                     # Compressor min-run: the plan parked a device that must keep
                     # running. Same rule as the idle hold: the device keeps its last
                     # setpoint unless the target changed on purpose (#436). A device
@@ -2528,6 +2561,11 @@ class MPCController:
             else:
                 trv_target = trv_heat_boost if self.has_external_sensor else effective_target
             for eid in thermostats:
+                if eid in _forced_on and eid in _forced_off:
+                    # Held by its uniform-mode group in the old mode: the min run ends there (#533)
+                    if not await self._async_hold_valve(eid, targets):
+                        await self._async_hold_retarget(eid, targets, current_temp)
+                    continue
                 if eid in _forced_off:
                     await async_idle_device(
                         self.hass,
@@ -2566,6 +2604,11 @@ class MPCController:
                         await self._async_hold_retarget(eid, targets, current_temp)
                     else:
                         await self._async_sit_out(eid, targets)
+                    continue
+                if eid in _forced_on and eid in _forced_off:
+                    # Held by its uniform-mode group in the old mode: the min run ends there (#533)
+                    if not await self._async_hold_valve(eid, targets):
+                        await self._async_hold_retarget(eid, targets, current_temp)
                     continue
                 if eid in _forced_off:
                     await async_idle_device(
@@ -2612,6 +2655,11 @@ class MPCController:
             else:
                 ac_cool_target = effective_target
             for eid in acs:
+                if eid in _forced_on and eid in _forced_off:
+                    # Held by its uniform-mode group in the old mode: the min run ends there (#533)
+                    if not await self._async_hold_valve(eid, targets):
+                        await self._async_hold_retarget(eid, targets, current_temp)
+                    continue
                 if eid in _forced_off:
                     await async_idle_device(
                         self.hass,
@@ -2634,6 +2682,11 @@ class MPCController:
                     deadband=self._proportional_deadband(eid, current_temp, effective_target),
                 )
             for eid in thermostats:
+                if eid in _forced_on and eid in _forced_off:
+                    # Held by its uniform-mode group in the old mode: the min run ends there (#533)
+                    if not await self._async_hold_valve(eid, targets):
+                        await self._async_hold_retarget(eid, targets, current_temp)
+                    continue
                 if eid in _forced_off:
                     await async_idle_device(
                         self.hass,
@@ -2698,7 +2751,7 @@ class MPCController:
     def _release_setback_for(self, eid: str, sitting_out: set[str]) -> frozenset[str]:
         """Modes in which ``eid``'s setback ends in off: always while sitting out, else when opted in (#255) or against its group (#533)."""
         if eid in sitting_out:
-            return _SETBACK_RELEASE_ALL
+            return _SETBACK_RELEASE_ALL | self._group_conflicts(eid)
         release = self._setback_release if get_setback_auto_off(self._devices, eid) else frozenset()
         return release | self._group_conflicts(eid)
 
@@ -2721,7 +2774,7 @@ class MPCController:
             use_setpoint_offset=self.has_external_sensor,
             head_offset=self._head_offset(eid, "idle"),
             force_off=self._force_off,
-            release_setback=_SETBACK_RELEASE_ALL,
+            release_setback=_SETBACK_RELEASE_ALL | self._group_conflicts(eid),
         )
 
     async def _async_drive_valve(self, eid: str, power_fraction: float, target: float) -> None:

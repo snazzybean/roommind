@@ -95,8 +95,8 @@ Invariants: `min_run_respected` (physical compressor), `min_run_commanded`,
 `min_off_respected`, `target_never_empty`, `no_cooling_below_outdoor_min`,
 `setpoints_within_device_range`, `no_full_cooling_at_target` (#450: no lowest AC
 setpoint once the room is at its cool target), `no_rejected_commands`, `window_open_pauses`,
-`no_heat_and_cool_same_group`, `uniform_group_one_mode` (#533: no units in heat and cool at
-once in a group with "All in the same mode"), `no_commands_when_climate_off`, `max_commands_per_hour`.
+`no_heat_and_cool_same_group`, `uniform_group_one_mode` (#533: no unit or master in heat while
+another is in cool, dry or fan in a group with "All in the same mode"), `no_commands_when_climate_off`, `max_commands_per_hour`.
 Check expressions see `room.<area>.<live field>`, `dev('<entity_id>')`,
 `cover('<entity_id>')`, `true_temp('<area>')` and `outdoor`.
 

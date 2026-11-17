@@ -79,6 +79,7 @@ from .control.thermal_model import RoomModelManager
 from .managers.ac_coil_dry_manager import AcCoilDryManager, CoilDryRoomResult
 from .managers.air_quality_manager import AirQualityTracker, VentilationController
 from .managers.compressor_group_manager import (
+    UNIFORM_MODE_CONFLICTS,
     CompressorGroupConfig,
     CompressorGroupManager,
     CompressorGroupState,
@@ -176,6 +177,18 @@ def _within_boost_cap(setpoint: float, cap: float | None, floor: float) -> float
     if cap is None:
         return setpoint
     return min(setpoint, max(cap, floor))
+
+
+def _uniform_mode(state: Any) -> str | None:
+    """The mode a unit holds on the shared circuit; heat_cool/auto by what it is doing (#533)."""
+    if state is None:
+        return None
+    if state.state in ("heat_cool", "auto"):
+        action = state.attributes.get("hvac_action")
+        return {"heating": "heat", "preheating": "heat", "cooling": "cool", "drying": "dry", "fan": "fan_only"}.get(
+            action
+        )
+    return str(state.state)
 
 
 def _setpoint_side(attr: str, state: Any, device_type: str, climate_mode: str) -> str | None:
@@ -337,6 +350,8 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         self._rooms_switched_off: set[str] = set()
         # Zone of no room woken for a group's master (#135), per group; switched off with the master
         self._woken_zones: dict[str, str] = {}
+        # Per uniform-mode group, the way a room already started it this cycle (#533)
+        self._uniform_claims: dict[str, str] = {}
         self._switch_entity_areas: set[str] = set()
         self._climate_control_switch_areas: set[str] = set()
         self._binary_sensor_entity_areas: set[str] = set()
@@ -386,6 +401,8 @@ class RoomMindCoordinator(DataUpdateCoordinator):
 
         # Load compressor groups from settings (every cycle, cheap)
         self._compressor_manager.load_groups(settings.get("compressor_groups", []))
+        self._uniform_claims.clear()
+        self._seed_uniform_modes()
 
         # Load thermal model and valve actuation data from store (once)
         if not self._model_loaded:
@@ -1290,6 +1307,19 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             sitting_out = set(get_ac_eids(room.get("devices", [])))
             plan_parked_eids |= sitting_out
 
+        # A Managed room in auto with both sides open has no demand of its own: in a
+        # uniform-mode group its units follow the group's mode instead of heat_cool (#533)
+        managed_follows_group = (
+            not has_external_sensor
+            and room.get("climate_mode", "auto") == "auto"
+            and all(controller.can_heat_cool())
+            and any(self._compressor_manager.is_uniform(eid) for eid in all_device_eids)
+        )
+        compressor_group_modes: dict[str, str] = {}
+        if climate_active and managed_follows_group:
+            for eid in all_device_eids:
+                if (managed_mode := self._compressor_manager.managed_mode(eid)) is not None:
+                    compressor_group_modes[eid] = managed_mode
         compressor_conflicting_modes: dict[str, frozenset[str]] = {}
         if climate_active:
             for eid in all_device_eids:
@@ -1297,7 +1327,11 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 if conflicting:
                     compressor_conflicting_modes[eid] = conflicting
 
+        # The mode a room wanted before its uniform-mode group held it back; it still counts for the group (#533)
+        group_wanted_mode: str | None = None
+        uniform_held = False
         if all_device_eids and climate_active and not window_open and not force_off:
+            group_action = {MODE_HEATING: "heat", MODE_COOLING: "cool"}.get(mode)
             for eid in all_device_eids:
                 if self._compressor_manager.get_group_for_entity(eid) is None:
                     continue
@@ -1307,15 +1341,18 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 elif mode != MODE_IDLE:
                     if not self._compressor_manager.check_can_activate(eid):
                         compressor_forced_off.add(eid)
-                    else:
-                        # Against the group's applied action and, while its master refuses
-                        # or delays the switch, the one it is turning to (#533).
-                        enforced = self._compressor_manager.get_enforced_action(eid)
-                        blocked = compressor_conflicting_modes.get(eid, frozenset())
-                        if (mode == MODE_HEATING and (enforced == "cool" or "heat" in blocked)) or (
-                            mode == MODE_COOLING and (enforced == "heat" or "cool" in blocked)
-                        ):
-                            compressor_forced_off.add(eid)
+                    elif (
+                        group_action is not None
+                        and not managed_follows_group
+                        and eid not in plan_parked_eids
+                        and self._held_by_uniform_group(eid, group_action, set(all_device_eids))
+                    ):
+                        compressor_forced_off.add(eid)
+                        group_wanted_mode = mode
+                        uniform_held = True
+                        # A unit still in its min run in the old mode finishes it there, not reversed
+                        if self._compressor_manager.check_must_stay_active(eid):
+                            compressor_forced_on.add(eid)
                     # The room still heats, but the heat-source plan parks this
                     # device: for the compressor that is a stop like any other.
                     if eid in plan_parked_eids and self._compressor_manager.check_must_stay_active(eid):
@@ -1350,6 +1387,12 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 mode = MODE_IDLE
                 power_fraction = 0.0
                 compressor_forced_off.clear()
+            else:
+                group_wanted_mode = None
+            if uniform_held and (group_wanted_mode is not None or protection_left <= 0):
+                # Held by the group's mode, not by a compressor timer
+                compressor_protection_reason = "uniform_mode"
+                compressor_protection_until = None
 
         # --- Residual heat transition tracking ---
         # After compressor constraints may have changed mode to IDLE.
@@ -1427,6 +1470,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             exclude_eids=cycling_eids,
             force_off=force_off,
             can_activate=self._compressor_manager.check_can_activate,
+            group_conflicts=compressor_conflicting_modes,
         )
 
         switch_off = area_id in self._rooms_to_switch_off and self._take_room_switch_off(area_id, climate_active)
@@ -1469,6 +1513,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                     compressor_forced_on=compressor_forced_on or None,
                     compressor_forced_off=compressor_forced_off or None,
                     compressor_conflicting_modes=compressor_conflicting_modes or None,
+                    compressor_group_modes=compressor_group_modes or None,
                     force_off=force_off,
                 )
             except Exception:  # noqa: BLE001
@@ -1483,7 +1528,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                     continue
                 if eid in cycling_eids:
                     continue
-                if eid in compressor_forced_off:
+                if eid in compressor_forced_off and eid not in compressor_forced_on:
                     self._compressor_manager.update_member(eid, False)
                 elif eid in compressor_forced_on:
                     # Verify device is actually running before tracking as active.
@@ -1641,6 +1686,17 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             compressor_protection_until=compressor_protection_until,
             coil_dry=coil_dry,
         )
+        if group_wanted_mode is not None:
+            room_state["group_wanted_mode"] = group_wanted_mode
+        if compressor_protection_reason == "uniform_mode":
+            # The way the outdoor unit runs; the room's own way still pending reads as switching
+            wanted = {MODE_HEATING: "heat", MODE_COOLING: "cool"}.get(group_wanted_mode or "")
+            running = next(
+                (m for e in all_device_eids if (m := self._compressor_manager.group_mode(e, resting=False))), None
+            )
+            room_state["uniform_group_mode"] = None if running == wanted else running
+        if managed_follows_group:
+            room_state["managed_follows_group"] = True
         room_state.update(air_quality)
         return room_state
 
@@ -3104,7 +3160,16 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             rs = room_states.get(area_id)
             if not rs:
                 continue
-            commanded = rs.get("commanded_mode", rs.get("mode", MODE_IDLE))
+            commanded = rs.get("group_wanted_mode") or rs.get("commanded_mode", rs.get("mode", MODE_IDLE))
+            if rs.get("managed_follows_group"):
+                # Its heating is a placeholder: it counts with what its units do or read against its band
+                doing = {
+                    self._managed_vote(self.hass.states.get(e), rs.get("heat_target"), rs.get("cool_target"))
+                    for e in device_eids & member_set
+                }
+                commanded = (
+                    MODE_HEATING if MODE_HEATING in doing else MODE_COOLING if MODE_COOLING in doing else MODE_IDLE
+                )
 
             # Heating only: skip this room when its active heat sources don't
             # include this group's device types.
@@ -3115,6 +3180,102 @@ class RoomMindCoordinator(DataUpdateCoordinator):
 
             modes.append(commanded)
         return modes
+
+    def _managed_vote(self, state: Any, heat_target: float | None, cool_target: float | None) -> str:
+        """A Managed unit's vote in its uniform-mode group: what it does, else its reading against the band (#533)."""
+        if state is None:
+            return MODE_IDLE
+        action = state.attributes.get("hvac_action")
+        if action in ("heating", "preheating"):
+            return MODE_HEATING
+        if action in ("cooling", "drying"):
+            return MODE_COOLING
+        reading = state.attributes.get("current_temperature")
+        if reading is None:
+            return MODE_IDLE
+        try:
+            temp = ha_temp_to_celsius(self.hass, float(reading))
+        except (TypeError, ValueError):
+            return MODE_IDLE
+        if cool_target is not None and temp > cool_target:
+            return MODE_COOLING
+        if heat_target is not None and temp < heat_target:
+            return MODE_HEATING
+        return MODE_IDLE
+
+    def _seed_uniform_modes(self) -> None:
+        """After a restart, read the way each uniform-mode group ran from its master or units (#533)."""
+        for gid, group in self._compressor_manager.get_groups().items():
+            state = self._compressor_manager.get_state(gid)
+            if not group.enforce_uniform_mode or state is None or state.last_mode_action is not None:
+                continue
+            units = ([group.master_entity] if group.master_entity else []) + list(group.members)
+            modes = [_uniform_mode(self.hass.states.get(e)) for e in units]
+            for action in ("heat", "cool"):
+                if action in modes or (action == "cool" and "dry" in modes):
+                    self._compressor_manager.seed_last_mode(gid, action)
+                    break
+
+    def _held_by_uniform_group(self, eid: str, action: str, own_eids: set[str]) -> bool:
+        """Whether a uniform-mode group keeps ``eid`` from running ``action`` (#533).
+
+        Against the applied group action, against the one it is turning to (a master refusing
+        or delaying the switch), and while another member still runs the other way. A unit in
+        its min run in the wanted mode finishes it.
+        """
+        gid = self._compressor_manager.get_group_for_entity(eid)
+        group = self._compressor_manager.get_groups().get(gid) if gid is not None else None
+        state = self._compressor_manager.get_state(gid) if gid is not None else None
+        if gid is None or group is None or state is None or not group.enforce_uniform_mode:
+            return False
+        enforced = self._compressor_manager.get_enforced_action(eid)
+        conflicting = self._compressor_manager.conflicting_modes(eid, resting=False)
+        claimed = self._uniform_claims.get(gid)
+        held = (
+            (enforced in UNIFORM_MODE_CONFLICTS and enforced != action)
+            or action in conflicting
+            or (claimed is not None and claimed != action)
+        )
+        if not held and enforced != action:
+            held = self._uniform_switch_pending(gid, group, action, own_eids, clear=False)
+        if held and self._compressor_manager.check_must_stay_active(eid):
+            # Its own min run in the wanted mode goes on; in the other mode the caller holds it there
+            current = _uniform_mode(self.hass.states.get(eid))
+            held = current is not None and current != action
+        if not held:
+            # A later room this cycle must not start the other way before any state shows it
+            self._uniform_claims[gid] = action
+        return held
+
+    def _uniform_switch_pending(
+        self, gid: str, group: CompressorGroupConfig, action: str, skip: set[str], *, clear: bool = True
+    ) -> bool:
+        """A member outside ``skip`` still runs the mode ``action`` conflicts with, and the wait is not over (#533).
+
+        Only the master step (``clear``) ends the wait: a room skipping its own unit sees nothing busy
+        where the master step still waits for that unit.
+        """
+        conflicting = UNIFORM_MODE_CONFLICTS.get(action, frozenset())
+        state = self._compressor_manager.get_state(gid)
+        ignored = state.switch_ignored if state is not None else {}
+        modes = {m: _uniform_mode(self.hass.states.get(m)) for m in group.members if m not in skip}
+        for m, mode in modes.items():
+            if m in ignored and ignored[m] != mode:
+                del ignored[m]  # changed its mode: counts again, with a fresh wait
+                self._compressor_manager.clear_switch_wait(gid)
+        busy = [m for m, mode in modes.items() if mode in conflicting and m not in ignored]
+        if not busy:
+            if clear:
+                self._compressor_manager.clear_switch_wait(gid)
+            return False
+        if any(self._compressor_manager.check_must_stay_active(m) for m in busy):
+            return True
+        if self._compressor_manager.switch_wait_over(gid, action):
+            # Waited once for these: they do not hold the next switch again
+            for m in busy:
+                ignored[m] = modes[m] or ""
+            return False
+        return True
 
     @staticmethod
     def _heating_sources(room: dict, room_state: dict) -> str | None:
@@ -3341,9 +3502,9 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                             group.master_entity,
                             group.name,
                         )
-                        # A stale wish would keep switching units off while the rooms want otherwise
-                        self._compressor_manager.set_desired_action(gid, None)
+                        self._compressor_manager.note_master_readable(gid, False)
                         continue
+                    self._compressor_manager.note_master_readable(gid, True)
 
                 # 2. Collect member room modes
                 modes = self._collect_member_room_modes(
@@ -3368,9 +3529,24 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 if new_action == "idle" and self._any_member_room_waiting(group.members, rooms_config):
                     continue
 
+                # All in the same mode: master and script switch only once no unit runs the other way (#533)
+                if (
+                    group.enforce_uniform_mode
+                    and new_action != (self._compressor_manager.get_state(gid) or CompressorGroupState()).master_action
+                    and self._uniform_switch_pending(gid, group, new_action, set())
+                ):
+                    _LOGGER.debug(
+                        "Group '%s': switch to %s waits for units still in the other mode",
+                        group.name,
+                        new_action,
+                    )
+                    continue
+
                 # 4. Get previous state for transition detection
                 state = self._compressor_manager.get_state(gid)
                 prev_action = state.master_action if state else None
+                if new_action == prev_action:
+                    self._compressor_manager.clear_switch_wait(gid)
 
                 # 5. Control master climate entity (when configured)
                 if has_master:
@@ -3403,7 +3579,14 @@ class RoomMindCoordinator(DataUpdateCoordinator):
 
                     # Pre-activate a zone for ducted multi-zone systems where
                     # the outdoor unit requires at least one active zone (#135).
-                    if new_action != "idle" and (prev_action is None or prev_action == "idle"):
+                    # Not into fan_only for a uniform-mode group that starts heating (#533).
+                    if (
+                        new_action != "idle"
+                        and (prev_action is None or prev_action == "idle")
+                        and not (
+                            group.enforce_uniform_mode and "fan_only" in UNIFORM_MODE_CONFLICTS.get(new_action, ())
+                        )
+                    ):
                         await self._async_wake_member_zone(group, room_states, rooms_config)
 
                     # Send climate command

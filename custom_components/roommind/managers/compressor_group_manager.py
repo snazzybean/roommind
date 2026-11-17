@@ -14,9 +14,17 @@ from ..const import (
     DEFAULT_COMPRESSOR_MIN_OFF_MINUTES,
     DEFAULT_COMPRESSOR_MIN_RUN_MINUTES,
     DEFAULT_CONFLICT_RESOLUTION,
+    UNIFORM_SWITCH_MAX_WAIT_S,
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+# hvac modes an indoor unit must not hold while the shared outdoor unit runs the given way (#533):
+# heating takes the whole circuit, cooling shares it with dry and fan (Daikin, Pioneer, Panasonic manuals).
+UNIFORM_MODE_CONFLICTS: dict[str, frozenset[str]] = {
+    "heat": frozenset({"cool", "dry", "fan_only"}),
+    "cool": frozenset({"heat"}),
+}
 
 
 @dataclass
@@ -44,6 +52,15 @@ class CompressorGroupState:
     master_action: str | None = None
     # What the members' rooms ask for, before the master guard and command (#533)
     desired_action: str | None = None
+    # The way the outdoor unit last ran or was wanted to: units resting in it may restart any time
+    last_mode_action: str | None = None
+    # A switch to this action waiting for members in the other mode, since (monotonic)
+    switch_wait_action: str | None = None
+    switch_wait_since: float | None = None
+    # Members the group stopped waiting for, with the mode they kept (a unit RoomMind may not touch)
+    switch_ignored: dict[str, str] = field(default_factory=dict)
+    # Uniform-mode group whose master can't be read: its applied mode is not trusted meanwhile
+    master_unreadable: bool = False
     master_on_since: float | None = None
     master_off_since: float | None = None
     member_started_at: dict[str, float] = field(default_factory=dict)
@@ -209,25 +226,94 @@ class CompressorGroupManager:
         if group is None or not group.enforce_uniform_mode:
             return None
         state = self._states.get(gid)
-        return state.master_action if state else None
+        if state is None or state.master_unreadable:
+            return None
+        return state.master_action
 
-    def conflicting_modes(self, entity_id: str) -> frozenset[str]:
-        """hvac modes a member must not hold while its uniform-mode group runs or turns the other way (#533).
+    def is_uniform(self, entity_id: str) -> bool:
+        """Whether the entity belongs to a group with "All in the same mode"."""
+        gid = self._entity_to_group.get(entity_id)
+        group = self._groups.get(gid) if gid is not None else None
+        return group is not None and group.enforce_uniform_mode
 
-        The wanted action counts before the applied one: a master that refuses the switch while
-        a unit still sits in the old mode, or waits out its min off, must not keep that unit there.
+    def group_mode(self, entity_id: str, *, resting: bool = True) -> str | None:
+        """The way a uniform-mode group runs or turns to (heat/cool), None without one (#533)."""
+        gid = self._entity_to_group.get(entity_id)
+        group = self._groups.get(gid) if gid is not None else None
+        state = self._states.get(gid) if gid is not None else None
+        if group is None or state is None or not group.enforce_uniform_mode:
+            return None
+        applied = None if state.master_unreadable else state.master_action
+        for action in (state.desired_action, applied, state.last_mode_action if resting else None):
+            if action in UNIFORM_MODE_CONFLICTS:
+                return action
+        return None
+
+    def managed_mode(self, entity_id: str) -> str | None:
+        """What a Managed auto room's unit runs in a uniform-mode group (#533).
+
+        The applied mode once the group runs; "off" while it turns to the other way (no direct
+        reversal next to an outdoor unit still in the old mode); None while the group is idle,
+        so the room keeps its own way (heat_cool or by the unit's reading).
         """
         gid = self._entity_to_group.get(entity_id)
         group = self._groups.get(gid) if gid is not None else None
         state = self._states.get(gid) if gid is not None else None
         if group is None or state is None or not group.enforce_uniform_mode:
-            return frozenset()
-        action = state.desired_action if state.desired_action in ("heat", "cool") else state.master_action
-        if action == "heat":
-            return frozenset({"cool"})
-        if action == "cool":
-            return frozenset({"heat"})
-        return frozenset()
+            return None
+        applied = state.master_action if not state.master_unreadable else None
+        applied = applied if applied in UNIFORM_MODE_CONFLICTS else None
+        desired = state.desired_action if state.desired_action in UNIFORM_MODE_CONFLICTS else None
+        if desired is not None and desired != applied:
+            return "off"
+        return applied
+
+    def conflicting_modes(self, entity_id: str, *, resting: bool = True) -> frozenset[str]:
+        """hvac modes a member must not hold while its uniform-mode group runs or turns the other way (#533).
+
+        The wanted action counts before the applied one: a master that refuses the switch while
+        a unit still sits in the old mode, or waits out its min off, must not keep that unit there.
+        For units at rest (``resting``) an idle group keeps the way it last ran, since its units
+        resting in that mode may start again; a room that wants to run is judged without it.
+        """
+        return UNIFORM_MODE_CONFLICTS.get(self.group_mode(entity_id, resting=resting) or "", frozenset())
+
+    def switch_wait_over(self, group_id: str, action: str) -> bool:
+        """Whether a switch to ``action`` has waited long enough for members in the other mode (#533)."""
+        state = self._states.get(group_id)
+        group = self._groups.get(group_id)
+        if state is None or group is None:
+            return True
+        if state.switch_wait_action != action or state.switch_wait_since is None:
+            state.switch_wait_action = action
+            state.switch_wait_since = monotonic()
+        return monotonic() - state.switch_wait_since >= UNIFORM_SWITCH_MAX_WAIT_S
+
+    def clear_switch_wait(self, group_id: str) -> None:
+        """No member in the other mode any more: a later switch waits afresh."""
+        state = self._states.get(group_id)
+        if state is not None:
+            state.switch_wait_action = None
+            state.switch_wait_since = None
+
+    def note_master_readable(self, group_id: str, readable: bool) -> None:
+        """A master that can't be read: no stale wish, and a uniform-mode group follows its members.
+
+        The applied action and its min run/off timers stay, so the master guard holds on its return.
+        """
+        state = self._states.get(group_id)
+        group = self._groups.get(group_id)
+        if state is None or group is None:
+            return
+        if not readable:
+            state.desired_action = None
+        state.master_unreadable = not readable and group.enforce_uniform_mode
+
+    def seed_last_mode(self, group_id: str, action: str) -> None:
+        """After a restart: the way the group ran before, read from its devices."""
+        state = self._states.get(group_id)
+        if state is not None and state.last_mode_action is None and action in UNIFORM_MODE_CONFLICTS:
+            state.last_mode_action = action
 
     def check_master_can_switch(self, group_id: str, new_action: str) -> bool:
         """Check if the master device is allowed to switch to *new_action*.
@@ -266,6 +352,8 @@ class CompressorGroupManager:
         state = self._states.get(group_id)
         if state is not None:
             state.desired_action = action
+            if action in UNIFORM_MODE_CONFLICTS:
+                state.last_mode_action = action
 
     def set_master_action(self, group_id: str, action: str) -> None:
         """Record the master entity's resolved action after commands are sent."""
@@ -274,6 +362,11 @@ class CompressorGroupManager:
             return
         prev = state.master_action
         state.master_action = action
+        if action != prev:
+            state.switch_wait_action = None
+            state.switch_wait_since = None
+        if action in UNIFORM_MODE_CONFLICTS:
+            state.last_mode_action = action
         if action != "idle" and (prev is None or prev == "idle"):
             state.master_on_since = monotonic()
             state.master_off_since = None

@@ -1,19 +1,26 @@
 name: multisplit-uniform-mode-master
 extends: multisplit-uniform-mode-setback
 description: >
-  The same spring days with an outdoor unit as master. The master keeps its min run and
-  min off before it follows a switch between heat and cool, so the group's wish runs ahead
-  of the applied mode: units resting in the old mode must go off meanwhile, and a room
-  wanting the old mode waits instead of starting it again (#533).
+  The same spring days with an outdoor unit as master, the office unit idling in fan_only,
+  coil drying after cooling, and a radiator in the heat only bedroom whose split unit (idle
+  fan_only) sits its heating runs out (#476). A restart in the second afternoon checks the
+  first cycles after it. Heating shares the outdoor unit with no other mode, cooling
+  with dry and fan: a switch first takes the units in the other mode off, then the master and
+  the units of the new mode follow; a room wanting the old mode waits meanwhile (#533).
 refs: [533]
 house:
   rooms:
+    schlafzimmer:
+      devices:
+        - {entity_id: climate.sz_split, profile: daikin_ac}
+        - {entity_id: climate.sz_trv, profile: generic_trv}
     technik:
       floor_area_m2: 4
       initial: {temperature: 15.0}
       devices: [{entity_id: climate.aussengeraet, profile: generic_split_ac}]
 roommind:
   settings:
+    coil_dry_enabled: true
     compressor_groups:
       - id: aussen
         name: Aussengeraet
@@ -22,3 +29,12 @@ roommind:
         min_run_minutes: 15
         min_off_minutes: 5
         enforce_uniform_mode: true
+  rooms:
+    schlafzimmer:
+      devices:
+        - {entity_id: climate.sz_split, type: ac, idle_action: fan_only}
+        - {entity_id: climate.sz_trv, type: trv, heating_system_type: radiator}
+    buero:
+      devices: [{entity_id: climate.buero_split, type: ac, idle_action: fan_only}]
+timeline:
+  - {at: "+1d14h00m", do: ha.restart}

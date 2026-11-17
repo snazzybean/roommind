@@ -434,3 +434,66 @@ async def test_unit_held_back_by_its_group_does_not_keep_the_other_mode(mode, mo
     )
 
     assert _turned_off(hass)
+
+
+@pytest.mark.asyncio
+async def test_fan_only_idle_ends_in_off_while_its_group_heats(monkeypatch):
+    """Heating shares the outdoor unit with no fan (#533)."""
+    hass, ctrl = _controller("fan_only", 21.0, [MODE_IDLE], monkeypatch, auto_off=False)
+    ctrl._devices[0]["idle_action"] = "fan_only"
+    hass.states.get.return_value.attributes["hvac_modes"] = ["heat", "cool", "fan_only", "off"]
+
+    await ctrl.async_apply(
+        MODE_IDLE,
+        HEAT_TARGETS,
+        power_fraction=0.0,
+        current_temp=21.3,
+        compressor_conflicting_modes={EID: frozenset({"cool", "dry", "fan_only"})},
+    )
+
+    assert _turned_off(hass)
+
+
+@pytest.mark.asyncio
+async def test_a_sitting_out_unit_does_not_keep_its_fan_on_while_its_group_heats():
+    """Heat only room with a TRV: its AC sits the run out, and fan_only would block the group (#476, #533)."""
+    hass = build_hass()
+    ac_state = _state("fan_only", 21.0)
+    ac_state.attributes["hvac_modes"] = ["heat", "cool", "fan_only", "off"]
+    trv_state = _state("heat", 25.0)
+    hass.states.get = MagicMock(side_effect=lambda eid: ac_state if eid == EID else trv_state)
+    room = make_room(thermostats=["climate.trv"], acs=[EID], climate_mode="heat_only")
+    for dev in room["devices"]:
+        if dev["entity_id"] == EID:
+            dev["idle_action"] = "fan_only"
+    ctrl = MPCController(
+        hass, room, model_manager=RoomModelManager(), outdoor_temp=5.0, settings={}, has_external_sensor=True
+    )
+
+    await ctrl.async_apply(
+        MODE_HEATING,
+        HEAT_TARGETS,
+        power_fraction=0.5,
+        current_temp=20.0,
+        compressor_conflicting_modes={EID: frozenset({"cool", "dry", "fan_only"})},
+    )
+
+    assert {"entity_id": EID, "hvac_mode": "off"} in _calls(hass, "set_hvac_mode")
+
+
+@pytest.mark.asyncio
+async def test_a_unit_held_in_its_min_run_is_not_switched_off_while_the_room_heats_on(monkeypatch):
+    """Held by its group in the old mode during its min run, in a room that still heats otherwise (#533)."""
+    hass, ctrl = _controller("cool", 24.0, [MODE_HEATING], monkeypatch, auto_off=False)
+
+    await ctrl.async_apply(
+        MODE_HEATING,
+        HEAT_TARGETS,
+        power_fraction=0.5,
+        current_temp=20.0,
+        compressor_forced_off={EID},
+        compressor_forced_on={EID},
+    )
+
+    assert not _turned_off(hass)
+    assert "heat" not in [d.get("hvac_mode") for d in _calls(hass, "set_hvac_mode")]

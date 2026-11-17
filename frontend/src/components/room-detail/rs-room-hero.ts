@@ -635,14 +635,21 @@ export class RsRoomHero extends LitElement {
         info:
           h.id === "compressor"
             ? localize("hero.compressor_protection_info", l)
-            : h.id === "setback"
-              ? localize("hero.setback_info", l)
-              : h.id === "learning_paused" && live.learning_paused_reason === "outdoor_unavailable"
-                ? localize("hero.mpc_learning_paused.outdoor_unavailable", l)
-                : undefined,
+            : h.id === "uniform_mode"
+              ? localize("hero.uniform_mode_info", l)
+              : h.id === "setback"
+                ? localize("hero.setback_info", l)
+                : h.id === "learning_paused" &&
+                    live.learning_paused_reason === "outdoor_unavailable"
+                  ? localize("hero.mpc_learning_paused.outdoor_unavailable", l)
+                  : undefined,
       }));
     // Compressor protection without a known end has no card hint; the hero names it anyway.
-    if (live.compressor_protection_active && live.compressor_protection_until == null) {
+    if (
+      live.compressor_protection_active &&
+      live.compressor_protection_until == null &&
+      live.compressor_protection_reason !== "uniform_mode"
+    ) {
       chips.push({
         icon: "mdi:timer-sand",
         text: localize(

@@ -468,9 +468,13 @@ class TestEnforceUniformMode:
         mgr.set_master_action("g1", "cool")
         assert mgr.conflicting_modes("climate.ac1") == frozenset({"heat"})
         mgr.set_master_action("g1", "heat")
-        assert mgr.conflicting_modes("climate.ac1") == frozenset({"cool"})
+        assert mgr.conflicting_modes("climate.ac1") == frozenset({"cool", "dry", "fan_only"})
         mgr.set_master_action("g1", "idle")
-        assert mgr.conflicting_modes("climate.ac1") == frozenset()
+        # Units resting in heat may start again: the idle group keeps the way it last ran
+        assert mgr.conflicting_modes("climate.ac1") == frozenset({"cool", "dry", "fan_only"})
+        mgr.set_desired_action("g1", "cool")
+        mgr.set_desired_action("g1", "idle")
+        assert mgr.conflicting_modes("climate.ac1") == frozenset({"heat"})
 
     def test_conflicting_modes_only_with_uniform_mode(self):
         mgr = CompressorGroupManager()
@@ -489,6 +493,39 @@ class TestEnforceUniformMode:
         mgr.set_master_action("g1", "heat")
         assert mgr.conflicting_modes("climate.ac1") == frozenset({"heat"})
         mgr.set_desired_action("g1", "idle")
-        assert mgr.conflicting_modes("climate.ac1") == frozenset({"cool"})
+        assert mgr.conflicting_modes("climate.ac1") == frozenset({"cool", "dry", "fan_only"})
         mgr.set_desired_action("unknown", "cool")
         assert mgr.get_state("unknown") is None
+
+    def test_switch_wait_lasts_five_minutes(self, monkeypatch):
+        import custom_components.roommind.managers.compressor_group_manager as mod
+
+        now = [1000.0]
+        monkeypatch.setattr(mod, "monotonic", lambda: now[0])
+        mgr = CompressorGroupManager()
+        mgr.load_groups([_make_group(enforce_uniform_mode=True)])
+        assert mgr.switch_wait_over("g1", "cool") is False
+        now[0] += 299
+        assert mgr.switch_wait_over("g1", "cool") is False
+        assert mgr.switch_wait_over("g1", "heat") is False  # another switch waits afresh
+        now[0] += 300
+        assert mgr.switch_wait_over("g1", "heat") is True
+        mgr.clear_switch_wait("g1")
+        assert mgr.switch_wait_over("g1", "heat") is False
+        assert mgr.switch_wait_over("unknown", "heat") is True
+        mgr.clear_switch_wait("unknown")
+
+    def test_a_done_switch_clears_the_wait(self):
+        mgr = CompressorGroupManager()
+        mgr.load_groups([_make_group(enforce_uniform_mode=True)])
+        mgr.switch_wait_over("g1", "cool")
+        mgr.set_master_action("g1", "cool")
+        assert mgr.get_state("g1").switch_wait_since is None
+
+    def test_a_room_that_wants_to_run_is_judged_without_the_last_mode(self):
+        mgr = CompressorGroupManager()
+        mgr.load_groups([_make_group(enforce_uniform_mode=True)])
+        mgr.set_master_action("g1", "heat")
+        mgr.set_master_action("g1", "idle")
+        assert mgr.conflicting_modes("climate.ac1") == frozenset({"cool", "dry", "fan_only"})
+        assert mgr.conflicting_modes("climate.ac1", resting=False) == frozenset()

@@ -361,6 +361,7 @@ async def websocket_list_rooms(
             "learning_paused_reason": learning_paused_reason,
             "compressor_protection_active": live.get("compressor_protection_active", False),
             "compressor_protection_reason": live.get("compressor_protection_reason"),
+            "uniform_group_mode": live.get("uniform_group_mode"),
             "compressor_protection_until": live.get("compressor_protection_until"),
             "coil_dry_active": live.get("coil_dry_active", False),
             "coil_dry_phase": live.get("coil_dry_phase"),

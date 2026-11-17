@@ -152,3 +152,32 @@ describe("roomHints air quality (#267)", () => {
     expect(hints.map((h) => h.id)).not.toContain("air_quality");
   });
 });
+
+describe("roomHints all in the same mode (#533)", () => {
+  test("a room its group holds names the way the outdoor unit runs, not a compressor timer", () => {
+    const held = room({
+      compressor_protection_active: true,
+      compressor_protection_reason: "uniform_mode",
+      compressor_protection_until: null,
+      uniform_group_mode: "heat",
+    });
+    const hints = roomHints(held, "controlled", ctx);
+    expect(hints.map((h) => h.id)).toEqual(expect.arrayContaining(["uniform_mode"]));
+    expect(hints.map((h) => h.id)).not.toContain("compressor");
+    expect(
+      hintText(
+        hints.find((h) => h.id === "uniform_mode")!,
+        "de",
+      ),
+    ).toBe("Außeneinheit heizt");
+  });
+
+  test("while the group switches", () => {
+    const switching = room({
+      compressor_protection_reason: "uniform_mode",
+      uniform_group_mode: null,
+    });
+    const hint = roomHints(switching, "controlled", ctx).find((h) => h.id === "uniform_mode");
+    expect(hintText(hint!, "en")).toBe("Outdoor unit switching");
+  });
+});

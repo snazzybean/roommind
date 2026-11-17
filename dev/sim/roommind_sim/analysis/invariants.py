@@ -386,23 +386,24 @@ def no_heat_and_cool_same_group(run: RunData) -> list[Violation]:
 
 
 def uniform_group_one_mode(run: RunData, grace_s: float = 180.0) -> list[Violation]:
-    """A group with "All in the same mode" never has units in heat and cool at once (#533).
+    """A group with "All in the same mode" never has units heating and cooling at once (#533).
 
     Mode, not action: an idle unit held in heat at its setback target still keeps an outdoor
-    unit that needs one mode from switching. ``grace_s`` covers one cycle plus the report.
+    unit that needs one mode from switching. Dry and fan share the circuit with cooling, not
+    with heating; the master counts like a member. ``grace_s`` covers a cycle plus the report.
     """
     out: list[Violation] = []
     for group in _groups(run):
         if not group.get("enforce_uniform_mode"):
             continue
-        members = group.get("members", [])
+        units = list(group.get("members", [])) + ([group["master_entity"]] if group.get("master_entity") else [])
         mixed_since: float | None = None
         for s in run.samples:
-            modes = {(s["devices"].get(m) or {}).get("mode") for m in members}
-            if {"heat", "cool"} <= modes:
+            modes = {(s["devices"].get(m) or {}).get("mode") for m in units}
+            if "heat" in modes and modes & {"cool", "dry", "fan_only"}:
                 mixed_since = s["t"] if mixed_since is None else mixed_since
                 if s["t"] - mixed_since > grace_s:
-                    out.append(Violation(mixed_since, f"group {group.get('id')}: units in heat and cool at once"))
+                    out.append(Violation(mixed_since, f"group {group.get('id')}: heating next to cool, dry or fan"))
                     break
             else:
                 mixed_since = None

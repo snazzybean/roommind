@@ -332,3 +332,13 @@ def test_uniform_group_flags_a_unit_left_in_the_other_mode_533():
     assert len(uniform_group_one_mode(_mode_run(["heat"] * 10))) == 1
     assert uniform_group_one_mode(_mode_run(["heat"] * 3 + ["off"] * 7)) == []
     assert uniform_group_one_mode(_mode_run(["heat"] * 10, uniform=False)) == []
+
+
+def test_uniform_group_counts_fan_and_dry_against_heat_533():
+    run = _mode_run(["heat"] * 10)
+    for s in run.samples:
+        s["devices"]["climate.a"]["mode"] = "fan_only"
+    assert len(uniform_group_one_mode(run)) == 1
+    for s in run.samples:
+        s["devices"]["climate.b"]["mode"] = "cool"
+    assert uniform_group_one_mode(run) == []

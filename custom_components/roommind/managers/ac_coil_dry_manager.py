@@ -93,11 +93,16 @@ class AcCoilDryManager:
         exclude_eids: set[str],
         force_off: bool,
         can_activate: Callable[[str], bool],
+        group_conflicts: dict[str, frozenset[str]] | None = None,
     ) -> CoilDryRoomResult:
         """Advance the state machine for every AC in this room.
 
         ``commandable`` is ``climate_active and not waiting_for_data`` — when
         False, RoomMind must send no commands at all (see #36).
+
+        ``group_conflicts`` lists per device the hvac modes its uniform-mode
+        compressor group rules out: a blow phase in one of them does not start
+        and a running one ends, else it keeps the outdoor unit from heating (#533).
         """
         result = CoilDryRoomResult()
         now = time.time()
@@ -114,8 +119,12 @@ class AcCoilDryManager:
             self._update_wetness(st, now, mode=mode, commandable=commandable, is_cooling=is_cooling)
 
             cfg = get_coil_dry_config(devices, eid, settings)
+            conflicts = (group_conflicts or {}).get(eid, frozenset())
 
-            if st.phase is not None:
+            if st.phase is not None and st.mode in conflicts:
+                _LOGGER.debug("Area '%s': coil dry on '%s' aborted (compressor group heats)", area_id, eid)
+                self._end_phase(st, completed=False)
+            elif st.phase is not None:
                 await self._advance_phase(
                     eid,
                     st,
@@ -127,7 +136,7 @@ class AcCoilDryManager:
                     commandable=commandable,
                     force_off=force_off,
                 )
-            elif self._should_start(
+            elif cfg.mode not in conflicts and self._should_start(
                 eid,
                 st,
                 cfg,
