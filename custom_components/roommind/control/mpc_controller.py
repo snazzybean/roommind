@@ -672,10 +672,11 @@ async def async_idle_device(
 
         if current_hvac in release_setback:
             _LOGGER.debug(
-                "Area '%s': no %s run planned for '%s' within the hour, setback ends in off",
+                "Area '%s': setback of '%s' in %s ends in off "
+                "(no run planned within the hour, or its compressor group runs the other mode)",
                 area_id,
-                current_hvac,
                 entity_id,
+                current_hvac,
             )
             await async_turn_off_climate(hass, entity_id, area_id=area_id, fallback_setpoint=fallback_temp)
             return False
@@ -1470,6 +1471,8 @@ class MPCController:
         self._planned = False
         # Devices the idle branch of async_apply holds at their setback target (#509)
         self.setback_eids: list[str] = []
+        # Per device, the hvac modes its uniform-mode compressor group rules out (#533, set by async_apply)
+        self._conflicting_modes: dict[str, frozenset[str]] = {}
 
         s = settings or {}
         self._mpc_enabled = is_mpc_enabled(s)
@@ -2198,6 +2201,7 @@ class MPCController:
         heat_source_plan: HeatSourcePlan | None = None,
         compressor_forced_on: set[str] | None = None,
         compressor_forced_off: set[str] | None = None,
+        compressor_conflicting_modes: dict[str, frozenset[str]] | None = None,
         force_off: bool = False,
     ) -> None:
         """Apply the determined mode with proportional valve control.
@@ -2206,6 +2210,10 @@ class MPCController:
         (schedule_off_action / presence_away_action = "off") rather than merely
         having no demand, so per-device idle_action must not keep devices
         running (#368).
+
+        ``compressor_conflicting_modes`` lists per device the hvac modes its
+        uniform-mode compressor group runs against; a setback in one of them
+        ends in off, else the unit keeps the whole group from switching (#533).
         """
         _forced_on = compressor_forced_on or set()
         _forced_off = compressor_forced_off or set()
@@ -2223,6 +2231,7 @@ class MPCController:
         # after backward-compat conversion so legacy callers get a TargetTemps.
         self._idle_targets = targets
         self._force_off = force_off
+        self._conflicting_modes = compressor_conflicting_modes or {}
         self.setback_eids = []
         for eid in self.thermostats + self.acs:
             if eid not in _forced_on:
@@ -2285,6 +2294,7 @@ class MPCController:
                         targets=targets,
                         use_setpoint_offset=self.has_external_sensor,
                         head_offset=self._head_offset(eid, "idle"),
+                        release_setback=self._group_conflicts(eid),
                     )
                     continue
                 if can_heat and ha_heat_target is not None:
@@ -2306,6 +2316,7 @@ class MPCController:
                         targets=targets,
                         use_setpoint_offset=self.has_external_sensor,
                         head_offset=self._head_offset(eid, "idle"),
+                        release_setback=self._group_conflicts(eid),
                     )
                     continue
                 ac_state = self.hass.states.get(eid)
@@ -2420,6 +2431,7 @@ class MPCController:
                         targets=targets,
                         use_setpoint_offset=self.has_external_sensor,
                         head_offset=self._head_offset(cmd.entity_id, "idle"),
+                        release_setback=self._group_conflicts(cmd.entity_id),
                     )
                     await self._async_release_valve(cmd.entity_id)
                     continue
@@ -2494,6 +2506,7 @@ class MPCController:
                             targets=targets,
                             use_setpoint_offset=self.has_external_sensor,
                             head_offset=self._head_offset(cmd.entity_id, "idle"),
+                            release_setback=self._group_conflicts(cmd.entity_id),
                         )
                         await self._async_release_valve(cmd.entity_id)
                     else:
@@ -2524,6 +2537,7 @@ class MPCController:
                         targets=targets,
                         use_setpoint_offset=self.has_external_sensor,
                         head_offset=self._head_offset(eid, "idle"),
+                        release_setback=self._group_conflicts(eid),
                     )
                     await self._async_release_valve(eid)
                     continue
@@ -2562,6 +2576,7 @@ class MPCController:
                         targets=targets,
                         use_setpoint_offset=self.has_external_sensor,
                         head_offset=self._head_offset(eid, "idle"),
+                        release_setback=self._group_conflicts(eid),
                     )
                     continue
                 shift = self._head_offset(eid, "heat")
@@ -2606,6 +2621,7 @@ class MPCController:
                         targets=targets,
                         use_setpoint_offset=self.has_external_sensor,
                         head_offset=self._head_offset(eid, "idle"),
+                        release_setback=self._group_conflicts(eid),
                     )
                     continue
                 direct_t = self._direct_setpoint_ha(eid, direct_target)
@@ -2627,6 +2643,7 @@ class MPCController:
                         targets=targets,
                         use_setpoint_offset=self.has_external_sensor,
                         head_offset=self._head_offset(eid, "idle"),
+                        release_setback=self._group_conflicts(eid),
                     )
                     await self._async_release_valve(eid)
                     continue
@@ -2679,10 +2696,15 @@ class MPCController:
         return {"devices": list(self.setback_eids), "until": until}
 
     def _release_setback_for(self, eid: str, sitting_out: set[str]) -> frozenset[str]:
-        """Modes in which ``eid``'s setback ends in off: always while sitting out, else only when opted in (#255)."""
+        """Modes in which ``eid``'s setback ends in off: always while sitting out, else when opted in (#255) or against its group (#533)."""
         if eid in sitting_out:
             return _SETBACK_RELEASE_ALL
-        return self._setback_release if get_setback_auto_off(self._devices, eid) else frozenset()
+        release = self._setback_release if get_setback_auto_off(self._devices, eid) else frozenset()
+        return release | self._group_conflicts(eid)
+
+    def _group_conflicts(self, eid: str) -> frozenset[str]:
+        """hvac modes ``eid``'s uniform-mode compressor group runs against (#533)."""
+        return self._conflicting_modes.get(eid, frozenset())
 
     async def _async_sit_out(self, eid: str, targets: TargetTemps) -> None:
         """Idle an AC through a heating run it may not take part in (heat only, #476).
@@ -3129,6 +3151,7 @@ class MPCController:
                 use_setpoint_offset=self.has_external_sensor,
                 head_offset=self._head_offset(eid, "idle"),
                 force_off=self._force_off,
+                release_setback=self._group_conflicts(eid),
             )
             return _CALL_SKIPPED
 

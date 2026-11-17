@@ -208,6 +208,7 @@ def _build_compressor_state(coordinator: Any) -> dict[str, Any]:
         if group_cfg and (group_cfg.master_entity or group_cfg.enforce_uniform_mode):
             entry["master_entity"] = group_cfg.master_entity
             entry["master_action"] = state.master_action
+            entry["desired_action"] = state.desired_action
             entry["conflict_resolution"] = group_cfg.conflict_resolution
             entry["enforce_uniform_mode"] = group_cfg.enforce_uniform_mode
             if group_cfg.action_script:

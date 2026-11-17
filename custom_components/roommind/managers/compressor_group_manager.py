@@ -42,6 +42,8 @@ class CompressorGroupState:
     compressor_on_since: float | None = None
     compressor_off_since: float | None = None
     master_action: str | None = None
+    # What the members' rooms ask for, before the master guard and command (#533)
+    desired_action: str | None = None
     master_on_since: float | None = None
     master_off_since: float | None = None
     member_started_at: dict[str, float] = field(default_factory=dict)
@@ -209,6 +211,24 @@ class CompressorGroupManager:
         state = self._states.get(gid)
         return state.master_action if state else None
 
+    def conflicting_modes(self, entity_id: str) -> frozenset[str]:
+        """hvac modes a member must not hold while its uniform-mode group runs or turns the other way (#533).
+
+        The wanted action counts before the applied one: a master that refuses the switch while
+        a unit still sits in the old mode, or waits out its min off, must not keep that unit there.
+        """
+        gid = self._entity_to_group.get(entity_id)
+        group = self._groups.get(gid) if gid is not None else None
+        state = self._states.get(gid) if gid is not None else None
+        if group is None or state is None or not group.enforce_uniform_mode:
+            return frozenset()
+        action = state.desired_action if state.desired_action in ("heat", "cool") else state.master_action
+        if action == "heat":
+            return frozenset({"cool"})
+        if action == "cool":
+            return frozenset({"heat"})
+        return frozenset()
+
     def check_master_can_switch(self, group_id: str, new_action: str) -> bool:
         """Check if the master device is allowed to switch to *new_action*.
 
@@ -240,6 +260,12 @@ class CompressorGroupManager:
                     return False
 
         return True
+
+    def set_desired_action(self, group_id: str, action: str | None) -> None:
+        """Record the action the member rooms ask for this cycle, whether or not the master follows yet."""
+        state = self._states.get(group_id)
+        if state is not None:
+            state.desired_action = action
 
     def set_master_action(self, group_id: str, action: str) -> None:
         """Record the master entity's resolved action after commands are sent."""

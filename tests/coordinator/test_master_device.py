@@ -2829,3 +2829,203 @@ async def test_a_woken_zone_of_a_room_is_not_marked(hass, mock_config_entry):
 
     assert _fan_only_wakes(hass) == ["climate.zone_b"]
     assert coordinator._woken_zones == {}
+
+
+class TestUniformModeSetback:
+    """A setback unit must not keep the opposite mode in a uniform-mode group (#533)."""
+
+    @staticmethod
+    async def _cycle_with_group_action(hass, mock_config_entry, action):
+        room = {
+            **SAMPLE_ROOM,
+            "thermostats": [],
+            "acs": ["climate.ac_living"],
+            "devices": [
+                {
+                    "entity_id": "climate.ac_living",
+                    "type": "ac",
+                    "role": "auto",
+                    "heating_system_type": "",
+                    "idle_action": "setback",
+                }
+            ],
+        }
+        store = _make_store_mock(
+            {"living_room_abc12345": room},
+            settings={
+                "climate_control_active": True,
+                "compressor_groups": [
+                    {
+                        "id": "g1",
+                        "name": "G1",
+                        "members": ["climate.ac_living", "climate.ac_other"],
+                        "enforce_uniform_mode": True,
+                    }
+                ],
+            },
+        )
+        ac_attrs = {"hvac_modes": ["heat", "cool", "off"], "min_temp": 16, "max_temp": 30, "temperature": 21.0}
+        # 22 °C sits between comfort heat 21 and cool 24: the room idles.
+        hass.states.get = make_mock_states_get(temp="22.0", extra={"climate.ac_living": ("heat", ac_attrs)})
+        hass.services.async_call = AsyncMock()
+        hass.data = {"roommind": {"store": store}}
+        coordinator = _create_coordinator(hass, mock_config_entry)
+        coordinator._compressor_manager.load_groups(store.get_settings()["compressor_groups"])
+        coordinator._compressor_manager.set_master_action("g1", action)
+        await coordinator._async_update_data()
+        return [
+            c.args[2]
+            for c in hass.services.async_call.call_args_list
+            if c.args[0] == "climate" and c.args[2].get("entity_id") == "climate.ac_living"
+        ]
+
+    @pytest.mark.asyncio
+    async def test_heat_setback_switches_off_when_the_group_cools(self, hass, mock_config_entry):
+        calls = await self._cycle_with_group_action(hass, mock_config_entry, "cool")
+        assert {"entity_id": "climate.ac_living", "hvac_mode": "off"} in calls
+
+    @pytest.mark.asyncio
+    async def test_heat_setback_stays_while_the_group_heats(self, hass, mock_config_entry):
+        calls = await self._cycle_with_group_action(hass, mock_config_entry, "heat")
+        assert not any(c.get("hvac_mode") == "off" for c in calls)
+        assert {"entity_id": "climate.ac_living", "temperature": 19.0} in calls
+
+    @pytest.mark.asyncio
+    async def test_a_refused_master_switch_still_frees_the_group(self, hass, mock_config_entry):
+        """The master refuses cool while a unit sits in heat: the unit goes off, the retry finds a free group."""
+
+        def ac(eid):
+            return [
+                {"entity_id": eid, "type": "ac", "role": "auto", "heating_system_type": "", "idle_action": "setback"}
+            ]
+
+        living = {**SAMPLE_ROOM, "thermostats": [], "acs": ["climate.ac_living"], "devices": ac("climate.ac_living")}
+        sunroom = {
+            **SAMPLE_ROOM,
+            "area_id": "sunroom",
+            "thermostats": [],
+            "acs": ["climate.ac_sun"],
+            "devices": ac("climate.ac_sun"),
+            "temperature_sensor": "sensor.sun_temp",
+            "humidity_sensor": "",
+        }
+        store = _make_store_mock(
+            {"living_room_abc12345": living, "sunroom": sunroom},
+            settings={
+                "climate_control_active": True,
+                "compressor_groups": [
+                    {
+                        "id": "g1",
+                        "name": "G1",
+                        "members": ["climate.ac_living", "climate.ac_sun"],
+                        "master_entity": "climate.outdoor",
+                        "enforce_uniform_mode": True,
+                    }
+                ],
+            },
+        )
+        ac_attrs = {"hvac_modes": ["heat", "cool", "off"], "min_temp": 16, "max_temp": 30, "temperature": 21.0}
+        # Living room 22 °C idles between 21 and 24, its unit rests in heat; the sunroom at 27 °C wants cooling.
+        hass.states.get = make_mock_states_get(
+            temp="22.0",
+            outdoor_temp="20.0",
+            extra={
+                "climate.ac_living": ("heat", ac_attrs),
+                "climate.ac_sun": ("off", ac_attrs),
+                "sensor.sun_temp": ("27.0", {}),
+                "climate.outdoor": ("off", {"hvac_modes": ["off", "heat", "cool"]}),
+            },
+        )
+
+        async def refuse_master(domain, service, data, **kwargs):
+            if data.get("entity_id") == "climate.outdoor":
+                raise RuntimeError("indoor units in different modes")
+
+        hass.services.async_call = AsyncMock(side_effect=refuse_master)
+        hass.data = {"roommind": {"store": store}}
+        coordinator = _create_coordinator(hass, mock_config_entry)
+
+        def living_off() -> bool:
+            return any(
+                c.args[0] == "climate" and c.args[2] == {"entity_id": "climate.ac_living", "hvac_mode": "off"}
+                for c in hass.services.async_call.call_args_list
+            )
+
+        await coordinator._async_update_data()
+        state = coordinator._compressor_manager.get_state("g1")
+        assert state.desired_action == "cool"
+        assert state.master_action != "cool"  # refused
+        assert not living_off()
+
+        await coordinator._async_update_data()
+        assert living_off()
+
+    @pytest.mark.asyncio
+    async def test_a_room_waits_while_its_group_turns_the_other_way(self, hass, mock_config_entry):
+        """The master has not followed the switch to cool yet: a room wanting heat does not start it (#533)."""
+        room = {
+            **SAMPLE_ROOM,
+            "thermostats": [],
+            "acs": ["climate.ac_living"],
+            "devices": [{"entity_id": "climate.ac_living", "type": "ac", "role": "auto", "heating_system_type": ""}],
+        }
+        store = _make_store_mock(
+            {"living_room_abc12345": room},
+            settings={
+                "climate_control_active": True,
+                "compressor_groups": [
+                    {
+                        "id": "g1",
+                        "name": "G1",
+                        "members": ["climate.ac_living", "climate.ac_other"],
+                        "enforce_uniform_mode": True,
+                    }
+                ],
+            },
+        )
+        ac_attrs = {"hvac_modes": ["heat", "cool", "off"], "min_temp": 16, "max_temp": 30, "temperature": 21.0}
+        hass.states.get = make_mock_states_get(temp="18.0", extra={"climate.ac_living": ("off", ac_attrs)})
+        hass.services.async_call = AsyncMock()
+        hass.data = {"roommind": {"store": store}}
+        coordinator = _create_coordinator(hass, mock_config_entry)
+        manager = coordinator._compressor_manager
+        manager.load_groups(store.get_settings()["compressor_groups"])
+        manager.set_master_action("g1", "idle")
+        manager.set_desired_action("g1", "cool")
+
+        result = await coordinator._async_update_data()
+
+        assert result["rooms"]["living_room_abc12345"]["mode"] == MODE_IDLE
+        calls = [c.args[2] for c in hass.services.async_call.call_args_list if c.args[0] == "climate"]
+        assert not any(c.get("hvac_mode") == "heat" for c in calls)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("climate_active", [True, False])
+    async def test_a_stale_wish_is_dropped(self, hass, mock_config_entry, climate_active):
+        """Master unavailable or climate control off: the old wish no longer switches units off."""
+        store = _make_store_mock(
+            {"living_room_abc12345": SAMPLE_ROOM},
+            settings={
+                "climate_control_active": climate_active,
+                "compressor_groups": [
+                    {
+                        "id": "g1",
+                        "name": "G1",
+                        "members": ["climate.living_room"],
+                        "master_entity": "climate.outdoor",
+                        "enforce_uniform_mode": True,
+                    }
+                ],
+            },
+        )
+        hass.states.get = make_mock_states_get(temp="22.0", extra={"climate.outdoor": ("unavailable", {})})
+        hass.services.async_call = AsyncMock()
+        hass.data = {"roommind": {"store": store}}
+        coordinator = _create_coordinator(hass, mock_config_entry)
+        manager = coordinator._compressor_manager
+        manager.load_groups(store.get_settings()["compressor_groups"])
+        manager.set_desired_action("g1", "cool")
+
+        await coordinator._async_update_data()
+
+        assert manager.get_state("g1").desired_action is None

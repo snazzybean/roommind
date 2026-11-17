@@ -1,0 +1,41 @@
+name: multisplit-uniform-mode-setback
+extends: multisplit-compressor
+description: >
+  Spring days on a multi-split heat pump whose indoor units must all run in one mode
+  ("All in the same mode"), every unit with idle action "setback". Mornings heat, in the
+  afternoon the sunny living room needs cooling. A unit held in heat at its setback target
+  kept the outdoor unit from switching to cool (#533); while the group cools it now goes off.
+refs: [533]
+tags: [compressor, ac, idle]
+start: 2026-05-04T00:00
+duration: 3d
+house:
+  rooms:
+    wohnzimmer:
+      windows: [{orientation: S, area_m2: 6}]
+roommind:
+  settings:
+    compressor_groups:
+      - id: aussen
+        name: Aussengeraet
+        members: [climate.wz_split, climate.sz_split, climate.buero_split]
+        min_run_minutes: 15
+        min_off_minutes: 5
+        enforce_uniform_mode: true
+  rooms:
+    wohnzimmer:
+      devices: [{entity_id: climate.wz_split, type: ac, idle_action: setback}]
+      climate_mode: auto
+      comfort_heat: 21.0
+      comfort_cool: 23.5
+      eco_heat: 18.0
+      eco_cool: 26.0
+    schlafzimmer:
+      devices: [{entity_id: climate.sz_split, type: ac, idle_action: setback}]
+    buero:
+      devices: [{entity_id: climate.buero_split, type: ac, idle_action: setback}]
+expect:
+  - {invariant: min_run_commanded}
+  - {invariant: no_heat_and_cool_same_group}
+  - {invariant: uniform_group_one_mode}
+  - {invariant: no_rejected_commands}

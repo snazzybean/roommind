@@ -459,3 +459,36 @@ class TestEnforceUniformMode:
         assert mgr.get_enforced_action("climate.ac1") == "cool"
         mgr.set_master_action("g1", "idle")
         assert mgr.get_enforced_action("climate.ac1") == "idle"
+
+    def test_conflicting_modes_follow_the_group(self):
+        """A member must not hold the mode opposite to the group's (#533)."""
+        mgr = CompressorGroupManager()
+        mgr.load_groups([_make_group(enforce_uniform_mode=True)])
+        assert mgr.conflicting_modes("climate.ac1") == frozenset()
+        mgr.set_master_action("g1", "cool")
+        assert mgr.conflicting_modes("climate.ac1") == frozenset({"heat"})
+        mgr.set_master_action("g1", "heat")
+        assert mgr.conflicting_modes("climate.ac1") == frozenset({"cool"})
+        mgr.set_master_action("g1", "idle")
+        assert mgr.conflicting_modes("climate.ac1") == frozenset()
+
+    def test_conflicting_modes_only_with_uniform_mode(self):
+        mgr = CompressorGroupManager()
+        mgr.load_groups([_make_group()])
+        mgr.set_master_action("g1", "cool")
+        assert mgr.conflicting_modes("climate.ac1") == frozenset()
+        assert mgr.conflicting_modes("climate.unknown") == frozenset()
+
+    def test_conflicting_modes_follow_the_wanted_action_before_the_master_does(self):
+        """A master refusing or delaying the switch must not keep units in the old mode (#533)."""
+        mgr = CompressorGroupManager()
+        mgr.load_groups([_make_group(enforce_uniform_mode=True)])
+        mgr.set_master_action("g1", "idle")
+        mgr.set_desired_action("g1", "cool")
+        assert mgr.conflicting_modes("climate.ac1") == frozenset({"heat"})
+        mgr.set_master_action("g1", "heat")
+        assert mgr.conflicting_modes("climate.ac1") == frozenset({"heat"})
+        mgr.set_desired_action("g1", "idle")
+        assert mgr.conflicting_modes("climate.ac1") == frozenset({"cool"})
+        mgr.set_desired_action("unknown", "cool")
+        assert mgr.get_state("unknown") is None

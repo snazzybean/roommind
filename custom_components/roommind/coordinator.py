@@ -1290,6 +1290,13 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             sitting_out = set(get_ac_eids(room.get("devices", [])))
             plan_parked_eids |= sitting_out
 
+        compressor_conflicting_modes: dict[str, frozenset[str]] = {}
+        if climate_active:
+            for eid in all_device_eids:
+                conflicting = self._compressor_manager.conflicting_modes(eid)
+                if conflicting:
+                    compressor_conflicting_modes[eid] = conflicting
+
         if all_device_eids and climate_active and not window_open and not force_off:
             for eid in all_device_eids:
                 if self._compressor_manager.get_group_for_entity(eid) is None:
@@ -1301,12 +1308,14 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                     if not self._compressor_manager.check_can_activate(eid):
                         compressor_forced_off.add(eid)
                     else:
+                        # Against the group's applied action and, while its master refuses
+                        # or delays the switch, the one it is turning to (#533).
                         enforced = self._compressor_manager.get_enforced_action(eid)
-                        if enforced is not None and enforced != "idle":
-                            if (mode == MODE_HEATING and enforced == "cool") or (
-                                mode == MODE_COOLING and enforced == "heat"
-                            ):
-                                compressor_forced_off.add(eid)
+                        blocked = compressor_conflicting_modes.get(eid, frozenset())
+                        if (mode == MODE_HEATING and (enforced == "cool" or "heat" in blocked)) or (
+                            mode == MODE_COOLING and (enforced == "heat" or "cool" in blocked)
+                        ):
+                            compressor_forced_off.add(eid)
                     # The room still heats, but the heat-source plan parks this
                     # device: for the compressor that is a stop like any other.
                     if eid in plan_parked_eids and self._compressor_manager.check_must_stay_active(eid):
@@ -1459,6 +1468,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                     heat_source_plan=heat_source_plan,
                     compressor_forced_on=compressor_forced_on or None,
                     compressor_forced_off=compressor_forced_off or None,
+                    compressor_conflicting_modes=compressor_conflicting_modes or None,
                     force_off=force_off,
                 )
             except Exception:  # noqa: BLE001
@@ -3309,6 +3319,8 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         Groups with only action_script (no master_entity) get script-only mode.
         """
         if not settings.get("climate_control_active", True):
+            for gid in self._compressor_manager.get_groups():
+                self._compressor_manager.set_desired_action(gid, None)
             return
         for gid, group in self._compressor_manager.get_groups().items():
             if not group.master_entity and not group.action_script and not group.enforce_uniform_mode:
@@ -3329,6 +3341,8 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                             group.master_entity,
                             group.name,
                         )
+                        # A stale wish would keep switching units off while the rooms want otherwise
+                        self._compressor_manager.set_desired_action(gid, None)
                         continue
 
                 # 2. Collect member room modes
@@ -3346,6 +3360,8 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                     self.outdoor_temp_effective,
                     settings.get("outdoor_heating_max", DEFAULT_OUTDOOR_HEATING_MAX),
                 )
+
+                self._compressor_manager.set_desired_action(gid, new_action)
 
                 # Startup guard: don't idle the master while a member room is
                 # still waiting for its first temperature reading.

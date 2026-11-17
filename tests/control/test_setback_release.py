@@ -382,3 +382,55 @@ async def test_a_running_room_shows_no_setback(monkeypatch):
     await ctrl.async_apply(MODE_HEATING, HEAT_TARGETS, power_fraction=0.5, current_temp=20.0)
 
     assert ctrl.setback_display() is None
+
+
+@pytest.mark.asyncio
+async def test_setback_ends_in_off_when_its_group_runs_the_other_way(monkeypatch):
+    """All in the same mode: a unit held in heat blocks a group that cools (#533)."""
+    hass, ctrl = _controller("heat", 21.0, [MODE_IDLE], monkeypatch, auto_off=False)
+
+    await ctrl.async_apply(
+        MODE_IDLE,
+        HEAT_TARGETS,
+        power_fraction=0.0,
+        current_temp=21.3,
+        compressor_conflicting_modes={EID: frozenset({"heat"})},
+    )
+
+    assert _turned_off(hass)
+    assert ctrl.setback_eids == []
+
+
+@pytest.mark.asyncio
+async def test_setback_in_the_group_mode_stays(monkeypatch):
+    hass, ctrl = _controller("heat", 21.0, [MODE_IDLE], monkeypatch, auto_off=False)
+
+    await ctrl.async_apply(
+        MODE_IDLE,
+        HEAT_TARGETS,
+        power_fraction=0.0,
+        current_temp=21.3,
+        compressor_conflicting_modes={EID: frozenset({"cool"})},
+    )
+
+    assert not _turned_off(hass)
+    assert [d["temperature"] for d in _calls(hass, "set_temperature")] == [19.0]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", [MODE_HEATING, MODE_COOLING])
+async def test_unit_held_back_by_its_group_does_not_keep_the_other_mode(mode, monkeypatch):
+    """A room the group holds back idles its unit; a setback must not keep the group's opposite mode (#533)."""
+    hvac = "cool" if mode == MODE_HEATING else "heat"
+    hass, ctrl = _controller(hvac, 24.0, [MODE_IDLE], monkeypatch, auto_off=False)
+
+    await ctrl.async_apply(
+        mode,
+        HEAT_TARGETS,
+        power_fraction=0.5,
+        current_temp=22.0,
+        compressor_forced_off={EID},
+        compressor_conflicting_modes={EID: frozenset({hvac})},
+    )
+
+    assert _turned_off(hass)

@@ -14,6 +14,7 @@ from roommind_sim.analysis.invariants import (
     no_cover_lowered_over_open_window,
     no_full_cooling_at_target,
     target_never_empty,
+    uniform_group_one_mode,
     window_open_pauses,
 )
 from roommind_sim.analysis.load import RunData
@@ -306,3 +307,28 @@ def test_cover_lowered_over_open_window():
     assert no_cover_lowered_over_open_window(_cover_run([(370, "set_cover_position", {"position": 0})], windows)) == []
     # rooms without window sensors in RoomMind are not checked
     assert no_cover_lowered_over_open_window(_cover_run(down, windows, window_sensors=False)) == []
+
+
+def _mode_run(modes_b: list[str], uniform: bool = True) -> RunData:
+    rooms = {
+        "a": {"devices": [{"entity_id": "climate.a", "profile": "generic_split_ac"}]},
+        "b": {"devices": [{"entity_id": "climate.b", "profile": "generic_split_ac"}]},
+    }
+    scn = load_scenario_dict(scenario(rooms))
+    t0 = scn.start
+    samples = [
+        {
+            "t": t0 + 60 * (i + 1),
+            "devices": {"climate.a": {"mode": "cool", "active": True}, "climate.b": {"mode": m, "active": False}},
+        }
+        for i, m in enumerate(modes_b)
+    ]
+    group = {"id": "g", "members": ["climate.a", "climate.b"], "enforce_uniform_mode": uniform}
+    storage = {"settings": {"compressor_groups": [group]}, "rooms": {}}
+    return RunData(None, scn, samples, [], [], t0 + 60 * (len(modes_b) + 1), storage)  # type: ignore[arg-type]
+
+
+def test_uniform_group_flags_a_unit_left_in_the_other_mode_533():
+    assert len(uniform_group_one_mode(_mode_run(["heat"] * 10))) == 1
+    assert uniform_group_one_mode(_mode_run(["heat"] * 3 + ["off"] * 7)) == []
+    assert uniform_group_one_mode(_mode_run(["heat"] * 10, uniform=False)) == []

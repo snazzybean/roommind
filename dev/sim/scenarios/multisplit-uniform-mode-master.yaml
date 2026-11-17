@@ -1,0 +1,24 @@
+name: multisplit-uniform-mode-master
+extends: multisplit-uniform-mode-setback
+description: >
+  The same spring days with an outdoor unit as master. The master keeps its min run and
+  min off before it follows a switch between heat and cool, so the group's wish runs ahead
+  of the applied mode: units resting in the old mode must go off meanwhile, and a room
+  wanting the old mode waits instead of starting it again (#533).
+refs: [533]
+house:
+  rooms:
+    technik:
+      floor_area_m2: 4
+      initial: {temperature: 15.0}
+      devices: [{entity_id: climate.aussengeraet, profile: generic_split_ac}]
+roommind:
+  settings:
+    compressor_groups:
+      - id: aussen
+        name: Aussengeraet
+        members: [climate.wz_split, climate.sz_split, climate.buero_split]
+        master_entity: climate.aussengeraet
+        min_run_minutes: 15
+        min_off_minutes: 5
+        enforce_uniform_mode: true
