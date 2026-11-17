@@ -592,8 +592,8 @@ class TestAreaAssignment:
         areas = MagicMock()
         areas.async_get_area.return_value = MagicMock() if area_exists else None
         with (
-            patch("custom_components.roommind.climate.er.async_get", return_value=registry),
-            patch("custom_components.roommind.climate.ar.async_get", return_value=areas),
+            patch("custom_components.roommind.utils.area_utils.er.async_get", return_value=registry),
+            patch("custom_components.roommind.utils.area_utils.ar.async_get", return_value=areas),
         ):
             entity._assign_area_once()
         return registry

@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from homeassistant.helpers.typing import UNDEFINED
 
 from custom_components.roommind.binary_sensor import (
     RoomMindCoverPausedSensor,
@@ -186,3 +187,43 @@ async def test_async_setup_entry_creates_the_air_quality_sensor_next_to_the_cove
     entities = add.call_args[0][0]
     assert [type(e) for e in entities] == [RoomMindCoverPausedSensor, RoomMindAirQualitySensor]
     assert coordinator._air_quality_entity_areas == {"living_room"}
+
+
+def test_air_quality_sensor_name_follows_a_renamed_room():
+    from custom_components.roommind.binary_sensor import RoomMindAirQualitySensor
+
+    room = {"display_name": "Schlafzimmer"}
+    coordinator = _aq_coordinator({}, room)
+    sensor = RoomMindAirQualitySensor(coordinator, "bed")
+    sensor.platform_data = MagicMock(
+        platform_name=DOMAIN,
+        domain="binary_sensor",
+        platform_translations={f"component.{DOMAIN}.entity.binary_sensor.air_quality.name": "{room} air quality poor"},
+    )
+    assert sensor.name == "Schlafzimmer air quality poor"
+    room["display_name"] = "Kinderzimmer"
+    assert sensor.name == "Kinderzimmer air quality poor"
+    sensor.platform_data = None
+    assert sensor.name is UNDEFINED
+
+
+def test_air_quality_sensor_falls_back_to_the_area_name():
+    from custom_components.roommind.binary_sensor import RoomMindAirQualitySensor
+
+    sensor = RoomMindAirQualitySensor(_aq_coordinator({}), "bed")
+    with patch("custom_components.roommind.binary_sensor._get_area_name", return_value="Bedroom"):
+        assert sensor.translation_placeholders == {"room": "Bedroom"}
+
+
+@pytest.mark.asyncio
+async def test_air_quality_sensor_lands_in_its_area_once():
+    from custom_components.roommind.binary_sensor import RoomMindAirQualitySensor
+
+    sensor = RoomMindAirQualitySensor(_aq_coordinator({}), "bed")
+    sensor.hass = MagicMock()
+    with (
+        patch("homeassistant.helpers.update_coordinator.CoordinatorEntity.async_added_to_hass", new=AsyncMock()),
+        patch("custom_components.roommind.binary_sensor.assign_area_once") as assign,
+    ):
+        await sensor.async_added_to_hass()
+    assign.assert_called_once_with(sensor.hass, "binary_sensor.roommind_bed_air_quality", "bed", DOMAIN)

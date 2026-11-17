@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from homeassistant.helpers import area_registry as ar
+from homeassistant.helpers import entity_registry as er
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -40,3 +41,20 @@ def rooms_without_area(hass: HomeAssistant, rooms: dict[str, dict]) -> dict[str,
     """Stored rooms whose area was deleted; they rest until the area is back or the user deletes them."""
     running = rooms_with_area(hass, rooms)
     return {area_id: room for area_id, room in rooms.items() if area_id not in running}
+
+
+def assign_area_once(hass: HomeAssistant, entity_id: str, area_id: str, domain: str) -> None:
+    """Put an entity into its room's area the first time it appears (area cards, Assist).
+
+    Marked in the entity's registry options, so an area the user removes or changes stays that way.
+    """
+    registry = er.async_get(hass)
+    entry = registry.async_get(entity_id)
+    if entry is None:
+        return
+    options = dict(entry.options.get(domain, {}))
+    if options.get("area_assigned"):
+        return
+    if entry.area_id is None and ar.async_get(hass).async_get_area(area_id) is not None:
+        registry.async_update_entity(entity_id, area_id=area_id)
+    registry.async_update_entity_options(entity_id, domain, {**options, "area_assigned": True})

@@ -22,8 +22,6 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import ATTR_TEMPERATURE, PRECISION_TENTHS, UnitOfTemperature
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ServiceValidationError
-from homeassistant.helpers import area_registry as ar
-from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.temperature import display_temp
@@ -50,7 +48,7 @@ from .const import (
 from .control.mpc_controller import check_acs_can_heat
 from .coordinator import RoomMindCoordinator, _get_area_name
 from .deprecation import warn_deprecated_use
-from .utils.area_utils import rooms_with_area
+from .utils.area_utils import assign_area_once, rooms_with_area
 from .utils.device_utils import get_ac_eids, get_trv_eids
 from .utils.schedule_utils import (
     band_in_force,
@@ -377,20 +375,7 @@ class RoomMindRoomClimate(CoordinatorEntity, ClimateEntity):
 
     @callback
     def _assign_area_once(self) -> None:
-        """Put the entity into its room's area the first time it appears (area cards, Assist).
-
-        Marked in the entity's registry options, so an area the user removes or changes stays that way.
-        """
-        registry = er.async_get(self.hass)
-        entry = registry.async_get(self.entity_id)
-        if entry is None:
-            return
-        options = dict(entry.options.get(DOMAIN, {}))
-        if options.get("area_assigned"):
-            return
-        if entry.area_id is None and ar.async_get(self.hass).async_get_area(self._area_id) is not None:
-            registry.async_update_entity(self.entity_id, area_id=self._area_id)
-        registry.async_update_entity_options(self.entity_id, DOMAIN, {**options, "area_assigned": True})
+        assign_area_once(self.hass, self.entity_id, self._area_id, DOMAIN)
 
     def _store(self) -> Any:
         return self.coordinator.hass.data[DOMAIN]["store"]
