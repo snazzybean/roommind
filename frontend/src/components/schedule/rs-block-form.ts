@@ -4,7 +4,6 @@ import type { HomeAssistant } from "../../types";
 import { localize } from "../../utils/localize";
 import { tokens } from "../../styles/tokens";
 import { tempRowStyles } from "../../styles/temp-row-styles";
-import { formatNumber } from "../../utils/format";
 import {
   MAX_TARGET_TEMP_C,
   MIN_TARGET_TEMP_C,
@@ -20,7 +19,6 @@ import {
   blockPosition,
   blockTemps,
   hm,
-  roundToStep,
   usesComfort,
   type ScheduleBlock,
 } from "../../utils/schedule-week";
@@ -275,7 +273,6 @@ export class RsBlockForm extends LitElement {
     const step = usesFahrenheit(this.hass) ? 1 : 0.5;
     const min = Math.ceil(toDisplay(MIN_TARGET_TEMP_C, this.hass));
     const max = Math.floor(toDisplay(MAX_TARGET_TEMP_C, this.hass));
-    const fmt = (v: number) => `${formatNumber(v, this.hass, 0, 1)}\u00a0${tempUnit(this.hass)}`;
     const both = this.sides.heat && this.sides.cool;
     return html`
       ${
@@ -294,7 +291,8 @@ export class RsBlockForm extends LitElement {
                 .min=${min}
                 .max=${max}
                 .step=${step}
-                .display=${fmt(this._heat)}
+                .editable=${true}
+                .unit=${tempUnit(this.hass)}
                 @value-changed=${(e: CustomEvent<{ value: number }>) =>
                   this._onTemp("heat", e.detail.value)}
               ></rs-stepper>
@@ -317,7 +315,8 @@ export class RsBlockForm extends LitElement {
                 .min=${min}
                 .max=${max}
                 .step=${step}
-                .display=${fmt(this._cool)}
+                .editable=${true}
+                .unit=${tempUnit(this.hass)}
                 @value-changed=${(e: CustomEvent<{ value: number }>) =>
                   this._onTemp("cool", e.detail.value)}
               ></rs-stepper>
@@ -386,9 +385,7 @@ export class RsBlockForm extends LitElement {
     });
   }
 
-  private _onTemp(side: "heat" | "cool", value: number) {
-    const step = usesFahrenheit(this.hass) ? 1 : 0.5;
-    const v = roundToStep(value, step);
+  private _onTemp(side: "heat" | "cool", v: number) {
     const temps: BlockTempChange = {};
     if (side === "heat") {
       this._heat = temps.heat = v;
