@@ -1,7 +1,7 @@
 import { LitElement, html, css, nothing, type PropertyValues } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { localize, uiLanguage } from "../../utils/localize";
-import { deepActiveElement, tabbables } from "../../utils/focus";
+import { containsDeep, deepActiveElement, tabbables } from "../../utils/focus";
 import type { RsIconButton } from "./rs-icon-button";
 import { tokens, alertStyles } from "../../styles/tokens";
 import "./rs-icon-button";
@@ -349,15 +349,7 @@ export class RsEditDialog extends LitElement {
 
   /** Whether `el` sits inside this dialog, across shadow roots and slots. */
   private _holds(el: Node): boolean {
-    let node: Node | null = el;
-    while (node) {
-      if (node === this) return true;
-      node =
-        (node as Element).assignedSlot ??
-        node.parentNode ??
-        (node instanceof ShadowRoot ? node.host : null);
-    }
-    return false;
+    return containsDeep(this, el);
   }
 
   private _onBackdropClick(e: Event) {

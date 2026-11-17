@@ -7,6 +7,25 @@ export function deepActiveElement(): HTMLElement | null {
   return el instanceof HTMLElement ? el : null;
 }
 
+/** Whether `node` sits inside `root`, across shadow roots and slots. */
+export function containsDeep(root: Node, node: Node): boolean {
+  let current: Node | null = node;
+  while (current) {
+    if (current === root) return true;
+    current =
+      (current as Element).assignedSlot ??
+      current.parentNode ??
+      (current instanceof ShadowRoot ? current.host : null);
+  }
+  return false;
+}
+
+/** Blurs the focused element inside `root`, so a typed value commits on its change event. */
+export function blurFocusedIn(root: Node | null): void {
+  const active = deepActiveElement();
+  if (root && active && containsDeep(root, active)) active.blur();
+}
+
 function isTabbable(el: HTMLElement): boolean {
   if (el.tabIndex < 0 || (el as HTMLElement & { disabled?: boolean }).disabled) return false;
   return typeof el.checkVisibility === "function"

@@ -9,6 +9,7 @@ import { floatingStyles } from "../../styles/floating-styles";
 import { inputStyles } from "../../styles/input-styles";
 import { fireSaveStatus } from "../../utils/events";
 import { formatNumber, formatPercent } from "../../utils/format";
+import { blurFocusedIn } from "../../utils/focus";
 import { hideFromTopLayer, positionNear, showInTopLayer } from "../../utils/popover";
 import { formatTempLocale, tempUnit, toDisplay, usesFahrenheit } from "../../utils/temperature";
 import {
@@ -1364,7 +1365,10 @@ export class RsScheduleEditor extends LitElement {
 
   private _closeBlock(refocus = true) {
     const open = this._open;
-    hideFromTopLayer(this.renderRoot.querySelector<HTMLElement>(".pop"));
+    const pop = this.renderRoot.querySelector<HTMLElement>(".pop");
+    // A press outside closes on pointerdown, before the browser blurs the field: commit a typed value first
+    blurFocusedIn(pop);
+    hideFromTopLayer(pop);
     this._removePopListeners();
     this._open = null;
     if (!refocus || !open) return;
