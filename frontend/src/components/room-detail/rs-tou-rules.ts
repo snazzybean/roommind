@@ -1028,10 +1028,10 @@ export class RsTouRules extends LitElement {
     const v =
       name === "comfort"
         ? side === "heat"
-          ? (room.comfort_heat ?? room.comfort_temp)
+          ? room.comfort_heat
           : room.comfort_cool
         : side === "heat"
-          ? (room.eco_heat ?? room.eco_temp)
+          ? room.eco_heat
           : room.eco_cool;
     return typeof v === "number" ? v : null;
   }

@@ -1731,11 +1731,12 @@ class TouManager:
         cool_max = _num(room.get("tou_cool_max"), _num(settings.get("tou_cool_max"), DEFAULT_TOU_COOL_MAX))
         swing = max(0.0, _num(room.get("tou_swing"), _num(settings.get("tou_swing"), DEFAULT_TOU_SWING)))
         gap = max(1.0, _num(room.get("tou_store_gap"), _num(settings.get("tou_store_gap"), DEFAULT_TOU_STORE_GAP)))
-        eco_heat = _num(room.get("eco_heat", room.get("eco_temp")), DEFAULT_ECO_HEAT)
+        # Named-value resolution ("set to Comfort/Eco") reads the v2 split
+        # fields only: this suite never shipped on the v1 single-temp
+        # aliases, so there is nothing to stay compatible with.
+        eco_heat = _num(room.get("eco_heat"), DEFAULT_ECO_HEAT)
         eco_cool = _num(room.get("eco_cool"), DEFAULT_ECO_COOL)
-        # Named-value resolution ("set to Comfort/Eco"): the room's own
-        # configured targets, the same sources the schedule resolver reads.
-        comfort_heat = _num(room.get("comfort_heat", room.get("comfort_temp")), DEFAULT_COMFORT_HEAT)
+        comfort_heat = _num(room.get("comfort_heat"), DEFAULT_COMFORT_HEAT)
         comfort_cool = _num(room.get("comfort_cool"), DEFAULT_COMFORT_COOL)
         store_runs = self._store_runs(timeline, gap, settings) if store_enabled else []
 
