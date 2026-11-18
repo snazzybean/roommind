@@ -22,6 +22,8 @@ export function resolveHeatingSystemType(devices: DeviceConfig[]): string {
   return best;
 }
 
+const ACTIVE_HVAC_MODES = ["heat", "cool", "heat_cool", "auto"];
+
 export interface DeviceAbilities {
   heat: boolean;
   cool: boolean;
@@ -29,14 +31,18 @@ export interface DeviceAbilities {
   mixed: boolean;
 }
 
-/** What the room's devices can do; a device without known hvac_modes counts as able. */
+/** What the room's devices can do; a device without known or usable hvac_modes counts as able. */
 export function deviceAbilities(
   devices: DeviceConfig[],
   hass: Pick<HomeAssistant, "states">,
 ): DeviceAbilities {
   const can = (eid: string, wanted: string[]) => {
     const m = hass.states[eid]?.attributes?.hvac_modes;
-    return !Array.isArray(m) || (m as string[]).some((x) => wanted.includes(x));
+    if (!Array.isArray(m)) return true;
+    const modes = m as string[];
+    // Like the backend (has_reliable_hvac_modes, #100): a list without any active mode hides what the device can do.
+    if (!modes.some((x) => ACTIVE_HVAC_MODES.includes(x))) return true;
+    return modes.some((x) => wanted.includes(x));
   };
   const trvs = devices.filter((d) => d.type === "trv");
   const acs = devices.filter((d) => d.type === "ac");
