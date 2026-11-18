@@ -71,24 +71,25 @@ roommind:
       comfort_temp: 22.0
       eco_temp: 19.0
 timeline:
+  # never two items at the same instant: their order (and the event log) would vary between runs
   - {at: "+0d07h", do: humidity.event, room: bad, grams: 450, for: 15m}
-  - {at: "+0d07h", do: humidity.event, room: bad2, grams: 450, for: 15m}
+  - {at: "+0d07h01m", do: humidity.event, room: bad2, grams: 450, for: 15m}
   - {at: "+1d07h", do: humidity.event, room: bad, grams: 450, for: 15m}
-  - {at: "+1d07h", do: humidity.event, room: bad2, grams: 450, for: 15m}
+  - {at: "+1d07h01m", do: humidity.event, room: bad2, grams: 450, for: 15m}
   - {at: "+2d07h", do: humidity.event, room: bad, grams: 450, for: 15m}
-  - {at: "+2d07h", do: humidity.event, room: bad2, grams: 450, for: 15m}
+  - {at: "+2d07h01m", do: humidity.event, room: bad2, grams: 450, for: 15m}
   # Bad: automation day 1, hand-off day 2, nothing day 3
   - {at: "+0d07h15m", do: ha.service, service: fan.turn_on, data: {entity_id: fan.bad_luefter}}
   - {at: "+0d07h45m", do: ha.service, service: fan.turn_off, data: {entity_id: fan.bad_luefter}}
   - {at: "+1d07h15m", do: ha.service, service: fan.turn_on, data: {entity_id: fan.bad_luefter}}
   - {at: "+1d07h25m", do: device.manual, entity_id: fan.bad_luefter, state: "off"}
   # Bad 2: plug on for an hour every day
-  - {at: "+0d07h15m", do: ha.service, service: switch.turn_on, data: {entity_id: switch.bad2_luefter}}
-  - {at: "+0d08h15m", do: ha.service, service: switch.turn_off, data: {entity_id: switch.bad2_luefter}}
-  - {at: "+1d07h15m", do: ha.service, service: switch.turn_on, data: {entity_id: switch.bad2_luefter}}
-  - {at: "+1d08h15m", do: ha.service, service: switch.turn_off, data: {entity_id: switch.bad2_luefter}}
-  - {at: "+2d07h15m", do: ha.service, service: switch.turn_on, data: {entity_id: switch.bad2_luefter}}
-  - {at: "+2d08h15m", do: ha.service, service: switch.turn_off, data: {entity_id: switch.bad2_luefter}}
+  - {at: "+0d07h16m", do: ha.service, service: switch.turn_on, data: {entity_id: switch.bad2_luefter}}
+  - {at: "+0d08h16m", do: ha.service, service: switch.turn_off, data: {entity_id: switch.bad2_luefter}}
+  - {at: "+1d07h16m", do: ha.service, service: switch.turn_on, data: {entity_id: switch.bad2_luefter}}
+  - {at: "+1d08h16m", do: ha.service, service: switch.turn_off, data: {entity_id: switch.bad2_luefter}}
+  - {at: "+2d07h16m", do: ha.service, service: switch.turn_on, data: {entity_id: switch.bad2_luefter}}
+  - {at: "+2d08h16m", do: ha.service, service: switch.turn_off, data: {entity_id: switch.bad2_luefter}}
 expect:
   - {metric: appliance.rejected_commands, entity_id: fan.bad_luefter, max: 0}
   - {metric: appliance.rejected_commands, entity_id: switch.bad2_luefter, max: 0}

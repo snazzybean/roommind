@@ -65,12 +65,13 @@ roommind:
       devices: [{entity_id: climate.raum_c_trv, type: trv, heating_system_type: radiator}]
       temperature_sensor: sensor.raum_c_temp
 timeline:
+  # never two items at the same instant: their order (and the event log) would vary between runs
   - {at: "+0d06h", do: ha.service, service: fan.turn_on, data: {entity_id: fan.raum_a_decke, percentage: 67}}
-  - {at: "+0d06h", do: ha.service, service: switch.turn_on, data: {entity_id: switch.raum_b_ventilator}}
+  - {at: "+0d06h01m", do: ha.service, service: switch.turn_on, data: {entity_id: switch.raum_b_ventilator}}
   - {at: "+0d22h", do: ha.service, service: fan.turn_off, data: {entity_id: fan.raum_a_decke}}
-  - {at: "+0d22h", do: ha.service, service: switch.turn_off, data: {entity_id: switch.raum_b_ventilator}}
+  - {at: "+0d22h01m", do: ha.service, service: switch.turn_off, data: {entity_id: switch.raum_b_ventilator}}
   - {at: "+1d06h", do: ha.service, service: fan.turn_on, data: {entity_id: fan.raum_a_decke, percentage: 67}}
-  - {at: "+1d06h", do: ha.service, service: switch.turn_on, data: {entity_id: switch.raum_b_ventilator}}
+  - {at: "+1d06h01m", do: ha.service, service: switch.turn_on, data: {entity_id: switch.raum_b_ventilator}}
   - {at: "+1d12h", do: device.manual, entity_id: fan.raum_a_decke, state: "off"}
   - {at: "+1d22h", do: ha.service, service: switch.turn_off, data: {entity_id: switch.raum_b_ventilator}}
 # physics, 2026-11-18 seed 1, day 1 07:30 with all valves open: radiator A 34.8 °C / 536 W,
