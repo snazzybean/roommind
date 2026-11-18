@@ -111,6 +111,10 @@ const ROOM_FIELDS: [string, RoomFieldSync][] = [
   ["voc_sensor", plain("_vocSensor", (c) => c?.voc_sensor ?? "")],
   ["voc_threshold", plain("_vocThreshold", (c) => c?.voc_threshold ?? null)],
   ["ventilation_entity", plain("_ventilationEntity", (c) => c?.ventilation_entity ?? "")],
+  ["humidity_max", plain("_humidityMax", (c) => c?.humidity_max ?? null)],
+  ["humidity_min", plain("_humidityMin", (c) => c?.humidity_min ?? null)],
+  ["dehumidifier_entity", plain("_dehumidifierEntity", (c) => c?.dehumidifier_entity ?? "")],
+  ["humidifier_entity", plain("_humidifierEntity", (c) => c?.humidifier_entity ?? "")],
   ["preheat_enabled", plain("_preheatEnabled", (c) => c?.preheat_enabled ?? true)],
   [
     "follow_device_setpoint",
@@ -254,6 +258,10 @@ export class RsRoomDetail extends LitElement {
   @state() private _vocSensor = "";
   @state() private _vocThreshold: number | null = null;
   @state() private _ventilationEntity = "";
+  @state() private _humidityMax: number | null = null;
+  @state() private _humidityMin: number | null = null;
+  @state() private _dehumidifierEntity = "";
+  @state() private _humidifierEntity = "";
   @state() private _selectedWindowSensors: Set<string> = new Set();
   @state() private _windowOpenDelay = 0;
   @state() private _windowCloseDelay = 0;
@@ -789,6 +797,10 @@ export class RsRoomDetail extends LitElement {
         .vocSensor=${this._vocSensor}
         .vocThreshold=${this._vocThreshold}
         .ventilationEntity=${this._ventilationEntity}
+        .humidityMax=${this._humidityMax}
+        .humidityMin=${this._humidityMin}
+        .dehumidifierEntity=${this._dehumidifierEntity}
+        .humidifierEntity=${this._humidifierEntity}
         .live=${this.config?.live}
         .windowSensors=${this._selectedWindowSensors}
         .windowOpenDelay=${this._windowOpenDelay}
@@ -984,6 +996,10 @@ export class RsRoomDetail extends LitElement {
             .vocSensor=${this._vocSensor}
             .vocThreshold=${this._vocThreshold}
             .ventilationEntity=${this._ventilationEntity}
+            .humidityMax=${this._humidityMax}
+            .humidityMin=${this._humidityMin}
+            .dehumidifierEntity=${this._dehumidifierEntity}
+            .humidifierEntity=${this._humidifierEntity}
             .live=${this.config?.live}
             .windowSensors=${this._selectedWindowSensors}
             .windowOpenDelay=${this._windowOpenDelay}
@@ -1290,6 +1306,14 @@ export class RsRoomDetail extends LitElement {
       this._vocThreshold = value as number | null;
     } else if (key === "ventilation_entity") {
       this._ventilationEntity = value as string;
+    } else if (key === "humidity_max") {
+      this._humidityMax = value as number | null;
+    } else if (key === "humidity_min") {
+      this._humidityMin = value as number | null;
+    } else if (key === "dehumidifier_entity") {
+      this._dehumidifierEntity = value as string;
+    } else if (key === "humidifier_entity") {
+      this._humidifierEntity = value as string;
     } else if (key === "window_sensors") {
       this._selectedWindowSensors = new Set(value as string[]);
     } else if (key === "window_open_delay") {

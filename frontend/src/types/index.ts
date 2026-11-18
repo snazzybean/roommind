@@ -51,6 +51,16 @@ export interface RoomLiveData {
   air_quality_reason?: "co2" | "voc" | null;
   /** RoomMind runs the room's ventilation entity for bad air. */
   ventilation_active?: boolean;
+  /** Past the room's humidity limits (#518, #526), with hysteresis. */
+  humidity_high?: boolean;
+  humidity_low?: boolean;
+  /** Too humid and the outdoor air dries: the room wants its ventilation for humidity. */
+  humidity_ventilate?: boolean;
+  /** Too humid, but the outdoor air is not drier: no ventilation for humidity. */
+  humidity_vent_blocked?: boolean;
+  /** RoomMind runs the room's dehumidifier / humidifier. */
+  dehumidifier_active?: boolean;
+  humidifier_active?: boolean;
   mold_risk_level: "ok" | "warning" | "critical";
   mold_surface_rh: number | null;
   mold_surface_temp: number | null;
@@ -159,6 +169,12 @@ export interface RoomConfig {
   voc_threshold?: number | null;
   /** fan.*, switch.* or input_boolean.* RoomMind switches on for bad air. */
   ventilation_entity?: string;
+  /** % RH; null = not regulated. Too humid from max on, too dry from min on (#518, #526). */
+  humidity_max?: number | null;
+  humidity_min?: number | null;
+  /** humidifier.*, switch.* or input_boolean.* RoomMind runs past the limits. */
+  dehumidifier_entity?: string;
+  humidifier_entity?: string;
   preheat_enabled?: boolean;
   /** K the schedule target may move with the electricity price, 0 = off. */
   price_shift?: number;

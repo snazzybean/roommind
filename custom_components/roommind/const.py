@@ -77,6 +77,22 @@ AIR_QUALITY_CLEAR_FACTOR = 0.8
 VENTILATION_DOMAINS = ("fan", "switch", "input_boolean")
 VENTILATION_MIN_RUN_MINUTES = 15
 
+# Humidity limits per room in % RH (#518, #526): too humid from the upper limit on, fine again
+# HUMIDITY_HYSTERESIS below it; the lower limit mirrors that. 40-60 % is the usual comfort band
+DEFAULT_HUMIDITY_MAX = 60
+DEFAULT_HUMIDITY_MIN = 40
+MIN_HUMIDITY_MAX = 40
+MAX_HUMIDITY_MAX = 90
+MIN_HUMIDITY_MIN = 20
+MAX_HUMIDITY_MIN = 60
+HUMIDITY_HYSTERESIS = 5
+# Upper minus lower limit: the two release points never cross, so both devices never run at once
+HUMIDITY_LIMIT_GAP = 10
+HUMIDITY_DEVICE_DOMAINS = ("humidifier", "switch", "input_boolean")
+# Ventilating for humidity: outdoor air this much drier (g/m³ absolute) to start, the smaller margin to go on
+HUMIDITY_VENT_START_MARGIN = 2.0
+HUMIDITY_VENT_KEEP_MARGIN = 1.0
+
 # Context identifier for RoomMind-initiated service calls.
 # Automations can check: trigger.context.parent_id == "roommind"
 ROOMMIND_CONTEXT_ID = "roommind"

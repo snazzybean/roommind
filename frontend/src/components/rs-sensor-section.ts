@@ -2,7 +2,7 @@ import { LitElement, html, css, nothing, type PropertyValues } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import type { HomeAssistant, HassArea, RoomLiveData } from "../types";
 import { getEntitiesForArea } from "../utils/room-state";
-import { localize } from "../utils/localize";
+import { localize, type TranslationKey } from "../utils/localize";
 import { openEntityInfo } from "../utils/events";
 import { tempUnit } from "../utils/temperature";
 import { formatMinutes, formatNumber, formatPercent } from "../utils/format";
@@ -11,9 +11,16 @@ import { inputStyles } from "../styles/input-styles";
 import { formStyles } from "../styles/form-styles";
 import {
   DEFAULT_CO2_THRESHOLD,
+  DEFAULT_HUMIDITY_MAX,
+  DEFAULT_HUMIDITY_MIN,
   DEFAULT_OCCUPANCY_ECO_DELAY,
+  HUMIDITY_LIMIT_GAP,
   MAX_CO2_THRESHOLD,
+  MAX_HUMIDITY_MAX,
+  MAX_HUMIDITY_MIN,
   MIN_CO2_THRESHOLD,
+  MIN_HUMIDITY_MAX,
+  MIN_HUMIDITY_MIN,
   MIN_OCCUPANCY_ECO_DELAY,
 } from "../utils/constants";
 import "./shared/rs-field";
@@ -22,20 +29,39 @@ import "./shared/rs-icon-button";
 import "./shared/rs-info-icon";
 import "./shared/rs-list-row";
 
-type SensorKind = "temp" | "humidity" | "occupancy" | "window" | "co2" | "voc" | "ventilation";
-type SingleKind = "temp" | "humidity" | "co2" | "voc" | "ventilation";
+type SensorKind =
+  | "temp"
+  | "humidity"
+  | "occupancy"
+  | "window"
+  | "co2"
+  | "voc"
+  | "ventilation"
+  | "dehumidifier"
+  | "humidifier";
+type SingleKind = Exclude<SensorKind, "occupancy" | "window">;
 
 const OCCUPANCY_CLASSES = ["occupancy", "motion", "presence"];
 const WINDOW_CLASSES = ["window", "door", "opening"];
 // VOC sensors report an index, ppb or µg/m³; ESPHome's SGP4x index comes as aqi or without a class
 const VOC_CLASSES = ["volatile_organic_compounds", "volatile_organic_compounds_parts", "aqi"];
 const VENTILATION_DOMAINS = ["fan", "switch", "input_boolean"];
+const HUMIDITY_DEVICE_DOMAINS = ["humidifier", "switch", "input_boolean"];
 const SINGLE_KEYS: Record<SingleKind, string> = {
   temp: "temperature_sensor",
   humidity: "humidity_sensor",
   co2: "co2_sensor",
   voc: "voc_sensor",
   ventilation: "ventilation_entity",
+  dehumidifier: "dehumidifier_entity",
+  humidifier: "humidifier_entity",
+};
+
+/** What an empty single-entity group says instead of "none assigned". */
+const EMPTY_KEYS: Partial<Record<SensorKind, TranslationKey>> = {
+  ventilation: "sensors.no_ventilation",
+  dehumidifier: "sensors.no_dehumidifier",
+  humidifier: "sensors.no_humidifier",
 };
 
 @customElement("rs-sensor-section")
@@ -55,6 +81,11 @@ export class RsSensorSection extends LitElement {
   @property({ type: String }) public vocSensor = "";
   @property({ attribute: false }) public vocThreshold: number | null = null;
   @property({ type: String }) public ventilationEntity = "";
+  /** Humidity limits in % RH, null = that side not regulated (#518, #526). */
+  @property({ attribute: false }) public humidityMax: number | null = null;
+  @property({ attribute: false }) public humidityMin: number | null = null;
+  @property({ type: String }) public dehumidifierEntity = "";
+  @property({ type: String }) public humidifierEntity = "";
   /** Live state of the room: air quality judgement and whether RoomMind runs the ventilation. */
   @property({ attribute: false }) public live?: RoomLiveData;
   @property({ type: String }) public heatingSystemType = "";
@@ -174,6 +205,7 @@ export class RsSensorSection extends LitElement {
           : nothing
       }
       ${this.outdoor ? nothing : this._renderControlRows(delays, occupancyNote)}
+      ${this.outdoor ? nothing : this._renderHumidityRows()}
       ${this.outdoor ? nothing : this._renderAirRows()}
       <rs-list-row
         clickable
@@ -213,7 +245,71 @@ export class RsSensorSection extends LitElement {
     `;
   }
 
-  /** CO2, VOC and the ventilation entity (#267). */
+  /** The humidity limits and the devices RoomMind runs past them (#518, #526). */
+  private _renderHumidityRows() {
+    if (!this.humiditySensor || (this.humidityMax == null && this.humidityMin == null)) {
+      return nothing;
+    }
+    const l = this.hass.language;
+    const live = this.live;
+    const range = [
+      this.humidityMax != null
+        ? localize("sensors.humidity_range_high", l, { value: this.humidityMax })
+        : "",
+      this.humidityMin != null
+        ? localize("sensors.humidity_range_low", l, { value: this.humidityMin })
+        : "",
+    ].filter(Boolean);
+    const past = live?.humidity_high ? "high" : live?.humidity_low ? "low" : null;
+    const running = localize("sensors.ventilation_running_humidity", l);
+    return html`
+      <rs-list-row
+        clickable
+        chevron
+        icon="mdi:water-sync"
+        .iconColor=${past ? "var(--rs-warn)" : ""}
+        .heading=${localize("detail.sensors.humidity_control", l)}
+        .secondary=${range.join(" · ")}
+        .value=${localize(
+          past === "high"
+            ? "sensors.humidity_too_high"
+            : past === "low"
+              ? "sensors.humidity_too_low"
+              : "sensors.humidity_in_range",
+          l,
+        )}
+        @row-click=${this._fireEdit}
+      ></rs-list-row>
+      ${
+        this.dehumidifierEntity && this.humidityMax != null
+          ? this._row(
+              this.dehumidifierEntity,
+              "mdi:water-minus",
+              [localize("detail.sensors.dehumidifier", l), live?.dehumidifier_active ? running : ""]
+                .filter(Boolean)
+                .join(" · "),
+              this._onOffValue(this.dehumidifierEntity),
+              live?.dehumidifier_active ? "var(--rs-ok)" : "",
+            )
+          : nothing
+      }
+      ${
+        this.humidifierEntity && this.humidityMin != null
+          ? this._row(
+              this.humidifierEntity,
+              "mdi:water-plus",
+              [localize("detail.sensors.humidifier", l), live?.humidifier_active ? running : ""]
+                .filter(Boolean)
+                .join(" · "),
+              this._onOffValue(this.humidifierEntity),
+              live?.humidifier_active ? "var(--rs-ok)" : "",
+            )
+          : nothing
+      }
+    `;
+  }
+
+  /** CO2, VOC and the ventilation entity (#267); a humidity limit runs it too (#526). */
   private _renderAirRows() {
     const l = this.hass.language;
     const reason = this.live?.air_quality_bad ? this.live.air_quality_reason : null;
@@ -252,13 +348,20 @@ export class RsSensorSection extends LitElement {
           : nothing
       }
       ${
-        this.ventilationEntity && (this.co2Sensor || this.vocSensor)
+        this.ventilationEntity && (this.co2Sensor || this.vocSensor || this._ventsForHumidity)
           ? this._row(
               this.ventilationEntity,
               "mdi:fan",
               [
                 localize("detail.sensors.ventilation", l),
-                this.live?.ventilation_active ? localize("sensors.ventilation_running", l) : "",
+                this.live?.ventilation_active
+                  ? localize(
+                      this.live.humidity_ventilate && !this.live.air_quality_bad
+                        ? "sensors.ventilation_running_humidity"
+                        : "sensors.ventilation_running",
+                      l,
+                    )
+                  : "",
               ]
                 .filter(Boolean)
                 .join(" · "),
@@ -268,6 +371,11 @@ export class RsSensorSection extends LitElement {
           : nothing
       }
     `;
+  }
+
+  /** The upper humidity limit also runs the ventilation (#526). */
+  private get _ventsForHumidity(): boolean {
+    return !!this.humiditySensor && this.humidityMax != null;
   }
 
   private _row(entityId: string, icon: string, secondary: string, value: string, color = "") {
@@ -358,6 +466,8 @@ export class RsSensorSection extends LitElement {
       "co2Sensor",
       "vocSensor",
       "ventilationEntity",
+      "dehumidifierEntity",
+      "humidifierEntity",
     ];
     if (!lists.some((p) => changed.has(p))) return;
     const section = this.renderRoot.querySelector(`section[data-kind="${this._focusKind}"]`);
@@ -400,6 +510,11 @@ export class RsSensorSection extends LitElement {
         );
       case "ventilation":
         return VENTILATION_DOMAINS.includes(domain);
+      // A humidifier entity's device class tells its direction; plugs and helpers fit both
+      case "dehumidifier":
+        return HUMIDITY_DEVICE_DOMAINS.includes(domain) && dc !== "humidifier";
+      case "humidifier":
+        return HUMIDITY_DEVICE_DOMAINS.includes(domain) && dc !== "dehumidifier";
     }
   }
 
@@ -410,6 +525,8 @@ export class RsSensorSection extends LitElement {
       co2: this.co2Sensor,
       voc: this.vocSensor,
       ventilation: this.ventilationEntity,
+      dehumidifier: this.dehumidifierEntity,
+      humidifier: this.humidifierEntity,
     }[kind];
   }
 
@@ -435,6 +552,8 @@ export class RsSensorSection extends LitElement {
               !id.startsWith("input_number.") &&
               !id.startsWith("climate.") &&
               (kind !== "ventilation" || id.startsWith("fan.")) &&
+              ((kind !== "dehumidifier" && kind !== "humidifier") ||
+                id.startsWith("humidifier.")) &&
               this._accepts(kind, id),
           )
         : [];
@@ -446,17 +565,25 @@ export class RsSensorSection extends LitElement {
       ${
         this.outdoor
           ? nothing
-          : html`${this._renderKind("window", inArea("window"), this._renderWindowSettings(l))}
+          : html`${this._renderHumidityControl(l, inArea)}
+            ${this._renderKind("window", inArea("window"), this._renderWindowSettings(l))}
             ${this._renderKind("occupancy", inArea("occupancy"), this._renderOccupancySettings(l))}
             ${this._renderKind("co2", inArea("co2"), this._renderCo2Settings(l))}
             ${this._renderKind("voc", inArea("voc"), this._renderVocSettings(l))}
             ${
-              this.co2Sensor || this.vocSensor || this.ventilationEntity
+              this.co2Sensor || this.vocSensor || this.ventilationEntity || this._ventsForHumidity
                 ? this._renderKind(
                     "ventilation",
                     inArea("ventilation"),
                     nothing,
-                    html`<p class="note">${localize("sensors.ventilation_note", l)}</p>`,
+                    html`<p class="note">${localize("sensors.ventilation_note", l)}</p>
+                      ${
+                        this._ventsForHumidity
+                          ? html`<p class="note">
+                              ${localize("sensors.ventilation_humidity_note", l)}
+                            </p>`
+                          : nothing
+                      }`,
                   )
                 : nothing
             }`
@@ -523,6 +650,18 @@ export class RsSensorSection extends LitElement {
           title: "detail.sensors.ventilation",
           info: "sensors.ventilation_info",
         } as const;
+      case "dehumidifier":
+        return {
+          icon: "mdi:water-minus",
+          title: "detail.sensors.dehumidifier",
+          info: "sensors.dehumidifier_info",
+        } as const;
+      case "humidifier":
+        return {
+          icon: "mdi:water-plus",
+          title: "detail.sensors.humidifier",
+          info: "sensors.humidifier_info",
+        } as const;
     }
   }
 
@@ -548,9 +687,7 @@ export class RsSensorSection extends LitElement {
         ${assigned.map((id) => this._renderAssigned(kind, id, this._areaIds.has(id)))}
         ${
           !assigned.length && kind !== "temp"
-            ? html`<p class="note">
-                ${localize(kind === "ventilation" ? "sensors.no_ventilation" : "sensors.none_assigned", l)}
-              </p>`
+            ? html`<p class="note">${localize(EMPTY_KEYS[kind] ?? "sensors.none_assigned", l)}</p>`
             : nothing
         }
         ${suggestions.map(
@@ -640,6 +777,8 @@ export class RsSensorSection extends LitElement {
       co2: ["sensor"],
       voc: ["sensor"],
       ventilation: VENTILATION_DOMAINS,
+      dehumidifier: HUMIDITY_DEVICE_DOMAINS,
+      humidifier: HUMIDITY_DEVICE_DOMAINS,
     }[kind];
     return html`<div class="picker">
       <ha-entity-picker
@@ -673,7 +812,9 @@ export class RsSensorSection extends LitElement {
     if (kind === "temp") return this._tempValue(entityId);
     if (kind === "humidity") return this._humidityValue(entityId);
     if (kind === "co2" || kind === "voc") return this._numberValue(entityId);
-    if (kind === "ventilation") return this._onOffValue(entityId);
+    if (kind === "ventilation" || kind === "dehumidifier" || kind === "humidifier") {
+      return this._onOffValue(entityId);
+    }
     return kind === "window"
       ? this._binaryValue(entityId, "detail.sensors.open", "detail.sensors.closed")
       : this._binaryValue(entityId, "detail.sensors.occupied", "detail.sensors.free");
@@ -758,6 +899,108 @@ export class RsSensorSection extends LitElement {
           : nothing
       }
     `;
+  }
+
+  /**
+   * Humidity limits (#518, #526): one switch per direction, its limit and its device. The
+   * ventilation group further down runs for the upper limit too.
+   */
+  private _renderHumidityControl(l: string, inArea: (kind: SensorKind) => string[]) {
+    if (!this.humiditySensor) return nothing;
+    const high = this.humidityMax != null;
+    const low = this.humidityMin != null;
+    return html`<section class="group" data-kind="humidity_control">
+        <h4 class="group-title">
+          <ha-icon icon="mdi:water-sync" aria-hidden="true"></ha-icon>
+          ${localize("detail.sensors.humidity_control", l)}
+          <rs-info-icon .text=${localize("sensors.humidity_control_info", l)}></rs-info-icon>
+        </h4>
+        <rs-list-row
+          switch
+          wrap
+          .heading=${localize("sensors.humidity_lower_high", l)}
+          .checked=${high}
+          @toggle-changed=${(e: CustomEvent<boolean>) =>
+            this._fireSensorChanged(
+              "humidity_max",
+              e.detail
+                ? Math.min(
+                    MAX_HUMIDITY_MAX,
+                    Math.max(DEFAULT_HUMIDITY_MAX, (this.humidityMin ?? 0) + HUMIDITY_LIMIT_GAP),
+                  )
+                : null,
+            )}
+        >
+          <rs-info-icon
+            slot="end"
+            .text=${localize("sensors.humidity_lower_high_info", l)}
+          ></rs-info-icon>
+        </rs-list-row>
+        ${
+          high
+            ? html`<rs-number-field
+                .label=${localize("sensors.humidity_max", l)}
+                .info=${localize("sensors.humidity_max_info", l)}
+                suffix="%"
+                .min=${Math.max(MIN_HUMIDITY_MAX, (this.humidityMin ?? 0) + HUMIDITY_LIMIT_GAP)}
+                .max=${MAX_HUMIDITY_MAX}
+                .value=${this.humidityMax}
+                @value-changed=${(e: CustomEvent<{ value: number }>) =>
+                  this._fireSensorChanged("humidity_max", e.detail.value)}
+              ></rs-number-field>`
+            : nothing
+        }
+        <rs-list-row
+          switch
+          wrap
+          .heading=${localize("sensors.humidity_raise_low", l)}
+          .checked=${low}
+          @toggle-changed=${(e: CustomEvent<boolean>) =>
+            this._fireSensorChanged(
+              "humidity_min",
+              e.detail
+                ? Math.max(
+                    MIN_HUMIDITY_MIN,
+                    Math.min(DEFAULT_HUMIDITY_MIN, (this.humidityMax ?? 100) - HUMIDITY_LIMIT_GAP),
+                  )
+                : null,
+            )}
+        >
+          <rs-info-icon
+            slot="end"
+            .text=${localize("sensors.humidity_raise_low_info", l)}
+          ></rs-info-icon>
+        </rs-list-row>
+        ${
+          low
+            ? html`<rs-number-field
+                .label=${localize("sensors.humidity_min", l)}
+                .info=${localize("sensors.humidity_min_info", l)}
+                suffix="%"
+                .min=${MIN_HUMIDITY_MIN}
+                .max=${Math.min(MAX_HUMIDITY_MIN, (this.humidityMax ?? 100) - HUMIDITY_LIMIT_GAP)}
+                .value=${this.humidityMin}
+                @value-changed=${(e: CustomEvent<{ value: number }>) =>
+                  this._fireSensorChanged("humidity_min", e.detail.value)}
+              ></rs-number-field>`
+            : nothing
+        }
+        ${
+          high || low
+            ? html`<p class="note">${localize("sensors.humidity_device_note", l)}</p>`
+            : nothing
+        }
+      </section>
+      ${
+        high || this.dehumidifierEntity
+          ? this._renderKind("dehumidifier", inArea("dehumidifier"), nothing)
+          : nothing
+      }
+      ${
+        low || this.humidifierEntity
+          ? this._renderKind("humidifier", inArea("humidifier"), nothing)
+          : nothing
+      }`;
   }
 
   /** Occupancy and window hold a list, every other kind one entity (a new one replaces it). */

@@ -10,6 +10,15 @@ export const MIN_OCCUPANCY_ECO_DELAY = 5;
 export const DEFAULT_CO2_THRESHOLD = 1000;
 export const MIN_CO2_THRESHOLD = 800;
 export const MAX_CO2_THRESHOLD = 5000;
+
+/** Humidity limits in % RH; mirror DEFAULT/MIN/MAX_HUMIDITY_* and HUMIDITY_LIMIT_GAP (#518, #526). */
+export const DEFAULT_HUMIDITY_MAX = 60;
+export const DEFAULT_HUMIDITY_MIN = 40;
+export const MIN_HUMIDITY_MAX = 40;
+export const MAX_HUMIDITY_MAX = 90;
+export const MIN_HUMIDITY_MIN = 20;
+export const MAX_HUMIDITY_MIN = 60;
+export const HUMIDITY_LIMIT_GAP = 10;
 /** Air counts as good again below this share of the threshold; mirrors AIR_QUALITY_CLEAR_FACTOR. */
 export const AIR_QUALITY_CLEAR_FACTOR = 0.8;
 

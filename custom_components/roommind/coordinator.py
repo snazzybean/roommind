@@ -90,6 +90,14 @@ from .managers.device_setpoint_tracker import DeviceSetpointTracker
 from .managers.ekf_training_manager import EkfTrainingManager
 from .managers.head_offset_tracker import HeadOffsetTracker
 from .managers.heat_source_orchestrator import HeatSourcePlan, evaluate_heat_sources
+from .managers.humidity_manager import (
+    HUMIDITY_HIGH,
+    HUMIDITY_LOW,
+    HumidityTracker,
+    humidity_device_claims,
+    humidity_limits,
+    humidity_regulated,
+)
 from .managers.mold_manager import MoldManager
 from .managers.price_manager import PriceManager
 from .managers.recent_temps import RECENT_WINDOW_S, RecentTemps
@@ -238,6 +246,15 @@ _NO_AIR_QUALITY: dict[str, Any] = {
     "ventilation_active": False,
 }
 
+_NO_HUMIDITY_CONTROL: dict[str, Any] = {
+    "humidity_high": False,
+    "humidity_low": False,
+    "humidity_ventilate": False,
+    "humidity_vent_blocked": False,
+    "dehumidifier_active": False,
+    "humidifier_active": False,
+}
+
 
 def _orchestrated_training_power(heat_source_plan: HeatSourcePlan) -> float:
     """Power fraction the EKF trains an orchestrated heating step with.
@@ -360,6 +377,10 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         # Air quality per room (CO2/VOC with hysteresis) and the ventilation RoomMind runs for it (#267)
         self._air_quality = AirQualityTracker()
         self._ventilation = VentilationController(hass)
+        # Humidity limits per room and the dehumidifiers/humidifiers RoomMind runs (#518, #526)
+        self._humidity = HumidityTracker()
+        self._humidity_devices = VentilationController(hass, label="Humidity device")
+        self._humidity_vent_rooms_saved: list[str] = []
         # Per-entity cache of schedule blocks; fallback when schedule.get_schedule fails (#308)
         self._schedule_blocks_cache: dict[str, dict] = {}
         # Entity platform callbacks, set by platform async_setup_entry
@@ -415,6 +436,9 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             self._coil_dry_manager.load_state(settings.get("coil_dry_state", {}))
             self._head_offsets.load_state(settings.get("ac_head_offsets", {}))
             self._ventilation.load_state(settings.get("ventilation_state", {}))
+            self._humidity_devices.load_state(settings.get("humidity_device_state", {}))
+            self._humidity.load_venting_rooms(settings.get("humidity_vent_rooms", []))
+            self._humidity_vent_rooms_saved = self._humidity.vented_rooms()
             self._model_loaded = True
 
         # Initialize history store (once)
@@ -460,6 +484,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             room_states[area_id] = room_state
 
         await self._async_reconcile_ventilation(settings, room_states)
+        await self._async_reconcile_humidity_devices(settings, room_states)
 
         # Control master devices based on aggregate room demand
         await self._async_control_master_devices(room_states, rooms, settings)
@@ -937,9 +962,13 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 "coil_dry_entities": [],
                 "schedule_temp_warnings": [],
                 **_NO_AIR_QUALITY,
+                **_NO_HUMIDITY_CONTROL,
             }
 
         air_quality = self._evaluate_air_quality(area_id, room)
+        humidity_control = self._evaluate_humidity(
+            area_id, room, current_temp, current_humidity, settings.get("climate_control_active", True)
+        )
 
         if has_external_sensor:
             self._observe_head_offsets(room, current_temp_raw)
@@ -1698,6 +1727,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         if managed_follows_group:
             room_state["managed_follows_group"] = True
         room_state.update(air_quality)
+        room_state.update(humidity_control)
         return room_state
 
     def _note_model_inputs(
@@ -2839,22 +2869,76 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         result["air_quality_reason"] = bad[0] if bad else None
         return result
 
+    def _evaluate_humidity(
+        self,
+        area_id: str,
+        room: dict,
+        current_temp: float | None,
+        current_humidity: float | None,
+        control_active: bool,
+    ) -> dict[str, Any]:
+        """Whether the room is past its humidity limits, with hysteresis (#518, #526).
+
+        Judged before any device control of the cycle, whatever climate control does (like the air
+        quality), so device control later in the cycle can use ``humidity_high``. Ventilation for
+        humidity only under climate control and while the outdoor air is drier, if an outdoor
+        humidity sensor tells.
+        """
+        result = dict(_NO_HUMIDITY_CONTROL)
+        if not humidity_regulated(room):
+            self._humidity.remove_room(area_id)
+            return result
+        low, high = humidity_limits(room)
+        # A device RoomMind runs since before a restart or reload for this room's humidity: the room
+        # was past its limit then. The ventilation only if it ran for humidity, not for CO2/VOC
+        assume = None
+        if self._humidity_devices.is_running(room.get("humidifier_entity") or "") and low is not None:
+            assume = HUMIDITY_LOW
+        elif high is not None and (
+            self._humidity_devices.is_running(room.get("dehumidifier_entity") or "")
+            or (
+                self._humidity.vented_before(area_id)
+                and self._ventilation.is_running(room.get("ventilation_entity") or "")
+            )
+        ):
+            assume = HUMIDITY_HIGH
+        level = self._humidity.evaluate(area_id, current_humidity, low, high, time.time(), assume=assume)
+        result["humidity_high"] = level == HUMIDITY_HIGH
+        result["humidity_low"] = level == HUMIDITY_LOW
+        controlled = control_active and room.get("climate_control_enabled", True)
+        if level == HUMIDITY_HIGH and room.get("ventilation_entity") and controlled:
+            dries = self._humidity.ventilation_dries(
+                area_id, current_temp, current_humidity, self.outdoor_temp_effective, self.outdoor_humidity
+            )
+            result["humidity_ventilate"] = dries
+            result["humidity_vent_blocked"] = not dries
+        else:
+            self._humidity.stop_venting(area_id)
+        return result
+
     async def _async_reconcile_ventilation(self, settings: dict, room_states: dict[str, dict]) -> None:
         """Run each room's ventilation entity while its air is bad (#267).
 
         Against the live store: a room deleted or an entity removed during the cycle no longer
         claims its unit, which then goes off if RoomMind switched it on. Rooms under climate
         control off claim nothing either (#36: nothing switched on; a unit RoomMind runs goes
-        off once). One entity in several rooms runs while any of them needs it.
+        off once). One entity in several rooms runs while any of them needs it. A room with an
+        upper humidity limit also wants it while too humid and the outdoor air dries (#526): one
+        controller for both, so neither trigger switches off what the other still needs.
         """
         rooms = rooms_with_area(self.hass, self.hass.data[DOMAIN]["store"].get_rooms())
         wanted: dict[str, bool] = {}
         if settings.get("climate_control_active", True):
             for area_id, room in rooms.items():
                 entity_id = room.get("ventilation_entity")
-                if not entity_id or not has_air_quality_sensor(room) or not room.get("climate_control_enabled", True):
+                if (
+                    not entity_id
+                    or not (has_air_quality_sensor(room) or humidity_regulated(room))
+                    or not room.get("climate_control_enabled", True)
+                ):
                     continue
-                bad = bool((room_states.get(area_id) or {}).get("air_quality_bad"))
+                rs = room_states.get(area_id) or {}
+                bad = bool(rs.get("air_quality_bad")) or bool(rs.get("humidity_ventilate"))
                 wanted[entity_id] = wanted.get(entity_id, False) or bad
         try:
             await self._ventilation.async_reconcile(wanted, time.time())
@@ -2868,6 +2952,43 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 {"ventilation_state": self._ventilation.get_state()}
             )
             self._ventilation.dirty = False
+
+    async def _async_reconcile_humidity_devices(self, settings: dict, room_states: dict[str, dict]) -> None:
+        """Run each room's dehumidifier while too humid and its humidifier while too dry (#518).
+
+        Like the ventilation: against the live store, nothing for rooms under climate control off
+        (an owned device goes off once), an open window switches them off at once. Vacation and
+        presence do not matter: the limits guard the building, not a comfort target.
+        """
+        rooms = rooms_with_area(self.hass, self.hass.data[DOMAIN]["store"].get_rooms())
+        controlled = (
+            {a: r for a, r in rooms.items() if r.get("climate_control_enabled", True)}
+            if settings.get("climate_control_active", True)
+            else {}
+        )
+        wanted, blocked = humidity_device_claims(controlled, room_states, self.hass.states.get)
+        try:
+            await self._humidity_devices.async_reconcile(wanted, time.time(), blocked)
+        except Exception:  # noqa: BLE001
+            _LOGGER.warning("Humidity device control failed", exc_info=True)
+        for area_id, rs in room_states.items():
+            room = rooms.get(area_id) or {}
+            for key, field in (
+                ("dehumidifier_active", "dehumidifier_entity"),
+                ("humidifier_active", "humidifier_entity"),
+            ):
+                entity_id = room.get(field)
+                rs[key] = bool(entity_id and humidity_regulated(room) and self._humidity_devices.is_running(entity_id))
+        changes: dict[str, Any] = {}
+        if self._humidity_devices.dirty:
+            changes["humidity_device_state"] = self._humidity_devices.get_state()
+        venting = self._humidity.venting_rooms()
+        if venting != self._humidity_vent_rooms_saved:
+            changes["humidity_vent_rooms"] = venting
+        if changes:
+            await self.hass.data[DOMAIN]["store"].async_save_settings(changes)
+            self._humidity_devices.dirty = False
+            self._humidity_vent_rooms_saved = venting
 
     async def _async_record_recent_temps(self, room_states: dict[str, dict]) -> None:
         """Feed the short series the dashboard cards draw; seeded from the history once per room."""
@@ -3040,6 +3161,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         self._binary_sensor_entity_areas.discard(area_id)
         self._air_quality_entity_areas.discard(area_id)
         self._air_quality.remove_room(area_id)
+        self._humidity.remove_room(area_id)
         self._climate_entity_areas.discard(area_id)
         self._heat_source_states.pop(area_id, None)
         self._coil_dry_manager.remove_room(area_id)

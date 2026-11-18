@@ -3727,6 +3727,212 @@ async def test_list_rooms_forwards_air_quality(ws_hass, store, connection):
     }
 
 
+def test_humidity_schema():
+    """Limits in % RH, dehumidifier/humidifier as humidifier/switch/input_boolean (#518, #526)."""
+    import voluptuous as vol
+
+    schema = websocket_save_room._ws_schema
+    base = {"type": "roommind/rooms/save", "id": 1, "area_id": "bath"}
+    result = schema(
+        {
+            **base,
+            "humidity_max": "65",
+            "humidity_min": 35,
+            "dehumidifier_entity": "humidifier.cellar",
+            "humidifier_entity": "switch.plug",
+        }
+    )
+    assert result["humidity_max"] == 65.0 and result["humidity_min"] == 35.0
+    assert schema({**base, "humidity_max": None, "humidity_min": None})["humidity_max"] is None
+    for eid in ("", "input_boolean.dehum"):
+        assert schema({**base, "dehumidifier_entity": eid})["dehumidifier_entity"] == eid
+    for bad in (
+        {"humidity_max": 39},
+        {"humidity_max": 91},
+        {"humidity_min": 19},
+        {"humidity_min": 61},
+        {"dehumidifier_entity": "fan.bath"},
+        {"humidifier_entity": "climate.ac"},
+    ):
+        with pytest.raises(vol.Invalid):
+            schema({**base, **bad})
+
+
+@pytest.mark.asyncio
+async def test_save_room_humidity_defaults_and_roundtrip(ws_hass, store, connection):
+    await store.async_load()
+    await _save_room(ws_hass, connection, {"id": 2, "type": "roommind/rooms/save", "area_id": "bath"})
+    stored = store.get_room("bath")
+    assert [stored[k] for k in ("humidity_max", "humidity_min", "dehumidifier_entity", "humidifier_entity")] == [
+        None,
+        None,
+        "",
+        "",
+    ]
+    await _save_room(
+        ws_hass,
+        connection,
+        {
+            "id": 3,
+            "type": "roommind/rooms/save",
+            "area_id": "bath",
+            "humidity_max": 70,
+            "dehumidifier_entity": "switch.d",
+        },
+    )
+    connection.send_error.assert_not_called()
+    stored = store.get_room("bath")
+    assert stored["humidity_max"] == 70 and stored["dehumidifier_entity"] == "switch.d"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "first,second",
+    [
+        ({"humidity_max": 50}, {"humidity_min": 41}),  # the second field alone, against the stored one
+        ({"humidity_min": 45}, {"humidity_max": 54}),
+        ({}, {"humidity_max": 50, "humidity_min": 45}),
+    ],
+)
+async def test_save_room_limits_keep_their_gap(ws_hass, store, connection, first, second):
+    await store.async_load()
+    await _save_room(ws_hass, connection, {"id": 2, "type": "roommind/rooms/save", "area_id": "bath", **first})
+    connection.send_error.assert_not_called()
+    await _save_room(ws_hass, connection, {"id": 3, "type": "roommind/rooms/save", "area_id": "bath", **second})
+    assert connection.send_error.call_args[0][1] == "invalid_format"
+
+
+@pytest.mark.asyncio
+async def test_save_room_limits_with_the_gap_and_cleared_ones_pass(ws_hass, store, connection):
+    await store.async_load()
+    for i, fields in enumerate(
+        ({"humidity_max": 50}, {"humidity_min": 40}, {"humidity_max": None}, {"humidity_min": 55})
+    ):
+        await _save_room(ws_hass, connection, {"id": i, "type": "roommind/rooms/save", "area_id": "bath", **fields})
+    connection.send_error.assert_not_called()
+    assert store.get_room("bath")["humidity_min"] == 55
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {"ventilation_entity": "switch.plug", "dehumidifier_entity": "switch.plug"},
+        {"dehumidifier_entity": "switch.plug", "humidifier_entity": "switch.plug"},
+    ],
+)
+async def test_save_room_one_role_per_entity(ws_hass, store, connection, fields):
+    await store.async_load()
+    await _save_room(ws_hass, connection, {"id": 2, "type": "roommind/rooms/save", "area_id": "bath", **fields})
+    assert connection.send_error.call_args[0][1] == "invalid_entity"
+
+
+@pytest.mark.asyncio
+async def test_save_room_one_role_per_entity_against_the_stored_room(ws_hass, store, connection):
+    await store.async_load()
+    msg = {"type": "roommind/rooms/save", "area_id": "bath"}
+    await _save_room(ws_hass, connection, {**msg, "id": 2, "ventilation_entity": "switch.plug"})
+    await _save_room(ws_hass, connection, {**msg, "id": 3, "humidifier_entity": "switch.plug"})
+    assert connection.send_error.call_args[0][1] == "invalid_entity"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "first,second,ok",
+    [
+        ({"ventilation_entity": "switch.plug"}, {"dehumidifier_entity": "switch.plug"}, False),
+        ({"dehumidifier_entity": "switch.plug"}, {"humidifier_entity": "switch.plug"}, False),
+        ({"humidifier_entity": "switch.plug"}, {"ventilation_entity": "switch.plug"}, False),
+        ({"dehumidifier_entity": "switch.plug"}, {"dehumidifier_entity": "switch.plug"}, True),
+        ({"ventilation_entity": "fan.hall"}, {"ventilation_entity": "fan.hall"}, True),
+    ],
+)
+async def test_save_room_one_role_per_entity_across_rooms(ws_hass, store, connection, first, second, ok):
+    """Ventilation and humidity devices run on two controllers: one switch keeps one role everywhere."""
+    await store.async_load()
+    msg = {"type": "roommind/rooms/save"}
+    await _save_room(ws_hass, connection, {**msg, "id": 2, "area_id": "bath", **first})
+    connection.send_error.assert_not_called()
+    await _save_room(ws_hass, connection, {**msg, "id": 3, "area_id": "hall", **second})
+    if ok:
+        connection.send_error.assert_not_called()
+    else:
+        assert connection.send_error.call_args[0][1] == "invalid_entity"
+
+
+@pytest.mark.asyncio
+async def test_save_room_device_class_only_checked_for_the_field_sent(ws_hass, store, connection):
+    """A humidifier that reports its class only later must not block other saves of the room."""
+    from types import SimpleNamespace
+
+    await store.async_load()
+    msg = {"type": "roommind/rooms/save", "area_id": "bath"}
+    ws_hass.states.get = lambda eid: SimpleNamespace(state="off", attributes={})
+    await _save_room(ws_hass, connection, {**msg, "id": 2, "dehumidifier_entity": "humidifier.unit"})
+    ws_hass.states.get = lambda eid: SimpleNamespace(state="off", attributes={"device_class": "humidifier"})
+    await _save_room(ws_hass, connection, {**msg, "id": 3, "comfort_heat": 22.0})
+    connection.send_error.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "field,device_class,ok",
+    [
+        ("dehumidifier_entity", "dehumidifier", True),
+        ("dehumidifier_entity", "humidifier", False),
+        ("humidifier_entity", "dehumidifier", False),
+        ("humidifier_entity", "humidifier", True),
+        ("humidifier_entity", None, True),
+    ],
+)
+async def test_save_room_humidifier_direction_from_its_device_class(
+    ws_hass, store, connection, field, device_class, ok
+):
+    from types import SimpleNamespace
+
+    await store.async_load()
+    ws_hass.states.get = lambda eid: SimpleNamespace(state="off", attributes={"device_class": device_class})
+    await _save_room(
+        ws_hass, connection, {"id": 2, "type": "roommind/rooms/save", "area_id": "bath", field: "humidifier.unit"}
+    )
+    if ok:
+        connection.send_error.assert_not_called()
+    else:
+        assert connection.send_error.call_args[0][1] == "invalid_entity"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("field", ["dehumidifier_entity", "humidifier_entity"])
+async def test_save_room_rejects_own_humidity_entities(ws_hass, store, connection, field):
+    await store.async_load()
+    msg = {"id": 2, "type": "roommind/rooms/save", "area_id": "bath", field: "switch.roommind_bath_climate_control"}
+    await _save_room(ws_hass, connection, msg)
+    assert connection.send_error.call_args[0][1] == "invalid_entity"
+
+
+@pytest.mark.asyncio
+async def test_list_rooms_forwards_humidity_control(ws_hass, store, connection):
+    await store.async_load()
+    await _save_room(ws_hass, connection, {"id": 2, "type": "roommind/rooms/save", "area_id": "bath"})
+    keys = (
+        "humidity_high",
+        "humidity_low",
+        "humidity_ventilate",
+        "humidity_vent_blocked",
+        "dehumidifier_active",
+        "humidifier_active",
+    )
+    mock_coordinator = MagicMock()
+    mock_coordinator.rooms = {"bath": dict.fromkeys(keys, True)}
+    mock_coordinator.async_request_refresh = AsyncMock()
+    ws_hass.data[DOMAIN]["coordinator"] = mock_coordinator
+
+    await _list_rooms(ws_hass, connection, {"id": 3, "type": "roommind/rooms/list"})
+
+    live = connection.send_result.call_args[0][1]["rooms"]["bath"]["live"]
+    assert {k: live[k] for k in keys} == dict.fromkeys(keys, True)
+
+
 # ── Admin-only commands and non-admin room saves ───────────────────────
 
 

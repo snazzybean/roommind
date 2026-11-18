@@ -303,6 +303,10 @@ class RoomMindStore:
             "voc_sensor": config.get("voc_sensor", ""),
             "voc_threshold": config.get("voc_threshold"),
             "ventilation_entity": config.get("ventilation_entity", ""),
+            "humidity_max": config.get("humidity_max"),
+            "humidity_min": config.get("humidity_min"),
+            "dehumidifier_entity": config.get("dehumidifier_entity", ""),
+            "humidifier_entity": config.get("humidifier_entity", ""),
         }
         _single_temps_to_cool_side(room, config, room["climate_mode"])
         # Directional device sync for new rooms (truthiness check, not just presence)

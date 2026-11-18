@@ -162,6 +162,7 @@ export function roomStateInfo(config: RoomConfig, climateControlActive: boolean)
 export type RoomHintId =
   | "mold_risk"
   | "air_quality"
+  | "humidity"
   | "window_open"
   | "not_controlled"
   | "override"
@@ -238,6 +239,8 @@ export function roomHints(
   }
   const air = airQualityHint(live, ctx.language);
   if (air) hints.push(air);
+  const humidity = humidityHint(live, ctx.language);
+  if (humidity) hints.push(humidity);
   if (kind !== "controlled") return hints;
 
   if (live.window_open) {
@@ -418,6 +421,41 @@ function airQualityHint(live: NonNullable<RoomConfig["live"]>, language: string)
     icon: "mdi:air-filter",
     severity: "warn",
     key: venting ? "card.hint.air_venting" : "card.hint.air_bad",
+  };
+}
+
+/**
+ * Past a humidity limit (#518, #526): the reading and what RoomMind runs against it. Without a
+ * running device "outdoor air wetter" tells why the ventilation stays off.
+ */
+function humidityHint(live: NonNullable<RoomConfig["live"]>, language: string): RoomHint | null {
+  if (!live.humidity_high && !live.humidity_low) return null;
+  const value =
+    live.current_humidity != null
+      ? formatNumber(Math.round(live.current_humidity), { language })
+      : "–";
+  let key: TranslationKey;
+  if (live.humidity_high) {
+    key = live.dehumidifier_active
+      ? "card.hint.humidity_dehumidifying"
+      : live.ventilation_active && live.humidity_ventilate
+        ? "card.hint.humidity_venting"
+        : live.humidity_vent_blocked
+          ? "card.hint.humidity_outdoor_wetter"
+          : "card.hint.humidity_high";
+  } else {
+    key = live.humidifier_active ? "card.hint.humidity_humidifying" : "card.hint.humidity_low";
+  }
+  const running =
+    key === "card.hint.humidity_dehumidifying" ||
+    key === "card.hint.humidity_venting" ||
+    key === "card.hint.humidity_humidifying";
+  return {
+    id: "humidity",
+    icon: "mdi:water-percent-alert",
+    severity: running ? "info" : "warn",
+    key,
+    params: { value },
   };
 }
 
