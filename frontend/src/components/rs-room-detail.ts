@@ -112,6 +112,11 @@ const ROOM_FIELDS: [string, RoomFieldSync][] = [
   ["voc_threshold", plain("_vocThreshold", (c) => c?.voc_threshold ?? null)],
   ["ventilation_entity", plain("_ventilationEntity", (c) => c?.ventilation_entity ?? "")],
   ["preheat_enabled", plain("_preheatEnabled", (c) => c?.preheat_enabled ?? true)],
+  ["mold_enabled", plain("_moldEnabled", (c) => c?.mold_enabled ?? true)],
+  [
+    "mold_prevention_intensity",
+    plain("_moldPreventionIntensity", (c) => c?.mold_prevention_intensity ?? ""),
+  ],
   [
     "follow_device_setpoint",
     plain("_followDeviceSetpoint", (c) => c?.follow_device_setpoint ?? false),
@@ -238,6 +243,9 @@ export class RsRoomDetail extends LitElement {
   @property({ attribute: false }) public outdoorTemp: number | null = null;
   @property({ type: Boolean }) public vacationActive = false;
   @property({ attribute: false }) public vacationUntil: number | null = null;
+  @property({ type: Boolean }) public moldDetectionEnabled = false;
+  @property({ type: Boolean }) public moldPreventionEnabled = false;
+  @property({ type: String }) public moldPreventionIntensity = "medium";
 
   @state() private _devices: DeviceConfig[] = [];
   @state() private _selectedTempSensor = "";
@@ -254,6 +262,8 @@ export class RsRoomDetail extends LitElement {
   @state() private _vocSensor = "";
   @state() private _vocThreshold: number | null = null;
   @state() private _ventilationEntity = "";
+  @state() private _moldEnabled = true;
+  @state() private _moldPreventionIntensity = "";
   @state() private _selectedWindowSensors: Set<string> = new Set();
   @state() private _windowOpenDelay = 0;
   @state() private _windowCloseDelay = 0;
@@ -789,6 +799,11 @@ export class RsRoomDetail extends LitElement {
         .vocSensor=${this._vocSensor}
         .vocThreshold=${this._vocThreshold}
         .ventilationEntity=${this._ventilationEntity}
+        .moldDetectionEnabled=${this.moldDetectionEnabled}
+        .moldPreventionEnabled=${this.moldPreventionEnabled}
+        .moldPreventionIntensityGlobal=${this.moldPreventionIntensity}
+        .moldEnabled=${this._moldEnabled}
+        .moldPreventionIntensity=${this._moldPreventionIntensity}
         .live=${this.config?.live}
         .windowSensors=${this._selectedWindowSensors}
         .windowOpenDelay=${this._windowOpenDelay}
@@ -984,6 +999,11 @@ export class RsRoomDetail extends LitElement {
             .vocSensor=${this._vocSensor}
             .vocThreshold=${this._vocThreshold}
             .ventilationEntity=${this._ventilationEntity}
+            .moldDetectionEnabled=${this.moldDetectionEnabled}
+            .moldPreventionEnabled=${this.moldPreventionEnabled}
+            .moldPreventionIntensityGlobal=${this.moldPreventionIntensity}
+            .moldEnabled=${this._moldEnabled}
+            .moldPreventionIntensity=${this._moldPreventionIntensity}
             .live=${this.config?.live}
             .windowSensors=${this._selectedWindowSensors}
             .windowOpenDelay=${this._windowOpenDelay}
@@ -1296,6 +1316,10 @@ export class RsRoomDetail extends LitElement {
       this._windowOpenDelay = value as number;
     } else if (key === "window_close_delay") {
       this._windowCloseDelay = value as number;
+    } else if (key === "mold_enabled") {
+      this._moldEnabled = value as boolean;
+    } else if (key === "mold_prevention_intensity") {
+      this._moldPreventionIntensity = value as string;
     }
     this._autoSave();
   }
