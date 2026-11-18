@@ -1,0 +1,52 @@
+name: Discussion Reopen
+
+on:
+  discussion_comment:
+    types: [created]
+
+jobs:
+  reopen-discussion:
+    if: contains(github.event.comment.body, '/reopen')
+    runs-on: ubuntu-latest
+    permissions:
+      discussions: write
+    steps:
+      - name: Reopen if requested by author
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const number = context.payload.discussion.number;
+            const author = context.payload.discussion.user.login;
+            const commenter = context.payload.comment.user.login;
+
+            const { repository } = await github.graphql(
+              `query($owner: String!, $repo: String!, $number: Int!) {
+                repository(owner: $owner, name: $repo) {
+                  discussion(number: $number) { id closed labels(first: 20) { nodes { name } } }
+                }
+              }`,
+              { owner, repo, number },
+            );
+            const d = repository.discussion;
+            if (!d.closed) return;
+
+            const comment = body => github.graphql(
+              `mutation($id: ID!, $body: String!) { addDiscussionComment(input: { discussionId: $id, body: $body }) { comment { id } } }`,
+              { id: d.id, body },
+            );
+
+            if (d.labels.nodes.some(l => l.name === 'no-reopen')) {
+              await comment(`This discussion has been marked as \`no-reopen\` by a maintainer and cannot be reopened via \`/reopen\`.`);
+              return;
+            }
+            if (commenter !== author) {
+              await comment(`@${commenter} Only the author can use \`/reopen\`. Your comment is still seen.`);
+              return;
+            }
+
+            await github.graphql(
+              `mutation($id: ID!) { reopenDiscussion(input: { discussionId: $id }) { discussion { id } } }`,
+              { id: d.id },
+            );
+            await comment(`Reopened by @${commenter}.`);

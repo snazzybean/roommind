@@ -18,9 +18,10 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       issues: write
+      discussions: write
       contents: read
     steps:
-      - name: Ask reporters of fixed issues to test
+      - name: Ask reporters of fixed issues to test, close implemented discussions
         uses: actions/github-script@v9
         with:
           script: |
@@ -29,39 +30,40 @@ jobs:
             const release = context.eventName === 'release'
               ? context.payload.release
               : (await github.rest.repos.getReleaseByTag({ owner, repo, tag: context.payload.inputs.tag })).data;
+            const prerelease = release.prerelease || /-(alpha|beta|rc)\b/.test(release.tag_name);
 
-            // Only full issue links; discussion and PR links have no reporter waiting on a fix.
-            const pattern = new RegExp(`github\\.com/${owner}/${repo}/issues/(\\d+)`, 'g');
+            // Issues and discussions share one number space; the number decides, not the link path.
+            const pattern = new RegExp(`github\\.com/${owner}/${repo}/(?:issues|discussions)/(\\d+)`, 'g');
             const numbers = [...new Set([...(release.body || '').matchAll(pattern)].map(m => Number(m[1])))];
-            core.info(`${release.tag_name}: issues referenced ${numbers.join(', ') || 'none'}`);
+            core.info(`${release.tag_name}: referenced ${numbers.join(', ') || 'none'}`);
 
             const base = release.tag_name.replace(/-(alpha|beta|rc)\b.*$/, '');
             const escaped = base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
             const cycleLink = new RegExp(`releases/tag/${escaped}(?:-(?:alpha|beta|rc)[0-9A-Za-z.]*)?(?![0-9A-Za-z.])`);
+            const releaseLink = `[${release.tag_name}](${release.html_url})`;
 
-            for (const number of numbers) {
-              const { data: issue } = await github.rest.issues.get({ owner, repo, issue_number: number });
+            async function handleIssue(issue, number) {
               const labels = issue.labels.map(l => l.name);
               if (issue.pull_request || issue.state !== 'open') {
                 core.info(`#${number}: skipped (${issue.pull_request ? 'pull request' : 'closed'})`);
-                continue;
+                return;
               }
               // Set by an earlier release of the same fix (beta before final).
               if (labels.includes('fix-released')) {
                 core.info(`#${number}: skipped (already notified)`);
-                continue;
+                return;
               }
               // A reply drops fix-released; a beta of this version already asked, the final must not
               // ask again and take needs-attention away from a "still broken" answer.
               const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number: number });
               if (comments.some(c => cycleLink.test(c.body || ''))) {
                 core.info(`#${number}: skipped (notified for ${base} already)`);
-                continue;
+                return;
               }
-              const body = `[${release.tag_name}](${release.html_url}) includes a fix for this. Please update and let me know if it works for you.`;
+              const body = `${releaseLink} includes a fix for this. Please update and let me know if it works for you.`;
               if (dryRun) {
                 core.info(`#${number}: would comment "${body}"`);
-                continue;
+                return;
               }
               await github.rest.issues.createComment({ owner, repo, issue_number: number, body });
               await github.rest.issues.addLabels({ owner, repo, issue_number: number, labels: ['waiting for feedback', 'fix-released'] });
@@ -72,3 +74,76 @@ jobs:
               }
               core.info(`#${number}: commented and labeled`);
             }
+
+            async function handleDiscussion(number) {
+              const { repository } = await github.graphql(
+                `query($owner: String!, $repo: String!, $number: Int!) {
+                  repository(owner: $owner, name: $repo) {
+                    discussion(number: $number) {
+                      id closed locked
+                      labels(first: 20) { nodes { name } }
+                      comments(last: 100) { nodes { body } }
+                    }
+                  }
+                }`,
+                { owner, repo, number },
+              );
+              const d = repository.discussion;
+              // A beta is not what most people install; the stable release closes the request.
+              if (prerelease) {
+                core.info(`#${number}: skipped (discussion, prerelease)`);
+                return;
+              }
+              if (d.closed || d.locked) {
+                core.info(`#${number}: skipped (discussion ${d.closed ? 'closed' : 'locked'})`);
+                return;
+              }
+              // Also covers a request reopened with /reopen after this release closed it.
+              if (d.comments.nodes.some(c => cycleLink.test(c.body || ''))) {
+                core.info(`#${number}: skipped (discussion, ${base} already posted)`);
+                return;
+              }
+              const keepOpen = d.labels.nodes.some(l => l.name === 'keep-open');
+              const body = keepOpen
+                ? `${releaseLink} includes part of this. I'm keeping the request open for the rest.`
+                : `${releaseLink} includes this, so I'm closing the request. If something is still missing, comment here. If you opened it, include \`/reopen\` in your comment and it opens again.`;
+              if (dryRun) {
+                core.info(`#${number}: would ${keepOpen ? 'comment (keep-open)' : 'comment and close'} "${body}"`);
+                return;
+              }
+              await github.graphql(
+                `mutation($id: ID!, $body: String!) { addDiscussionComment(input: { discussionId: $id, body: $body }) { comment { id } } }`,
+                { id: d.id, body },
+              );
+              if (keepOpen) {
+                core.info(`#${number}: commented (keep-open)`);
+                return;
+              }
+              await github.graphql(
+                `mutation($id: ID!) { closeDiscussion(input: { discussionId: $id, reason: RESOLVED }) { discussion { id } } }`,
+                { id: d.id },
+              );
+              core.info(`#${number}: commented and closed`);
+            }
+
+            const failed = [];
+            for (const number of numbers) {
+              try {
+                let issue = null;
+                try {
+                  ({ data: issue } = await github.rest.issues.get({ owner, repo, issue_number: number }));
+                } catch (e) {
+                  if (e.status !== 404) throw e;
+                }
+                if (issue) {
+                  await handleIssue(issue, number);
+                } else {
+                  await handleDiscussion(number);
+                }
+              } catch (e) {
+                // One bad link must not keep the remaining reporters from hearing about the release.
+                core.warning(`#${number}: ${e.message}`);
+                failed.push(number);
+              }
+            }
+            if (failed.length) core.setFailed(`Failed for ${failed.map(n => `#${n}`).join(', ')}`);
