@@ -60,7 +60,7 @@ jobs:
                 core.info(`#${number}: skipped (notified for ${base} already)`);
                 return;
               }
-              const body = `${releaseLink} includes a fix for this. Please update and let me know if it works for you.`;
+              const body = `${releaseLink} includes a fix for this. Please update and comment here whether it works for you.`;
               if (dryRun) {
                 core.info(`#${number}: would comment "${body}"`);
                 return;
@@ -105,8 +105,8 @@ jobs:
               }
               const keepOpen = d.labels.nodes.some(l => l.name === 'keep-open');
               const body = keepOpen
-                ? `${releaseLink} includes part of this. I'm keeping this open for the rest.`
-                : `${releaseLink} includes this, so I'm closing it. If something is still missing, comment here. If you opened it, include \`/reopen\` in your comment and it opens again.`;
+                ? `${releaseLink} includes part of this. This discussion stays open for the rest.`
+                : `${releaseLink} includes this, so this discussion is closed. If something is still missing, comment here. If you opened it, include \`/reopen\` in your comment and it opens again.`;
               if (dryRun) {
                 core.info(`#${number}: would ${keepOpen ? 'comment (keep-open)' : 'comment and close'} "${body}"`);
                 return;
