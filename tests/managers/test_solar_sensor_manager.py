@@ -350,8 +350,12 @@ def test_the_position_turns_when_the_evidence_does():
     assert mgr.status("room")["position"] is None
     _run(mgr, hass, noon - 3 * 3600, 2, lambda ts, q, sf: 1000.0 * q * sf, shading_of=lambda ts: CLOSED)
     assert mgr.status("room")["position"] == POSITION_INSIDE
+    # A spell in between keeps the call
+    _run(mgr, hass, noon - 3600, 1, lambda ts, q, sf: 1000.0 * q * 0.9, shading_of=lambda ts: CLOSED)
+    assert mgr.status("room")["position"] == POSITION_INSIDE
     # Long shaded spells outside: the old evidence fades and the call turns
-    _run(mgr, hass, noon - 3600, 5, lambda ts, q, sf: 1000.0 * q, shading_of=lambda ts: CLOSED)
+    for day in range(3):
+        _run(mgr, hass, noon + day * 86400 - 3 * 3600, 6, lambda ts, q, sf: 1000.0 * q, shading_of=lambda ts: CLOSED)
     assert mgr.status("room")["position"] == POSITION_OUTSIDE
 
 
@@ -394,3 +398,22 @@ def test_a_cover_that_lets_more_light_through_than_modelled_still_counts_as_insi
     noon = ts + 12 * 3600
     _run(mgr, hass, noon - 2 * 3600, 2, lambda ts, q, sf: 1000.0 * q * 0.8, shading_of=lambda ts: CLOSED)
     assert mgr.status("room")["position"] == POSITION_INSIDE
+
+
+def test_winter_calibrates_on_the_short_sun_path():
+    """December: few azimuth bins with sun at all; the calibration needs a share of them, not a fixed count."""
+    hass = _Hass()
+    mgr = SolarSensorManager(hass)
+    dec = datetime(2026, 12, 21, tzinfo=UTC).timestamp()
+    _run(mgr, hass, dec, 24 * 4, lambda ts, q, sf: 1000.0 * q)
+    assert mgr.status("room")["state"] == "active"
+
+
+def test_the_clamp_follows_clear_sky_not_the_cloud_forecast():
+    """Forecast overcast, sun out: the reading is what the room gets."""
+    mgr, hass, ts = _calibrated()
+    t = ts + 12 * 3600
+    clear = _q(t)
+    hass.set(SENSOR, _state(1000 * clear, reported=t))
+    out = mgr.update("room", SENSOR, clear * 0.2, 1.0, t)
+    assert out.q_now == pytest.approx(clear, rel=1e-6)

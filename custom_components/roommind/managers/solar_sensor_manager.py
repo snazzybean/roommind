@@ -40,7 +40,7 @@ from ..const import (
     SOLAR_SENSOR_STALE_S,
     SOLAR_SENSOR_USE_MIN_Q,
 )
-from ..control.solar import solar_azimuth
+from ..control.solar import compute_q_solar_norm, solar_azimuth
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -61,13 +61,17 @@ _MIN_BIN_H = 0.05
 # Shaded samples only judge the position where the profile is learned and expects sun
 _POSITION_MIN_BIN_H = 0.25
 # A reading this far below the open-cover profile while shaded comes from behind the cover
-_POSITION_INSIDE_BELOW = 0.9
+_POSITION_INSIDE_BELOW = 0.85
+# ... and one at least this close to the profile from in front of it; in between the call stays
+_POSITION_OUTSIDE_ABOVE = 0.95
 _POSITION_MIN_PROFILE = 0.2
 # Old position evidence halves once there is this much, so a wrong early call can turn
 _POSITION_MAX_SUN_H = 2.0
 _PEAK_DAYS_KEPT = 3
-# Azimuth bins with sun samples before the calibration may end (~120° of the sun's path)
-_CALIBRATION_MIN_BINS = 8
+# Share of the sun's path (azimuth bins with sun this season) the calibration must have seen with
+# the covers open: a room shaded every afternoon would get a scale from the morning alone
+_CALIBRATION_MIN_SHARE = 0.6
+_CALIBRATION_MIN_BINS = 2
 # A direction the sensor barely sees (diffuse light only) does not set the deviation for all others
 _DEVIATION_MIN_PROFILE = 0.3
 
@@ -141,6 +145,7 @@ class _SensorState:
     cal_raw: list[float] = field(default_factory=_zeros)
     cal_model: list[float] = field(default_factory=_zeros)
     cal_hours: list[float] = field(default_factory=_zeros)
+    cal_sun: list[float] = field(default_factory=_zeros)
     profile: list[float] = field(default_factory=lambda: [1.0] * SOLAR_SENSOR_PROFILE_BINS)
     weight: list[float] = field(default_factory=_zeros)
     position: str | None = None
@@ -203,6 +208,8 @@ class SolarSensorManager:
         if st.scale is None:
             # Unsupported only once the sensor shows a unit RoomMind cannot use, not while it has no state
             st.status = "unsupported" if kind is None and state is not None else "learning"
+            if q_model >= SOLAR_SENSOR_LEARN_MIN_Q:
+                st.cal_sun[b] += dt_h
             if learn and raw is not None:
                 self.learned = True
                 st.cal_raw[b] += raw * dt_h
@@ -215,7 +222,8 @@ class SolarSensorManager:
 
         st.status = "active" if raw is not None else "unavailable"
         # Clamped like the profile: a scale learned on diffuse light must not turn direct sun into many suns
-        m = None if raw is None else min(raw / st.scale, SOLAR_SENSOR_RATIO_MAX * q_model)
+        # Against clear sky, not the cloud forecast: sun the forecast did not expect is what the sensor is for
+        m = None if raw is None else min(raw / st.scale, SOLAR_SENSOR_RATIO_MAX * compute_q_solar_norm(lat, lon, now))
         if learn and m is not None:
             self._learn(st, b, m / q_model, dt_h, now)
             self.learned = True
@@ -295,7 +303,9 @@ class SolarSensorManager:
         if model < SOLAR_SENSOR_CALIBRATION_SUN_H or raw <= 0.0:
             return
         # Most of the sun's path seen: a room shaded every afternoon would get a scale from the morning alone
-        if sum(1 for h in st.cal_hours if h >= _MIN_BIN_H) < _CALIBRATION_MIN_BINS:
+        seen = sum(1 for h in st.cal_hours if h >= _MIN_BIN_H)
+        path = sum(1 for h in st.cal_sun if h >= _MIN_BIN_H)
+        if seen < max(_CALIBRATION_MIN_BINS, math.ceil(_CALIBRATION_MIN_SHARE * path)):
             return
         st.scale = raw / model
         for b in range(SOLAR_SENSOR_PROFILE_BINS):
@@ -303,7 +313,7 @@ class SolarSensorManager:
                 ratio = st.cal_raw[b] / st.cal_model[b] / st.scale
                 st.profile[b] = max(0.0, min(SOLAR_SENSOR_RATIO_MAX, ratio))
                 st.weight[b] = st.cal_hours[b]
-        st.cal_raw, st.cal_model, st.cal_hours = _zeros(), _zeros(), _zeros()
+        st.cal_raw, st.cal_model, st.cal_hours, st.cal_sun = _zeros(), _zeros(), _zeros(), _zeros()
         st.status = "active"
         self.dirty = True
         _LOGGER.info("Room '%s': sun sensor %s calibrated (scale %.4g)", area_id, st.entity_id, st.scale)
@@ -349,8 +359,12 @@ class SolarSensorManager:
         mean_shading = st.pos_shading / st.pos_sun
         # Behind the cover the reading drops; how far depends on the real cover (slats let light
         # through, the shading factor is only RoomMind's model), so any clear drop counts
-        threshold = max((1.0 + mean_shading) / 2.0, _POSITION_INSIDE_BELOW)
-        position = POSITION_INSIDE if mean_ratio < threshold else POSITION_OUTSIDE
+        if mean_ratio < max((1.0 + mean_shading) / 2.0, _POSITION_INSIDE_BELOW):
+            position = POSITION_INSIDE
+        elif mean_ratio > _POSITION_OUTSIDE_ABOVE:
+            position = POSITION_OUTSIDE
+        else:
+            return
         if position != st.position:
             st.position = position
             self.dirty = True
@@ -375,7 +389,7 @@ class SolarSensorManager:
                 "entity_id": st.entity_id,
                 "kind": st.kind,
                 "scale": st.scale,
-                "cal": [st.cal_raw, st.cal_model, st.cal_hours] if st.scale is None else None,
+                "cal": [st.cal_raw, st.cal_model, st.cal_hours, st.cal_sun] if st.scale is None else None,
                 "profile": [round(p, 4) for p in st.profile],
                 "weight": [round(w, 3) for w in st.weight],
                 "position": st.position,
@@ -395,8 +409,8 @@ class SolarSensorManager:
                 scale = d.get("scale")
                 st.scale = float(scale) if scale is not None and float(scale) > 0.0 else None
                 cal = d.get("cal")
-                if st.scale is None and cal and all(len(c) == n for c in cal):
-                    st.cal_raw, st.cal_model, st.cal_hours = ([float(v) for v in c] for c in cal)
+                if st.scale is None and cal and len(cal) == 4 and all(len(c) == n for c in cal):
+                    st.cal_raw, st.cal_model, st.cal_hours, st.cal_sun = ([float(v) for v in c] for c in cal)
                 if len(d.get("profile") or []) == n and len(d.get("weight") or []) == n:
                     st.profile = [float(v) for v in d["profile"]]
                     st.weight = [float(v) for v in d["weight"]]

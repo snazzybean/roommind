@@ -312,10 +312,10 @@ COVER_SMOOTHING_MINUTES: float = 30.0  # EMA time constant for room temp and sha
 # Per-room sun sensor (#303), see managers/solar_sensor_manager.py
 SOLAR_SENSOR_LEARN_MIN_Q: float = 0.1  # the model must expect at least this much sun (GHI/1000) to learn the ratio
 SOLAR_SENSOR_USE_MIN_Q: float = 0.02  # below it (dawn, dusk) a reading is lamp light as much as sun
-SOLAR_SENSOR_CALIBRATION_SUN_H: float = 2.0  # model sun (hours at 1000 W/m²) before the sensor's scale is fixed
+SOLAR_SENSOR_CALIBRATION_SUN_H: float = 0.3  # model sun (h at 1000 W/m²) to fix the scale: a clear winter day
 SOLAR_SENSOR_OPEN_SHADING: float = 0.9  # shading factor from which the covers count as open (~88 % position)
 SOLAR_SENSOR_SHADED: float = 0.75  # shading factor up to which a sample tells where the sensor sits
-SOLAR_SENSOR_POSITION_MIN_SUN_H: float = 0.25  # shaded model sun before the sensor position is decided
+SOLAR_SENSOR_POSITION_MIN_SUN_H: float = 0.5  # shaded model sun before the sensor position is decided
 SOLAR_SENSOR_STALE_S: float = 3600.0  # no report for this long in daylight: the sensor hangs
 SOLAR_SENSOR_PROFILE_BINS: int = 24  # profile per 15° of sun azimuth
 SOLAR_SENSOR_PROFILE_TAU_H: float = 3.0  # sample hours a profile bin averages over
