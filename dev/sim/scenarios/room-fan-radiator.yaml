@@ -78,7 +78,8 @@ timeline:
 # 40 min. RoomMind runs the three rooms differently (C heats on until 09:00), so the per-room
 # totals are not a clean comparison; tests/test_appliances.py isolates the effect.
 expect:
-  - {invariant: no_rejected_commands}
+  - {metric: appliance.rejected_commands, entity_id: fan.raum_a_decke, max: 0}
+  - {metric: appliance.rejected_commands, entity_id: switch.raum_b_ventilator, max: 0}
   - {metric: appliance.starts, entity_id: fan.raum_a_decke, min: 2, max: 2}
   - {metric: appliance.manual_switches, entity_id: fan.raum_a_decke, min: 1, max: 1}
   - {check: "appliance('fan.raum_a_decke').pct == 67 and state('fan.raum_a_decke') == 'on'", at: "+0d07h", label: fan runs at 67 %}

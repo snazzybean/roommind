@@ -76,7 +76,9 @@ timeline:
   - {at: "+1d12h", do: device.manual, entity_id: humidifier.keller_entfeuchter, state: "off"}
   - {at: "+1d00h", do: ha.service, service: humidifier.set_humidity, data: {entity_id: humidifier.sz_befeuchter, humidity: 50}}
 expect:
-  - {invariant: no_rejected_commands}
+  - {metric: appliance.rejected_commands, entity_id: humidifier.keller_entfeuchter, max: 0}
+  - {metric: appliance.rejected_commands, entity_id: switch.hwr_entfeuchter, max: 0}
+  - {metric: appliance.rejected_commands, entity_id: humidifier.sz_befeuchter, max: 0}
   - {metric: appliance.manual_switches, entity_id: humidifier.keller_entfeuchter, min: 1, max: 1}
   - {metric: appliance.commands, entity_id: switch.hwr_entfeuchter, min: 6, max: 6}
   - {check: "state('humidifier.keller_entfeuchter') == 'off'", at: "+1d13h", label: hand-off shows in HA}
