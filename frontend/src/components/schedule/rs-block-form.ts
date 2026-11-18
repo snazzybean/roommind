@@ -15,11 +15,15 @@ import {
   COVER_CLOSED,
   COVER_OPEN,
   DAY_MINUTES,
+  DEFAULT_PREHEAT_MINUTES,
+  MAX_PREHEAT_MINUTES,
   SNAP_MINUTES,
   blockPosition,
+  blockPreheat,
   blockTemps,
   hm,
   usesComfort,
+  type BlockPreheat,
   type ScheduleBlock,
 } from "../../utils/schedule-week";
 import "../shared/rs-segmented";
@@ -37,7 +41,8 @@ export interface BlockTempChange {
  * `block-times` `{ start, end }`, `block-split` `{ start, endNextDay }` for a range past
  * midnight, `block-temps` `{ temps }` (null = comfort, else only the sides that changed),
  * `block-delete`, `block-done`. A cover schedule's block (`cover`) has a position instead of a
- * temperature: `block-position` `{ position }`.
+ * temperature: `block-position` `{ position }`. A climate block also sets pre-heating before it:
+ * `block-preheat` `{ preheat }` ("room", "on", "off" or a lead limit in minutes).
  * Events bubble but are not composed: the editor listens on the form itself.
  */
 @customElement("rs-block-form")
@@ -66,6 +71,9 @@ export class RsBlockForm extends LitElement {
   @state() private _heat = 21;
   @state() private _cool = 24;
   @state() private _position: number = COVER_CLOSED;
+  @state() private _preheat: BlockPreheat = "room";
+  /** Lead limit shown for "limit", kept while switching between the choices. */
+  @state() private _preheatMinutes = DEFAULT_PREHEAT_MINUTES;
 
   static styles = [
     tokens,
@@ -175,6 +183,9 @@ export class RsBlockForm extends LitElement {
     this._heat = t.heat ?? t.single ?? this.defaults.heat;
     this._cool = t.cool ?? t.single ?? this.defaults.cool;
     this._position = blockPosition(this.block) ?? COVER_CLOSED;
+    this._preheat = blockPreheat(this.block);
+    this._preheatMinutes =
+      typeof this._preheat === "number" ? this._preheat : DEFAULT_PREHEAT_MINUTES;
   }
 
   render() {
@@ -219,7 +230,7 @@ export class RsBlockForm extends LitElement {
             </div>`
           : nothing
       }
-      ${this.cover ? this._renderPosition() : this._renderTemperature()}
+      ${this.cover ? this._renderPosition() : html`${this._renderTemperature()}${this._renderPreheat()}`}
       <div class="footer">
         <ha-button variant="danger" appearance="plain" @click=${this._onDelete}>
           <ha-icon slot="start" icon="mdi:delete-outline"></ha-icon>
@@ -244,6 +255,41 @@ export class RsBlockForm extends LitElement {
         @value-changed=${this._onKind}
       ></rs-segmented>
       ${this._own ? this._renderOwn() : html`<p class="hint">${this._comfortHint()}</p>`}
+    </div>`;
+  }
+
+  private _renderPreheat() {
+    const l = this.hass.language;
+    const kind = typeof this._preheat === "number" ? "limit" : this._preheat;
+    return html`<div class="section">
+      <p class="section-title">${localize("schedule_editor.preheat", l)}</p>
+      <rs-segmented
+        wrap
+        .label=${localize("schedule_editor.preheat", l)}
+        .options=${[
+          { value: "room", label: localize("schedule_editor.preheat_room", l) },
+          { value: "on", label: localize("schedule_editor.preheat_on", l) },
+          { value: "limit", label: localize("schedule_editor.preheat_limit", l) },
+          { value: "off", label: localize("schedule_editor.preheat_off", l) },
+        ]}
+        .value=${kind}
+        @value-changed=${this._onPreheatKind}
+      ></rs-segmented>
+      ${
+        kind === "limit"
+          ? html`<rs-number-field
+              style="margin-top: var(--rs-space-3)"
+              .label=${localize("schedule_editor.preheat_minutes", l)}
+              suffix="min"
+              .min=${1}
+              .max=${MAX_PREHEAT_MINUTES}
+              .step=${5}
+              .value=${this._preheatMinutes}
+              @value-changed=${this._onPreheatMinutes}
+            ></rs-number-field>`
+          : nothing
+      }
+      <p class="hint">${localize(`schedule_editor.preheat_hint_${kind}`, l)}</p>
     </div>`;
   }
 
@@ -397,6 +443,19 @@ export class RsBlockForm extends LitElement {
     }
     // Only the sides that moved: the other keeps its stored value or keeps following comfort.
     this._fire("block-temps", { temps });
+  }
+
+  private _onPreheatKind(e: CustomEvent<{ value: string }>) {
+    const kind = e.detail.value;
+    this._preheat = kind === "limit" ? this._preheatMinutes : (kind as BlockPreheat);
+    this._fire("block-preheat", { preheat: this._preheat });
+  }
+
+  private _onPreheatMinutes(e: CustomEvent<{ value: number | null }>) {
+    if (e.detail.value == null || e.detail.value <= 0) return;
+    this._preheatMinutes = Math.min(MAX_PREHEAT_MINUTES, Math.round(e.detail.value));
+    this._preheat = this._preheatMinutes;
+    this._fire("block-preheat", { preheat: this._preheat });
   }
 
   private _onPosition(e: CustomEvent<{ value: number | null }>) {

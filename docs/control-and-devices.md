@@ -21,6 +21,24 @@ When a schedule block raises the target (for example eco 17 °C until 06:00, the
 - Rooms with an AC that cools pre-cool the same way: when a cooler schedule block (for example comfort 24 °C after eco 27 °C) cannot be reached by starting shortly before it, cooling starts early enough that the room is near the target when the block begins. It counts on the AC pulling the air down quickly at the start of a run, as the learned model does. The slider limit and the room switch apply to pre-cooling too; the switch is then called `Pre-cool before schedule blocks` (cool only) or `Pre-heat and pre-cool before schedule blocks`.
 - `Simple` control mode does not pre-heat or pre-cool.
 
+#### Per schedule block
+
+A schedule block can differ from the room's switch. In RoomMind's schedule editor, open the block and pick under **Pre-heating**: `Like the room`, `On`, `Limited` (with the minutes) or `Off`. The editor stores it as `preheat` in the block's data, next to `temperature`, which can also be set by hand in Home Assistant's schedule helper:
+
+```yaml
+- from: "06:00:00"
+  to: "08:00:00"
+  data:
+    temperature: 22
+    preheat: 45     # at most 45 minutes ahead
+- from: "17:00:00"
+  to: "22:00:00"
+  data:
+    preheat: false  # only shortly before the block
+```
+
+`true` pre-heats even in a room whose switch is off, `false` (or `0`) behaves like the switch turned off for this block, a number limits the lead to that many minutes. The same goes for pre-cooling before a cooler block. Without `preheat` the room's switch applies. The `Priority` slider still limits the lead on top. Like the switch, it applies to rooms in `Intelligent (MPC)` mode and not to the screed pre-heating of underfloor heating.
+
 This setting does **not** change your schedule targets, overrides, comfort temperature, or eco temperature. It only changes how aggressively MPC tries to reach and hold those targets.
 
 ## Thermostat vs Climate Device

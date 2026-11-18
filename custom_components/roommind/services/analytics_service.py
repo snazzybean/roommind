@@ -171,6 +171,7 @@ async def _compute_target_forecast(
     from ..utils.schedule_utils import (
         cap_cool_only_heat,
         get_active_schedule_entity,
+        make_preheat_lead_resolver,
         price_shifted,
         read_schedule_blocks,
         resolve_targets_at_time,
@@ -195,6 +196,7 @@ async def _compute_target_forecast(
 
     _hass = hass
     converter = lambda v: ha_temp_to_celsius(_hass, v)  # noqa: E731
+    preheat_lead = make_preheat_lead_resolver(schedule_blocks, room)
 
     # Generate forecast points
     now = time.time()
@@ -243,17 +245,19 @@ async def _compute_target_forecast(
             # Auto mode: show heat target (primary for chart line)
             target = heat_target
 
-        result.append(
-            {
-                "ts": round(ts, 1),
-                "target_temp": target,
-                "heat_target": heat_target,
-                "cool_target": cool_target,
-                # For the prediction's pre-heat deadline, which ignores the price shift
-                "price_shift_heat": shift_heat,
-                "price_shift_cool": shift_cool,
-            }
-        )
+        point = {
+            "ts": round(ts, 1),
+            "target_temp": target,
+            "heat_target": heat_target,
+            "cool_target": cool_target,
+            # For the prediction's pre-heat deadline, which ignores the price shift
+            "price_shift_heat": shift_heat,
+            "price_shift_cool": shift_cool,
+        }
+        if preheat_lead is not None:
+            # How far ahead the simulated controller may pre-heat for this target (s, None: unlimited)
+            point["preheat_lead"] = preheat_lead(ts)
+        result.append(point)
         ts += interval_minutes * 60
     return result
 

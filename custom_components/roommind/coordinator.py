@@ -958,6 +958,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             cap_cool_only_heat,
             find_rejected_block_temps,
             get_active_schedule_entity,
+            make_preheat_lead_resolver,
             make_target_resolver,
             read_schedule_blocks,
         )
@@ -1121,6 +1122,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             has_external_sensor=has_external_sensor,
             target_resolver=target_resolver,
             schedule_target_resolver=schedule_target_resolver,
+            preheat_lead=make_preheat_lead_resolver(schedule_blocks, room),
             q_solar=self._current_q_solar,
             latitude=self.hass.config.latitude,
             longitude=self.hass.config.longitude,
