@@ -166,6 +166,19 @@ async def test_offset_applied_before_clamp():
 
 
 @pytest.mark.asyncio
+async def test_large_heating_offset_clamped_to_max_temp():
+    """A TRV reading its own warm body: target + a large offset stops at the device's max_temp."""
+    _last_commands.clear()
+    hass = build_hass()
+    hass.states.get = MagicMock(return_value=_state(min_temp=5.0, max_temp=30.0, modes=("heat", "off")))
+    ctrl = _controller(hass, _room("trv", offset=10.0))
+
+    await ctrl.async_apply(MODE_HEATING, TargetTemps(heat=21.0, cool=None), power_fraction=1.0, current_temp=18.0)
+
+    assert _sent(hass) == [30.0]
+
+
+@pytest.mark.asyncio
 async def test_offset_snapped_to_device_step():
     _last_commands.clear()
     hass = build_hass()
