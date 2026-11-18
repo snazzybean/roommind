@@ -65,11 +65,38 @@ export function hasFloors(hass: Pick<HomeAssistant, "floors">): boolean {
   return !!hass.floors && Object.keys(hass.floors).length > 0;
 }
 
-/** One group without floors; else floors by level (highest first), then name, no floor last. */
+/** Where the floors come from and how the user ordered them. */
+export interface FloorOrder {
+  /** Home Assistant's own floor order (registry, reorderable on its areas page), from rooms/list. */
+  ha: readonly string[];
+  /** Order set in RoomMind's edit mode; wins over `ha`. */
+  own: readonly string[];
+}
+
+/** Floor ids in display order: `own` first, then the rest in Home Assistant's order. */
+export function orderedFloorIds(
+  hass: Pick<HomeAssistant, "floors">,
+  order: FloorOrder = { ha: [], own: [] },
+): string[] {
+  const known = Object.keys(hass.floors ?? {});
+  const exists = new Set(known);
+  const result: string[] = [];
+  const seen = new Set<string>();
+  for (const id of [...order.own, ...order.ha, ...known]) {
+    if (exists.has(id) && !seen.has(id)) {
+      seen.add(id);
+      result.push(id);
+    }
+  }
+  return result;
+}
+
+/** One group without floors; else floors in `orderedFloorIds` order, no floor last. */
 export function floorGroups(
   infos: AreaInfo[],
   hass: HomeAssistant,
   groupByFloor: boolean,
+  floorOrder?: FloorOrder,
 ): FloorGroup[] {
   if (!groupByFloor || !hasFloors(hass)) return [{ key: "", name: "", items: infos }];
   const floors = hass.floors!;
@@ -80,15 +107,12 @@ export function floorGroups(
     if (!groups.has(fid)) groups.set(fid, []);
     groups.get(fid)!.push(info);
   }
+  const rank = new Map(orderedFloorIds(hass, floorOrder).map((id, i) => [id, i]));
+  const last = rank.size;
   const keys = [...groups.keys()].sort((a, b) => {
     if (a === null) return 1;
     if (b === null) return -1;
-    const fa = floors[a];
-    const fb = floors[b];
-    if (fa?.level != null && fb?.level != null) return fb.level - fa.level;
-    if (fa?.level != null) return -1;
-    if (fb?.level != null) return 1;
-    return (fa?.name ?? "").localeCompare(fb?.name ?? "");
+    return (rank.get(a) ?? last) - (rank.get(b) ?? last);
   });
   return keys.map((key) => ({
     key,
@@ -120,4 +144,27 @@ export function moveInGroup(ids: readonly string[], id: string, delta: number): 
   next.splice(idx, 1);
   next.splice(target, 0, id);
   return next;
+}
+
+/**
+ * Full own floor order after moving one floor by `delta` among the shown ones; null at the edge.
+ * The shown floors swap within their own slots, so floors without rooms keep their place.
+ */
+export function floorOrderWithMove(
+  groups: FloorGroup[],
+  hass: Pick<HomeAssistant, "floors">,
+  order: FloorOrder,
+  floorId: string,
+  delta: number,
+): string[] | null {
+  const full = orderedFloorIds(hass, order);
+  const shown = groups.flatMap((g) => (g.key && full.includes(g.key) ? [g.key] : []));
+  const moved = moveInGroup(shown, floorId, delta);
+  if (!moved) return null;
+  const result = [...full];
+  let next = 0;
+  full.forEach((id, slot) => {
+    if (shown.includes(id)) result[slot] = moved[next++];
+  });
+  return result;
 }

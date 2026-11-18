@@ -266,6 +266,7 @@ export interface GlobalSettings {
   compressor_groups?: CompressorGroup[];
   room_order?: string[];
   group_by_floor?: boolean;
+  floor_order?: string[];
   boost_applied_at?: Record<string, number>;
 }
 

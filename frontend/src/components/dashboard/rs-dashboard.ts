@@ -2,7 +2,7 @@ import { LitElement, html, nothing } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import { repeat } from "lit/directives/repeat.js";
 import type { HomeAssistant, PriceStatus } from "../../types";
-import { floorGroups, type AreaInfo } from "../../utils/dashboard";
+import { floorGroups, type AreaInfo, type FloorOrder } from "../../utils/dashboard";
 import { hasDevices } from "../../utils/room-state";
 import { localize, type TranslationKey } from "../../utils/localize";
 import { formatTempLocale, tempUnit } from "../../utils/temperature";
@@ -36,6 +36,7 @@ export class RsDashboard extends LitElement {
   @property({ attribute: false }) public infos: AreaInfo[] = [];
   @property({ attribute: false }) public hiddenRooms: string[] = [];
   @property({ type: Boolean }) public groupByFloor = false;
+  @property({ attribute: false }) public floorOrder: FloorOrder = { ha: [], own: [] };
   @property({ type: String }) public controlMode: "mpc" | "bangbang" = "mpc";
   @property({ type: Boolean }) public climateControlActive = true;
   @property({ attribute: false }) public summary!: HouseSummary;
@@ -60,7 +61,7 @@ export class RsDashboard extends LitElement {
           <ha-button @click=${this._requestEdit}>${localize("panel.edit_rooms", l)}</ha-button>
         </div>`;
     }
-    const groups = floorGroups(visible, this.hass, this.groupByFloor);
+    const groups = floorGroups(visible, this.hass, this.groupByFloor, this.floorOrder);
     return html`
       ${this._renderPills(visible)}
       ${groups.map(

@@ -1,13 +1,15 @@
-import { LitElement, html, css, nothing } from "lit";
+import { LitElement, html, css, nothing, type PropertyValues } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { repeat } from "lit/directives/repeat.js";
 import type { HomeAssistant } from "../../types";
 import {
   floorGroups,
+  floorOrderWithMove,
   hasFloors,
   orderWithGroup,
   type AreaInfo,
   type FloorGroup,
+  type FloorOrder,
 } from "../../utils/dashboard";
 import { DragReorderController } from "../../utils/drag-reorder";
 import { localize } from "../../utils/localize";
@@ -29,9 +31,10 @@ const groupAttr = (key: string | null) => (key === null ? NO_FLOOR : key);
 
 /**
  * Edit mode of the rooms tab: drag cards into a new order (within their floor), hide and
- * show rooms, group by floor. From 600 px the real cards (WYSIWYG), below compact tiles.
- * Fires `room-order-changed` {order}, `room-hidden-changed` {areaId, hidden},
- * `group-by-floor-changed` {value} and `area-selected` {areaId}; the panel persists.
+ * show rooms, group by floor and move floors. From 600 px the real cards (WYSIWYG), below
+ * compact tiles. Fires `room-order-changed` {order}, `room-hidden-changed` {areaId, hidden},
+ * `group-by-floor-changed` {value}, `floor-order-changed` {order} and `area-selected` {areaId};
+ * the panel persists.
  */
 @customElement("rs-dashboard-edit")
 export class RsDashboardEdit extends LitElement {
@@ -39,12 +42,15 @@ export class RsDashboardEdit extends LitElement {
   @property({ attribute: false }) public infos: AreaInfo[] = [];
   @property({ attribute: false }) public hiddenRooms: string[] = [];
   @property({ type: Boolean }) public groupByFloor = false;
+  @property({ attribute: false }) public floorOrder: FloorOrder = { ha: [], own: [] };
   @property({ type: String }) public controlMode: "mpc" | "bangbang" = "mpc";
   @property({ type: Boolean }) public climateControlActive = true;
 
   @state() private _narrow = window.matchMedia(NARROW_QUERY).matches;
 
   private _mq = window.matchMedia(NARROW_QUERY);
+  /** Floor button to focus again after a move: the keyed floor block may be re-inserted. */
+  private _refocusFloor: { group: string; icon: string } | null = null;
   private _groups: FloorGroup[] = [];
 
   private _drag = new DragReorderController(this, {
@@ -88,6 +94,29 @@ export class RsDashboardEdit extends LitElement {
         font-size: 13px;
         color: var(--secondary-text-color);
         line-height: 1.45;
+      }
+
+      .floorhead {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin: 20px 4px 10px;
+      }
+
+      .floorhead.first {
+        margin-top: 4px;
+      }
+
+      .floorhead h2.floor {
+        flex: 1;
+        min-width: 0;
+        margin: 0;
+      }
+
+      .floorhead .fctl {
+        display: flex;
+        gap: 6px;
+        flex: none;
       }
 
       .intro rs-list-row {
@@ -360,7 +389,7 @@ export class RsDashboardEdit extends LitElement {
   };
 
   protected willUpdate(): void {
-    this._groups = floorGroups(this.infos, this.hass, this.groupByFloor);
+    this._groups = floorGroups(this.infos, this.hass, this.groupByFloor, this.floorOrder);
   }
 
   render() {
@@ -388,32 +417,32 @@ export class RsDashboardEdit extends LitElement {
             : nothing
         }
       </ha-card>
-      ${this._groups.map((g) => {
-        const group = groupAttr(g.key);
-        const byId = new Map(g.items.map((i) => [i.area.area_id, i]));
-        const ids = this._drag.order(
-          group,
-          g.items.map((i) => i.area.area_id),
-        );
-        const items = ids.map((id) => byId.get(id)!).filter(Boolean);
-        return html`
-          ${
-            g.name
-              ? html`<h2 class="floor">${g.name} <span class="count">${g.items.length}</span></h2>`
-              : nothing
-          }
-          <div class=${this._narrow ? "egrid" : "grid"}>
-            ${repeat(
-              items,
-              (i) => i.area.area_id,
-              (i, idx) =>
-                this._narrow
-                  ? this._renderTile(i, group, idx, items.length)
-                  : this._renderEditCard(i, group, idx, items.length),
-            )}
-          </div>
-        `;
-      })}
+      ${repeat(
+        this._groups,
+        (g) => groupAttr(g.key),
+        (g, gi) => {
+          const group = groupAttr(g.key);
+          const byId = new Map(g.items.map((i) => [i.area.area_id, i]));
+          const ids = this._drag.order(
+            group,
+            g.items.map((i) => i.area.area_id),
+          );
+          const items = ids.map((id) => byId.get(id)!).filter(Boolean);
+          return html`
+            ${g.name ? this._renderFloorHead(g, gi) : nothing}
+            <div class=${this._narrow ? "egrid" : "grid"}>
+              ${repeat(
+                items,
+                (i) => i.area.area_id,
+                (i, idx) =>
+                  this._narrow
+                    ? this._renderTile(i, group, idx, items.length)
+                    : this._renderEditCard(i, group, idx, items.length),
+              )}
+            </div>
+          `;
+        },
+      )}
       <div class="edit-foot">
         <ha-icon icon="mdi:information-outline" aria-hidden="true"></ha-icon>
         <span>${localize("panel.edit.footer", l)}</span>
@@ -431,6 +460,66 @@ export class RsDashboardEdit extends LitElement {
           : nothing
       }
     `;
+  }
+
+  /** Floor heading; floors (not "no floor", always last) move up and down among each other. */
+  private _renderFloorHead(g: FloorGroup, index: number) {
+    const l = this.hass.language;
+    const floors = this._groups.filter((x) => x.key);
+    const pos = floors.indexOf(g);
+    const movable = g.key !== null && floors.length > 1;
+    return html`<div class="floorhead ${index === 0 ? "first" : ""}" data-floor=${groupAttr(g.key)}>
+      <h2 class="floor">${g.name} <span class="count">${g.items.length}</span></h2>
+      ${
+        movable
+          ? html`<span class="fctl">
+              <rs-icon-button
+                size="sm"
+                icon="mdi:arrow-up"
+                .label=${localize("panel.edit.floor_up", l, { name: g.name })}
+                .softDisabled=${pos === 0}
+                @click=${() => this._moveFloor(g, -1, "mdi:arrow-up")}
+              ></rs-icon-button>
+              <rs-icon-button
+                size="sm"
+                icon="mdi:arrow-down"
+                .label=${localize("panel.edit.floor_down", l, { name: g.name })}
+                .softDisabled=${pos === floors.length - 1}
+                @click=${() => this._moveFloor(g, 1, "mdi:arrow-down")}
+              ></rs-icon-button>
+            </span>`
+          : nothing
+      }
+    </div>`;
+  }
+
+  private _moveFloor(g: FloorGroup, delta: number, icon: string) {
+    if (!g.key) return;
+    const order = floorOrderWithMove(this._groups, this.hass, this.floorOrder, g.key, delta);
+    if (!order) return;
+    const shown = this._groups.filter((x) => x.key).length;
+    const position =
+      order.filter((id) => this._groups.some((x) => x.key === id)).indexOf(g.key) + 1;
+    // One live region for rooms and floors, so the latest move is always the one announced.
+    this._drag.announcement = localize("panel.edit.floor_moved", this.hass.language, {
+      name: g.name,
+      position,
+      total: shown,
+    });
+    this._refocusFloor = { group: groupAttr(g.key), icon };
+    this._fire("floor-order-changed", { order });
+    this.requestUpdate();
+  }
+
+  protected updated(changed: PropertyValues<this>): void {
+    if (!this._refocusFloor || !changed.has("floorOrder")) return;
+    const { group, icon } = this._refocusFloor;
+    const button = this.renderRoot.querySelector<HTMLElement>(
+      `.floorhead[data-floor="${CSS.escape(group)}"] rs-icon-button[icon="${icon}"]`,
+    );
+    if (!button) return;
+    this._refocusFloor = null;
+    if (!button.matches(":focus-within")) button.focus();
   }
 
   private _name(id: string): string {

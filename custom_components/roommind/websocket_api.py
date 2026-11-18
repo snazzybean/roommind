@@ -39,7 +39,7 @@ from .services.analytics_service import (
     _safe_float,  # noqa: F401 - re-exported for tests
     build_analytics_data,
 )
-from .utils.area_utils import REST_SWITCHED_OFF, rooms_with_area, rooms_without_area
+from .utils.area_utils import REST_SWITCHED_OFF, ha_floor_order, rooms_with_area, rooms_without_area
 from .utils.device_utils import (
     COIL_DRY_INHERIT,
     COIL_DRY_MODE_FAN_ONLY,
@@ -234,6 +234,7 @@ _SETTINGS_SAVE_FIELDS = (
     "mold_prevention_notify_targets",
     "room_order",
     "group_by_floor",
+    "floor_order",
     "compressor_groups",
 )
 
@@ -399,6 +400,8 @@ async def websocket_list_rooms(
             "hidden_rooms": settings.get("hidden_rooms", []),
             "room_order": settings.get("room_order", []),
             "group_by_floor": settings.get("group_by_floor", False),
+            "floor_order": settings.get("floor_order", []),
+            "ha_floor_order": ha_floor_order(hass),
             "control_mode": settings.get("control_mode", DEFAULT_CONTROL_MODE),
             "climate_control_active": settings.get("climate_control_active", True),
             "presence_enabled": settings.get("presence_enabled", False),
@@ -903,6 +906,7 @@ async def websocket_get_settings(
         ],
         vol.Optional("room_order"): [str],
         vol.Optional("group_by_floor"): bool,
+        vol.Optional("floor_order"): [str],
         vol.Optional("compressor_groups"): [
             {
                 vol.Required("id"): str,

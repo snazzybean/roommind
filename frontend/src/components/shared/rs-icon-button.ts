@@ -13,6 +13,9 @@ export class RsIconButton extends LitElement {
   @property({ type: String }) public icon = "";
   @property({ type: String }) public label = "";
   @property({ type: Boolean, reflect: true }) public disabled = false;
+  /** Looks disabled and says so (`aria-disabled`) but keeps the focus; clicks still fire, the caller ignores them. */
+  @property({ type: Boolean, attribute: "soft-disabled", reflect: true }) public softDisabled =
+    false;
   /** Toggle buttons: sets `aria-pressed`. */
   @property({ attribute: false }) public pressed: boolean | undefined = undefined;
   @property({ type: String }) public haspopup: "" | "menu" = "";
@@ -58,7 +61,7 @@ export class RsIconButton extends LitElement {
         }
       }
 
-      button:hover:not(:disabled) {
+      button:hover:not(:disabled):not([aria-disabled="true"]) {
         background: var(--rs-icon-button-hover, var(--rs-fill-strong));
       }
 
@@ -67,7 +70,8 @@ export class RsIconButton extends LitElement {
         outline-offset: 1px;
       }
 
-      button:disabled {
+      button:disabled,
+      button[aria-disabled="true"] {
         opacity: 0.35;
         cursor: default;
       }
@@ -93,6 +97,7 @@ export class RsIconButton extends LitElement {
           aria-pressed=${ifDefined(this.pressed === undefined ? undefined : String(this.pressed))}
           aria-haspopup=${ifDefined(this.haspopup || undefined)}
           aria-expanded=${ifDefined(this.haspopup ? String(this.expanded) : undefined)}
+          aria-disabled=${ifDefined(this.softDisabled ? "true" : undefined)}
           ?disabled=${this.disabled}
         >
           <ha-icon .icon=${this.icon}></ha-icon>

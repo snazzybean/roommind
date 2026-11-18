@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 
 from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import floor_registry as fr
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -27,6 +28,14 @@ def _known_area_ids(hass: HomeAssistant) -> set[str] | None:
     except (KeyError, AttributeError, TypeError):
         return None
     return {area.id for area in areas}
+
+
+def ha_floor_order(hass: HomeAssistant) -> list[str]:
+    """Floor ids in Home Assistant's own order (its areas page, reorderable there); [] without registry."""
+    try:
+        return [floor.floor_id for floor in fr.async_get(hass).async_list_floors()]
+    except (KeyError, AttributeError, TypeError):
+        return []
 
 
 def rooms_with_area(hass: HomeAssistant, rooms: dict[str, dict]) -> dict[str, dict]:

@@ -84,6 +84,8 @@ async def test_list_rooms_empty(ws_hass, store, connection):
             "hidden_rooms": [],
             "room_order": [],
             "group_by_floor": False,
+            "floor_order": [],
+            "ha_floor_order": [],
             "control_mode": "mpc",
             "climate_control_active": True,
             "presence_enabled": False,
@@ -1218,6 +1220,20 @@ async def test_save_settings(ws_hass, store, connection):
     connection.send_result.assert_called_once()
     result = connection.send_result.call_args[0][1]
     assert result["settings"]["outdoor_temp_sensor"] == "sensor.outdoor"
+
+
+@pytest.mark.asyncio
+async def test_save_settings_keeps_the_floor_order(ws_hass, store, connection):
+    """The floor order set in the dashboard's edit mode is stored and listed with the rooms (#541)."""
+    await store.async_load()
+
+    msg = {"id": 12, "type": "roommind/settings/save", "floor_order": ["ground", "attic"]}
+    await _save_settings(ws_hass, connection, msg)
+
+    assert store.get_settings()["floor_order"] == ["ground", "attic"]
+    connection.send_result.reset_mock()
+    await _list_rooms(ws_hass, connection, {"id": 13, "type": "roommind/rooms/list"})
+    assert connection.send_result.call_args[0][1]["floor_order"] == ["ground", "attic"]
 
 
 @pytest.mark.asyncio
