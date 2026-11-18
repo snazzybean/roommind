@@ -11,12 +11,13 @@ from dataclasses import dataclass
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from .appliances import SimAppliance
 from .covers import SimCover
 from .devices import DeviceEnv, SimDevice, create_device
 from .devices.base import CommandResult
 from .devices.models import Boiler
 from .people import MOISTURE_KG_S, SENSIBLE_W, SimPerson
-from .physics.solar import window_gain_w
+from .physics.solar import window_gain_w, window_irradiance
 from .physics.zone import Gains, Zone, ZoneParams
 from .scenario.model import Scenario, WindowSpec
 from .sensors import SimOccupancy, SimSensor
@@ -78,6 +79,7 @@ class World:
         self.boot_time = scenario.start
         self.zones: dict[str, Zone] = {}
         self.devices: dict[str, SimDevice] = {}
+        self.appliances: dict[str, SimAppliance] = {}
         self.valve_numbers: dict[str, tuple[str, str]] = {}  # number entity -> (TRV, opening|closing)
         self.sensors: dict[str, SimSensor] = {}
         self.occupancy: dict[str, SimOccupancy] = {}
@@ -124,6 +126,8 @@ class World:
                 self.devices[dev.entity_id] = create_device(dev, random.Random(f"{scn.seed}:{dev.entity_id}"))
                 for kind, number in dev.valve_numbers().items():
                     self.valve_numbers[number] = (dev.entity_id, kind)
+            for a in room.appliances:
+                self.appliances[a.entity_id] = SimAppliance(a)
             for s in room.sensors:
                 if s.kind == "occupancy":
                     self.occupancy[s.entity_id] = SimOccupancy(s)
@@ -173,6 +177,11 @@ class World:
                 changed.add(cover.entity_id)
 
         gains = {area: Gains() for area in self.zones}
+        radiator_factor = dict.fromkeys(self.zones, 1.0)
+        mixing = dict.fromkeys(self.zones, 1.0)
+        for app in self.appliances.values():
+            radiator_factor[app.room] = max(radiator_factor[app.room], app.radiator_factor())
+            mixing[app.room] = max(mixing[app.room], app.mixing_factor())
         boilers = [d for d in self.devices.values() if isinstance(d, Boiler)]
         loads = {b.entity_id: 0.0 for b in boilers}
         for dev in self.devices.values():
@@ -182,7 +191,14 @@ class World:
             server = next((b for b in boilers if b.serves(dev.entity_id)), None)
             if server is not None and dev.model in ("trv", "ufh"):
                 supply = server.supply_temp(self.zones[dev.room].t_air)
-            env = DeviceEnv(now=now, zone=self.zones[dev.room], outdoor=out, zones=self.zones, supply_temp_c=supply)
+            env = DeviceEnv(
+                now=now,
+                zone=self.zones[dev.room],
+                outdoor=out,
+                zones=self.zones,
+                supply_temp_c=supply,
+                radiator_factor=radiator_factor[dev.room],
+            )
             for area, g in dev.step(dt, env).items():
                 if area in gains:
                     gains[area].add(g)
@@ -194,6 +210,10 @@ class World:
             b.load_w = loads[b.entity_id]
             b.step(dt, DeviceEnv(now=now, zone=self.zones[b.room], outdoor=out, zones=self.zones))
             changed.add(b.entity_id)
+        for app in self.appliances.values():
+            for area, g in app.step(dt, self.zones, out, now).items():
+                gains[area].add(g)
+            changed.add(app.entity_id)
 
         for area, zone in self.zones.items():
             g = gains[area]
@@ -215,7 +235,7 @@ class World:
             flows[b] -= q
         x_out = out.x
         for area, zone in self.zones.items():
-            zone.step(dt, out.temp_c, x_out, gains[area], flows[area])
+            zone.step(dt, out.temp_c, x_out, gains[area], flows[area], mixing[area])
             recorded = _replay_value(self.replay.get(area), now)
             if recorded is not None:
                 # Open-loop replay: the reporter's room temperature wins over the physics.
@@ -245,6 +265,44 @@ class World:
             total += gain * (1 - shading)
         return total
 
+    def solar_sensor_w_m2(self, sensor: SimSensor) -> float:
+        """True irradiance at a solar sensor: area-weighted over its windows, inside = behind
+        glass (``transmittance``) and cover, outside = on the window plane."""
+        p = sensor.spec.params
+        area = sensor.spec.room
+        picked = p.get("windows")
+        windows = [w for w in self.windows[area] if picked is None or w.spec.index in picked]
+        total_area = sum(w.spec.area_m2 for w in windows)
+        if total_area <= 0:
+            return 0.0
+        inside = str(p.get("position", "inside")) == "inside"
+        out = self.outdoor
+        acc = 0.0
+        for w in windows:
+            e = window_irradiance(out.sun, out.irradiance, w.spec.orientation)
+            if inside and e > 0:
+                shading = max(
+                    (
+                        c.shading()
+                        for c in self.covers.values()
+                        if c.spec.room == area and w.spec.index in c.spec.windows
+                    ),
+                    default=0.0,
+                )
+                e *= float(p.get("transmittance", 0.75)) * (1 - shading)
+            acc += e * w.spec.area_m2
+        return acc / total_area
+
+    def _solar_sensor_value(self, sensor: SimSensor) -> float:
+        p = sensor.spec.params
+        w_m2 = self.solar_sensor_w_m2(sensor)
+        unit = p.get("unit", "w_m2")
+        if unit == "lx":
+            return w_m2 * float(p.get("lux_per_w_m2", 120.0))
+        if unit == "pct":
+            return 100.0 * w_m2 / float(p.get("full_scale_w_m2", 1000.0))
+        return w_m2
+
     def _sensor_update(self, sensor: SimSensor, now: float) -> bool:
         kind = sensor.spec.kind
         if kind == "outdoor_temperature":
@@ -255,6 +313,8 @@ class World:
             true = self.zones[sensor.spec.room].t_air
         elif kind == "humidity":
             true = self.zones[sensor.spec.room].rh
+        elif kind == "solar":
+            true = self._solar_sensor_value(sensor)
         else:
             return False
         return sensor.update(true, now, self.boot_time)
@@ -266,6 +326,12 @@ class World:
         if dev is None:
             return CommandResult(False, "unknown_entity")
         return dev.call(service, data, now)
+
+    def appliance_call(self, entity_id: str, service: str, data: dict[str, Any], now: float) -> CommandResult:
+        app = self.appliances.get(entity_id)
+        if app is None:
+            return CommandResult(False, "unknown_entity")
+        return app.call(service, data, now)
 
     def valve_call(self, entity_id: str, value: float, now: float) -> CommandResult:
         """``number.set_value`` on a TRV's valve opening/closing degree entity."""
@@ -292,6 +358,8 @@ class World:
             return now >= self.window_sensors[entity_id].unavailable_until
         if entity_id in self.covers:
             return self.covers[entity_id].available
+        if entity_id in self.appliances:
+            return self.appliances[entity_id].available
         return True
 
     # --- actions (timeline / CLI) ------------------------------------------------------------
@@ -344,6 +412,9 @@ class World:
                 cover.target_tilt = float(args["tilt"])
             return {eid}
         if action == "device.manual":
+            if eid in self.appliances:
+                self.appliances[eid].manual(args)
+                return {eid}
             dev = self.devices.get(eid)
             if dev is None:
                 raise WorldError(f"unknown device {eid!r}")
@@ -405,6 +476,8 @@ class World:
             self.window_sensors[eid].unavailable_until = 0.0 if available else inf
         elif eid in self.covers:
             self.covers[eid].available = available
+        elif eid in self.appliances:
+            self.appliances[eid].available = available
         else:
             raise WorldError(f"unknown entity {eid!r}")
 
@@ -413,6 +486,9 @@ class World:
         head, _, rest = path.partition(".")
         if head == "device":
             eid, _, key = rest.rpartition(".")
+            if eid in self.appliances:
+                self.appliances[eid].spec.params[key] = value
+                return
             if eid not in self.devices:
                 raise WorldError(f"unknown device {eid!r}")
             self.devices[eid].spec.params[key] = value
@@ -441,7 +517,7 @@ class World:
     def sample(self) -> dict[str, Any]:
         """Ground truth for the timeline (one record per sample interval)."""
         out = self.outdoor
-        return {
+        rec: dict[str, Any] = {
             "outdoor": {
                 "temp": round(out.temp_c, 3),
                 "rh": round(out.rh, 1),
@@ -485,6 +561,13 @@ class World:
             "covers": {e: {"position": round(c.position), "tilt": round(c.tilt)} for e, c in self.covers.items()},
             "people": {p: {"home": s.home, "room": s.room} for p, s in self.people.items()},
         }
+        # only with the scenario keys that need them, so older scenarios keep their timelines
+        if self.appliances:
+            rec["appliances"] = {e: a.sample() for e, a in self.appliances.items()}
+        solar = {e: s.value for e, s in self.sensors.items() if s.spec.kind == "solar"}
+        if solar:
+            rec["solar_sensors"] = solar
+        return rec
 
     def ground_truth(self) -> dict[str, dict[str, float]]:
         return {a: z.params.equivalent_first_order() for a, z in self.zones.items()}
@@ -502,6 +585,7 @@ class World:
                 e: {"open": w.open, "unavailable_until": w.unavailable_until} for e, w in self.window_sensors.items()
             },
             "covers": {e: c.snapshot() for e, c in self.covers.items()},
+            "appliances": {e: a.snapshot() for e, a in self.appliances.items()},
             "people": {p: s.snapshot() for p, s in self.people.items()},
             "pending": self.pending,
             "occupancy_force": {k: list(v) for k, v in self.occupancy_force.items()},
@@ -520,6 +604,7 @@ class World:
             ("sensors", self.sensors),
             ("occupancy", self.occupancy),
             ("covers", self.covers),
+            ("appliances", self.appliances),
             ("people", self.people),
         ):
             for key, state in data.get(group, {}).items():

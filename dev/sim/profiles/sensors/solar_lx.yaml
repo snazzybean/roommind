@@ -1,0 +1,7 @@
+description: Illuminance sensor at the window in lx (device class illuminance), saturates at max_value.
+extends: solar_w_m2
+unit: lx
+lux_per_w_m2: 120     # daylight luminous efficacy
+max_value: 65535      # many sensors saturate here or (cheap indoor ones) far lower
+resolution: 1
+report: {min_delta: 100, heartbeat_s: 600, min_interval_s: 30}

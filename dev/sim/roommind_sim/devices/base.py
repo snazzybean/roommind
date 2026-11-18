@@ -33,6 +33,7 @@ class DeviceEnv:
     outdoor: Outdoor
     zones: dict[str, Zone]
     supply_temp_c: float | None = None  # from a boiler master, None = own default
+    radiator_factor: float = 1.0  # convective boost on radiators from a running room fan
 
 
 @dataclass

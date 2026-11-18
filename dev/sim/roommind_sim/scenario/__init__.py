@@ -3,6 +3,7 @@
 from .errors import ScenarioError
 from .loader import load_scenario, load_scenario_dict
 from .model import (
+    ApplianceSpec,
     DeviceSpec,
     Location,
     PersonSpec,
@@ -14,6 +15,7 @@ from .model import (
 )
 
 __all__ = [
+    "ApplianceSpec",
     "DeviceSpec",
     "Location",
     "PersonSpec",

@@ -169,12 +169,17 @@ class Trv(SimDevice):
         excess = self.t_rad - z.t_air
         n = float(p.get("radiator_exponent", 1.3))
         q_out = h_rad * dt_design * math.copysign((abs(excess) / dt_design) ** n, excess)
-        self.t_rad += dt * (q_in - q_out) / capacity_j_k
+        # a room fan blows past the fins: more output, all of the extra convective
+        q_total = q_out * env.radiator_factor
+        self.t_rad += dt * (q_in - q_total) / capacity_j_k
         self.active = self.valve > 0.05 and q_in > 1.0
         self.hvac_action = "off" if self.hvac_mode == "off" else ("heating" if self.active else "idle")
         self.water_draw_w = q_in
-        self._account(dt, q_out, 0.0)
-        return {self.room: _gains(q_out, float(p.get("radiant_fraction", 0.3)))}
+        self._account(dt, q_total, 0.0)
+        gains = _gains(q_out, float(p.get("radiant_fraction", 0.3)))
+        if q_total != q_out:
+            gains.conv_w += q_total - q_out
+        return {self.room: gains}
 
     def _model_state(self) -> dict[str, Any]:
         return {

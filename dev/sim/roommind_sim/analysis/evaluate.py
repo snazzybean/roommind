@@ -120,6 +120,9 @@ def _metric(run: RunData, metrics: dict[str, Any], exp: dict[str, Any]) -> dict[
     elif group == "model":
         scope = metrics["model"].get(exp.get("room", ""), {})
         label += f"[{exp.get('room')}]"
+    elif group in ("appliance", "sensor"):
+        scope = metrics.get(f"{group}s", {}).get(exp.get("entity_id", ""), {})
+        label += f"[{exp.get('entity_id')}]"
     else:
         return {"label": label, "passed": False, "detail": f"unknown metric group {group!r}"}
     value = scope.get(key)
@@ -168,6 +171,10 @@ def _check(run: RunData, exp: dict[str, Any]) -> dict[str, Any]:
         "world": _ns(sample),
         "dev": lambda eid: _ns(sample["devices"].get(eid) or {}),
         "cover": lambda eid: _ns(sample.get("covers", {}).get(eid) or {}),
+        # ground truth of a fan/dehumidifier/humidifier and the reported value of a solar sensor
+        "appliance": lambda eid: _ns(sample.get("appliances", {}).get(eid) or {}),
+        "sensor": lambda eid: sample.get("solar_sensors", {}).get(eid),
+        "rh": lambda area: sample["rooms"][area]["rh"],
         # HA state of a helper or fan (observer ``states``), None if not recorded
         "state": (obs.get("states") or {}).get,
         "true_temp": lambda area: sample["rooms"][area]["t_air"],
@@ -212,6 +219,16 @@ def _lines(metrics: dict[str, Any], warnings: list[dict[str, Any]]) -> list[str]
             f"{m['earliest_first_move_h']} h), shaded {m['shaded_h']} h at {m['mean_shaded_position']} % "
             f"({m['shaded_while_heating_h']} h while heating), "
             f"{m['sunny_days_unshaded']} of {m['sunny_days']} sunny days unshaded"
+        )
+    for eid, m in metrics.get("appliances", {}).items():
+        lines.append(
+            f"appliance {eid}: {m['commands']} cmds, {m['manual_switches']} by hand, on {m['on_h']} h, "
+            f"{m['starts']} starts, running {m['run_h']} h, {m['electric_kwh']} kWh el, "
+            f"moisture -{m['moisture_removed_kg']} / +{m['moisture_added_kg']} kg"
+        )
+    for eid, m in metrics.get("sensors", {}).items():
+        lines.append(
+            f"solar sensor {eid}: max {m['max']}, mean {m['mean']} over {m['sun_h']} h, saturated {m['saturated_h']} h"
         )
     for area, m in metrics["model"].items():
         if m["learned_alpha_per_h"] is not None:

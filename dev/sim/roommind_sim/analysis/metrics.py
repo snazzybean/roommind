@@ -26,6 +26,14 @@ def compute_metrics(run: RunData) -> dict[str, Any]:
         "devices": {eid: _device_metrics(run, eid, duration_h) for eid in _device_ids(run)},
         "covers": {c.entity_id: _cover_metrics(run, c.entity_id, c.room) for c in _covers(run)},
         "model": _model_metrics(run),
+        "appliances": {
+            a.entity_id: _appliance_metrics(run, a.entity_id, duration_h) for a in run.scenario.all_appliances()
+        },
+        "sensors": {
+            s.entity_id: _solar_sensor_metrics(run, s.entity_id, s.params)
+            for s in run.scenario.all_sensors()
+            if s.kind == "solar"
+        },
     }
 
 
@@ -261,6 +269,7 @@ def _room_metrics(run: RunData, area: str) -> dict[str, Any]:
     return {
         **_run_overshoot(run, area),
         **_air_quality_metrics(run, area),
+        **_humidity_metrics(run, area),
         "heating_h_cheap": round(by_level["cheap"], 2),
         "heating_h_normal": round(by_level["normal"], 2),
         "heating_h_expensive": round(by_level["expensive"], 2),
@@ -280,6 +289,123 @@ def _room_metrics(run: RunData, area: str) -> dict[str, Any]:
         "temp_min": round(min(temps), 2) if temps else None,
         "temp_max": round(max(temps), 2) if temps else None,
         "prediction_mae_30m": round(sum(pred_err) / len(pred_err), 3) if pred_err else None,
+    }
+
+
+RH_THRESHOLDS = (60, 70, 80)
+
+
+def _humidity_metrics(run: RunData, area: str) -> dict[str, Any]:
+    """True room humidity: ``rh_max`` / ``rh_mean`` and hours at or above 60/70/80 % (``rh_over_<n>_h``)."""
+    over = dict.fromkeys(RH_THRESHOLDS, 0.0)
+    values: list[float] = []
+    prev: tuple[float, float] | None = None
+    for s in run.samples:
+        rh = s["rooms"][area].get("rh")
+        if rh is None:
+            continue
+        values.append(rh)
+        if prev is not None:
+            for th in RH_THRESHOLDS:
+                if prev[1] >= th:
+                    over[th] += (s["t"] - prev[0]) / 3600
+        prev = (s["t"], rh)
+    return {
+        "rh_max": max(values) if values else None,
+        "rh_mean": round(sum(values) / len(values), 1) if values else None,
+        **{f"rh_over_{th}_h": round(h, 2) for th, h in over.items()},
+    }
+
+
+def _appliance_metrics(run: RunData, eid: str, duration_h: float) -> dict[str, Any]:
+    """Fans, dehumidifiers, humidifiers (ground truth from the samples, commands from the log).
+
+    ``on_h`` / ``power_ons``: switched on (what HA shows); ``run_h`` / ``starts`` /
+    ``shortest_run_min`` / ``longest_run_min``: actually running (a device hygrostat idles
+    an appliance that is on). ``manual_switches``: ``device.manual`` actions on it (a hand at
+    the device, no command). ``moisture_removed_kg`` / ``moisture_added_kg``: water taken
+    from or given to the room air (an exhaust fan's share is the exchange with outdoor air).
+    """
+    cmds = [c for c in run.commands if c["entity_id"] == eid]
+    manual = sum(
+        1
+        for e in run.events
+        if e.get("type") == "action"
+        and e.get("action") == "device.manual"
+        and (e.get("args") or {}).get("entity_id") == eid
+        and e.get("ok", True)
+    )
+    on_h = run_h = electric_wh = heat_wh = removed = added = 0.0
+    starts = power_ons = 0
+    runs: list[float] = []
+    run_start: float | None = None
+    prev: tuple[float, dict[str, Any]] | None = None
+    for s in run.samples:
+        a = (s.get("appliances") or {}).get(eid)
+        if a is None:
+            continue
+        if prev is not None:
+            dt_h = (s["t"] - prev[0]) / 3600
+            p = prev[1]
+            on_h += dt_h if p["on"] else 0.0
+            run_h += dt_h if p["running"] else 0.0
+            electric_wh += p["electric_w"] * dt_h
+            heat_wh += p["heat_w"] * dt_h
+            water = p["moisture_g_h"] * dt_h / 1000
+            removed += max(0.0, -water)
+            added += max(0.0, water)
+        was_on = prev[1]["on"] if prev else False
+        was_running = prev[1]["running"] if prev else False
+        if a["on"] and not was_on:
+            power_ons += 1
+        if a["running"] and not was_running:
+            starts += 1
+            run_start = s["t"]
+        elif not a["running"] and was_running and run_start is not None:
+            runs.append((s["t"] - run_start) / 60)
+            run_start = None
+        prev = (s["t"], a)
+    return {
+        "commands": len(cmds),
+        "commands_per_hour": round(len(cmds) / duration_h, 2),
+        "redundant_commands": sum(1 for c in cmds if c.get("result") == "accepted:no_change"),
+        "rejected_commands": sum(1 for c in cmds if str(c.get("result", "")).startswith("rejected")),
+        "manual_switches": manual,
+        "power_ons": power_ons,
+        "on_h": round(on_h, 2),
+        "starts": starts,
+        "run_h": round(run_h, 2),
+        "shortest_run_min": round(min(runs), 1) if runs else None,
+        "longest_run_min": round(max(runs), 1) if runs else None,
+        "electric_kwh": round(electric_wh / 1000, 3),
+        "heat_kwh": round(heat_wh / 1000, 3),
+        "moisture_removed_kg": round(removed, 3),
+        "moisture_added_kg": round(added, 3),
+    }
+
+
+def _solar_sensor_metrics(run: RunData, eid: str, params: dict[str, Any]) -> dict[str, Any]:
+    """Reported value of a solar sensor: ``max``, ``mean`` over the hours with sun on it
+    (``sun_h``, value > 0) and ``saturated_h`` (at its ``max_value``)."""
+    cap = params.get("max_value")
+    values: list[float] = []
+    sun_h = sat_h = 0.0
+    prev: tuple[float, float | None] | None = None
+    for s in run.samples:
+        v = (s.get("solar_sensors") or {}).get(eid)
+        if prev is not None and prev[1] is not None and prev[1] > 0:
+            dt_h = (s["t"] - prev[0]) / 3600
+            sun_h += dt_h
+            if cap is not None and prev[1] >= float(cap):
+                sat_h += dt_h
+        if v is not None and v > 0:
+            values.append(v)
+        prev = (s["t"], v)
+    return {
+        "max": max(values) if values else 0,
+        "mean": round(sum(values) / len(values), 1) if values else 0,
+        "sun_h": round(sun_h, 2),
+        "saturated_h": round(sat_h, 2),
     }
 
 

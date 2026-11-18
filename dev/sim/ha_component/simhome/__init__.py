@@ -18,7 +18,7 @@ from homeassistant.helpers.typing import ConfigType
 from roommind_sim import clock as clockmod
 
 from .actions import run_action
-from .const import DOMAIN, PLATFORMS
+from .const import APPLIANCE_PLATFORMS, DOMAIN, PLATFORMS
 from .runtime import SimRuntime
 
 _LOGGER = logging.getLogger(__name__)
@@ -59,14 +59,19 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     runtime: SimRuntime = hass.data[DOMAIN]
     runtime.setup_registries()
-    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    await hass.config_entries.async_forward_entry_setups(entry, _platforms(runtime))
     runtime.assign_areas()
     runtime.start()
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    return await hass.config_entries.async_unload_platforms(entry, _platforms(hass.data[DOMAIN]))
+
+
+def _platforms(rt: SimRuntime) -> list[str]:
+    domains = {a.domain for a in rt.world.appliances.values()}
+    return PLATFORMS + [p for p in APPLIANCE_PLATFORMS if p in domains]
 
 
 def _rt(hass: HomeAssistant) -> SimRuntime:
@@ -147,5 +152,6 @@ def ws_world(hass: HomeAssistant, connection: websocket_api.ActiveConnection, ms
     rt = _rt(hass)
     data = rt.world.sample()
     data["counters"] = {e: d.counters.__dict__ for e, d in rt.world.devices.items()}
+    data["counters"].update({e: a.counters.__dict__ for e, a in rt.world.appliances.items()})
     data["ground_truth"] = rt.world.ground_truth()
     connection.send_result(msg["id"], data)

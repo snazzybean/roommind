@@ -1,0 +1,7 @@
+description: Sun intensity in % (no device class), full_scale_w_m2 = 100 %.
+extends: solar_w_m2
+unit: pct
+full_scale_w_m2: 1000
+max_value: 100
+resolution: 1
+report: {min_delta: 1, heartbeat_s: 600, min_interval_s: 30}

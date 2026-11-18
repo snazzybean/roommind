@@ -49,9 +49,21 @@ class DeviceSpec:
 
 
 @dataclass
+class ApplianceSpec:
+    """A non-climate appliance (``fan.*``, ``switch.*``, ``humidifier.*``); ``model`` picks the physics."""
+
+    entity_id: str
+    room: str
+    model: str  # exhaust_fan | dehumidifier | humidifier | room_fan
+    name: str
+    profile: str
+    params: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
 class SensorSpec:
     entity_id: str
-    kind: str  # temperature | humidity | occupancy | outdoor_temperature | outdoor_humidity
+    kind: str  # temperature | humidity | occupancy | solar | outdoor_temperature | outdoor_humidity
     room: str | None
     name: str
     params: dict[str, Any] = field(default_factory=dict)
@@ -89,6 +101,7 @@ class RoomSpec:
     covers: list[CoverSpec] = field(default_factory=list)
     neighbors: dict[str, str | float] = field(default_factory=dict)
     initial: dict[str, float] = field(default_factory=dict)
+    appliances: list[ApplianceSpec] = field(default_factory=list)
 
 
 @dataclass
@@ -139,6 +152,9 @@ class Scenario:
     def all_devices(self) -> list[DeviceSpec]:
         return [d for r in self.rooms.values() for d in r.devices]
 
+    def all_appliances(self) -> list[ApplianceSpec]:
+        return [a for r in self.rooms.values() for a in r.appliances]
+
     def all_sensors(self) -> list[SensorSpec]:
         return [s for r in self.rooms.values() for s in r.sensors] + self.outdoor_sensors
 
@@ -147,6 +163,7 @@ class Scenario:
         ids: set[str] = {d.entity_id for d in self.all_devices()}
         ids |= {eid for d in self.all_devices() for eid in d.valve_numbers().values()}
         ids |= {s.entity_id for s in self.all_sensors()}
+        ids |= {a.entity_id for a in self.all_appliances()}
         for room in self.rooms.values():
             ids |= {w.sensor for w in room.windows if w.sensor}
             ids |= {c.entity_id for c in room.covers}

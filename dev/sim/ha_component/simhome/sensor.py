@@ -6,7 +6,7 @@ from typing import Any
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import PERCENTAGE, UnitOfTemperature
+from homeassistant.const import LIGHT_LUX, PERCENTAGE, UnitOfIrradiance, UnitOfTemperature
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
@@ -27,7 +27,16 @@ class SimSensorEntity(SimEntity, SensorEntity):
     def __init__(self, rt: Any, sensor: SimSensor) -> None:
         super().__init__(rt, sensor.entity_id, sensor.spec.name)
         self.sensor = sensor
-        if sensor.spec.kind.endswith("humidity"):
+        unit = sensor.spec.params.get("unit")
+        if sensor.spec.kind == "solar" and unit == "lx":
+            self._attr_device_class = SensorDeviceClass.ILLUMINANCE
+            self._attr_native_unit_of_measurement = LIGHT_LUX
+        elif sensor.spec.kind == "solar" and unit == "pct":
+            self._attr_native_unit_of_measurement = PERCENTAGE
+        elif sensor.spec.kind == "solar":
+            self._attr_device_class = SensorDeviceClass.IRRADIANCE
+            self._attr_native_unit_of_measurement = UnitOfIrradiance.WATTS_PER_SQUARE_METER
+        elif sensor.spec.kind.endswith("humidity"):
             self._attr_device_class = SensorDeviceClass.HUMIDITY
             self._attr_native_unit_of_measurement = PERCENTAGE
         else:
