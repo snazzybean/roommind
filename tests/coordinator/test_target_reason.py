@@ -49,7 +49,7 @@ def test_vacation_is_named(hass, mock_config_entry):
     assert reason == TARGET_REASON_VACATION
 
 
-@pytest.mark.parametrize("action", ["eco", "off"])
+@pytest.mark.parametrize("action", ["eco", "off", "away"])
 def test_presence_away_is_named(hass, mock_config_entry, action):
     coordinator = _create_coordinator(hass, mock_config_entry)
     coordinator._is_presence_away = lambda room, settings: True
@@ -104,3 +104,17 @@ async def test_room_state_carries_the_mold_boost_on_top_of_the_schedule(hass, mo
 async def test_room_state_without_reason_follows_the_schedule(hass, mock_config_entry):
     state = await _run_cycle(hass, mock_config_entry, SAMPLE_ROOM)
     assert state["target_reason"] == ""
+
+
+def test_presence_away_uses_the_away_level(hass, mock_config_entry):
+    """presence_away_action "away": nobody home uses the room's away levels, eco where unset."""
+    coordinator = _create_coordinator(hass, mock_config_entry)
+    coordinator._is_presence_away = lambda room, settings: True
+    settings = {"presence_away_action": "away"}
+    room = {**SAMPLE_ROOM, "eco_heat": 18.0, "eco_cool": 27.0, "away_heat": 16.0}
+    targets, reason = coordinator._resolve_target_temps_and_reason(room, settings)
+    assert (targets.heat, targets.cool) == (16.0, 27.0)
+    assert reason == TARGET_REASON_AWAY
+    unset = {**SAMPLE_ROOM, "eco_heat": 18.0, "eco_cool": 27.0}
+    targets, _ = coordinator._resolve_target_temps_and_reason(unset, settings)
+    assert (targets.heat, targets.cool) == (18.0, 27.0)

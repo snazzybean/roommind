@@ -268,6 +268,9 @@ class RoomMindStore:
             "comfort_cool": config.get("comfort_cool", DEFAULT_COMFORT_COOL),
             "eco_heat": eco_heat,
             "eco_cool": config.get("eco_cool", DEFAULT_ECO_COOL),
+            # Nobody home with presence_away_action "away"; None = eco
+            "away_heat": config.get("away_heat"),
+            "away_cool": config.get("away_cool"),
             "presence_persons": config.get("presence_persons", []),
             "display_name": config.get("display_name", ""),
             "heating_system_type": config.get("heating_system_type", ""),

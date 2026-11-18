@@ -119,6 +119,7 @@ from .utils.history_store import HistoryStore
 from .utils.presence_utils import is_room_vacant
 from .utils.price_utils import PriceSignal
 from .utils.schedule_utils import (
+    away_target_temps,
     band_in_force,
     cap_to_eco,
     override_hold_until,
@@ -2583,15 +2584,17 @@ class RoomMindCoordinator(DataUpdateCoordinator):
 
         # 2.5 Presence-based eco or off (skip if room ignores presence)
         if not room.get("ignore_presence", False) and self._is_presence_away(room, settings):
-            if settings.get("presence_away_action", "eco") == "off":
+            away_action = settings.get("presence_away_action", "eco")
+            if away_action == "off":
                 return TargetTemps(heat=None, cool=None), TARGET_REASON_AWAY
-            return (
-                TargetTemps(
-                    heat=room.get("eco_heat", room.get("eco_temp", DEFAULT_ECO_HEAT)),
-                    cool=room.get("eco_cool", DEFAULT_ECO_COOL),
-                ),
-                TARGET_REASON_AWAY,
-            )
+            eco_heat = room.get("eco_heat", room.get("eco_temp", DEFAULT_ECO_HEAT))
+            eco_cool = room.get("eco_cool", DEFAULT_ECO_COOL)
+            if away_action == "away":
+                return (
+                    away_target_temps(room.get("away_heat"), room.get("away_cool"), eco_heat, eco_cool),
+                    TARGET_REASON_AWAY,
+                )
+            return TargetTemps(heat=eco_heat, cool=eco_cool), TARGET_REASON_AWAY
 
         # 3. Schedule / comfort / eco
         targets = self._resolve_schedule_targets(room, settings, schedule_blocks, schedule_entity_id)

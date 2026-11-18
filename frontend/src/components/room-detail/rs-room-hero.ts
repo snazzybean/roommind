@@ -1,6 +1,12 @@
 import { LitElement, html, css, nothing, svg } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
-import type { HomeAssistant, HassArea, RoomConfig, RoomLiveData } from "../../types";
+import type {
+  HomeAssistant,
+  HassArea,
+  PresenceAwayAction,
+  RoomConfig,
+  RoomLiveData,
+} from "../../types";
 import {
   hintText,
   isRoomControlled,
@@ -51,6 +57,7 @@ export class RsRoomHero extends LitElement {
   @property({ attribute: false }) public outdoorTemp: number | null = null;
   @property({ type: Boolean }) public vacationActive = false;
   @property({ attribute: false }) public vacationUntil: number | null = null;
+  @property({ type: String }) public presenceAwayAction: PresenceAwayAction = "eco";
 
   @state() private _editingName = false;
   @state() private _nameInput = "";
@@ -739,6 +746,7 @@ export class RsRoomHero extends LitElement {
           states: this.hass.states,
           vacationActive: this.vacationActive,
           vacationUntil: this.vacationUntil,
+          presenceAwayAction: this.presenceAwayAction,
         });
     const adjustments: string[] = [];
     const price = inactive ? null : priceShiftInfo(this.config);
