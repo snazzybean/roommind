@@ -46,7 +46,7 @@
 | custom\_components/roommind/store.py                               |      184 |        0 |    100% |           |
 | custom\_components/roommind/switch.py                              |      114 |        0 |    100% |           |
 | custom\_components/roommind/utils/\_\_init\_\_.py                  |        0 |        0 |    100% |           |
-| custom\_components/roommind/utils/area\_utils.py                   |       30 |        0 |    100% |           |
+| custom\_components/roommind/utils/area\_utils.py                   |       36 |        0 |    100% |           |
 | custom\_components/roommind/utils/device\_utils.py                 |      201 |        0 |    100% |           |
 | custom\_components/roommind/utils/history\_store.py                |      186 |        2 |     99% |     98-99 |
 | custom\_components/roommind/utils/mold\_utils.py                   |       31 |        0 |    100% |           |
@@ -56,8 +56,8 @@
 | custom\_components/roommind/utils/schedule\_utils.py               |      279 |        3 |     99% |   419-421 |
 | custom\_components/roommind/utils/sensor\_utils.py                 |       29 |        1 |     97% |        25 |
 | custom\_components/roommind/utils/temp\_utils.py                   |       26 |        0 |    100% |           |
-| custom\_components/roommind/websocket\_api.py                      |      383 |        3 |     99% |703, 943-948 |
-| **TOTAL**                                                          | **10368** |  **202** | **98%** |           |
+| custom\_components/roommind/websocket\_api.py                      |      383 |        3 |     99% |706, 947-952 |
+| **TOTAL**                                                          | **10374** |  **202** | **98%** |           |
 
 
 ## Setup coverage badge
