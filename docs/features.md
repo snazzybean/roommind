@@ -28,6 +28,8 @@ TRVs that expose their valve opening as `number` entities (e.g. SONOFF TRVZB) ar
 
 Estimates solar irradiance from sun position and weather data. The model learns each room's solar response and reduces unnecessary heating.
 
+Optionally, a room gets its own sun sensor (irradiance in W/m², illuminance in lx or a percentage, inside behind the window or outside). RoomMind learns the sensor's scale over the first sunny day and uses the weather data until then. Afterwards the reading is the room's solar gain, and RoomMind learns from it when the sun reaches the room (orientation, trees, neighbouring buildings) for its forecasts and the covers. A sensor behind a cover is recognized, so the shading is not counted twice. Without a reading the room falls back to the weather data.
+
 ## Schedules and targets
 
 ### Schedules

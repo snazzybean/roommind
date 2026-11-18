@@ -28,6 +28,7 @@ from custom_components.roommind.managers.cover_orchestrator import (
     CoverOrchestrator,
     CoverResult,
 )
+from custom_components.roommind.managers.solar_sensor_manager import RoomSolar
 
 _BUILD_SOLAR_SERIES = "custom_components.roommind.managers.cover_orchestrator.build_solar_series"
 
@@ -2651,3 +2652,70 @@ class TestDeletedForceSchedule:
         morning = await _cycle(60_000.0, 10.0)
 
         assert not morning.changed
+
+
+# ── Sun sensor (#303) ─────────────────────────────────────────────────
+
+
+def _room_solar(q_now: float, factor: float) -> RoomSolar:
+    return RoomSolar(
+        q_now=q_now,
+        q_effective=q_now,
+        measured=True,
+        latitude=48.2,
+        longitude=16.3,
+        now=0.0,
+        profile=(factor,) * 24,
+        deviation=1.0,
+    )
+
+
+class TestSunSensor:
+    """A sun sensor replaces the cover orientations and scales the lookahead."""
+
+    async def _process(self, orch, room, q_solar, room_solar, mode=MODE_HEATING, targets=None):
+        return await orch.async_process(
+            area_id="living_room",
+            room=room,
+            targets=targets or TargetTemps(heat=21.0, cool=24.0),
+            mode=mode,
+            current_temp=20.0,
+            outdoor_temp=25.0,
+            q_solar=q_solar,
+            predicted_peak_temp=None,
+            has_override=False,
+            room_solar=room_solar,
+        )
+
+    @pytest.mark.asyncio
+    @patch(_BUILD_SOLAR_SERIES, return_value=[0.5] * 96)
+    async def test_the_sensor_profile_scales_the_series_instead_of_the_orientation(self, mock_bss):
+        orch = CoverOrchestrator(_make_hass(), _make_cover_manager(), _make_model_manager())
+        room = _make_room(covers=["cover.blind1"], cover_orientations={"cover.blind1": 0})
+        with (
+            patch(_BUILD_ORIENTED) as mock_oriented,
+            patch.object(CoverOrchestrator, "_sunlit_weight", side_effect=AssertionError("orientation used")),
+        ):
+            await self._process(orch, room, 0.5, _room_solar(0.5, 2.0))
+        mock_oriented.assert_not_called()
+        # Tier 2: daily peak of the scaled series
+        peak = orch._estimate_solar_peak_temp("living_room", 20.0, 24.0, 0.5, None, None, _room_solar(0.5, 2.0))
+        assert peak == pytest.approx(20.0 + COVER_DEFAULT_BETA_S * 1.0 * COVER_LINEAR_LOOKAHEAD_H)
+
+    @pytest.mark.asyncio
+    @patch(_BUILD_SOLAR_SERIES, return_value=[0.5] * 96)
+    async def test_the_cooling_lookahead_follows_the_sensor(self, mock_bss):
+        orch = CoverOrchestrator(_make_hass(), _make_cover_manager(), _make_model_manager())
+        plain = orch._estimate_solar_load_peak("living_room", 20.0, 24.0, 0.5, None, None)
+        scaled = orch._estimate_solar_load_peak("living_room", 20.0, 24.0, 0.5, None, None, _room_solar(0.5, 0.5))
+        assert scaled - 20.0 == pytest.approx((plain - 20.0) * 0.5)
+
+    @pytest.mark.asyncio
+    @patch(_BUILD_SOLAR_SERIES, return_value=[0.9] * 96)
+    async def test_no_sun_on_the_room_now_keeps_the_covers_open(self, mock_bss):
+        cm = _make_cover_manager()
+        orch = CoverOrchestrator(_make_hass(), cm, _make_model_manager())
+        room = _make_room(covers=["cover.blind1"])
+        await self._process(orch, room, 0.05, _room_solar(0.05, 1.0), targets=TargetTemps(heat=19.0, cool=24.0))
+        kwargs = cm.evaluate.call_args.kwargs
+        assert kwargs["predicted_peak_temp"] == kwargs["target_temp"]

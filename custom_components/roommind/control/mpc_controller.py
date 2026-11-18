@@ -81,6 +81,7 @@ from .thermal_model import RoomModelManager
 if TYPE_CHECKING:
     from ..managers.head_offset_tracker import HeadOffsetTracker
     from ..managers.heat_source_orchestrator import HeatSourcePlan
+    from ..managers.solar_sensor_manager import RoomSolar
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -1510,6 +1511,7 @@ class MPCController:
         target_resolver: Callable[[float], TargetTemps | float] | None = None,
         schedule_target_resolver: Callable[[float], TargetTemps] | None = None,
         q_solar: float = 0.0,
+        room_solar: RoomSolar | None = None,
         latitude: float = 0.0,
         longitude: float = 0.0,
         cloud_series: list[float | None] | None = None,
@@ -1574,6 +1576,9 @@ class MPCController:
         self._mode_on_since = mode_on_since
         self._idle_since = idle_since
         self._shading_factor = shading_factor
+        # Sun sensor (#303): its input already sits behind the covers, and forecasts follow its profile
+        self._room_solar = room_solar
+        self._q_solar_shaded = q_solar * shading_factor if room_solar is None else room_solar.q_effective
         self.q_occupancy = q_occupancy
         # AC rebound charge now (residual_heat); None leaves the air/mass term out
         self.q_rebound = q_rebound
@@ -1816,7 +1821,7 @@ class MPCController:
             T_out,
             Q_active=0.0,
             dt_minutes=dt_minutes,
-            q_solar=self.q_solar * self._shading_factor,
+            q_solar=self._q_solar_shaded,
             q_residual=self.q_residual,
             q_occupancy=self.q_occupancy,
             q_rebound=None if self.q_rebound is None else mean_rebound(self.q_rebound, False, dt_minutes),
@@ -2078,7 +2083,7 @@ class MPCController:
             current_temp,
             outdoor_temp,
             target,
-            q_solar=self.q_solar * self._shading_factor,
+            q_solar=self._q_solar_shaded,
             q_residual=self.q_residual,
             q_occupancy=self.q_occupancy,
             rebound_charge=self.q_rebound,
@@ -2090,7 +2095,7 @@ class MPCController:
             current_temp,
             outdoor_temp,
             target,
-            q_solar=self.q_solar * self._shading_factor,
+            q_solar=self._q_solar_shaded,
             q_occupancy=self.q_occupancy,
         )
 
@@ -2275,6 +2280,8 @@ class MPCController:
         )
         # MPC uses unshaded solar to avoid oscillation feedback loop:
         # covers deployed → low solar prediction → retract → high solar → deploy
+        if self._room_solar is not None:
+            return self._room_solar.scale(series, time.time(), PLAN_DT_MINUTES)
         return series
 
     @property

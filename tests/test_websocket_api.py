@@ -1657,6 +1657,7 @@ def _make_analytics_coordinator(history_rows=None, estimator=None, rooms_live=No
     coordinator.outdoor_humidity = 60
     coordinator._weather_manager._outdoor_forecast = []
     coordinator._window_manager._paused = {}
+    coordinator.room_solar.return_value = None
 
     if history_rows is not None:
         hs = MagicMock()
@@ -3322,6 +3323,27 @@ async def test_analytics_model_reports_solar_gain_now_and_today(ws_hass, store, 
 
 
 @pytest.mark.asyncio
+async def test_analytics_solar_gain_now_uses_the_sun_sensor(ws_hass, store, connection):
+    """With a sun sensor the room's own input counts, already behind its covers (#303)."""
+    await store.async_load()
+    await store.async_save_room("room_a", {"thermostats": ["climate.trv1"]})
+
+    est = _make_mock_estimator(model_dict={"Q_heat": 3.0, "Q_solar": 2.0, "Q_occupancy": 0.3})
+    est.get_model.return_value.Q_solar = 2.0
+    coordinator = _make_analytics_coordinator(
+        history_rows=[], estimator=est, rooms_live={"room_a": {"shading_factor": 0.5, "solar_input": 0.15}}
+    )
+    coordinator._current_q_solar = 0.4
+    ws_hass.data[DOMAIN]["coordinator"] = coordinator
+
+    msg = {"id": 63, "type": "roommind/analytics/get", "area_id": "room_a"}
+    await _get_analytics(ws_hass, connection, msg)
+
+    model = connection.send_result.call_args[0][1]["model"]
+    assert model["solar_gain_now"] == pytest.approx(0.3)
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("system", "learned", "ac_heats", "expected"),
     [
@@ -3906,6 +3928,38 @@ async def test_save_room_humidifier_direction_from_its_device_class(
 async def test_save_room_rejects_own_humidity_entities(ws_hass, store, connection, field):
     await store.async_load()
     msg = {"id": 2, "type": "roommind/rooms/save", "area_id": "bath", field: "switch.roommind_bath_climate_control"}
+    await _save_room(ws_hass, connection, msg)
+    assert connection.send_error.call_args[0][1] == "invalid_entity"
+
+
+@pytest.mark.asyncio
+async def test_sun_sensor_roundtrip_and_live_status(ws_hass, store, connection):
+    """The sun sensor is a plain room field; rooms/list carries what RoomMind makes of it (#303)."""
+    await store.async_load()
+    await _save_room(ws_hass, connection, {"id": 2, "type": "roommind/rooms/save", "area_id": "office"})
+    assert store.get_room("office")["solar_sensor"] == ""
+    msg = {"id": 3, "type": "roommind/rooms/save", "area_id": "office", "solar_sensor": "sensor.office_lux"}
+    await _save_room(ws_hass, connection, msg)
+    assert store.get_room("office")["solar_sensor"] == "sensor.office_lux"
+
+    status = {"kind": "illuminance", "state": "learning", "position": None}
+    mock_coordinator = MagicMock()
+    mock_coordinator.rooms = {"office": {"solar_sensor": status}}
+    mock_coordinator.async_request_refresh = AsyncMock()
+    ws_hass.data[DOMAIN]["coordinator"] = mock_coordinator
+    await _list_rooms(ws_hass, connection, {"id": 4, "type": "roommind/rooms/list"})
+    assert connection.send_result.call_args[0][1]["rooms"]["office"]["live"]["solar_sensor"] == status
+
+
+@pytest.mark.asyncio
+async def test_save_room_rejects_own_entity_as_sun_sensor(ws_hass, store, connection):
+    await store.async_load()
+    msg = {
+        "id": 2,
+        "type": "roommind/rooms/save",
+        "area_id": "office",
+        "solar_sensor": "sensor.roommind_living_room_target_temp",
+    }
     await _save_room(ws_hass, connection, msg)
     assert connection.send_error.call_args[0][1] == "invalid_entity"
 

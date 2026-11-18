@@ -115,6 +115,7 @@ const ROOM_FIELDS: [string, RoomFieldSync][] = [
   ["humidity_min", plain("_humidityMin", (c) => c?.humidity_min ?? null)],
   ["dehumidifier_entity", plain("_dehumidifierEntity", (c) => c?.dehumidifier_entity ?? "")],
   ["humidifier_entity", plain("_humidifierEntity", (c) => c?.humidifier_entity ?? "")],
+  ["solar_sensor", plain("_solarSensor", (c) => c?.solar_sensor ?? "")],
   ["preheat_enabled", plain("_preheatEnabled", (c) => c?.preheat_enabled ?? true)],
   [
     "follow_device_setpoint",
@@ -262,6 +263,7 @@ export class RsRoomDetail extends LitElement {
   @state() private _humidityMin: number | null = null;
   @state() private _dehumidifierEntity = "";
   @state() private _humidifierEntity = "";
+  @state() private _solarSensor = "";
   @state() private _selectedWindowSensors: Set<string> = new Set();
   @state() private _windowOpenDelay = 0;
   @state() private _windowCloseDelay = 0;
@@ -801,6 +803,7 @@ export class RsRoomDetail extends LitElement {
         .humidityMin=${this._humidityMin}
         .dehumidifierEntity=${this._dehumidifierEntity}
         .humidifierEntity=${this._humidifierEntity}
+        .solarSensor=${this._solarSensor}
         .live=${this.config?.live}
         .windowSensors=${this._selectedWindowSensors}
         .windowOpenDelay=${this._windowOpenDelay}
@@ -1000,6 +1003,7 @@ export class RsRoomDetail extends LitElement {
             .humidityMin=${this._humidityMin}
             .dehumidifierEntity=${this._dehumidifierEntity}
             .humidifierEntity=${this._humidifierEntity}
+            .solarSensor=${this._solarSensor}
             .live=${this.config?.live}
             .windowSensors=${this._selectedWindowSensors}
             .windowOpenDelay=${this._windowOpenDelay}
@@ -1314,6 +1318,8 @@ export class RsRoomDetail extends LitElement {
       this._dehumidifierEntity = value as string;
     } else if (key === "humidifier_entity") {
       this._humidifierEntity = value as string;
+    } else if (key === "solar_sensor") {
+      this._solarSensor = value as string;
     } else if (key === "window_sensors") {
       this._selectedWindowSensors = new Set(value as string[]);
     } else if (key === "window_open_delay") {

@@ -308,6 +308,20 @@ COVER_REOPEN_HOLD_SECONDS: int = 3600  # min time since the last move before a p
 COVER_REOPEN_SNAP_PCT: int = 5  # a reopening ending this close to open (or the baseline) goes all the way
 COVER_DAILY_LOOKAHEAD_H: float = 8.0  # hours ahead to search for daily solar peak (Tier 2)
 COVER_SMOOTHING_MINUTES: float = 30.0  # EMA time constant for room temp and shading excess (AC cycles)
+
+# Per-room sun sensor (#303), see managers/solar_sensor_manager.py
+SOLAR_SENSOR_LEARN_MIN_Q: float = 0.1  # the model must expect at least this much sun (GHI/1000) to learn the ratio
+SOLAR_SENSOR_USE_MIN_Q: float = 0.02  # below it (dawn, dusk) a reading is lamp light as much as sun
+SOLAR_SENSOR_CALIBRATION_SUN_H: float = 2.0  # model sun (hours at 1000 W/m²) before the sensor's scale is fixed
+SOLAR_SENSOR_OPEN_SHADING: float = 0.9  # shading factor from which the covers count as open (~88 % position)
+SOLAR_SENSOR_SHADED: float = 0.75  # shading factor up to which a sample tells where the sensor sits
+SOLAR_SENSOR_POSITION_MIN_SUN_H: float = 0.25  # shaded model sun before the sensor position is decided
+SOLAR_SENSOR_STALE_S: float = 3600.0  # no report for this long in daylight: the sensor hangs
+SOLAR_SENSOR_PROFILE_BINS: int = 24  # profile per 15° of sun azimuth
+SOLAR_SENSOR_PROFILE_TAU_H: float = 3.0  # sample hours a profile bin averages over
+SOLAR_SENSOR_RATIO_MAX: float = 4.0  # measured/model ratio clamp (a facade gets more than GHI at low sun)
+SOLAR_SENSOR_DEVIATION_TAU_MIN: float = 20.0  # smoothing of the current deviation from the profile
+SOLAR_SENSOR_DEVIATION_FADE_H: float = 2.0  # forecasts fade the current deviation back to the profile
 COVER_SMOOTHING_RISE_MINUTES: float = 10.0  # faster EMA while the shading excess climbs
 
 # Heat source orchestration — smart routing for rooms with multiple heating device types

@@ -23,6 +23,14 @@ export interface CoverScheduleEntry {
   mode?: "force" | "gate";
 }
 
+/** What RoomMind makes of a room's sun sensor (#303). */
+export interface SolarSensorLive {
+  kind: "irradiance" | "illuminance" | "percent" | null;
+  /** learning: scale not known yet (weather model in use); unavailable: weather model meanwhile. */
+  state: "learning" | "active" | "unavailable" | "unsupported";
+  position: "inside" | "outside" | null;
+}
+
 export interface RoomLiveData {
   current_temp: number | null;
   current_humidity: number | null;
@@ -61,6 +69,8 @@ export interface RoomLiveData {
   /** RoomMind runs the room's dehumidifier / humidifier. */
   dehumidifier_active?: boolean;
   humidifier_active?: boolean;
+  /** Sun sensor (#303); null without one. */
+  solar_sensor?: SolarSensorLive | null;
   mold_risk_level: "ok" | "warning" | "critical";
   mold_surface_rh: number | null;
   mold_surface_temp: number | null;
@@ -175,6 +185,8 @@ export interface RoomConfig {
   /** humidifier.*, switch.* or input_boolean.* RoomMind runs past the limits. */
   dehumidifier_entity?: string;
   humidifier_entity?: string;
+  /** Sunlight on the room: W/m², lx or % (#303). */
+  solar_sensor?: string;
   preheat_enabled?: boolean;
   /** K the schedule target may move with the electricity price, 0 = off. */
   price_shift?: number;

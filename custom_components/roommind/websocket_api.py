@@ -183,6 +183,7 @@ _ROOM_SAVE_FIELDS = (
     "humidity_min",
     "dehumidifier_entity",
     "humidifier_entity",
+    "solar_sensor",
 )
 
 # Same limits as the room climate entity; also turns away nan/inf
@@ -278,6 +279,7 @@ def _validate_no_own_entities(config: dict, own_prefix: str) -> str | None:
         "voc_sensor",
         "ventilation_entity",
         *_HUMIDITY_DEVICE_FIELDS,
+        "solar_sensor",
     ):
         eid = config.get(field, "")
         if eid and eid.split(".", 1)[-1].startswith(own_prefix):
@@ -407,6 +409,8 @@ async def websocket_list_rooms(
             "humidity_vent_blocked": live.get("humidity_vent_blocked", False),
             "dehumidifier_active": live.get("dehumidifier_active", False),
             "humidifier_active": live.get("humidifier_active", False),
+            # Sun sensor (#303): kind (irradiance/illuminance/percent) and learning/active/unavailable/unsupported
+            "solar_sensor": live.get("solar_sensor"),
             "mold_risk_level": live.get("mold_risk_level", "ok"),
             "mold_surface_rh": live.get("mold_surface_rh"),
             "mold_surface_temp": live.get("mold_surface_temp"),
@@ -589,6 +593,7 @@ async def websocket_list_rooms(
             vol.Coerce(int), vol.Range(min=MIN_CO2_THRESHOLD, max=MAX_CO2_THRESHOLD)
         ),
         vol.Optional("voc_sensor"): str,
+        vol.Optional("solar_sensor"): str,
         # In the sensor's own unit (index, ppb, µg/m³); None = the reading is shown, not judged
         vol.Optional("voc_threshold"): vol.Any(None, vol.All(vol.Coerce(float), vol.Range(min=0.001, max=1e6))),
         vol.Optional("ventilation_entity"): vol.Any(

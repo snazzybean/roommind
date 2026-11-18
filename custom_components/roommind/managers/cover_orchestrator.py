@@ -47,6 +47,7 @@ if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
 
     from ..control.thermal_model import RoomModelManager
+    from .solar_sensor_manager import RoomSolar
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -130,11 +131,15 @@ class CoverOrchestrator:
         predicted_peak_temp: float | None,
         has_override: bool,
         window_open: bool = False,
+        room_solar: RoomSolar | None = None,
     ) -> CoverResult:
         """Process cover control for a room: MPC check, schedule, prediction, evaluate, apply.
 
         *window_open* is the raw window state (no open/close delay, pending counts
         as open). With ``covers_window_hold`` it keeps the covers from going down.
+
+        *room_solar* (sun sensor, #303): *q_solar* and the lookahead come from it, and it
+        replaces the cover orientations (the sensor already sees which side the sun is on).
         """
         # Early exit: when auto control is disabled, do nothing.
         # Schedule, night close and MPC are all suppressed — covers stay wherever they are.
@@ -238,7 +243,7 @@ class CoverOrchestrator:
         _cover_eids: list[str] = room.get("covers", [])
         _cover_orientations: dict[str, int] = room.get("cover_orientations", {})
         _surface_azimuths: list[float] | None = None
-        if _cover_eids and _cover_orientations:
+        if _cover_eids and _cover_orientations and room_solar is None:
             _az_list = [float(_cover_orientations[eid]) for eid in _cover_eids if eid in _cover_orientations]
             if _az_list:
                 _surface_azimuths = _az_list
@@ -269,7 +274,7 @@ class CoverOrchestrator:
             # temperature, plan peak and learned solar gain all swing with the
             # compressor cycle, so base temperature and excess are smoothed.
             raw_peak = self._estimate_solar_load_peak(
-                area_id, smoothed_temp, cover_target, q_solar, outdoor_temp, _surface_azimuths
+                area_id, smoothed_temp, cover_target, q_solar, outdoor_temp, _surface_azimuths, room_solar
             )
             if predicted_peak_temp is not None:
                 raw_peak = max(raw_peak, predicted_peak_temp)
@@ -298,7 +303,7 @@ class CoverOrchestrator:
                 _cover_predicted_peak = predicted_peak_temp
             else:
                 _cover_predicted_peak = self._estimate_solar_peak_temp(
-                    area_id, current_temp, cover_target, q_solar, outdoor_temp, _surface_azimuths
+                    area_id, current_temp, cover_target, q_solar, outdoor_temp, _surface_azimuths, room_solar
                 )
 
         # Heating demand: solar gain is welcome, never shade against it. A cool_only
@@ -311,7 +316,8 @@ class CoverOrchestrator:
         ):
             _cover_predicted_peak = cover_target
 
-        if _oriented_q_solar < COVER_SOLAR_MIN and _surface_azimuths:
+        # Sun not on this room now (orientation or sensor): the covers cannot help
+        if _oriented_q_solar < COVER_SOLAR_MIN and (_surface_azimuths or room_solar is not None):
             _cover_predicted_peak = cover_target
 
         # None (store default up to 1.8.2) means the default the room page shows.
@@ -465,6 +471,7 @@ class CoverOrchestrator:
         q_solar: float,
         outdoor_temp: float | None,
         surface_azimuths: list[float] | None = None,
+        room_solar: RoomSolar | None = None,
     ) -> float:
         """Estimate peak temperature from solar gain.
 
@@ -488,7 +495,7 @@ class CoverOrchestrator:
                 # Tier 1: RC model trajectory with proper physics
                 model = self._model_manager.get_model(area_id)
                 n_steps = int(COVER_DAILY_LOOKAHEAD_H * 60 / COVER_PREDICTION_DT_MINUTES)
-                solar_series = self._solar_series(n_steps, surface_azimuths)
+                solar_series = self._solar_series(n_steps, surface_azimuths, room_solar)
                 trajectory = model.predict_trajectory(
                     base_temp,
                     [outdoor_temp] * n_steps,
@@ -504,7 +511,7 @@ class CoverOrchestrator:
         # Using the daily peak (instead of current q_solar) means the initial position is computed
         # from the afternoon maximum — one decisive deployment rather than incremental steps as q_solar rises.
         n_daily = int(COVER_DAILY_LOOKAHEAD_H * 60 / COVER_PREDICTION_DT_MINUTES)
-        daily_series = self._solar_series(n_daily, surface_azimuths)
+        daily_series = self._solar_series(n_daily, surface_azimuths, room_solar)
         q_solar_peak = max(daily_series) if daily_series else q_solar
         return base_temp + COVER_DEFAULT_BETA_S * q_solar_peak * COVER_LINEAR_LOOKAHEAD_H
 
@@ -516,6 +523,7 @@ class CoverOrchestrator:
         q_solar: float,
         outdoor_temp: float | None,
         surface_azimuths: list[float] | None = None,
+        room_solar: RoomSolar | None = None,
     ) -> float:
         """Peak temperature the sun alone would cause in a room that can cool.
 
@@ -539,7 +547,7 @@ class CoverOrchestrator:
         """
         base_temp = min(current_temp, target_temp) if current_temp is not None else target_temp
         n_steps = max(1, int(COVER_COOLING_LOOKAHEAD_H * 60 / COVER_PREDICTION_DT_MINUTES))
-        solar_series = self._sunlit_solar_series(n_steps, surface_azimuths)
+        solar_series = self._sunlit_solar_series(n_steps, surface_azimuths, room_solar)
         if not solar_series:
             solar_series = [q_solar] * n_steps
         n_linear = max(1, int(COVER_COOLING_LINEAR_H * 60 / COVER_PREDICTION_DT_MINUTES))
@@ -574,7 +582,9 @@ class CoverOrchestrator:
             pass
         return linear_peak
 
-    def _sunlit_solar_series(self, n_steps: int, surface_azimuths: list[float] | None) -> list[float]:
+    def _sunlit_solar_series(
+        self, n_steps: int, surface_azimuths: list[float] | None, room_solar: RoomSolar | None = None
+    ) -> list[float]:
         """GHI series, weighted per step by how directly the sun faces the covers.
 
         Orientation decides *when* the sun is on the window, GHI how strong it
@@ -586,6 +596,8 @@ class CoverOrchestrator:
         series = build_solar_series(
             lat, lon, n_steps, dt_minutes=COVER_PREDICTION_DT_MINUTES, cloud_series=self._cloud_series
         )
+        if room_solar is not None:
+            return room_solar.scale(series, time.time(), COVER_PREDICTION_DT_MINUTES)
         if not surface_azimuths:
             return series
         now = time.time()
@@ -606,10 +618,17 @@ class CoverOrchestrator:
         weights = [max(0.0, min(1.0, math.cos(math.radians(sun_azimuth - az)) / full)) for az in surface_azimuths]
         return sum(weights) / len(weights)
 
-    def _solar_series(self, n_steps: int, surface_azimuths: list[float] | None) -> list[float]:
+    def _solar_series(
+        self, n_steps: int, surface_azimuths: list[float] | None, room_solar: RoomSolar | None = None
+    ) -> list[float]:
         """Unshaded solar series for the cover lookahead, oriented when azimuths are known."""
         lat = self.hass.config.latitude
         lon = self.hass.config.longitude
+        if room_solar is not None:
+            series = build_solar_series(
+                lat, lon, n_steps, dt_minutes=COVER_PREDICTION_DT_MINUTES, cloud_series=self._cloud_series
+            )
+            return room_solar.scale(series, time.time(), COVER_PREDICTION_DT_MINUTES)
         if surface_azimuths:
             return build_oriented_solar_series(
                 lat,

@@ -38,7 +38,8 @@ type SensorKind =
   | "voc"
   | "ventilation"
   | "dehumidifier"
-  | "humidifier";
+  | "humidifier"
+  | "sun";
 type SingleKind = Exclude<SensorKind, "occupancy" | "window">;
 
 const OCCUPANCY_CLASSES = ["occupancy", "motion", "presence"];
@@ -47,6 +48,17 @@ const WINDOW_CLASSES = ["window", "door", "opening"];
 const VOC_CLASSES = ["volatile_organic_compounds", "volatile_organic_compounds_parts", "aqi"];
 const VENTILATION_DOMAINS = ["fan", "switch", "input_boolean"];
 const HUMIDITY_DEVICE_DOMAINS = ["humidifier", "switch", "input_boolean"];
+type SunKind = "irradiance" | "illuminance" | "percent";
+
+/** What a sun sensor measures; same rule as the backend (solar_sensor_manager.solar_sensor_kind). */
+function sunKind(attrs: Record<string, unknown>): SunKind | null {
+  const dc = attrs.device_class as string | undefined;
+  const unit = attrs.unit_of_measurement as string | undefined;
+  if (dc === "irradiance" || unit === "W/m²") return "irradiance";
+  if (dc === "illuminance" || unit === "lx") return "illuminance";
+  if (unit === "%" && !dc) return "percent";
+  return null;
+}
 const SINGLE_KEYS: Record<SingleKind, string> = {
   temp: "temperature_sensor",
   humidity: "humidity_sensor",
@@ -55,6 +67,7 @@ const SINGLE_KEYS: Record<SingleKind, string> = {
   ventilation: "ventilation_entity",
   dehumidifier: "dehumidifier_entity",
   humidifier: "humidifier_entity",
+  sun: "solar_sensor",
 };
 
 /** What an empty single-entity group says instead of "none assigned". */
@@ -86,6 +99,8 @@ export class RsSensorSection extends LitElement {
   @property({ attribute: false }) public humidityMin: number | null = null;
   @property({ type: String }) public dehumidifierEntity = "";
   @property({ type: String }) public humidifierEntity = "";
+  /** Sunlight on the room (#303). */
+  @property({ type: String }) public solarSensor = "";
   /** Live state of the room: air quality judgement and whether RoomMind runs the ventilation. */
   @property({ attribute: false }) public live?: RoomLiveData;
   @property({ type: String }) public heatingSystemType = "";
@@ -207,6 +222,7 @@ export class RsSensorSection extends LitElement {
       ${this.outdoor ? nothing : this._renderControlRows(delays, occupancyNote)}
       ${this.outdoor ? nothing : this._renderHumidityRows()}
       ${this.outdoor ? nothing : this._renderAirRows()}
+      ${this.outdoor || !this.solarSensor ? nothing : this._renderSunRow()}
       <rs-list-row
         clickable
         plain-icon
@@ -378,6 +394,24 @@ export class RsSensorSection extends LitElement {
     return !!this.humiditySensor && this.humidityMax != null;
   }
 
+  /** Sun sensor with what RoomMind makes of it: learning its scale, or the forecast while it has no reading. */
+  private _renderSunRow() {
+    const l = this.hass.language;
+    const state = this.live?.solar_sensor?.state;
+    const note =
+      state === "learning"
+        ? localize("sensors.sun_learning", l)
+        : state === "unavailable"
+          ? localize("sensors.sun_fallback", l)
+          : "";
+    return this._row(
+      this.solarSensor,
+      "mdi:white-balance-sunny",
+      [localize("detail.sensors.sun", l), note].filter(Boolean).join(" · "),
+      this._numberValue(this.solarSensor),
+    );
+  }
+
   private _row(entityId: string, icon: string, secondary: string, value: string, color = "") {
     const name =
       (this.hass.states[entityId]?.attributes?.friendly_name as string | undefined) || entityId;
@@ -468,6 +502,7 @@ export class RsSensorSection extends LitElement {
       "ventilationEntity",
       "dehumidifierEntity",
       "humidifierEntity",
+      "solarSensor",
     ];
     if (!lists.some((p) => changed.has(p))) return;
     const section = this.renderRoot.querySelector(`section[data-kind="${this._focusKind}"]`);
@@ -515,6 +550,8 @@ export class RsSensorSection extends LitElement {
         return HUMIDITY_DEVICE_DOMAINS.includes(domain) && dc !== "humidifier";
       case "humidifier":
         return HUMIDITY_DEVICE_DOMAINS.includes(domain) && dc !== "dehumidifier";
+      case "sun":
+        return domain === "sensor" && sunKind(attrs) !== null;
     }
   }
 
@@ -527,6 +564,7 @@ export class RsSensorSection extends LitElement {
       ventilation: this.ventilationEntity,
       dehumidifier: this.dehumidifierEntity,
       humidifier: this.humidifierEntity,
+      sun: this.solarSensor,
     }[kind];
   }
 
@@ -554,6 +592,7 @@ export class RsSensorSection extends LitElement {
               (kind !== "ventilation" || id.startsWith("fan.")) &&
               ((kind !== "dehumidifier" && kind !== "humidifier") ||
                 id.startsWith("humidifier.")) &&
+              (kind !== "sun" || sunKind(this.hass.states[id]?.attributes ?? {}) !== "percent") &&
               this._accepts(kind, id),
           )
         : [];
@@ -586,7 +625,8 @@ export class RsSensorSection extends LitElement {
                       }`,
                   )
                 : nothing
-            }`
+            }
+            ${this._renderKind("sun", inArea("sun"), nothing, this._renderSunNote(l))}`
       }
     `;
   }
@@ -661,6 +701,12 @@ export class RsSensorSection extends LitElement {
           icon: "mdi:water-plus",
           title: "detail.sensors.humidifier",
           info: "sensors.humidifier_info",
+        } as const;
+      case "sun":
+        return {
+          icon: "mdi:white-balance-sunny",
+          title: "detail.sensors.sun",
+          info: "sensors.sun_info",
         } as const;
     }
   }
@@ -779,6 +825,7 @@ export class RsSensorSection extends LitElement {
       ventilation: VENTILATION_DOMAINS,
       dehumidifier: HUMIDITY_DEVICE_DOMAINS,
       humidifier: HUMIDITY_DEVICE_DOMAINS,
+      sun: ["sensor"],
     }[kind];
     return html`<div class="picker">
       <ha-entity-picker
@@ -811,7 +858,7 @@ export class RsSensorSection extends LitElement {
   private _kindValue(kind: SensorKind, entityId: string): string {
     if (kind === "temp") return this._tempValue(entityId);
     if (kind === "humidity") return this._humidityValue(entityId);
-    if (kind === "co2" || kind === "voc") return this._numberValue(entityId);
+    if (kind === "co2" || kind === "voc" || kind === "sun") return this._numberValue(entityId);
     if (kind === "ventilation" || kind === "dehumidifier" || kind === "humidifier") {
       return this._onOffValue(entityId);
     }
@@ -835,6 +882,19 @@ export class RsSensorSection extends LitElement {
           ? "sensors.device_sensor_note"
           : "sensors.full_control_note";
     return html`<p class="note">${localize(key, l)}</p>`;
+  }
+
+  /** What the chosen sun sensor measures, and that the forecast stays in use until its scale is learned. */
+  private _renderSunNote(l: string) {
+    if (!this.solarSensor) return nothing;
+    const kind = sunKind(this.hass.states[this.solarSensor]?.attributes ?? {});
+    const lines = [
+      localize(kind ? `sensors.sun_kind_${kind}` : "sensors.sun_kind_unsupported", l),
+      kind && [undefined, "learning"].includes(this.live?.solar_sensor?.state)
+        ? localize("sensors.sun_learning_note", l)
+        : "",
+    ].filter(Boolean);
+    return html`<p class="note">${lines.join(" ")}</p>`;
   }
 
   private _renderWindowSettings(l: string) {

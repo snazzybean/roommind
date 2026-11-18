@@ -109,6 +109,7 @@ from .managers.residual_heat_tracker import (
     ResidualHeatLearner,
     ResidualHeatTracker,
 )
+from .managers.solar_sensor_manager import RoomSolar, SolarSensorManager
 from .managers.valve_manager import ValveManager
 from .managers.weather_manager import WeatherManager
 from .managers.window_manager import WindowManager
@@ -388,6 +389,8 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             min_off_s=HUMIDITY_DEVICE_MIN_OFF_MINUTES * 60,
         )
         self._humidity_vent_rooms_saved: list[str] = []
+        self._solar_sensors = SolarSensorManager(hass)
+        self._room_solar: dict[str, RoomSolar] = {}
         # Per-entity cache of schedule blocks; fallback when schedule.get_schedule fails (#308)
         self._schedule_blocks_cache: dict[str, dict] = {}
         # Entity platform callbacks, set by platform async_setup_entry
@@ -446,6 +449,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             self._humidity_devices.load_state(settings.get("humidity_device_state", {}))
             self._humidity.load_venting_rooms(settings.get("humidity_vent_rooms", []))
             self._humidity_vent_rooms_saved = self._humidity.vented_rooms()
+            self._solar_sensors.load_state(settings.get("solar_sensor_state", {}))
             self._model_loaded = True
 
         # Initialize history store (once)
@@ -584,7 +588,11 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                                 self.outdoor_temp_effective,
                                 Q,
                                 3.0,
-                                q_solar=self._current_q_solar * rs.get("shading_factor", 1.0),
+                                q_solar=(
+                                    self._current_q_solar * rs.get("shading_factor", 1.0)
+                                    if rs.get("solar_input") is None
+                                    else rs["solar_input"]
+                                ),
                                 q_rebound=mean_rebound(
                                     self._rebound_tracker.get_charge(area_id), model.cooling_drive(Q), 3.0
                                 ),
@@ -645,6 +653,14 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         if self._coil_dry_manager.state_dirty:
             await store.async_save_settings({"coil_dry_state": self._coil_dry_manager.get_state()})
             self._coil_dry_manager.state_dirty = False
+
+        # Sun sensors: a calibration, a new sensor or a found position is saved at once,
+        # the learned profile with the thermal data
+        self._solar_sensors.prune(set(stored_rooms))
+        if self._solar_sensors.dirty or (self._solar_sensors.learned and self._thermal_save_count == 0):
+            await store.async_save_settings({"solar_sensor_state": self._solar_sensors.get_state()})
+            self._solar_sensors.dirty = False
+            self._solar_sensors.learned = False
 
         self.rooms = room_states
         return {"rooms": room_states}
@@ -1133,6 +1149,14 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         cover_eids: list[str] = room.get("covers", [])
         cover_pos_result = self._cover_orchestrator.read_positions(area_id, room)
         shading_factor = cover_pos_result.shading_factor
+        # Sun sensor (#303): None runs the room on the weather model, as without one
+        room_solar = self._solar_sensors.update(
+            area_id, room.get("solar_sensor", ""), self._current_q_solar, shading_factor, time.time()
+        )
+        if room_solar is None:
+            self._room_solar.pop(area_id, None)
+        else:
+            self._room_solar[area_id] = room_solar
 
         # Read occupancy sensors for thermal model (OR logic: any sensor "on" → occupied)
         q_occupancy = 0.0
@@ -1157,7 +1181,8 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             has_external_sensor=has_external_sensor,
             target_resolver=target_resolver,
             schedule_target_resolver=schedule_target_resolver,
-            q_solar=self._current_q_solar,
+            q_solar=self._current_q_solar if room_solar is None else room_solar.q_now,
+            room_solar=room_solar,
             latitude=self.hass.config.latitude,
             longitude=self.hass.config.longitude,
             cloud_series=WeatherManager.extract_cloud_series(outdoor_forecast),
@@ -1444,7 +1469,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             minutes_since_stop=self._residual_tracker.minutes_since_stop(area_id),
             run_minutes=self._residual_tracker.last_run_minutes(area_id),
             run_power=self._residual_tracker.last_run_power(area_id),
-            q_solar=self._current_q_solar * shading_factor,
+            q_solar=self._current_q_solar * shading_factor if room_solar is None else room_solar.q_effective,
             q_occupancy=q_occupancy,
             # Only an undisturbed afterglow of RoomMind's own run, measured by the room sensor
             disturbed=(
@@ -1603,10 +1628,11 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             mode=mode,
             current_temp=current_temp,
             outdoor_temp=self.outdoor_temp_effective,
-            q_solar=self._current_q_solar,
+            q_solar=self._current_q_solar if room_solar is None else room_solar.q_now,
             predicted_peak_temp=controller.predicted_peak_temp,
             has_override=has_override,
             window_open=raw_open,
+            room_solar=room_solar,
         )
 
         # Track valve actuation during normal heating (skip excluded entities)
@@ -1656,6 +1682,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             raw_open=raw_open,
             q_residual=q_residual,
             shading_factor=shading_factor,
+            room_solar=room_solar,
             q_occupancy=q_occupancy,
             q_rebound=q_rebound,
             has_external_sensor=has_external_sensor,
@@ -1722,6 +1749,12 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             compressor_protection_until=compressor_protection_until,
             coil_dry=coil_dry,
         )
+        # Sun sensor (#303), only in rooms with one: what the room gets behind its covers, and the status
+        solar_status = self._solar_sensors.status(area_id)
+        if solar_status is not None:
+            room_state["solar_sensor"] = solar_status
+        if room_solar is not None:
+            room_state["solar_input"] = room_solar.q_effective
         if group_wanted_mode is not None:
             room_state["group_wanted_mode"] = group_wanted_mode
         if compressor_protection_reason == "uniform_mode":
@@ -1737,6 +1770,10 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         room_state.update(humidity_control)
         return room_state
 
+    def room_solar(self, area_id: str) -> RoomSolar | None:
+        """The room's sun sensor input of the last cycle (analytics forecast), None on the weather model."""
+        return self._room_solar.get(area_id)
+
     def _note_model_inputs(
         self,
         area_id: str,
@@ -1745,6 +1782,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         shading_factor: float | None,
         q_residual: float,
         q_occupancy: float,
+        room_solar: RoomSolar | None = None,
     ) -> None:
         """Keep the inputs the EKF learned from this cycle for the history (analytics backtest).
 
@@ -1757,7 +1795,12 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         sign = 1.0 if ekf_mode == MODE_HEATING else -1.0 if ekf_mode == MODE_COOLING else 0.0
         self._model_inputs[area_id] = {
             "model_power": round(sign * ekf_pf, 3),
-            "model_solar": round(self._current_q_solar * (shading_factor if shading_factor is not None else 0.0), 3),
+            "model_solar": round(
+                self._current_q_solar * (shading_factor if shading_factor is not None else 0.0)
+                if room_solar is None
+                else room_solar.q_effective,
+                3,
+            ),
             "model_residual": round(q_residual, 3),
             "model_occupancy": q_occupancy,
         }
@@ -1778,6 +1821,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         q_occupancy: float,
         has_external_sensor: bool,
         heat_source_plan: Any | None,
+        room_solar: RoomSolar | None = None,
         q_rebound: float | None = None,
         climate_active: bool,
         coil_dry_skip_training: bool = False,
@@ -1924,15 +1968,18 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 window_open=window_open,
                 raw_open=raw_open,
                 q_residual=q_residual_training,
-                shading_factor=shading_factor if shading_factor is not None else 0.0,
-                q_solar=self._current_q_solar,
+                # A sun sensor's input already sits behind the covers where it should
+                shading_factor=(shading_factor if shading_factor is not None else 0.0) if room_solar is None else 1.0,
+                q_solar=self._current_q_solar if room_solar is None else room_solar.q_effective,
                 can_heat=can_heat,
                 can_cool=can_cool,
                 dt_minutes=UPDATE_INTERVAL / 60.0,
                 q_occupancy=q_occupancy,
                 q_rebound=q_rebound,
             )
-            self._note_model_inputs(area_id, ekf_mode, ekf_pf, shading_factor, q_residual_training, q_occupancy)
+            self._note_model_inputs(
+                area_id, ekf_mode, ekf_pf, shading_factor, q_residual_training, q_occupancy, room_solar
+            )
         else:
             self._model_inputs.pop(area_id, None)
             # A held unit or a coil dry run keeps the old resume (learn the change across the
@@ -3172,6 +3219,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         self._climate_entity_areas.discard(area_id)
         self._heat_source_states.pop(area_id, None)
         self._coil_dry_manager.remove_room(area_id)
+        self._room_solar.pop(area_id, None)
 
     def cleanup_orphaned_entities(self) -> None:
         """Remove entities that no longer match any registered entity type.
