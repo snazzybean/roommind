@@ -1,0 +1,51 @@
+name: trv-lost-off
+description: >
+  Kitchen TRV that once does not get RoomMind's off: Zigbee2MQTT shows "off" at 5 °C right
+  away, the valve stays open at the boost setpoint and the TRV keeps reporting "heating".
+  Up to v2.0.0 RoomMind took the "off" at its word: the room stayed above its target, so
+  nothing was sent again and the radiator heated until someone stepped in (13 h in the
+  reporter's kitchen, here to the end of the run). RoomMind must send the off again.
+  The boiler runs on its own heating curve (no master), as in that house.
+tags: [trv, mpc, device-quirk]
+start: 2026-01-12T00:00
+duration: 3d
+location: {latitude: 52.5, longitude: 13.4, time_zone: Europe/Berlin}
+weather: {profile: temperate}
+house:
+  building: bestand_teilsaniert
+  outdoor: {sensors: {temperature: sensor.aussen_temp}}
+  rooms:
+    kueche:
+      name: Küche
+      floor_area_m2: 12
+      exterior_wall_m2: 9
+      initial: {temperature: 19.0}
+      windows: [{orientation: S, area_m2: 1.5}]
+      devices:
+        - {entity_id: climate.kueche_trv, profile: tuya_trv_lost_off}
+      sensors:
+        temperature: {entity_id: sensor.kueche_temp}
+helpers:
+  schedule:
+    plan: {weekdays: ["06:00-22:00"], weekend: ["07:00-22:00"]}
+roommind:
+  settings:
+    outdoor_temp_sensor: sensor.aussen_temp
+    weather_entity: weather.simhome
+    control_mode: mpc
+  rooms:
+    kueche:
+      devices: [{entity_id: climate.kueche_trv, type: trv, heating_system_type: radiator}]
+      temperature_sensor: sensor.kueche_temp
+      climate_mode: heat_only
+      schedules: [{entity_id: schedule.plan}]
+      comfort_temp: 21.0
+      eco_temp: 18.0
+expect:
+  - {invariant: no_rejected_commands}
+  # v2.0.0: the valve stayed open from the lost off on day 2 to the end (23.4 °C,
+  # 34.2 Kh above comfort + 0.5, TRV active 62 h); now the off goes out again 5 min later
+  # (21.2 °C, 0.06 Kh, 43.5 h, the same as the twin run without the lost off)
+  - {metric: room.temp_max, room: kueche, max: 21.6}
+  - {metric: comfort.heat_overshoot_kh, room: kueche, max: 1.0}
+  - {metric: device.active_h, entity_id: climate.kueche_trv, max: 46}

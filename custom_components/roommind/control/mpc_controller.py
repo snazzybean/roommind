@@ -7,11 +7,13 @@ import math
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, replace
+from datetime import datetime, timedelta
 from functools import partial
 from typing import TYPE_CHECKING, Any, cast
 
 from homeassistant.const import UnitOfTemperature
 from homeassistant.core import HomeAssistant
+from homeassistant.util import dt as dt_util
 
 from ..const import (
     AC_BOOST_DELTA_MAX,
@@ -37,6 +39,9 @@ from ..const import (
     MODE_COOLING,
     MODE_HEATING,
     MODE_IDLE,
+    OFF_CONFIRM_SECONDS,
+    OFF_RESEND_INTERVAL_SECONDS,
+    OFF_RESEND_MAX,
     PROPORTIONAL_DEADBAND_C,
     PROPORTIONAL_DEADBAND_NEAR_TARGET_C,
     PROPORTIONAL_SETPOINT_DWELL_SECONDS,
@@ -106,6 +111,24 @@ _hold_modulated: set[str] = set()
 _proportional_sent: dict[str, _ProportionalSend] = {}
 # Switch-on time of a dropped setpoint sent again this cycle: the dwell still ends from there
 _dwell_reasserting: dict[str, float] = {}
+
+
+@dataclass
+class _OffSent:
+    """An off RoomMind sent, watched until the device stops reporting a run."""
+
+    at: float  # monotonic
+    wall: datetime
+    was_running: bool
+    resends: int = 0
+    resent_at: float = 0.0
+    gave_up: bool = False
+
+
+_RUNNING_ACTIONS = ("heating", "preheating", "cooling")
+_off_sent: dict[str, _OffSent] = {}
+# Devices whose hvac_action went from a run to idle/off after RoomMind's off: theirs follows the mode
+_reports_stop: set[str] = set()
 # hvac states in which a lower setpoint means more cooling, not less output
 # Outcome of MPCController._call
 _CALL_SENT = "sent"  # a command went to the device
@@ -177,6 +200,8 @@ def _remember_command(entity_id: str, service: str, data: dict) -> None:
             del _last_by_service[key]
             _sent_at.pop(key, None)
     _proportional_sent.pop(entity_id, None)
+    if data.get("hvac_mode") not in (None, "off"):
+        _off_sent.pop(entity_id, None)
     _last_commands[entity_id] = _cache_entry(service, data)
     _note_applied(entity_id, service, data)
 
@@ -321,6 +346,8 @@ def clear_command_cache() -> None:
     _active_targets.clear()
     _overshoot_sent.clear()
     _hold_modulated.clear()
+    _off_sent.clear()
+    _reports_stop.clear()
     clear_valve_cache()
 
 
@@ -430,6 +457,106 @@ async def _send_idle_setpoint(
         )
 
 
+async def _send_off(hass: HomeAssistant, entity_id: str, *, area_id: str) -> bool:
+    try:
+        await hass.services.async_call(
+            "climate",
+            "set_hvac_mode",
+            {"entity_id": entity_id, "hvac_mode": "off"},
+            blocking=True,
+            context=make_roommind_context(),
+        )
+    except Exception:  # noqa: BLE001
+        _LOGGER.warning(
+            "Area '%s': climate.set_hvac_mode(off) failed on '%s'",
+            area_id,
+            entity_id,
+            exc_info=True,
+        )
+        return False
+    _remember_command(entity_id, "set_hvac_mode", {"hvac_mode": "off"})
+    return True
+
+
+async def _confirm_off(
+    hass: HomeAssistant,
+    entity_id: str,
+    state: Any,
+    idle_setpoint: float | None,
+    *,
+    area_id: str,
+) -> None:
+    """Send RoomMind's off again when the device shows "off" but keeps reporting the run.
+
+    The state then only says what the integration assumed after sending (Zigbee2MQTT shows
+    the off at once); a TRV that never got the command heats on unnoticed. Only devices
+    seen to drop a run's ``hvac_action`` after an off qualify, so an integration whose
+    ``hvac_action`` does not follow the mode is never sent anything extra.
+    """
+    sent = _off_sent.get(entity_id)
+    if sent is None:
+        return
+    action = state.attributes.get("hvac_action")
+    now = _now()
+    if action not in _RUNNING_ACTIONS:
+        # A stop hours later (room cooled past an action computed from temperatures) proves nothing
+        if sent.was_running and now - sent.at < OFF_CONFIRM_SECONDS:
+            _reports_stop.add(entity_id)
+        if sent.resends:
+            _LOGGER.info(
+                "Area '%s': '%s' stopped after the off was sent %d more time(s)", area_id, entity_id, sent.resends
+            )
+        del _off_sent[entity_id]
+        return
+    if sent.gave_up:
+        return
+    if entity_id not in _reports_stop:
+        if now - sent.at >= OFF_CONFIRM_SECONDS:
+            del _off_sent[entity_id]
+        return
+    changed = getattr(state, "last_changed", None)
+    if isinstance(changed, datetime) and changed - sent.wall > timedelta(minutes=1):
+        # Switched on and off again by someone else since: not RoomMind's off any more
+        del _off_sent[entity_id]
+        return
+    if now - sent.at < OFF_CONFIRM_SECONDS:
+        return
+    if sent.resends and now - sent.resent_at < OFF_RESEND_INTERVAL_SECONDS:
+        return
+    minutes = round((now - sent.at) / 60)
+    if sent.resends >= OFF_RESEND_MAX:
+        sent.gave_up = True
+        # Not a device whose hvac_action can be trusted in off after all: no resends for its next offs
+        _reports_stop.discard(entity_id)
+        _LOGGER.warning(
+            "Area '%s': '%s' still reports %s %d min after RoomMind switched it off, also after "
+            "%d more sends; check the device (connection, frost protection)",
+            area_id,
+            entity_id,
+            action,
+            minutes,
+            sent.resends,
+        )
+        return
+    sent.resends += 1
+    sent.resent_at = now
+    _LOGGER.log(
+        logging.WARNING if sent.resends == 1 else logging.DEBUG,
+        "Area '%s': '%s' shows off but still reports %s %d min after RoomMind switched it off; "
+        "sending the off again (%d/%d)",
+        area_id,
+        entity_id,
+        action,
+        minutes,
+        sent.resends,
+        OFF_RESEND_MAX,
+    )
+    # A unit that can cool may still sit in heat_cool/auto behind the "off": min_temp would cool it hard (#388)
+    if "cool" not in (state.attributes.get("hvac_modes") or []) and idle_setpoint is not None:
+        await _send_idle_setpoint(hass, entity_id, state, idle_setpoint, area_id=area_id)
+    await _send_off(hass, entity_id, area_id=area_id)
+
+
 async def async_turn_off_climate(
     hass: HomeAssistant,
     entity_id: str,
@@ -463,8 +590,11 @@ async def async_turn_off_climate(
         )
 
         if state and state.state == "off":
-            if permanently_off and effective_setpoint is not None:
-                await _send_idle_setpoint(hass, entity_id, state, effective_setpoint, area_id=area_id)
+            if permanently_off:
+                if effective_setpoint is not None:
+                    await _send_idle_setpoint(hass, entity_id, state, effective_setpoint, area_id=area_id)
+            else:
+                await _confirm_off(hass, entity_id, state, effective_setpoint, area_id=area_id)
             return  # already off
 
         if permanently_off:
@@ -491,21 +621,11 @@ async def async_turn_off_climate(
         if state and effective_setpoint is not None and not on_cooling_side:
             await _send_idle_setpoint(hass, entity_id, state, effective_setpoint, area_id=area_id)
 
-        try:
-            await hass.services.async_call(
-                "climate",
-                "set_hvac_mode",
-                {"entity_id": entity_id, "hvac_mode": "off"},
-                blocking=True,
-                context=make_roommind_context(),
-            )
-            _remember_command(entity_id, "set_hvac_mode", {"hvac_mode": "off"})
-        except Exception:  # noqa: BLE001
-            _LOGGER.warning(
-                "Area '%s': climate.set_hvac_mode(off) failed on '%s'",
-                area_id,
-                entity_id,
-                exc_info=True,
+        if await _send_off(hass, entity_id, area_id=area_id):
+            _off_sent[entity_id] = _OffSent(
+                at=_now(),
+                wall=dt_util.utcnow(),
+                was_running=state is not None and state.attributes.get("hvac_action") in _RUNNING_ACTIONS,
             )
         return
 

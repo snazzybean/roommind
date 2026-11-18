@@ -67,6 +67,41 @@ def test_battery_trv_goes_offline_when_held_off_183():
     assert not d.call("set_hvac_mode", {"hvac_mode": "heat"}, w.now).ok
 
 
+def test_lost_off_shows_off_while_the_trv_heats_on():
+    w, d = _one("tuya_trv_lost_off", temp=19.0)
+    w.ha_started(w.now)
+    run(w, 30)
+    d.call("set_temperature", {"temperature": 34.5, "hvac_mode": "heat"}, w.now)
+    d.call("set_temperature", {"temperature": 5.0}, w.now)
+    d.call("set_hvac_mode", {"hvac_mode": "off"}, w.now)
+    assert d.state(w.now) == "off"  # first off before after_s goes through
+    d.call("set_temperature", {"temperature": 34.5, "hvac_mode": "heat"}, w.now)
+    run(w, 108000)
+    d.call("set_temperature", {"temperature": 5.0}, w.now)
+    d.call("set_hvac_mode", {"hvac_mode": "off"}, w.now)
+    run(w, 120)
+    attrs = d.attributes(w.now)
+    assert d.state(w.now) == "off" and attrs["temperature"] == 5.0
+    assert d.hvac_mode == "heat" and d.target == 34.5 and attrs["hvac_action"] == "heating"
+    run(w, 2220)
+    assert d.attributes(w.now)["temperature"] == 34.5 and d.state(w.now) == "off"
+    d.call("set_hvac_mode", {"hvac_mode": "off"}, w.now)
+    assert d.hvac_mode == "off" and d.state(w.now) == "off"
+    assert d.attributes(w.now)["hvac_mode"] == "off"
+
+
+def test_lost_off_ends_when_the_trv_is_switched_on():
+    w, d = _one("tuya_trv_lost_off", temp=19.0)
+    w.ha_started(w.now)
+    run(w, 108030)
+    d.call("set_temperature", {"temperature": 34.5, "hvac_mode": "heat"}, w.now)
+    d.call("set_hvac_mode", {"hvac_mode": "off"}, w.now)
+    assert d.state(w.now) == "off" and d.hvac_mode == "heat"
+    # Unchanged on the device, still the integration shows it in heat again
+    d.call("set_temperature", {"temperature": 34.5, "hvac_mode": "heat"}, w.now)
+    assert d.state(w.now) == "heat" and d.attributes(w.now)["hvac_mode"] == "heat"
+
+
 def test_sonoff_unavailable_after_ha_start():
     w, d = _one("sonoff_trvzb")
     w.ha_started(w.now)

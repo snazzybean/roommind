@@ -169,6 +169,8 @@ Important:
 
 RoomMind sends the TRV to its `off` state.
 
+Some integrations show `off` as soon as the command is sent, whether or not the device got it (Zigbee2MQTT does). A battery TRV that misses the command keeps heating behind that `off`. If a device still reports `heating` (or `cooling`) 5 minutes after RoomMind switched it off, RoomMind sends the off again, every 10 minutes, at most 3 times, and logs a warning. This only happens for devices that have shown before that they report the end of a run within those 5 minutes, so devices whose reported activity does not follow their mode are never sent anything extra. A device that does not stop after 3 sends gets a second warning and no more resends until it proves itself again. Home Assistant restarts start that learning over.
+
 ### Low
 
 RoomMind keeps the TRV in its current heating mode but lowers the setpoint to the device's minimum temperature.

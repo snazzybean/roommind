@@ -1,0 +1,9 @@
+description: >
+  Battery Tuya TRV over Zigbee2MQTT that once swallows an off (and the setpoint sent with it).
+  HA shows "off" at the sent setpoint while the valve stays open; 37 min later the TRV's
+  report brings its own setpoint back, the mode stays "off".
+extends: generic_trv
+capabilities:
+  max_temp: 35
+quirks:
+  - {type: lost_off, after_s: 108000, count: 1, revert_after_s: 2220}
