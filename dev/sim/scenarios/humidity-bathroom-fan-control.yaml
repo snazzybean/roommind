@@ -1,0 +1,40 @@
+name: humidity-bathroom-fan-control
+description: >
+  RoomMind runs the bathroom exhaust fans for humidity (#526). The two bathrooms of
+  humidity-bathroom-exhaust-fan (shower 450 g in 15 min at 07:00 every day, winter), both with
+  an upper humidity limit of 60 % and the fan as ventilation entity: Bad 1 a fan.* with make-up
+  air from the hall, Bad 2 a switch.* with outdoor make-up air; an outdoor humidity sensor
+  (January, airing dries). The limits are set at 00:01 through rooms/save, so a run
+  against v2.0.1 (which rejects the fields) shows the bathrooms without it. Day 1 a hand
+  switches the Bad 1 fan off during its run (it stays off until the room is dry again); day 2
+  HA restarts in the middle of the run (it goes on).
+tags: [humidity, appliances]
+refs: [526, 518]
+extends: humidity-bathroom-exhaust-fan
+# milder than the base (-12 °C) so the shower passes the limit; still dry outdoor air
+weather: {profile: temperate}
+timeline:
+  - {at: "+0d00h01m", do: roommind.ws, type: roommind/rooms/save, area_id: bad, humidity_max: 60, ventilation_entity: fan.bad_luefter}
+  - {at: "+0d00h01m30s", do: roommind.ws, type: roommind/rooms/save, area_id: bad2, humidity_max: 60, ventilation_entity: switch.bad2_luefter}
+  - {at: "+0d07h", do: humidity.event, room: bad, grams: 450, for: 15m}
+  - {at: "+0d07h00m30s", do: humidity.event, room: bad2, grams: 450, for: 15m}
+  - {at: "+1d07h", do: humidity.event, room: bad, grams: 450, for: 15m}
+  - {at: "+1d07h00m30s", do: humidity.event, room: bad2, grams: 450, for: 15m}
+  - {at: "+1d07h16m", do: device.manual, entity_id: fan.bad_luefter, state: "off"}
+  - {at: "+2d07h", do: humidity.event, room: bad, grams: 450, for: 15m}
+  - {at: "+2d07h00m30s", do: humidity.event, room: bad2, grams: 450, for: 15m}
+  - {at: "+2d07h15m", do: ha.restart}
+expect:
+  - {invariant: no_rejected_commands}
+  - {check: "room.bad.humidity_high == true and state('fan.bad_luefter') == 'on' and state('switch.bad2_luefter') == 'on'", at: "+0d07h18m", label: both fans on once the shower passes 60 %}
+  - {check: "room.bad.humidity_high == false and state('fan.bad_luefter') == 'off' and state('switch.bad2_luefter') == 'off'", at: "+0d09h", label: off again once the bathrooms are dry}
+  - {check: "room.bad.humidity_high == true and state('fan.bad_luefter') == 'off' and state('switch.bad2_luefter') == 'on'", at: "+1d07h22m", label: switched off by hand stays off while still humid}
+  - {check: "state('fan.bad_luefter') == 'on' and room.bad.ventilation_active == true", at: "+2d07h20m", label: a run goes on across a restart}
+  - {check: "state('fan.bad_luefter') == 'off'", at: "+2d09h", label: and ends}
+  # 2026-11-18 seed 1: both bathrooms start at 60 % (one 15 min run at 00:01), then one run per
+  # shower: on at 07:13-07:15 (60 %), off at 07:28-07:33 once below 55 % and 15 min passed; day 1
+  # Bad 1 stays off from the hand at 07:16 and above 55 % until about 08:00; v2.0.1: no fan at all
+  - {metric: appliance.starts, entity_id: fan.bad_luefter, min: 4, max: 4}
+  - {metric: appliance.starts, entity_id: switch.bad2_luefter, min: 4, max: 4}
+  - {metric: appliance.shortest_run_min, entity_id: switch.bad2_luefter, min: 15}
+  - {metric: appliance.manual_switches, entity_id: fan.bad_luefter, min: 1, max: 1}
