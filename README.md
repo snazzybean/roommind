@@ -59,7 +59,7 @@ RoomMind turns the thermostats, radiator valves and air conditioners you already
   </tr>
   <tr>
     <td>🔥 <b>Devices</b></td>
-    <td>TRVs, ACs, heat pumps, underfloor heating · heat source selection between radiators and AC · compressor groups for multi-split units · idle as off, fan only or setback · proportional or direct setpoint per device</td>
+    <td>TRVs, ACs, heat pumps, underfloor heating · heat source selection between radiators and AC · shared boiler or outdoor unit switched by room demand, with compressor protection for multi-split units · idle as off, fan only or setback · proportional or direct setpoint per device</td>
   </tr>
   <tr>
     <td>🏠 <b>Around the room</b></td>

@@ -95,6 +95,12 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
         title: "settings.learning_title",
         intro: "settings.intro.learning",
       },
+      {
+        id: "compressor",
+        icon: "mdi:heat-pump-outline",
+        title: "compressor.title",
+        intro: "settings.intro.compressor",
+      },
     ],
   },
   {
@@ -106,12 +112,6 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
         icon: "mdi:shield-refresh",
         title: "valve_protection.title",
         intro: "settings.intro.valve",
-      },
-      {
-        id: "compressor",
-        icon: "mdi:heat-pump-outline",
-        title: "compressor.title",
-        intro: "settings.intro.compressor",
       },
       {
         id: "coil_dry",

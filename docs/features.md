@@ -64,9 +64,9 @@ Global setback temperature with end date for all rooms.
 
 Rooms with both TRVs and ACs automatically route heating demand to the most efficient device based on temperature gap and outdoor conditions.
 
-### Compressor groups
+### Shared system: boiler or outdoor unit (compressor groups)
 
-Define groups of climate devices sharing an outdoor compressor. Enforces minimum run and off times to prevent short-cycling. Until `min_run_minutes` has elapsed, a device keeps its last active setpoint, including a boost setpoint, so the room can overshoot its target further than without protection. A target that changes on purpose in the meantime (override, vacation, schedule off, presence) is passed on to the device right away (a device with a single heat/cool setpoint only when that cannot push the room the wrong way).
+Settings > Shared system (boiler, outdoor unit). Define groups of climate devices sharing a boiler or an outdoor compressor. A main device (gas boiler, heat pump outdoor unit, main switch of a ducted system) is switched on as soon as a room in the group wants to heat or cool, and off when all rooms are idle. Enforces minimum run and off times to prevent short-cycling. Until `min_run_minutes` has elapsed, a device keeps its last active setpoint, including a boost setpoint, so the room can overshoot its target further than without protection. A target that changes on purpose in the meantime (override, vacation, schedule off, presence) is passed on to the device right away (a device with a single heat/cool setpoint only when that cannot push the room the wrong way).
 
 ### Idle modes
 
