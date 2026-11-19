@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import time
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from custom_components.roommind.const import DOMAIN
+import custom_components.roommind.managers.ac_dry_manager as ac_dry_mod
+from custom_components.roommind.const import AC_DRY_DEHUMIDIFIER_GONE_MINUTES, DOMAIN
 
 from .conftest import SAMPLE_ROOM, _create_coordinator, _make_store_mock, make_mock_states_get
 
@@ -176,12 +178,16 @@ async def test_no_dry(hass, mock_config_entry, room_patch, kw):
     assert not any(data.get("hvac_mode") == "dry" for _, data in _ac_calls(calls))
 
 
+@pytest.mark.parametrize("dehumidifier", [SimpleNamespace(state="unavailable", attributes={}), None])
 @pytest.mark.asyncio
-async def test_unavailable_dehumidifier_lets_the_ac_dry(hass, mock_config_entry):
+async def test_dehumidifier_gone_for_a_while_lets_the_ac_dry(hass, mock_config_entry, monkeypatch, dehumidifier):
+    """Unavailable or without any state yet (HA still starting): the AC waits some minutes, then dries."""
+    clock = [time.time()]
+    monkeypatch.setattr(ac_dry_mod.time, "time", lambda: clock[0])
     room_cfg = {**AC_ROOM, "dehumidifier_entity": DEHUM}
-    coordinator, *_ = _setup(
-        hass, mock_config_entry, room_cfg, **{DEHUM: SimpleNamespace(state="unavailable", attributes={})}
-    )
+    coordinator, *_ = _setup(hass, mock_config_entry, room_cfg, **{DEHUM: dehumidifier})
+    assert (await _cycle(coordinator))["ac_dry_active"] is False
+    clock[0] += AC_DRY_DEHUMIDIFIER_GONE_MINUTES * 60
     assert (await _cycle(coordinator))["ac_dry_active"] is True
 
 

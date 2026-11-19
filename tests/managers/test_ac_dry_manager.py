@@ -197,6 +197,64 @@ async def test_no_dry_within_an_hour_of_heating(now):
     assert (await _process(mgr)).active
 
 
+# --- the room's own dehumidifier ---------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_dehumidifier_that_reads_keeps_the_ac_out(now):
+    hass, _, calls = _hass()
+    mgr = AcDryManager(hass)
+    for _ in range(40):
+        assert not (await _process(mgr, dehumidifier_reads=True)).active
+        now[0] += 30
+    assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_dehumidifier_dropping_out_for_a_cycle_does_not_start_the_ac(now):
+    hass, _, calls = _hass()
+    mgr = AcDryManager(hass)
+    for reads in (True, False, True, False, True):
+        assert not (await _process(mgr, dehumidifier_reads=reads)).active
+        now[0] += 30
+    assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_ac_steps_in_once_the_dehumidifier_was_gone_for_a_while(now):
+    hass, _, _ = _hass()
+    mgr = AcDryManager(hass)
+    assert not (await _process(mgr, dehumidifier_reads=False)).active
+    now[0] += mod.AC_DRY_DEHUMIDIFIER_GONE_MINUTES * 60 - 1
+    assert not (await _process(mgr, dehumidifier_reads=False)).active
+    now[0] += 1
+    assert (await _process(mgr, dehumidifier_reads=False)).active
+    # Still gone: dry goes on
+    now[0] += 3600
+    assert (await _process(mgr, dehumidifier_reads=False)).active
+
+
+@pytest.mark.asyncio
+async def test_dehumidifier_back_ends_dry_after_the_min_run_and_gives_the_setback_back(now):
+    hass, _, calls = _hass(state="cool", temperature=27.0)
+    mgr = AcDryManager(hass)
+    room = _room(idle_action="setback")
+    await _process(mgr, room=room, dehumidifier_reads=False)
+    now[0] += mod.AC_DRY_DEHUMIDIFIER_GONE_MINUTES * 60
+    assert (await _process(mgr, room=room, dehumidifier_reads=False)).active
+    calls.clear()
+    now[0] += 30
+    assert (await _process(mgr, room=room, dehumidifier_reads=True)).active
+    assert calls == []
+    now[0] += mod.AC_DRY_MIN_RUN_MINUTES * 60
+    result = await _process(mgr, room=room, dehumidifier_reads=True)
+    assert not result.active and result.excluded_eids == {AC}
+    assert calls == [("set_temperature", {"hvac_mode": "cool", "temperature": 27.0})]
+    # Gone again for a moment: the AC does not jump back in
+    now[0] += 30
+    assert not (await _process(mgr, room=room, dehumidifier_reads=False)).active
+
+
 # --- end ----------------------------------------------------------------
 
 

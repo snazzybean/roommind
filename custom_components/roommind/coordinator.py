@@ -3053,18 +3053,21 @@ class RoomMindCoordinator(DataUpdateCoordinator):
 
         Only with a room sensor (in Managed mode the unit regulates itself, idle means nothing),
         an upper humidity limit and no dehumidifier of the room's own that reads (that one is
-        the tool the user picked; the AC steps in while it is unavailable), and only where the
+        the tool the user picked; the AC steps in once it was unavailable for some minutes), and only where the
         room may cool now: dry is a cooling cycle, so heat only rooms and an outdoor temperature
         below the cooling minimum keep it off.
         """
         dehumidifier = room.get("dehumidifier_entity") or ""
         dehumidifier_state = self.hass.states.get(dehumidifier) if dehumidifier else None
-        own_dehumidifier = dehumidifier_state is not None and dehumidifier_state.state not in ("unavailable", "unknown")
+        dehumidifier_reads = (
+            dehumidifier_state is not None and dehumidifier_state.state not in ("unavailable", "unknown")
+            if dehumidifier
+            else None
+        )
         allowed = (
             has_external_sensor
             and humidity_regulated(room)
             and humidity_limits(room)[1] is not None
-            and not own_dehumidifier
             and not force_off
             and room.get("climate_mode", "auto") != CLIMATE_MODE_HEAT_ONLY
         )
@@ -3087,6 +3090,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             may_cool=controller.can_heat_cool()[1],
             control_active=climate_active,
             window_open=window_open,
+            dehumidifier_reads=dehumidifier_reads,
             waiting=waiting_for_data,
             room_temp=current_temp,
             stop_temp=dry_stop_temp(heat, targets.cool, room.get("climate_mode", "auto")),

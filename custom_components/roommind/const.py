@@ -113,6 +113,8 @@ AC_DRY_AFTER_HEATING_MINUTES = 60
 AC_DRY_SETTLE_MINUTES = 30
 # A unit that does not show dry this long after the switch does not take it
 AC_DRY_REPORT_SECONDS = 300
+# The room's own dehumidifier must be unreadable this long before an AC dries in its place (Wi-Fi dropouts)
+AC_DRY_DEHUMIDIFIER_GONE_MINUTES = 10
 
 # Room fan (#266): a ceiling or standing fan that runs while RoomMind heats and/or cools the room
 ROOM_FAN_HEAT = "heat"

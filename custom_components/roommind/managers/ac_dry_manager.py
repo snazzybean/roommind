@@ -1,7 +1,7 @@
 """Air conditioners in dry while a room is too humid and needs neither heating nor cooling (#440).
 
-Rooms with an upper humidity limit and no dehumidifier of their own let an AC that offers
-``dry`` run in it while the room is too humid and the controller idles. Heating and cooling
+Rooms with an upper humidity limit and no dehumidifier of their own (or one unreadable for
+``AC_DRY_DEHUMIDIFIER_GONE_MINUTES``) let an AC that offers ``dry`` run in it while the room is too humid and the controller idles. Heating and cooling
 always come first: the room's mode is decided before, and a room that heats or cools ends dry
 in the same cycle, ``async_apply`` then switches the unit. Dry cools as well, so it keeps to the
 room's band: it ends ``AC_DRY_STOP_MARGIN_K`` above the heat target and starts again only
@@ -28,6 +28,7 @@ from homeassistant.core import HomeAssistant
 
 from ..const import (
     AC_DRY_AFTER_HEATING_MINUTES,
+    AC_DRY_DEHUMIDIFIER_GONE_MINUTES,
     AC_DRY_MAX_BELOW_COOL_K,
     AC_DRY_MIN_OFF_MINUTES,
     AC_DRY_MIN_RUN_MINUTES,
@@ -51,6 +52,7 @@ _END_DRY_ENOUGH = "humidity back in range"
 _END_COLD = "room at its lower limit"
 _END_NOT_ALLOWED = "room may not dry"
 _END_WINDOW = "window open"
+_END_DEHUMIDIFIER_BACK = "the room's dehumidifier is back"
 
 
 def dry_stop_temp(heat: float | None, cool: float | None, climate_mode: str) -> float | None:
@@ -116,6 +118,8 @@ class AcDryManager:
         self._rest_until: dict[str, float] = {}
         # Units that did not take dry or were changed by hand, until the room is no longer too humid
         self._declined: dict[str, set[str]] = {}
+        # Per room: since when its own dehumidifier does not read (in memory)
+        self._dehumidifier_gone_since: dict[str, float] = {}
         self._dirty = False
 
     def is_running(self, entity_id: str) -> bool:
@@ -135,6 +139,7 @@ class AcDryManager:
         may_cool: bool,
         control_active: bool,
         window_open: bool = False,
+        dehumidifier_reads: bool | None = None,
         waiting: bool,
         room_temp: float | None,
         stop_temp: float | None,
@@ -147,9 +152,12 @@ class AcDryManager:
     ) -> AcDryRoomResult:
         """Advance dry for every AC of the room.
 
-        ``allowed``: the room may dry at all (Full Control, upper limit and no dehumidifier, not
-        switched off, not heat only). ``window_open`` ends a run at once and gives no setback
-        back: the window pause in async_apply takes the unit over in the same cycle. ``may_cool``: the outdoor limit lets the
+        ``allowed``: the room may dry at all (Full Control, upper limit, not switched off, not
+        heat only). ``window_open`` ends a run at once and gives no setback
+        back: the window pause in async_apply takes the unit over in the same cycle.
+        ``dehumidifier_reads``: None without a dehumidifier of the room's own; it is the tool the
+        user picked, so an AC only starts once it was unreadable for
+        ``AC_DRY_DEHUMIDIFIER_GONE_MINUTES``, and a run ends after its min run once it is back. ``may_cool``: the outdoor limit lets the
         room cool now; asked only for a start, a reading going back and forth over the cooling
         minimum must not end a run. ``coil_dry_follows``: units whose coil dry takes over after
         dry, they get no setback back. ``switched_off``: the room's schedule or presence switches
@@ -166,6 +174,12 @@ class AcDryManager:
             self._heated_at[area_id] = now
         if not too_humid:
             self._declined.pop(area_id, None)
+        if dehumidifier_reads is not False:
+            self._dehumidifier_gone_since.pop(area_id, None)
+        may_replace_dehumidifier = dehumidifier_reads is None or (
+            dehumidifier_reads is False
+            and now - self._dehumidifier_gone_since.setdefault(area_id, now) >= AC_DRY_DEHUMIDIFIER_GONE_MINUTES * 60
+        )
         cold = room_temp is None or stop_temp is None or room_temp <= stop_temp
         warm_enough = (
             room_temp is not None
@@ -194,6 +208,7 @@ class AcDryManager:
                     window_open=window_open,
                     control_active=control_active,
                     cold=cold,
+                    dehumidifier_back=dehumidifier_reads is True,
                     held=eid in compressor_forced_on,
                     conflicts=group_conflicts.get(eid, frozenset()),
                 )
@@ -217,6 +232,7 @@ class AcDryManager:
                 too_humid
                 and allowed
                 and not window_open
+                and may_replace_dehumidifier
                 and may_cool
                 and control_active
                 and mode == MODE_IDLE
@@ -256,6 +272,7 @@ class AcDryManager:
         window_open: bool,
         control_active: bool,
         cold: bool,
+        dehumidifier_back: bool,
         held: bool,
         conflicts: frozenset[str],
     ) -> str | None:
@@ -285,6 +302,8 @@ class AcDryManager:
             return _END_DRY_ENOUGH
         if cold:
             return _END_COLD
+        if dehumidifier_back:
+            return _END_DEHUMIDIFIER_BACK
         return None
 
     async def _async_start(
@@ -335,7 +354,7 @@ class AcDryManager:
         if (
             restore
             and in_dry
-            and reason in (_END_DRY_ENOUGH, _END_COLD, _END_NOT_ALLOWED)
+            and reason in (_END_DRY_ENOUGH, _END_COLD, _END_NOT_ALLOWED, _END_DEHUMIDIFIER_BACK)
             and st.prev_mode is not None
             and st.prev_temperature is not None
         ):
@@ -406,3 +425,4 @@ class AcDryManager:
         self._rest_until.pop(area_id, None)
         self._dried_at.pop(area_id, None)
         self._declined.pop(area_id, None)
+        self._dehumidifier_gone_since.pop(area_id, None)
