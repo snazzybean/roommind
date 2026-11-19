@@ -529,3 +529,83 @@ class TestEnforceUniformMode:
         mgr.set_master_action("g1", "idle")
         assert mgr.conflicting_modes("climate.ac1") == frozenset({"cool", "dry", "fan_only"})
         assert mgr.conflicting_modes("climate.ac1", resting=False) == frozenset()
+
+
+class TestMasterRoomsNeeded:
+    def test_heat_needs_the_set_number_of_rooms(self):
+        modes = ["heating", "heating", "idle"]
+        assert resolve_master_action(modes, "heating_priority", None, 22, min_rooms=2) == "heat"
+        assert resolve_master_action(modes, "heating_priority", None, 22, min_rooms=3) == "idle"
+
+    def test_a_side_below_the_threshold_does_not_count_in_a_conflict(self):
+        modes = ["heating", "cooling", "cooling"]
+        assert resolve_master_action(modes, "heating_priority", None, 22, min_rooms=2) == "cool"
+
+
+def _delay_group(start=0, run_on=0):
+    return {**_make_group(), "start_delay_seconds": start, "run_on_seconds": run_on}
+
+
+class TestMasterStartDelayAndRunOn:
+    def _mgr(self, start=60, run_on=300, applied="idle"):
+        mgr = CompressorGroupManager()
+        mgr.load_groups([_delay_group(start, run_on)])
+        mgr._states["g1"].master_action = applied
+        return mgr
+
+    def test_start_waits_the_delay(self):
+        mgr = self._mgr()
+        action, wait = mgr.delayed_action("g1", "heat")
+        assert action == "idle"
+        assert 59 < wait <= 60
+        assert mgr.delay_pending("g1")[0] == "heat"
+        mgr._states["g1"].delay_wanted_since = time.monotonic() - 61
+        assert mgr.delayed_action("g1", "heat") == ("heat", 0.0)
+
+    def test_demand_that_drops_within_the_delay_switches_nothing(self):
+        mgr = self._mgr()
+        mgr.delayed_action("g1", "heat")
+        assert mgr.delayed_action("g1", "idle") == ("idle", 0.0)
+        assert mgr.delay_pending("g1") is None
+        # A new wish starts the delay over
+        mgr._states["g1"].delay_wanted_since = time.monotonic() - 1000
+        action, wait = mgr.delayed_action("g1", "heat")
+        assert action == "idle" and wait > 59
+
+    def test_run_on_keeps_it_running(self):
+        mgr = self._mgr(applied="heat")
+        action, wait = mgr.delayed_action("g1", "idle")
+        assert action == "heat"
+        assert 299 < wait <= 300
+        # Demand returns within the run-on: keeps running, no new start delay
+        assert mgr.delayed_action("g1", "heat") == ("heat", 0.0)
+        mgr.delayed_action("g1", "idle")
+        mgr._states["g1"].delay_wanted_since = time.monotonic() - 301
+        assert mgr.delayed_action("g1", "idle") == ("idle", 0.0)
+
+    def test_no_delay_and_startup_switch_at_once(self):
+        assert self._mgr(start=0, run_on=0).delayed_action("g1", "heat") == ("heat", 0.0)
+        assert self._mgr(applied=None).delayed_action("g1", "heat") == ("heat", 0.0)
+
+    def test_unknown_group(self):
+        mgr = CompressorGroupManager()
+        assert mgr.delayed_action("nope", "heat") == ("heat", 0.0)
+        assert mgr.delay_pending("nope") is None
+
+    def test_config_reads_the_new_options(self):
+        mgr = CompressorGroupManager()
+        mgr.load_groups(
+            [
+                {
+                    **_make_group(),
+                    "master_entity": "climate.boiler",
+                    "min_rooms": 2,
+                    "on_temperature": 60,
+                    "off_temperature": 10,
+                    "off_mode": "temperature",
+                }
+            ]
+        )
+        cfg = mgr.get_groups()["g1"]
+        assert (cfg.min_rooms, cfg.on_temperature, cfg.off_temperature, cfg.off_mode) == (2, 60, 10, "temperature")
+        assert cfg.master_domain == "climate"

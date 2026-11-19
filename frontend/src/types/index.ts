@@ -139,7 +139,19 @@ export interface CompressorGroup {
   conflict_resolution: ConflictResolution;
   action_script: string;
   enforce_uniform_mode: boolean;
+  /** The main device runs only while at least this many member rooms want its action. */
+  min_rooms?: number;
+  /** Seconds a wanted switch must hold before the main device follows: on, off. */
+  start_delay_seconds?: number;
+  run_on_seconds?: number;
+  /** Climate main device: setpoint when heating and when off (its own unit), null = mode only. */
+  on_temperature?: number | null;
+  off_temperature?: number | null;
+  /** "off": switch the thermostat off, "temperature": keep its heat mode at the off temperature. */
+  off_mode?: MasterOffMode;
 }
+
+export type MasterOffMode = "off" | "temperature";
 
 export interface RoomConfig {
   area_id: string;

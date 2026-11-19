@@ -2780,7 +2780,7 @@ async def test_save_settings_compressor_master_entity_valid(ws_hass, store, conn
 
 @pytest.mark.asyncio
 async def test_save_settings_compressor_master_non_climate(ws_hass, store, connection):
-    """Master entity must be a climate entity."""
+    """Master entity must be a climate, switch or input_boolean entity."""
     await store.async_load()
 
     msg = {
@@ -2791,7 +2791,7 @@ async def test_save_settings_compressor_master_non_climate(ws_hass, store, conne
                 "id": "g1",
                 "name": "Test",
                 "members": ["climate.ac1"],
-                "master_entity": "switch.boiler",
+                "master_entity": "light.boiler",
             },
         ],
     }
@@ -2799,6 +2799,64 @@ async def test_save_settings_compressor_master_non_climate(ws_hass, store, conne
 
     connection.send_error.assert_called_once()
     assert connection.send_error.call_args[0][1] == "invalid_master_entity"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("master", ["switch.boiler", "input_boolean.boiler", "climate.boiler"])
+async def test_save_settings_compressor_master_switch_and_setpoints(ws_hass, store, connection, master):
+    """A switch or input_boolean can be the master; rooms needed, delays and setpoints are saved."""
+    await store.async_load()
+    group = {
+        "id": "g1",
+        "name": "Boiler",
+        "members": ["climate.trv1"],
+        "master_entity": master,
+        "min_rooms": 2,
+        "start_delay_seconds": 120,
+        "run_on_seconds": 600,
+        "on_temperature": 60,
+        "off_temperature": 10,
+        "off_mode": "temperature",
+    }
+    validated = websocket_save_settings._ws_schema(
+        {"id": 31, "type": "roommind/settings/save", "compressor_groups": [group]}
+    )
+    await _save_settings(ws_hass, connection, validated)
+
+    connection.send_error.assert_not_called()
+    saved = connection.send_result.call_args[0][1]["settings"]["compressor_groups"][0]
+    assert saved["master_entity"] == master
+    assert (saved["min_rooms"], saved["start_delay_seconds"], saved["run_on_seconds"]) == (2, 120, 600)
+    assert (saved["on_temperature"], saved["off_temperature"], saved["off_mode"]) == (60.0, 10.0, "temperature")
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"min_rooms": 0},
+        {"start_delay_seconds": 3601},
+        {"run_on_seconds": -1},
+        {"on_temperature": 95},
+        {"off_temperature": 2},
+        {"off_mode": "pause"},
+    ],
+)
+def test_save_settings_compressor_master_options_invalid(change):
+    import voluptuous as vol
+
+    group = {"id": "g1", "name": "Boiler", "members": ["climate.trv1"], "master_entity": "switch.boiler", **change}
+    with pytest.raises(vol.Invalid):
+        websocket_save_settings._ws_schema({"id": 1, "type": "roommind/settings/save", "compressor_groups": [group]})
+
+
+def test_save_settings_compressor_master_option_defaults():
+    group = {"id": "g1", "name": "Boiler", "members": ["climate.trv1"]}
+    validated = websocket_save_settings._ws_schema(
+        {"id": 1, "type": "roommind/settings/save", "compressor_groups": [group]}
+    )["compressor_groups"][0]
+    assert validated["min_rooms"] == 1
+    assert (validated["start_delay_seconds"], validated["run_on_seconds"]) == (0, 0)
+    assert (validated["on_temperature"], validated["off_temperature"], validated["off_mode"]) == (None, None, "off")
 
 
 @pytest.mark.asyncio

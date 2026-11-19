@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from datetime import timedelta
 from functools import partial
 from typing import Any
@@ -14,6 +14,7 @@ from homeassistant.components.persistent_notification import async_dismiss as as
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import CoreState, HomeAssistant
 from homeassistant.helpers import area_registry as ar
+from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
 
@@ -35,6 +36,8 @@ from .const import (
     HEATING_SYSTEM_RADIATOR,
     HISTORY_ROTATE_CYCLES,
     HISTORY_WRITE_CYCLES,
+    MASTER_OFF_MODE_TEMPERATURE,
+    MASTER_TEMPERATURE_TOLERANCE,
     MAX_PREDICTION_DELTA,
     MAX_SENSOR_STALENESS,
     MAX_TARGET_TEMP,
@@ -311,6 +314,10 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         self._cover_orchestrator = CoverOrchestrator(hass, self._cover_manager, self._model_manager)
         # Compressor group management (min-run / min-off protection)
         self._compressor_manager = CompressorGroupManager()
+        # Refresh when a master's start delay or run-on ends (group id -> cancel)
+        self._master_delay_timers: dict[str, Callable[[], None]] = {}
+        # Groups whose master refused a setpoint, warned about once
+        self._master_setpoint_warned: set[str] = set()
         # AC evaporator drying (anti-odour): bounded fan run after cooling
         self._coil_dry_manager = AcCoilDryManager(hass)
         # Heat source orchestration state (per room)
@@ -3520,6 +3527,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                     group.conflict_resolution,
                     self.outdoor_temp_effective,
                     settings.get("outdoor_heating_max", DEFAULT_OUTDOOR_HEATING_MAX),
+                    group.min_rooms,
                 )
 
                 self._compressor_manager.set_desired_action(gid, new_action)
@@ -3528,6 +3536,11 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 # still waiting for its first temperature reading.
                 if new_action == "idle" and self._any_member_room_waiting(group.members, rooms_config):
                     continue
+
+                # Start delay / run-on: a switch the rooms want waits, a wish that returns switches nothing
+                new_action, wait = self._compressor_manager.delayed_action(gid, new_action)
+                if wait > 0:
+                    self._schedule_master_delay_refresh(gid, wait)
 
                 # All in the same mode: master and script switch only once no unit runs the other way (#533)
                 if (
@@ -3548,16 +3561,14 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 if new_action == prev_action:
                     self._compressor_manager.clear_switch_wait(gid)
 
-                # 5. Control master climate entity (when configured)
-                if has_master:
+                # 5. Control the master entity (when configured)
+                if has_master and master_state is not None:
                     # Min-run/min-off guard: prevent master short-cycling
                     if not self._compressor_manager.check_master_can_switch(gid, new_action):
                         continue
 
-                    resolved_mode = self._resolve_master_hvac_mode(group.master_entity, new_action)
-
-                    # Skip when mode is unsupported
-                    if resolved_mode is None:
+                    target = self._master_target(group, new_action)
+                    if target is None:
                         if new_action != "idle":
                             _LOGGER.warning(
                                 "Master '%s' (group '%s'): cannot resolve mode for action '%s', skipping",
@@ -3567,8 +3578,8 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                             )
                         continue
 
-                    # Redundancy check — compare resolved mode with actual entity state
-                    if master_state is not None and master_state.state == resolved_mode:
+                    # Redundancy check — compare with the entity's actual state
+                    if self._master_matches(master_state, target):
                         self._compressor_manager.set_master_action(gid, new_action)
                         if new_action == "idle":
                             await self._async_release_woken_zone(gid, rooms_config)
@@ -3589,26 +3600,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                     ):
                         await self._async_wake_member_zone(group, room_states, rooms_config)
 
-                    # Send climate command
-                    try:
-                        await self.hass.services.async_call(
-                            "climate",
-                            "set_hvac_mode",
-                            {
-                                "entity_id": group.master_entity,
-                                "hvac_mode": resolved_mode,
-                            },
-                            blocking=True,
-                            context=make_roommind_context(),
-                        )
-                    except Exception:  # noqa: BLE001
-                        _LOGGER.warning(
-                            "Master '%s' (group '%s'): failed to set hvac_mode '%s'",
-                            group.master_entity,
-                            group.name,
-                            resolved_mode,
-                            exc_info=True,
-                        )
+                    if not await self._async_command_master(group, master_state, target):
                         continue  # don't update state on failed command
                     if new_action == "idle":
                         await self._async_release_woken_zone(gid, rooms_config)
@@ -3635,6 +3627,132 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                     group.name,
                     exc_info=True,
                 )
+
+    def _master_target(self, group: CompressorGroupConfig, action: str) -> tuple[str, float | None] | None:
+        """State the master entity should be in for *action*: (mode or on/off, setpoint or None).
+
+        A switch or input_boolean is on for heat and cool. A climate master gets the
+        mode, heating with its on temperature; off sets its off temperature first, or,
+        with off mode "temperature", keeps the heat mode at the off temperature.
+        None when the climate master supports no fitting mode.
+        """
+        if group.master_domain != "climate":
+            return ("off" if action == "idle" else "on", None)
+        if action == "heat":
+            mode = self._resolve_master_hvac_mode(group.master_entity, "heat")
+            return (mode, group.on_temperature) if mode else None
+        if action == "idle":
+            if group.off_mode == MASTER_OFF_MODE_TEMPERATURE and group.off_temperature is not None:
+                mode = self._resolve_master_hvac_mode(group.master_entity, "heat")
+            else:
+                mode = self._resolve_master_hvac_mode(group.master_entity, "idle")
+            return (mode, group.off_temperature) if mode else None
+        mode = self._resolve_master_hvac_mode(group.master_entity, action)
+        return (mode, None) if mode else None
+
+    @staticmethod
+    def _master_setpoint(state: Any, temperature: float) -> float:
+        """*temperature* within the range the master thermostat accepts (its min_temp/max_temp)."""
+        for bound, pick in (("min_temp", max), ("max_temp", min)):
+            try:
+                temperature = pick(temperature, float(state.attributes[bound]))
+            except (KeyError, TypeError, ValueError):
+                pass
+        return temperature
+
+    @classmethod
+    def _master_matches(cls, state: Any, target: tuple[str, float | None]) -> bool:
+        """True when the master entity already is in *target* (a switched-off climate ignores its setpoint)."""
+        mode, temperature = target
+        if state.state != mode:
+            return False
+        if temperature is None or mode == "off":
+            return True
+        current = state.attributes.get("temperature")
+        try:
+            return abs(float(current) - cls._master_setpoint(state, temperature)) <= MASTER_TEMPERATURE_TOLERANCE
+        except (TypeError, ValueError):
+            return False
+
+    async def _async_command_master(
+        self, group: CompressorGroupConfig, state: Any, target: tuple[str, float | None]
+    ) -> bool:
+        """Send the master entity into *target*.
+
+        Returns False when switching it failed. A setpoint the thermostat refuses does not
+        undo the switch: it is warned about once and tried again on the next change.
+        """
+        mode, temperature = target
+        entity_id = group.master_entity
+        domain = group.master_domain
+        if domain != "climate":
+            return await self._async_master_call(group, domain, "turn_off" if mode == "off" else "turn_on", {})
+        setpoint = None if temperature is None else self._master_setpoint(state, temperature)
+        needs_setpoint = setpoint is not None and not self._master_matches(state, (state.state, setpoint))
+        if mode == "off":
+            if state.state == "off":
+                return True
+            # The setpoint first: many thermostats take none while off
+            if needs_setpoint:
+                await self._async_master_call(
+                    group, "climate", "set_temperature", {"temperature": setpoint}, quiet=True
+                )
+            return await self._async_master_call(group, "climate", "set_hvac_mode", {"hvac_mode": "off"})
+        if state.state != mode and not await self._async_master_call(
+            group, "climate", "set_hvac_mode", {"hvac_mode": mode}
+        ):
+            return False
+        if setpoint is not None and (state.state != mode or needs_setpoint):
+            await self._async_master_call(group, "climate", "set_temperature", {"temperature": setpoint}, quiet=True)
+        _LOGGER.debug("Master '%s' (group '%s'): %s at %s", entity_id, group.name, mode, setpoint)
+        return True
+
+    async def _async_master_call(
+        self, group: CompressorGroupConfig, domain: str, service: str, data: dict, *, quiet: bool = False
+    ) -> bool:
+        """Call one service on the master; *quiet* warns about a failure only once per group."""
+        try:
+            await self.hass.services.async_call(
+                domain,
+                service,
+                {"entity_id": group.master_entity, **data},
+                blocking=True,
+                context=make_roommind_context(),
+            )
+        except Exception:  # noqa: BLE001
+            if not quiet or group.id not in self._master_setpoint_warned:
+                _LOGGER.warning(
+                    "Master '%s' (group '%s'): %s.%s %s failed",
+                    group.master_entity,
+                    group.name,
+                    domain,
+                    service,
+                    data,
+                    exc_info=True,
+                )
+                if quiet:
+                    self._master_setpoint_warned.add(group.id)
+            return False
+        if quiet:
+            self._master_setpoint_warned.discard(group.id)
+        return True
+
+    def _schedule_master_delay_refresh(self, group_id: str, seconds: float) -> None:
+        """Refresh when a group's start delay or run-on ends, so it switches to the second."""
+        if (old := self._master_delay_timers.pop(group_id, None)) is not None:
+            old()
+
+        async def _due(_now: Any) -> None:
+            self._master_delay_timers.pop(group_id, None)
+            await self.async_request_refresh()
+
+        self._master_delay_timers[group_id] = async_call_later(self.hass, seconds + 0.1, _due)
+
+    def cancel_master_delay_timers(self) -> None:
+        """Stop pending start delay / run-on refreshes (unload)."""
+        for cancel in self._master_delay_timers.values():
+            cancel()
+        self._master_delay_timers.clear()
 
     async def _call_action_script(
         self,

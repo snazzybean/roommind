@@ -20,10 +20,16 @@ from .const import (
     DEFAULT_CONFLICT_RESOLUTION,
     DEFAULT_CONTROL_MODE,
     DOMAIN,
+    MASTER_ENTITY_DOMAINS,
+    MASTER_OFF_MODE_OFF,
+    MASTER_OFF_MODES,
     MAX_CO2_THRESHOLD,
+    MAX_MASTER_DELAY_S,
+    MAX_MASTER_TEMPERATURE,
     MAX_PRICE_SHIFT_K,
     MAX_TARGET_TEMP,
     MIN_CO2_THRESHOLD,
+    MIN_MASTER_TEMPERATURE,
     MIN_OCCUPANCY_ECO_DELAY_MINUTES,
     MIN_TARGET_TEMP,
     OVERRIDE_CUSTOM,
@@ -922,6 +928,22 @@ async def websocket_get_settings(
                 vol.Optional("conflict_resolution", default=DEFAULT_CONFLICT_RESOLUTION): vol.In(CONFLICT_RESOLUTIONS),
                 vol.Optional("action_script", default=""): str,
                 vol.Optional("enforce_uniform_mode", default=False): bool,
+                vol.Optional("min_rooms", default=1): vol.All(vol.Coerce(int), vol.Range(min=1, max=50)),
+                vol.Optional("start_delay_seconds", default=0): vol.All(
+                    vol.Coerce(int), vol.Range(min=0, max=MAX_MASTER_DELAY_S)
+                ),
+                vol.Optional("run_on_seconds", default=0): vol.All(
+                    vol.Coerce(int), vol.Range(min=0, max=MAX_MASTER_DELAY_S)
+                ),
+                vol.Optional("on_temperature", default=None): vol.Any(
+                    None,
+                    vol.All(vol.Coerce(float), vol.Range(min=MIN_MASTER_TEMPERATURE, max=MAX_MASTER_TEMPERATURE)),
+                ),
+                vol.Optional("off_temperature", default=None): vol.Any(
+                    None,
+                    vol.All(vol.Coerce(float), vol.Range(min=MIN_MASTER_TEMPERATURE, max=MAX_MASTER_TEMPERATURE)),
+                ),
+                vol.Optional("off_mode", default=MASTER_OFF_MODE_OFF): vol.In(MASTER_OFF_MODES),
             }
         ],
     }
@@ -974,11 +996,11 @@ async def websocket_save_settings(
         for g in groups:
             master = g.get("master_entity", "")
             if master:
-                if not master.startswith("climate."):
+                if master.split(".", 1)[0] not in MASTER_ENTITY_DOMAINS:
                     connection.send_error(
                         msg["id"],
                         "invalid_master_entity",
-                        f"Master entity '{master}' must be a climate entity",
+                        f"Master entity '{master}' must be a climate, switch or input_boolean entity",
                     )
                     return
                 if master in g.get("members", []):

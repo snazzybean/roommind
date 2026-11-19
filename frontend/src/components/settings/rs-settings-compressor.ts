@@ -3,13 +3,20 @@
  */
 import { html, css, nothing } from "lit";
 import { customElement, property } from "lit/decorators.js";
-import type { HomeAssistant, CompressorGroup, ConflictResolution } from "../../types";
+import type {
+  HomeAssistant,
+  CompressorGroup,
+  ConflictResolution,
+  MasterOffMode,
+} from "../../types";
 import { localize, type TranslationKey } from "../../utils/localize";
 import { getSelectValue } from "../../utils/events";
 import "../shared/rs-confirm-button";
 import "../shared/rs-icon-button";
 import "../shared/rs-number-field";
 import "../shared/rs-list-row";
+import "../shared/rs-field";
+import "../shared/rs-segmented";
 import { inputStyles } from "../../styles/input-styles";
 import { alertStyles } from "../../styles/tokens";
 import { RsSettingsBase } from "./rs-settings-base";
@@ -35,6 +42,9 @@ export function compressorGroupProblem(
   }
   return null;
 }
+
+/** A main device gets a mode (climate) or is turned on and off (switch, input_boolean). */
+const MASTER_DOMAINS = ["climate", "switch", "input_boolean"];
 
 @customElement("rs-settings-compressor")
 export class RsSettingsCompressor extends RsSettingsBase {
@@ -168,13 +178,14 @@ export class RsSettingsCompressor extends RsSettingsBase {
         <ha-entity-picker
           .hass=${this.hass}
           .value=${group.master_entity || ""}
-          .includeDomains=${["climate"]}
+          .includeDomains=${MASTER_DOMAINS}
           .entityFilter=${this._masterFilter}
           @value-changed=${(e: CustomEvent) => {
             this._updateGroup(idx, "master_entity", (e.detail?.value as string) ?? "");
           }}
         ></ha-entity-picker>
         <span class="field-hint">${localize("compressor.master_entity_hint", l)}</span>
+        ${group.master_entity || group.action_script ? this._renderMasterOptions(group, idx) : nothing}
 
         <rs-list-row
           switch
@@ -250,6 +261,98 @@ export class RsSettingsCompressor extends RsSettingsBase {
           ></rs-confirm-button>
         </div>
       </section>
+    `;
+  }
+
+  /** Rooms needed, start delay and run-on; setpoints and how it switches off for a thermostat. */
+  private _renderMasterOptions(group: CompressorGroup, idx: number) {
+    const l = this.hass.language;
+    const thermostat = group.master_entity.startsWith("climate.");
+    const number = (field: keyof CompressorGroup) => (e: CustomEvent<{ value: number | null }>) => {
+      if (e.detail.value != null) this._updateGroup(idx, field, e.detail.value);
+    };
+    const optional = (field: keyof CompressorGroup) => (e: CustomEvent<{ value: number | null }>) =>
+      this._updateGroup(idx, field, e.detail.value);
+    return html`
+      <rs-number-field
+        .label=${localize("compressor.min_rooms", l)}
+        .hint=${localize("compressor.min_rooms_hint", l)}
+        .min=${1}
+        .max=${50}
+        .step=${1}
+        .value=${group.min_rooms ?? 1}
+        @value-changed=${number("min_rooms")}
+      ></rs-number-field>
+      <div class="threshold-grid">
+        <rs-number-field
+          .label=${localize("compressor.start_delay", l)}
+          suffix="s"
+          .min=${0}
+          .max=${3600}
+          .step=${1}
+          .value=${group.start_delay_seconds ?? 0}
+          @value-changed=${number("start_delay_seconds")}
+        ></rs-number-field>
+        <rs-number-field
+          .label=${localize("compressor.run_on", l)}
+          suffix="s"
+          .min=${0}
+          .max=${3600}
+          .step=${1}
+          .value=${group.run_on_seconds ?? 0}
+          @value-changed=${number("run_on_seconds")}
+        ></rs-number-field>
+      </div>
+      <span class="field-hint">${localize("compressor.delays_hint", l)}</span>
+      ${
+        thermostat
+          ? html`
+              <div class="threshold-grid">
+                <rs-number-field
+                  allow-empty
+                  .label=${localize("compressor.on_temperature", l)}
+                  .min=${5}
+                  .max=${90}
+                  .step=${0.5}
+                  .value=${group.on_temperature ?? null}
+                  @value-changed=${optional("on_temperature")}
+                ></rs-number-field>
+                <rs-number-field
+                  allow-empty
+                  .label=${localize("compressor.off_temperature", l)}
+                  .min=${5}
+                  .max=${90}
+                  .step=${0.5}
+                  .value=${group.off_temperature ?? null}
+                  @value-changed=${optional("off_temperature")}
+                ></rs-number-field>
+              </div>
+              <span class="field-hint">${localize("compressor.temperatures_hint", l)}</span>
+              ${
+                group.off_temperature != null
+                  ? html`<rs-field .label=${localize("compressor.off_mode", l)}>
+                      <rs-segmented
+                        wrap
+                        .label=${localize("compressor.off_mode", l)}
+                        .options=${[
+                          { value: "off", label: localize("compressor.off_mode_off", l) },
+                          {
+                            value: "temperature",
+                            label: localize("compressor.off_mode_temperature", l),
+                          },
+                        ]}
+                        .value=${group.off_mode ?? "off"}
+                        @value-changed=${(e: CustomEvent<{ value: string }>) => {
+                          if (e.detail.value)
+                            this._updateGroup(idx, "off_mode", e.detail.value as MasterOffMode);
+                        }}
+                      ></rs-segmented>
+                    </rs-field>`
+                  : nothing
+              }
+            `
+          : nothing
+      }
     `;
   }
 
@@ -337,6 +440,12 @@ export class RsSettingsCompressor extends RsSettingsBase {
         conflict_resolution: "heating_priority" as ConflictResolution,
         action_script: "",
         enforce_uniform_mode: false,
+        min_rooms: 1,
+        start_delay_seconds: 0,
+        run_on_seconds: 0,
+        on_temperature: null,
+        off_temperature: null,
+        off_mode: "off",
       },
     ]);
   }
