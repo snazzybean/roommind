@@ -152,7 +152,8 @@ class VentilationController:
         kept = set(wanted) | set(blocked)
         self._declined &= kept
         self._last_state = {e: v for e, v in self._last_state.items() if e in kept}
-        self._off_at = {e: t for e, t in self._off_at.items() if e in kept and now - t < self._min_off_s}
+        # By time only: a room dropping out of control for a cycle must not cut its device's rest short
+        self._off_at = {e: t for e, t in self._off_at.items() if now - t < self._min_off_s}
 
     async def _async_switch_off_owned(self, entity_id: str) -> None:
         state = self.hass.states.get(entity_id)

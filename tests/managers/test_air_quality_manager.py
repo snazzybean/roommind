@@ -450,6 +450,20 @@ async def test_min_off_counts_a_blocked_off_and_not_a_hand_off():
 
 
 @pytest.mark.asyncio
+async def test_min_off_holds_after_the_room_dropped_out_of_control():
+    """Climate control off and on again (an automation): the device RoomMind switched off still rests."""
+    hass = _Hass({FAN: "off"})
+    v = VentilationController(hass, min_off_s=900)
+    await v.async_reconcile({FAN: True}, 0)
+    await v.async_reconcile({}, 60)
+    assert hass.calls[-1] == ("fan", "turn_off", FAN)
+    await v.async_reconcile({FAN: True}, 90)
+    assert len(hass.calls) == 2
+    await v.async_reconcile({FAN: True}, 960)
+    assert hass.calls[-1] == ("fan", "turn_on", FAN)
+
+
+@pytest.mark.asyncio
 async def test_without_min_off_a_start_follows_at_once():
     hass = _Hass({FAN: "off"})
     v = VentilationController(hass)
