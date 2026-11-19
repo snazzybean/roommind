@@ -1,6 +1,6 @@
 import { LitElement, html, css, nothing, type PropertyValues } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
-import type { HomeAssistant, HassArea, RoomLiveData } from "../types";
+import type { HomeAssistant, HassArea, RoomFanMode, RoomLiveData } from "../types";
 import { getEntitiesForArea } from "../utils/room-state";
 import { localize, type TranslationKey } from "../utils/localize";
 import { openEntityInfo } from "../utils/events";
@@ -28,6 +28,7 @@ import "./shared/rs-number-field";
 import "./shared/rs-icon-button";
 import "./shared/rs-info-icon";
 import "./shared/rs-list-row";
+import "./shared/rs-segmented";
 
 type SensorKind =
   | "temp"
@@ -39,6 +40,7 @@ type SensorKind =
   | "ventilation"
   | "dehumidifier"
   | "humidifier"
+  | "room_fan"
   | "sun";
 type SingleKind = Exclude<SensorKind, "occupancy" | "window">;
 
@@ -67,6 +69,7 @@ const SINGLE_KEYS: Record<SingleKind, string> = {
   ventilation: "ventilation_entity",
   dehumidifier: "dehumidifier_entity",
   humidifier: "humidifier_entity",
+  room_fan: "room_fan_entity",
   sun: "solar_sensor",
 };
 
@@ -75,7 +78,14 @@ const EMPTY_KEYS: Partial<Record<SensorKind, TranslationKey>> = {
   ventilation: "sensors.no_ventilation",
   dehumidifier: "sensors.no_dehumidifier",
   humidifier: "sensors.no_humidifier",
+  room_fan: "sensors.no_room_fan",
 };
+
+const ROOM_FAN_MODES: { value: RoomFanMode; key: TranslationKey }[] = [
+  { value: "heat", key: "sensors.room_fan_heat" },
+  { value: "cool", key: "sensors.room_fan_cool" },
+  { value: "both", key: "sensors.room_fan_both" },
+];
 
 @customElement("rs-sensor-section")
 export class RsSensorSection extends LitElement {
@@ -101,6 +111,11 @@ export class RsSensorSection extends LitElement {
   @property({ type: String }) public humidifierEntity = "";
   /** Sunlight on the room (#303). */
   @property({ type: String }) public solarSensor = "";
+  /** Ceiling or standing fan RoomMind runs while the room heats or cools (#266). */
+  @property({ type: String }) public roomFanEntity = "";
+  @property({ type: String }) public roomFanMode: RoomFanMode = "both";
+  /** The room can heat and cool: the fan's heat/cool/both choice is offered. */
+  @property({ type: Boolean }) public roomFanChoice = false;
   /** Live state of the room: air quality judgement and whether RoomMind runs the ventilation. */
   @property({ attribute: false }) public live?: RoomLiveData;
   @property({ type: String }) public heatingSystemType = "";
@@ -222,6 +237,7 @@ export class RsSensorSection extends LitElement {
       ${this.outdoor ? nothing : this._renderControlRows(delays, occupancyNote)}
       ${this.outdoor ? nothing : this._renderHumidityRows()}
       ${this.outdoor ? nothing : this._renderAirRows()}
+      ${this.outdoor || !this.roomFanEntity ? nothing : this._renderRoomFanRow()}
       ${this.outdoor || !this.solarSensor ? nothing : this._renderSunRow()}
       <rs-list-row
         clickable
@@ -394,6 +410,26 @@ export class RsSensorSection extends LitElement {
     return !!this.humiditySensor && this.humidityMax != null;
   }
 
+  /** The room fan: when it runs (only shown where the room can heat and cool) and whether RoomMind runs it now. */
+  private _renderRoomFanRow() {
+    const l = this.hass.language;
+    const active = !!this.live?.room_fan_active;
+    const when = ROOM_FAN_MODES.find((m) => m.value === this.roomFanMode) ?? ROOM_FAN_MODES[2];
+    return this._row(
+      this.roomFanEntity,
+      "mdi:ceiling-fan",
+      [
+        localize("detail.sensors.room_fan", l),
+        this.roomFanChoice ? localize(when.key, l) : "",
+        active ? localize("sensors.room_fan_running", l) : "",
+      ]
+        .filter(Boolean)
+        .join(" · "),
+      this._onOffValue(this.roomFanEntity),
+      active ? "var(--rs-ok)" : "",
+    );
+  }
+
   /** Sun sensor with what RoomMind makes of it: learning its scale, or the forecast while it has no reading. */
   private _renderSunRow() {
     const l = this.hass.language;
@@ -502,6 +538,7 @@ export class RsSensorSection extends LitElement {
       "ventilationEntity",
       "dehumidifierEntity",
       "humidifierEntity",
+      "roomFanEntity",
       "solarSensor",
     ];
     if (!lists.some((p) => changed.has(p))) return;
@@ -544,6 +581,7 @@ export class RsSensorSection extends LitElement {
           domain === "sensor" && (VOC_CLASSES.includes(dc ?? "") || (!dc && /voc/i.test(entityId)))
         );
       case "ventilation":
+      case "room_fan":
         return VENTILATION_DOMAINS.includes(domain);
       // A humidifier entity's device class tells its direction; plugs and helpers fit both
       case "dehumidifier":
@@ -564,6 +602,7 @@ export class RsSensorSection extends LitElement {
       ventilation: this.ventilationEntity,
       dehumidifier: this.dehumidifierEntity,
       humidifier: this.humidifierEntity,
+      room_fan: this.roomFanEntity,
       sun: this.solarSensor,
     }[kind];
   }
@@ -589,7 +628,7 @@ export class RsSensorSection extends LitElement {
             (id) =>
               !id.startsWith("input_number.") &&
               !id.startsWith("climate.") &&
-              (kind !== "ventilation" || id.startsWith("fan.")) &&
+              ((kind !== "ventilation" && kind !== "room_fan") || id.startsWith("fan.")) &&
               ((kind !== "dehumidifier" && kind !== "humidifier") ||
                 id.startsWith("humidifier.")) &&
               (kind !== "sun" || sunKind(this.hass.states[id]?.attributes ?? {}) !== "percent") &&
@@ -626,6 +665,12 @@ export class RsSensorSection extends LitElement {
                   )
                 : nothing
             }
+            ${this._renderKind(
+              "room_fan",
+              inArea("room_fan"),
+              this._renderRoomFanSettings(l),
+              html`<p class="note">${localize("sensors.room_fan_note", l)}</p>`,
+            )}
             ${this._renderKind("sun", inArea("sun"), nothing, this._renderSunNote(l))}`
       }
     `;
@@ -701,6 +746,12 @@ export class RsSensorSection extends LitElement {
           icon: "mdi:water-plus",
           title: "detail.sensors.humidifier",
           info: "sensors.humidifier_info",
+        } as const;
+      case "room_fan":
+        return {
+          icon: "mdi:ceiling-fan",
+          title: "detail.sensors.room_fan",
+          info: "sensors.room_fan_info",
         } as const;
       case "sun":
         return {
@@ -825,6 +876,7 @@ export class RsSensorSection extends LitElement {
       ventilation: VENTILATION_DOMAINS,
       dehumidifier: HUMIDITY_DEVICE_DOMAINS,
       humidifier: HUMIDITY_DEVICE_DOMAINS,
+      room_fan: VENTILATION_DOMAINS,
       sun: ["sensor"],
     }[kind];
     return html`<div class="picker">
@@ -859,7 +911,12 @@ export class RsSensorSection extends LitElement {
     if (kind === "temp") return this._tempValue(entityId);
     if (kind === "humidity") return this._humidityValue(entityId);
     if (kind === "co2" || kind === "voc" || kind === "sun") return this._numberValue(entityId);
-    if (kind === "ventilation" || kind === "dehumidifier" || kind === "humidifier") {
+    if (
+      kind === "ventilation" ||
+      kind === "dehumidifier" ||
+      kind === "humidifier" ||
+      kind === "room_fan"
+    ) {
       return this._onOffValue(entityId);
     }
     return kind === "window"
@@ -895,6 +952,24 @@ export class RsSensorSection extends LitElement {
         : "",
     ].filter(Boolean);
     return html`<p class="note">${lines.join(" ")}</p>`;
+  }
+
+  /** Heating, cooling or both; only where the room can do both, else the fan simply follows what it does. */
+  private _renderRoomFanSettings(l: string) {
+    if (!this.roomFanEntity || !this.roomFanChoice) return nothing;
+    return html`<rs-field
+      .label=${localize("sensors.room_fan_when", l)}
+      .info=${localize("sensors.room_fan_when_info", l)}
+    >
+      <rs-segmented
+        wrap
+        .label=${localize("sensors.room_fan_when", l)}
+        .options=${ROOM_FAN_MODES.map((m) => ({ value: m.value, label: localize(m.key, l) }))}
+        .value=${this.roomFanMode}
+        @value-changed=${(e: CustomEvent<{ value: string }>) =>
+          this._fireSensorChanged("room_fan_mode", e.detail.value)}
+      ></rs-segmented>
+    </rs-field>`;
   }
 
   private _renderWindowSettings(l: string) {
@@ -1152,7 +1227,7 @@ export class RsSensorSection extends LitElement {
     ></rs-number-field>`;
   }
 
-  private _fireSensorChanged(key: string, value: boolean | number | null) {
+  private _fireSensorChanged(key: string, value: boolean | number | string | null) {
     this.dispatchEvent(
       new CustomEvent("sensor-changed", {
         detail: { key, value },

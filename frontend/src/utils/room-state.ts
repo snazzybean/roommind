@@ -175,7 +175,8 @@ export type RoomHintId =
   | "price_shift"
   | "preheat"
   | "learning_paused"
-  | "mpc_learning";
+  | "mpc_learning"
+  | "room_fan";
 
 export interface RoomHint {
   id: RoomHintId;
@@ -217,7 +218,7 @@ export function formatClock(unixS: number, language: string, now = Date.now()): 
 /**
  * Everything worth a hint for a room, most important first: mold risk, air quality, window
  * open, not controlled, override (with end), compressor protection, away / room empty, mold
- * prevention, price shift, setback, pre-heat, learning. Rooms without control only get the
+ * prevention, price shift, setback, pre-heat, learning, room fan on. Rooms without control only get the
  * measured ones (mold risk, air quality).
  */
 export function roomHints(
@@ -378,6 +379,14 @@ export function roomHints(
       icon: "mdi:school-outline",
       severity: "info",
       key: "card.mpc_learning",
+    });
+  }
+  if (live.room_fan_active) {
+    hints.push({
+      id: "room_fan",
+      icon: "mdi:ceiling-fan",
+      severity: "info",
+      key: "card.hint.room_fan",
     });
   }
   return hints;

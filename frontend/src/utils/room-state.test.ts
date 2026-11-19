@@ -246,3 +246,20 @@ describe("roomHints all in the same mode (#533)", () => {
     expect(hintText(hint!, "en")).toBe("Outdoor unit switching");
   });
 });
+
+describe("roomHints room fan (#266)", () => {
+  const ids = (r: RoomConfig) => roomHints(r, "controlled", ctx).map((h) => h.id);
+
+  test("comes last, after every other hint", () => {
+    const r = room({ mode: "heating", room_fan_active: true, window_open: true });
+    expect(ids(r)).toEqual(["window_open", "room_fan"]);
+    const hint = roomHints(r, "controlled", ctx).find((h) => h.id === "room_fan")!;
+    expect(hint.severity).toBe("info");
+    expect(hintText(hint, "de")).toBe("Raumlüfter läuft");
+  });
+
+  test("no hint while RoomMind does not run it", () => {
+    expect(ids(room({ mode: "heating", room_fan_active: false }))).not.toContain("room_fan");
+    expect(ids(room({ mode: "heating" }))).not.toContain("room_fan");
+  });
+});

@@ -10,6 +10,7 @@ import type {
   DeviceConfig,
   DeviceType,
   DeviceRole,
+  RoomFanMode,
 } from "../types";
 import "./room-detail/rs-room-hero";
 import "./rs-schedule-settings";
@@ -116,6 +117,8 @@ const ROOM_FIELDS: [string, RoomFieldSync][] = [
   ["dehumidifier_entity", plain("_dehumidifierEntity", (c) => c?.dehumidifier_entity ?? "")],
   ["humidifier_entity", plain("_humidifierEntity", (c) => c?.humidifier_entity ?? "")],
   ["solar_sensor", plain("_solarSensor", (c) => c?.solar_sensor ?? "")],
+  ["room_fan_entity", plain("_roomFanEntity", (c) => c?.room_fan_entity ?? "")],
+  ["room_fan_mode", plain("_roomFanMode", (c) => c?.room_fan_mode ?? "both")],
   ["preheat_enabled", plain("_preheatEnabled", (c) => c?.preheat_enabled ?? true)],
   [
     "follow_device_setpoint",
@@ -264,6 +267,8 @@ export class RsRoomDetail extends LitElement {
   @state() private _dehumidifierEntity = "";
   @state() private _humidifierEntity = "";
   @state() private _solarSensor = "";
+  @state() private _roomFanEntity = "";
+  @state() private _roomFanMode: RoomFanMode = "both";
   @state() private _selectedWindowSensors: Set<string> = new Set();
   @state() private _windowOpenDelay = 0;
   @state() private _windowCloseDelay = 0;
@@ -804,6 +809,9 @@ export class RsRoomDetail extends LitElement {
         .dehumidifierEntity=${this._dehumidifierEntity}
         .humidifierEntity=${this._humidifierEntity}
         .solarSensor=${this._solarSensor}
+        .roomFanEntity=${this._roomFanEntity}
+        .roomFanMode=${this._roomFanMode}
+        .roomFanChoice=${this._roomFanChoice()}
         .live=${this.config?.live}
         .windowSensors=${this._selectedWindowSensors}
         .windowOpenDelay=${this._windowOpenDelay}
@@ -1004,6 +1012,9 @@ export class RsRoomDetail extends LitElement {
             .dehumidifierEntity=${this._dehumidifierEntity}
             .humidifierEntity=${this._humidifierEntity}
             .solarSensor=${this._solarSensor}
+            .roomFanEntity=${this._roomFanEntity}
+            .roomFanMode=${this._roomFanMode}
+            .roomFanChoice=${this._roomFanChoice()}
             .live=${this.config?.live}
             .windowSensors=${this._selectedWindowSensors}
             .windowOpenDelay=${this._windowOpenDelay}
@@ -1286,6 +1297,11 @@ export class RsRoomDetail extends LitElement {
     this._autoSave();
   }
 
+  /** Heating or cooling only, or both: a choice only where the room can do both (#266). */
+  private _roomFanChoice(): boolean {
+    return this._climateMode === "auto" && this._devices.some((d) => d.type === "ac");
+  }
+
   private _onSensorChanged(
     e: CustomEvent<{ key: string; value: string | string[] | number | boolean | null }>,
   ) {
@@ -1320,6 +1336,10 @@ export class RsRoomDetail extends LitElement {
       this._humidifierEntity = value as string;
     } else if (key === "solar_sensor") {
       this._solarSensor = value as string;
+    } else if (key === "room_fan_entity") {
+      this._roomFanEntity = value as string;
+    } else if (key === "room_fan_mode") {
+      this._roomFanMode = value as RoomFanMode;
     } else if (key === "window_sensors") {
       this._selectedWindowSensors = new Set(value as string[]);
     } else if (key === "window_open_delay") {

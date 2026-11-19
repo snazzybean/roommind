@@ -73,6 +73,8 @@ export interface RoomLiveData {
   humidifier_active?: boolean;
   /** Sun sensor (#303); null without one. */
   solar_sensor?: SolarSensorLive | null;
+  /** RoomMind runs the room fan while the room heats or cools (#266). */
+  room_fan_active?: boolean;
   mold_risk_level: "ok" | "warning" | "critical";
   mold_surface_rh: number | null;
   mold_surface_temp: number | null;
@@ -163,6 +165,8 @@ export interface CompressorGroup {
   enforce_uniform_mode: boolean;
 }
 
+export type RoomFanMode = "heat" | "cool" | "both";
+
 export interface RoomConfig {
   area_id: string;
   thermostats: string[];
@@ -189,6 +193,9 @@ export interface RoomConfig {
   humidifier_entity?: string;
   /** Sunlight on the room: W/m², lx or % (#303). */
   solar_sensor?: string;
+  /** fan.*, switch.* or input_boolean.* RoomMind runs while the room heats or cools (#266). */
+  room_fan_entity?: string;
+  room_fan_mode?: RoomFanMode;
   preheat_enabled?: boolean;
   /** K the schedule target may move with the electricity price, 0 = off. */
   price_shift?: number;
