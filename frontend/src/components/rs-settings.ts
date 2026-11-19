@@ -767,7 +767,7 @@ export class RsSettings extends LitElement {
         if (!this._touEnabled) return { text: off, on: false };
         const cur = this.touTierInfo?.current;
         const text = cur
-          ? `${localize(`tou.tier.${cur.tier}`, l)} · ${formatNumber(cur.rate, this.hass)}${
+          ? `${localize(`tou.tier.${cur.tier}`, l)} · ${formatNumber(cur.rate, this.hass, 0, 4)}${
               this.touTierInfo?.unit ? ` ${this.touTierInfo.unit}` : ""
             }`
           : localize("settings.summary.tou_enabled", l);
