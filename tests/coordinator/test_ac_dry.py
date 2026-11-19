@@ -139,6 +139,25 @@ async def test_open_window_ends_dry(hass, mock_config_entry):
     assert devices[AC].state == "off"
 
 
+@pytest.mark.asyncio
+async def test_open_window_switches_a_setback_unit_off_without_its_setback_first(hass, mock_config_entry):
+    room_cfg = {
+        **AC_ROOM,
+        "window_sensors": [WINDOW],
+        "devices": [{"entity_id": AC, "type": "ac", "role": "auto", "idle_action": "setback"}],
+    }
+    coordinator, _, devices, world, calls = _setup(
+        hass, mock_config_entry, room_cfg, **{AC: _ac(state="cool", temperature=27.0)}
+    )
+    assert (await _cycle(coordinator))["ac_dry_active"] is True
+    world["window"] = "on"
+    calls.clear()
+    room = await _cycle(coordinator)
+    assert room["window_open"] is True and room["ac_dry_active"] is False
+    assert devices[AC].state == "off"
+    assert not any(data.get("hvac_mode") == "cool" for _, data in _ac_calls(calls))
+
+
 @pytest.mark.parametrize(
     ("room_patch", "kw"),
     [

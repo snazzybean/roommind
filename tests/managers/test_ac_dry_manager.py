@@ -150,6 +150,7 @@ async def test_unit_without_a_single_setpoint_gets_only_the_mode(now):
         {"room_temp": None},
         {"room_temp": 21.9},  # above the stop point, below the start margin
         {"blocked_eids": {AC}},
+        {"window_open": True},
         {"compressor_forced_on": {AC}},
         {"group_conflicts": {AC: frozenset({"cool", "dry", "fan_only"})}},
         {"can_start": lambda _eid: False},
@@ -205,6 +206,7 @@ async def test_no_dry_within_an_hour_of_heating(now):
         {"mode": "cooling"},
         {"mode": "heating"},
         {"allowed": False},
+        {"window_open": True},
         {"group_conflicts": {AC: frozenset({"cool", "dry", "fan_only"})}},
     ],
 )
@@ -376,7 +378,7 @@ async def test_setback_unit_gets_its_mode_and_setpoint_back(now):
 
 
 @pytest.mark.asyncio
-async def test_setback_unit_gets_its_mode_back_when_a_window_opens(now):
+async def test_setback_unit_gets_its_mode_back_when_the_room_may_no_longer_dry(now):
     hass, ac, calls = _hass(state="cool", temperature=27.0)
     mgr = AcDryManager(hass)
     room = _room(idle_action="setback")
@@ -385,6 +387,19 @@ async def test_setback_unit_gets_its_mode_back_when_a_window_opens(now):
     result = await _process(mgr, room=room, allowed=False)
     assert result.excluded_eids == {AC}
     assert calls == [("set_temperature", {"hvac_mode": "cool", "temperature": 27.0})]
+
+
+@pytest.mark.asyncio
+async def test_open_window_ends_dry_at_once_and_leaves_the_setback_unit_to_async_apply(now):
+    """The window pause switches the unit off; a setback sent first would cool against the open window."""
+    hass, ac, calls = _hass(state="cool", temperature=27.0)
+    mgr = AcDryManager(hass)
+    room = _room(idle_action="setback")
+    await _process(mgr, room=room)
+    calls.clear()
+    result = await _process(mgr, room=room, window_open=True)
+    assert not result.active and result.excluded_eids == set()
+    assert calls == [] and not mgr.is_running(AC)
 
 
 @pytest.mark.parametrize(

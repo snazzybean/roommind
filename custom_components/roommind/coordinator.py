@@ -3065,7 +3065,6 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             and humidity_regulated(room)
             and humidity_limits(room)[1] is not None
             and not own_dehumidifier
-            and not window_open
             and not force_off
             and room.get("climate_mode", "auto") != CLIMATE_MODE_HEAT_ONLY
         )
@@ -3087,6 +3086,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             allowed=allowed,
             may_cool=controller.can_heat_cool()[1],
             control_active=climate_active,
+            window_open=window_open,
             waiting=waiting_for_data,
             room_temp=current_temp,
             stop_temp=dry_stop_temp(heat, targets.cool, room.get("climate_mode", "auto")),

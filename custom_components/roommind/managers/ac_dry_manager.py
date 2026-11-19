@@ -50,6 +50,7 @@ _END_CONTROL_OFF = "climate control off"
 _END_DRY_ENOUGH = "humidity back in range"
 _END_COLD = "room at its lower limit"
 _END_NOT_ALLOWED = "room may not dry"
+_END_WINDOW = "window open"
 
 
 def dry_stop_temp(heat: float | None, cool: float | None, climate_mode: str) -> float | None:
@@ -133,6 +134,7 @@ class AcDryManager:
         allowed: bool,
         may_cool: bool,
         control_active: bool,
+        window_open: bool = False,
         waiting: bool,
         room_temp: float | None,
         stop_temp: float | None,
@@ -145,8 +147,9 @@ class AcDryManager:
     ) -> AcDryRoomResult:
         """Advance dry for every AC of the room.
 
-        ``allowed``: the room may dry at all (Full Control, upper limit and no dehumidifier, no
-        open window, not switched off, not heat only). ``may_cool``: the outdoor limit lets the
+        ``allowed``: the room may dry at all (Full Control, upper limit and no dehumidifier, not
+        switched off, not heat only). ``window_open`` ends a run at once and gives no setback
+        back: the window pause in async_apply takes the unit over in the same cycle. ``may_cool``: the outdoor limit lets the
         room cool now; asked only for a start, a reading going back and forth over the cooling
         minimum must not end a run. ``coil_dry_follows``: units whose coil dry takes over after
         dry, they get no setback back. ``switched_off``: the room's schedule or presence switches
@@ -188,6 +191,7 @@ class AcDryManager:
                     mode=mode,
                     too_humid=too_humid,
                     allowed=allowed,
+                    window_open=window_open,
                     control_active=control_active,
                     cold=cold,
                     held=eid in compressor_forced_on,
@@ -212,6 +216,7 @@ class AcDryManager:
             if (
                 too_humid
                 and allowed
+                and not window_open
                 and may_cool
                 and control_active
                 and mode == MODE_IDLE
@@ -248,6 +253,7 @@ class AcDryManager:
         mode: str,
         too_humid: bool,
         allowed: bool,
+        window_open: bool,
         control_active: bool,
         cold: bool,
         held: bool,
@@ -258,6 +264,8 @@ class AcDryManager:
             return _END_CONTROL_OFF
         if mode != MODE_IDLE:
             return f"room {mode}"
+        if window_open:
+            return _END_WINDOW
         if not allowed:
             return _END_NOT_ALLOWED
         if DRY in conflicts:
