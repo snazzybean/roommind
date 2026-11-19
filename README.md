@@ -67,7 +67,7 @@ RoomMind turns the thermostats, radiator valves and air conditioners you already
   </tr>
   <tr>
     <td>📊 <b>Insight</b></td>
-    <td>Analytics page · <a href="#dashboard-card">dashboard card</a> · <a href="#room-climate-entity">room climate entity</a> for automations, thermostat cards and voice assistants · English, German, French and Italian</td>
+    <td>Analytics page · <a href="#dashboard-card">dashboard card</a> · <a href="#room-climate-entity">room climate entity</a> for automations, thermostat cards and voice assistants · English, German, French, Italian and Spanish</td>
   </tr>
 </table>
 
