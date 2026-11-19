@@ -139,6 +139,11 @@ def _zeros() -> list[float]:
     return [0.0] * SOLAR_SENSOR_PROFILE_BINS
 
 
+def _sun_day(now: float, lon: float) -> int:
+    """Day number by local solar time: it changes at local midnight, never while the sun is up."""
+    return int((now + lon / 15.0 * 3600.0) // 86400)
+
+
 @dataclass
 class _SensorState:
     entity_id: str
@@ -148,7 +153,7 @@ class _SensorState:
     cal_model: list[float] = field(default_factory=_zeros)
     cal_hours: list[float] = field(default_factory=_zeros)
     cal_sun: list[float] = field(default_factory=_zeros)
-    # [utc day, model sun-hours] per calibration day
+    # [sun day (_sun_day), model sun-hours] per calibration day
     cal_days: list[list[float]] = field(default_factory=list)
     profile: list[float] = field(default_factory=lambda: [1.0] * SOLAR_SENSOR_PROFILE_BINS)
     weight: list[float] = field(default_factory=_zeros)
@@ -202,9 +207,9 @@ class SolarSensorManager:
         st.last_ts = now
 
         raw = self._reading(state, kind, q_model, now)
-        capped = raw is not None and self._at_cap(st, raw, now)
         lat = self.hass.config.latitude
         lon = self.hass.config.longitude
+        capped = raw is not None and self._at_cap(st, raw, _sun_day(now, lon))
         b = _bin(solar_azimuth(lat, lon, now))
         is_open = shading_factor >= SOLAR_SENSOR_OPEN_SHADING
         learn = raw is not None and not capped and is_open and q_model >= SOLAR_SENSOR_LEARN_MIN_Q
@@ -219,7 +224,7 @@ class SolarSensorManager:
                 st.cal_raw[b] += raw * dt_h
                 st.cal_model[b] += q_model * dt_h
                 st.cal_hours[b] += dt_h
-                day = int(now // 86400)
+                day = _sun_day(now, lon)
                 if st.cal_days and st.cal_days[-1][0] == day:
                     st.cal_days[-1][1] += q_model * dt_h
                 else:
@@ -292,11 +297,10 @@ class SolarSensorManager:
         return value
 
     @staticmethod
-    def _at_cap(st: _SensorState, raw: float, now: float) -> bool:
+    def _at_cap(st: _SensorState, raw: float, day: int) -> bool:
         """True when *raw* sits at the sensor's ceiling: its all-time maximum, reached on two days or more."""
         if raw <= 0.0:
             return False
-        day = int(now // 86400)
         if raw > st.peak:
             st.peak = raw
             st.peak_days = [day]

@@ -430,3 +430,23 @@ def test_a_sliver_of_a_second_day_does_not_count():
     hass.set(SENSOR, _state(0, reported=ts + 86000))
     mgr.update("room", SENSOR, 0.0, 1.0, ts + 86000)
     assert mgr.status("room")["state"] == "learning"
+
+
+@pytest.mark.parametrize(("lat", "lon"), [(-33.9, 151.2), (21.3, -157.8)])
+def test_a_sun_day_across_utc_midnight_counts_once(lat, lon):
+    """Sydney and Honolulu see their sun around UTC midnight: one local day is one calibration day."""
+    hass = _Hass()
+    hass.config = SimpleNamespace(latitude=lat, longitude=lon)
+    mgr = SolarSensorManager(hass)
+    # From local midnight over one whole local day, a flat sensor capped below the noon sun
+    start = DAY0 - lon / 15 * 3600
+    ts = start
+    while ts < start + 86400:
+        q = compute_q_solar_norm(lat, lon, ts)
+        hass.set(SENSOR, _state(min(1000.0 * q, 300.0), reported=ts))
+        mgr.update("room", SENSOR, q, 1.0, ts)
+        ts += STEP
+    st = mgr._rooms["room"]
+    assert len(st.cal_days) == 1
+    assert len(st.peak_days) == 1
+    assert st.scale is None
