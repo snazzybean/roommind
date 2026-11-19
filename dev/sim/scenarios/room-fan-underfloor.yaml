@@ -1,0 +1,26 @@
+name: room-fan-underfloor
+extends: ufh-proportional
+description: >
+  The underfloor room of ufh-proportional with a ceiling fan (#266). The fan runs while the
+  floor heats and goes off with the run: a screed glows for hours, a post-run there would
+  keep it on most of the day.
+refs: [266]
+tags: [ufh, appliances, room-fan]
+house:
+  rooms:
+    wohnzimmer:
+      appliances: [{entity_id: switch.wz_ventilator, profile: ceiling_fan}]
+roommind:
+  rooms:
+    wohnzimmer:
+      room_fan_entity: switch.wz_ventilator
+# Own expectations: the fan's motor heat changes the room a little, the slab start count of
+# ufh-proportional (22) is not the point here (21 -> 23 starts, energy -4 %, 2026-11-19)
+expect:
+  - {metric: comfort.undershoot_kh, room: wohnzimmer, max: 10}
+  - {metric: comfort.heat_overshoot_kh, room: wohnzimmer, max: 15}
+  - {metric: device.shortest_run_min, entity_id: climate.wohnzimmer_fbh, min: 15}
+  - {invariant: target_never_empty}
+  - {metric: appliance.rejected_commands, entity_id: switch.wz_ventilator, max: 0}
+  - {metric: appliance.starts, entity_id: switch.wz_ventilator, min: 3, max: 25}
+  - {metric: appliance.shortest_run_min, entity_id: switch.wz_ventilator, min: 10}
