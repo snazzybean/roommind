@@ -75,7 +75,7 @@ def _run(mgr, hass, start, hours, value_of, shading_of=lambda ts: 1.0, area="roo
 def _calibrated(value_of=lambda ts, q, sf: 1000.0 * q, **kw):
     hass = _Hass()
     mgr = SolarSensorManager(hass)
-    _, ts = _run(mgr, hass, DAY0, 24, value_of, **kw)
+    _, ts = _run(mgr, hass, DAY0, 48, value_of, **kw)
     return mgr, hass, ts
 
 
@@ -106,10 +106,11 @@ def test_no_sensor_no_input():
 def test_weather_model_until_a_sunny_day_is_over():
     hass = _Hass()
     mgr = SolarSensorManager(hass)
-    out, ts = _run(mgr, hass, DAY0, 14, lambda ts, q, sf: 800.0 * q)
+    out, ts = _run(mgr, hass, DAY0, 38, lambda ts, q, sf: 800.0 * q)
     assert out is None
+    # One day is not enough: its cloud nowcast error would stay in the scale
     assert mgr.status("room")["state"] == "learning"
-    # The scale is fixed at night, never in daylight
+    # The scale is fixed at dusk of the second day, never in daylight
     out, ts = _run(mgr, hass, ts, 10, lambda ts, q, sf: 800.0 * q)
     assert mgr.status("room")["state"] == "active"
     assert mgr.dirty
@@ -319,7 +320,7 @@ def test_a_sensor_that_appears_late_keeps_its_learning():
     # Before the entity has a state (HA still starting)
     assert mgr.update("room", SENSOR, 0.0, 1.0, DAY0) is None
     assert mgr.status("room")["kind"] is None
-    _run(mgr, hass, DAY0 + 60, 24, lambda ts, q, sf: 1000.0 * q)
+    _run(mgr, hass, DAY0 + 60, 48, lambda ts, q, sf: 1000.0 * q)
     assert mgr.status("room") == {"kind": KIND_IRRADIANCE, "state": "active", "position": None}
 
 
@@ -334,7 +335,7 @@ def test_an_unusable_reading_falls_back(value):
 def test_a_calibration_in_progress_survives_a_restart():
     hass = _Hass()
     mgr = SolarSensorManager(hass)
-    _, ts = _run(mgr, hass, DAY0, 14, lambda ts, q, sf: 800.0 * q)
+    _, ts = _run(mgr, hass, DAY0, 38, lambda ts, q, sf: 800.0 * q)
     other = SolarSensorManager(hass)
     other.load_state(mgr.get_state())
     assert sum(other._rooms["room"].cal_model) == pytest.approx(sum(mgr._rooms["room"].cal_model))

@@ -3,7 +3,7 @@
 The weather model gives one irradiance for the whole house. A sensor at or in a room
 measures what reaches it: orientation, a tree, the neighbour's roof, real clouds.
 
-Scale: a calibration over the first sunny day(s) divides the reading by the ratio
+Scale: a calibration over the first two days with sun divides the reading by the ratio
 sensor/model, so W/m² behind glass, lux and percent all end up "GHI-equivalent" and the
 learned solar gain (beta_s) and the cover constants per unit GHI keep their meaning. Until
 the calibration is done (it ends at night, so the input never jumps in daylight) the room
@@ -72,6 +72,8 @@ _PEAK_DAYS_KEPT = 3
 # the covers open: a room shaded every afternoon would get a scale from the morning alone
 _CALIBRATION_MIN_SHARE = 0.6
 _CALIBRATION_MIN_BINS = 2
+# Days with calibration samples: one day's cloud nowcast error would stay in the scale for good
+_CALIBRATION_MIN_DAYS = 2
 # A direction the sensor barely sees (diffuse light only) does not set the deviation for all others
 _DEVIATION_MIN_PROFILE = 0.3
 
@@ -146,6 +148,7 @@ class _SensorState:
     cal_model: list[float] = field(default_factory=_zeros)
     cal_hours: list[float] = field(default_factory=_zeros)
     cal_sun: list[float] = field(default_factory=_zeros)
+    cal_days: list[int] = field(default_factory=list)
     profile: list[float] = field(default_factory=lambda: [1.0] * SOLAR_SENSOR_PROFILE_BINS)
     weight: list[float] = field(default_factory=_zeros)
     position: str | None = None
@@ -215,6 +218,9 @@ class SolarSensorManager:
                 st.cal_raw[b] += raw * dt_h
                 st.cal_model[b] += q_model * dt_h
                 st.cal_hours[b] += dt_h
+                day = int(now // 86400)
+                if day not in st.cal_days:
+                    st.cal_days = [*st.cal_days, day]
             if q_model < SOLAR_SENSOR_USE_MIN_Q:
                 # Dusk, never full daylight: the input does not jump (and midnight sun still ends it)
                 self._finish_calibration(area_id, st)
@@ -300,7 +306,7 @@ class SolarSensorManager:
         """At night after enough sun: fix the scale and seed the profile from the calibration days."""
         model = sum(st.cal_model)
         raw = sum(st.cal_raw)
-        if model < SOLAR_SENSOR_CALIBRATION_SUN_H or raw <= 0.0:
+        if model < SOLAR_SENSOR_CALIBRATION_SUN_H or raw <= 0.0 or len(st.cal_days) < _CALIBRATION_MIN_DAYS:
             return
         # Most of the sun's path seen: a room shaded every afternoon would get a scale from the morning alone
         seen = sum(1 for h in st.cal_hours if h >= _MIN_BIN_H)
@@ -314,6 +320,7 @@ class SolarSensorManager:
                 st.profile[b] = max(0.0, min(SOLAR_SENSOR_RATIO_MAX, ratio))
                 st.weight[b] = st.cal_hours[b]
         st.cal_raw, st.cal_model, st.cal_hours, st.cal_sun = _zeros(), _zeros(), _zeros(), _zeros()
+        st.cal_days = []
         st.status = "active"
         self.dirty = True
         _LOGGER.info("Room '%s': sun sensor %s calibrated (scale %.4g)", area_id, st.entity_id, st.scale)
@@ -390,6 +397,7 @@ class SolarSensorManager:
                 "kind": st.kind,
                 "scale": st.scale,
                 "cal": [st.cal_raw, st.cal_model, st.cal_hours, st.cal_sun] if st.scale is None else None,
+                "cal_days": st.cal_days if st.scale is None else [],
                 "profile": [round(p, 4) for p in st.profile],
                 "weight": [round(w, 3) for w in st.weight],
                 "position": st.position,
@@ -411,6 +419,7 @@ class SolarSensorManager:
                 cal = d.get("cal")
                 if st.scale is None and cal and len(cal) == 4 and all(len(c) == n for c in cal):
                     st.cal_raw, st.cal_model, st.cal_hours, st.cal_sun = ([float(v) for v in c] for c in cal)
+                    st.cal_days = [int(v) for v in d.get("cal_days", [])]
                 if len(d.get("profile") or []) == n and len(d.get("weight") or []) == n:
                     st.profile = [float(v) for v in d["profile"]]
                     st.weight = [float(v) for v in d["weight"]]
