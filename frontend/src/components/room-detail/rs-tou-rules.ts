@@ -103,6 +103,10 @@ export class RsTouRules extends LitElement {
   static styles = [
     inputStyles,
     css`
+      .view-body {
+        cursor: pointer;
+      }
+
       .hint {
         color: var(--secondary-text-color);
         font-size: 0.85em;
@@ -214,16 +218,20 @@ export class RsTouRules extends LitElement {
     const l = this.hass.language;
     if (!this.editing) {
       if (this.rows.length === 0) {
-        return html`<div class="hint">${localize("tou.schedule_empty", l)}</div>`;
+        // The empty state still routes into the editor — "add one below"
+        // would be a dead end with no click path to reach the "below".
+        return html`<div class="view-body" @click=${this._fireEdit}>
+          <div class="hint">${localize("tou.schedule_empty", l)}</div>
+        </div>`;
       }
-      return html`
+      return html`<div class="view-body" @click=${this._fireEdit}>
         ${this.rows.map((row) => this._renderViewRow(row, l))}
         ${
           this.scheduleEnabled
             ? nothing
             : html`<div class="hint">${localize("tou.schedule_off_hint", l)}</div>`
         }
-      `;
+      </div>`;
     }
     return html`
       <rs-list-row
@@ -271,6 +279,12 @@ export class RsTouRules extends LitElement {
   }
 
   // ---- Card summary rows ----
+
+  private _fireEdit() {
+    // Sibling-card contract: the room detail binds @edit-click on the
+    // rs-list-card and opens the rules dialog on this bubbled event.
+    this.dispatchEvent(new CustomEvent("edit-click", { bubbles: true, composed: true }));
+  }
 
   private _renderViewRow(row: TouOverrideRow, l: string) {
     const rule = this._defOf(row);
