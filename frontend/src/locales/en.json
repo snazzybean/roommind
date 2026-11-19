@@ -1063,7 +1063,7 @@
   "sensors.humidifier_info": "A humidifier (humidifier entity) or the smart plug it hangs on (switch, input_boolean). RoomMind only switches it on and off; a target set on the device stays and should not be below the lower limit.",
   "sensors.no_dehumidifier": "None. Without one, RoomMind lowers the humidity only through the ventilation.",
   "sensors.no_humidifier": "None. Without one, RoomMind only shows a hint.",
-  "sensors.humidity_device_note": "The devices go off once the humidity is back, after at least 15 minutes, at once while a window is open. RoomMind only switches off what it switched on itself, and never runs the dehumidifier and the humidifier together.",
+  "sensors.humidity_device_note": "The devices run at least 30 minutes and go off once the humidity is back, at once while a window is open; after that they rest at least 15 minutes. RoomMind only switches off what it switched on itself, and never runs the dehumidifier and the humidifier together.",
   "sensors.ventilation_humidity_note": "With the humidity above the upper limit it runs too, while the outdoor air is drier.",
   "sensors.ventilation_running_humidity": "running for the humidity",
   "sensors.humidity_range_high": "lower above {value} %",

@@ -94,12 +94,25 @@ class VentilationController:
 
     Ownership (entity -> time RoomMind switched it on) is persisted, so a restart still
     switches off what RoomMind switched on before it. The humidity devices (#518) run on their
-    own instance with their own persisted state; ``label`` names the kind in the log.
+    own instance with their own persisted state; ``label`` names the kind in the log,
+    ``min_run_s`` is the shortest run RoomMind ends and ``min_off_s`` makes a unit RoomMind
+    switched off rest that long before its next start.
     """
 
-    def __init__(self, hass: HomeAssistant, label: str = "Ventilation") -> None:
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        label: str = "Ventilation",
+        min_run_s: float = VENTILATION_MIN_RUN_S,
+        min_off_s: float = 0,
+    ) -> None:
         self.hass = hass
         self._label = label
+        self._min_run_s = min_run_s
+        self._min_off_s = min_off_s
+        # When RoomMind last switched an entity off (in memory): the start of its rest
+        self._off_at: dict[str, float] = {}
+        self._now = 0.0
         self._owned: dict[str, float] = {}
         # Switched off by someone during a bad spell: not switched on again until the air was good
         self._declined: set[str] = set()
@@ -126,6 +139,7 @@ class VentilationController:
         and switches it off once it is back. ``blocked`` entities (window open) go off at once
         too, but a hand on the switch is still remembered for when they are back in ``wanted``.
         """
+        self._now = now
         for entity_id, want in wanted.items():
             await self._async_reconcile_one(entity_id, want, now)
         for entity_id in blocked:
@@ -138,6 +152,7 @@ class VentilationController:
         kept = set(wanted) | set(blocked)
         self._declined &= kept
         self._last_state = {e: v for e, v in self._last_state.items() if e in kept}
+        self._off_at = {e: t for e, t in self._off_at.items() if e in kept and now - t < self._min_off_s}
 
     async def _async_switch_off_owned(self, entity_id: str) -> None:
         state = self.hass.states.get(entity_id)
@@ -191,7 +206,7 @@ class VentilationController:
                     if want:
                         self._declined.add(entity_id)
                 return
-            if not want and now - since >= VENTILATION_MIN_RUN_S and await switch(False):
+            if not want and now - since >= self._min_run_s and await switch(False):
                 self._release(entity_id)
             return
         if not want or current != "off":
@@ -199,6 +214,8 @@ class VentilationController:
         if previous == "on":
             # Ran by someone's hand into the bad spell and was switched off by hand in it
             self._declined.add(entity_id)
+        if now - self._off_at.get(entity_id, -math.inf) < self._min_off_s:
+            return
         if entity_id not in self._declined and await switch(True):
             self._owned[entity_id] = now
             self.dirty = True
@@ -230,4 +247,6 @@ class VentilationController:
             return False
         # Our own switch is no hand on it in the next cycle
         self._last_state[entity_id] = "on" if on else "off"
+        if not on and self._min_off_s:
+            self._off_at[entity_id] = self._now
         return True

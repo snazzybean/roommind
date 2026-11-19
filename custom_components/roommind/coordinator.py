@@ -35,6 +35,8 @@ from .const import (
     HEATING_SYSTEM_RADIATOR,
     HISTORY_ROTATE_CYCLES,
     HISTORY_WRITE_CYCLES,
+    HUMIDITY_DEVICE_MIN_OFF_MINUTES,
+    HUMIDITY_DEVICE_MIN_RUN_MINUTES,
     MAX_PREDICTION_DELTA,
     MAX_SENSOR_STALENESS,
     MAX_TARGET_TEMP,
@@ -379,7 +381,12 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         self._ventilation = VentilationController(hass)
         # Humidity limits per room and the dehumidifiers/humidifiers RoomMind runs (#518, #526)
         self._humidity = HumidityTracker()
-        self._humidity_devices = VentilationController(hass, label="Humidity device")
+        self._humidity_devices = VentilationController(
+            hass,
+            label="Humidity device",
+            min_run_s=HUMIDITY_DEVICE_MIN_RUN_MINUTES * 60,
+            min_off_s=HUMIDITY_DEVICE_MIN_OFF_MINUTES * 60,
+        )
         self._humidity_vent_rooms_saved: list[str] = []
         # Per-entity cache of schedule blocks; fallback when schedule.get_schedule fails (#308)
         self._schedule_blocks_cache: dict[str, dict] = {}

@@ -1063,7 +1063,7 @@
   "sensors.humidifier_info": "Un humidificateur (entité humidifier) ou la prise connectée qui l’alimente (switch, input_boolean). RoomMind ne fait que l’allumer et l’éteindre ; une consigne réglée sur l’appareil reste et ne devrait pas être sous la limite basse.",
   "sensors.no_dehumidifier": "Aucun. Sans lui, RoomMind ne réduit l’humidité que par la ventilation.",
   "sensors.no_humidifier": "Aucun. Sans lui, RoomMind affiche seulement une indication.",
-  "sensors.humidity_device_note": "Les appareils s’arrêtent dès que l’humidité est revenue, au plus tôt après 15 minutes, aussitôt si une fenêtre est ouverte. RoomMind n’éteint que ce qu’il a allumé lui-même, et le déshumidificateur et l’humidificateur ne tournent jamais ensemble.",
+  "sensors.humidity_device_note": "Les appareils tournent au moins 30 minutes et s’arrêtent dès que l’humidité est revenue, aussitôt si une fenêtre est ouverte ; ensuite ils restent arrêtés au moins 15 minutes. RoomMind n’éteint que ce qu’il a allumé lui-même, et le déshumidificateur et l’humidificateur ne tournent jamais ensemble.",
   "sensors.ventilation_humidity_note": "Avec une humidité au-dessus de la limite haute, elle tourne aussi tant que l’air extérieur est plus sec.",
   "sensors.ventilation_running_humidity": "en marche pour l’humidité",
   "sensors.humidity_range_high": "réduire au-dessus de {value} %",

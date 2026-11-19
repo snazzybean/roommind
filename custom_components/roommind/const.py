@@ -89,6 +89,10 @@ HUMIDITY_HYSTERESIS = 5
 # Upper minus lower limit: the two release points never cross, so both devices never run at once
 HUMIDITY_LIMIT_GAP = 10
 HUMIDITY_DEVICE_DOMAINS = ("humidifier", "switch", "input_boolean")
+# Dehumidifiers/humidifiers: a run lasts at least 30 min and RoomMind's own off rests 15 min, so a
+# compressor dehumidifier starts at most every 45 min instead of cycling on the 5 % hysteresis
+HUMIDITY_DEVICE_MIN_RUN_MINUTES = 30
+HUMIDITY_DEVICE_MIN_OFF_MINUTES = 15
 # Ventilating for humidity: outdoor air this much drier (g/m³ absolute) to start, the smaller margin to go on
 HUMIDITY_VENT_START_MARGIN = 2.0
 HUMIDITY_VENT_KEEP_MARGIN = 1.0

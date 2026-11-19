@@ -1063,7 +1063,7 @@
   "sensors.humidifier_info": "Ein Befeuchter (humidifier-Entität) oder der Zwischenstecker, an dem er hängt (switch, input_boolean). RoomMind schaltet ihn nur ein und aus; ein Zielwert am Gerät bleibt und sollte nicht unter der Untergrenze liegen.",
   "sensors.no_dehumidifier": "Keiner. Ohne Entfeuchter senkt RoomMind die Feuchte nur über die Lüftung.",
   "sensors.no_humidifier": "Keiner. Ohne Befeuchter zeigt RoomMind nur einen Hinweis.",
-  "sensors.humidity_device_note": "Die Geräte gehen aus, sobald die Feuchte zurück ist, frühestens nach 15 Minuten, bei offenem Fenster sofort. Aus schaltet RoomMind nur, was es selbst eingeschaltet hat, und Entfeuchter und Befeuchter laufen nie zusammen.",
+  "sensors.humidity_device_note": "Die Geräte laufen mindestens 30 Minuten und gehen aus, sobald die Feuchte zurück ist, bei offenem Fenster sofort; danach pausieren sie mindestens 15 Minuten. Aus schaltet RoomMind nur, was es selbst eingeschaltet hat, und Entfeuchter und Befeuchter laufen nie zusammen.",
   "sensors.ventilation_humidity_note": "Bei Luftfeuchte über der Obergrenze läuft sie auch, solange die Außenluft trockener ist.",
   "sensors.ventilation_running_humidity": "läuft wegen der Luftfeuchte",
   "sensors.humidity_range_high": "über {value} % senken",

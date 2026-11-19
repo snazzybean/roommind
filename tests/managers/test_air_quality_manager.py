@@ -416,3 +416,55 @@ async def test_label_names_the_unit_in_the_log(caplog):
     v = VentilationController(hass, label="Humidity device")
     await v.async_reconcile({"humidifier.cellar": True}, 0)
     assert "Humidity device 'humidifier.cellar'" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_min_off_holds_a_restart_after_its_own_off():
+    """Humidity devices (#518): after RoomMind switched one off it rests before the next start."""
+    hass = _Hass({FAN: "off"})
+    v = VentilationController(hass, min_off_s=900)
+    await v.async_reconcile({FAN: True}, 0)
+    await v.async_reconcile({FAN: False}, VENTILATION_MIN_RUN_S)
+    assert hass.calls[-1] == ("fan", "turn_off", FAN)
+    await v.async_reconcile({FAN: True}, VENTILATION_MIN_RUN_S + 899)
+    assert len(hass.calls) == 2
+    await v.async_reconcile({FAN: True}, VENTILATION_MIN_RUN_S + 900)
+    assert hass.calls[-1] == ("fan", "turn_on", FAN)
+
+
+@pytest.mark.asyncio
+async def test_min_off_counts_a_blocked_off_and_not_a_hand_off():
+    hass = _Hass({FAN: "off"})
+    v = VentilationController(hass, min_off_s=900)
+    await v.async_reconcile({FAN: True}, 0)
+    await v.async_reconcile({}, 10, blocked={FAN})
+    await v.async_reconcile({FAN: True}, 20)
+    assert len(hass.calls) == 2  # still resting after the window off
+    await v.async_reconcile({FAN: True}, 910)
+    assert hass.calls[-1] == ("fan", "turn_on", FAN)
+    # A unit that was never switched off by RoomMind starts at once
+    other = _Hass({FAN: "off"})
+    w = VentilationController(other, min_off_s=900)
+    await w.async_reconcile({FAN: True}, 0)
+    assert other.calls == [("fan", "turn_on", FAN)]
+
+
+@pytest.mark.asyncio
+async def test_without_min_off_a_start_follows_at_once():
+    hass = _Hass({FAN: "off"})
+    v = VentilationController(hass)
+    await v.async_reconcile({FAN: True}, 0)
+    await v.async_reconcile({FAN: False}, VENTILATION_MIN_RUN_S)
+    await v.async_reconcile({FAN: True}, VENTILATION_MIN_RUN_S + 30)
+    assert hass.calls[-1] == ("fan", "turn_on", FAN)
+
+
+@pytest.mark.asyncio
+async def test_own_min_run():
+    hass = _Hass({FAN: "off"})
+    v = VentilationController(hass, min_run_s=1800)
+    await v.async_reconcile({FAN: True}, 0)
+    await v.async_reconcile({FAN: False}, 1799)
+    assert v.is_running(FAN)
+    await v.async_reconcile({FAN: False}, 1800)
+    assert hass.calls[-1] == ("fan", "turn_off", FAN)
