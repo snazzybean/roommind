@@ -100,7 +100,10 @@ expect:
   - {check: "room.keller.humidity_high == true and state('humidifier.keller_entfeuchter') == 'on'", at: "+2d12h05m", label: the wet cellar starts its dehumidifier}
   - {check: "room.keller.humidity_high == true and state('humidifier.keller_entfeuchter') == 'off'", at: "+2d12h30m", label: switched off by hand stays off while the cellar is still humid}
   - {metric: appliance.starts, entity_id: switch.sz_entfeuchter, max: 0}
-  - {metric: appliance.shortest_run_min, entity_id: switch.hwr_entfeuchter, min: 15}
-  - {metric: appliance.shortest_run_min, entity_id: humidifier.sz_befeuchter, min: 15}
+  # 2026-11-19 seed 1, min run 30 min / rest 15 min: utility room 7 starts (15-min runs: 10),
+  # humidifier 25 (42); utility room RH >= 60 % 0.15 h, bedroom RH mean 43.4 %; v2.0.1 27.5 h / 33.3 %
+  - {metric: appliance.shortest_run_min, entity_id: switch.hwr_entfeuchter, min: 30}
+  - {metric: appliance.shortest_run_min, entity_id: humidifier.sz_befeuchter, min: 30}
+  - {metric: appliance.starts, entity_id: humidifier.sz_befeuchter, max: 30}
   - {metric: room.rh_over_60_h, room: hwr, max: 1}
   - {metric: room.rh_mean, room: schlafzimmer, min: 40}

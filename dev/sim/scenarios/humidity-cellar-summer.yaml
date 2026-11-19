@@ -50,12 +50,13 @@ timeline:
   - {at: "+1d00h00m", do: weather.set, temperature: 12, humidity: 70, for: 24h}
 expect:
   - {invariant: no_rejected_commands}
-  # 2026-11-18 seed 1: fan off all of day 0 (outdoor air wetter), 4 runs of 15 min on day 1;
-  # dehumidifier 12.8 h, 3.84 kWh, RH >= 60 % 34.4 h. Without the outdoor humidity sensor
-  # (--set roommind.settings.outdoor_humidity_sensor='""') the fan ran 24 h and carried 11.3 kg
-  # of water in, the dehumidifier ran 24 h (7.2 kWh), RH >= 60 % 47.7 h
+  # 2026-11-19 seed 1: fan off all of day 0 (outdoor air wetter), 2 runs on day 1; dehumidifier
+  # 28 starts of 30 min (15-min runs without rest: 50), 14 h, 4.2 kWh, RH >= 60 % 24.3 h.
+  # 2026-11-18, without the outdoor humidity sensor (--set roommind.settings.outdoor_humidity_sensor='""'):
+  # the fan ran 24 h and carried 11.3 kg of water in, the dehumidifier ran 24 h (7.2 kWh), RH >= 60 % 47.7 h
   - {metric: appliance.moisture_added_kg, entity_id: fan.keller_luefter, max: 0.5}
   - {metric: appliance.starts, entity_id: fan.keller_luefter, min: 1}
   - {metric: appliance.on_h, entity_id: fan.keller_luefter, max: 2}
   - {metric: appliance.electric_kwh, entity_id: humidifier.keller_entfeuchter, max: 5}
-  - {metric: appliance.shortest_run_min, entity_id: humidifier.keller_entfeuchter, min: 15}
+  - {metric: appliance.shortest_run_min, entity_id: humidifier.keller_entfeuchter, min: 30}
+  - {metric: appliance.starts, entity_id: humidifier.keller_entfeuchter, max: 32}
