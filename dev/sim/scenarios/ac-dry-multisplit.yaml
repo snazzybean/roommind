@@ -1,0 +1,25 @@
+name: ac-dry-multisplit
+extends: multisplit-uniform-mode-master
+description: >
+  The spring multi-split with its outdoor unit as master and all units in one mode, the living
+  room unit (setback idle) with a humidity sensor and an upper limit of 55 % in muggy air
+  (#440). Dry shares the outdoor unit with cooling but not with heating: while the heat only
+  rooms heat in the mornings the living room must not dry, otherwise its dry asks the master
+  for cooling, and after drying the unit goes back to its setback.
+refs: [440, 533]
+tags: [humidity, compressor, ac]
+house:
+  rooms:
+    wohnzimmer:
+      initial: {temperature: 19.0, humidity: 70}
+      sensors: {humidity: {entity_id: sensor.wz_feuchte}}
+roommind:
+  rooms:
+    wohnzimmer:
+      humidity_sensor: sensor.wz_feuchte
+timeline:
+  - {at: "+0d00h00m", do: weather.set, humidity: 92, for: 72h}
+  - {at: "+0d00h01m", do: roommind.ws, type: roommind/rooms/save, area_id: wohnzimmer, humidity_max: 55}
+# Inherits the uniform-mode invariants (no dry or cooling unit next to a heating one). 2026-11-19
+# seed 1: two dry runs in 3 d (the mornings heat, the outdoor reading sits around the 16 °C
+# cooling minimum), living room in band 93.8 -> 94.6 %, unit +0.4 kWh
