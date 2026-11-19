@@ -1,0 +1,36 @@
+name: ac-dry-dehumidifier-dropout
+extends: ac-dry-humid-summer
+description: >
+  The muggy room with a weak dehumidifier on a smart plug that drops off the network now and
+  then (#440). The dehumidifier is the tool the user picked; the AC dries only once it has been
+  gone for a while. Cool wet days (19 °C, 95 %); the dehumidifier's heat still makes the room
+  cool now and then. Day 0 a one-minute dropout every four hours: the AC stays out (before:
+  dry at 02:00 and 06:00, off again a minute later). Day 1 08:00 the plug is gone for two
+  hours: the AC waits 10 minutes, then dries once the room is too humid and idle.
+refs: [440]
+house:
+  rooms:
+    wohnzimmer:
+      appliances:
+        # Too weak to hold the limit: the room stays too humid, every dropout counts
+        - {entity_id: switch.wz_entfeuchter, profile: dehumidifier, rated_kg_h: 0.05}
+timeline:
+  - {at: "+0d00h00m", do: weather.set, temperature: 19, humidity: 95, for: 48h}
+  - {at: "+0d00h01m", do: roommind.ws, type: roommind/rooms/save, area_id: wohnzimmer, humidity_max: 60, dehumidifier_entity: switch.wz_entfeuchter}
+  - {at: "+0d02h00m", do: entity.unavailable, entity_id: switch.wz_entfeuchter, for: 1m}
+  - {at: "+0d06h00m", do: entity.unavailable, entity_id: switch.wz_entfeuchter, for: 1m}
+  - {at: "+0d10h00m", do: entity.unavailable, entity_id: switch.wz_entfeuchter, for: 1m}
+  - {at: "+0d14h00m", do: entity.unavailable, entity_id: switch.wz_entfeuchter, for: 1m}
+  - {at: "+0d18h00m", do: entity.unavailable, entity_id: switch.wz_entfeuchter, for: 1m}
+  - {at: "+0d22h00m", do: entity.unavailable, entity_id: switch.wz_entfeuchter, for: 1m}
+  - {at: "+1d08h00m", do: entity.unavailable, entity_id: switch.wz_entfeuchter, for: 2h}
+expect:
+  - {invariant: no_rejected_commands}
+  - {check: "room.wohnzimmer.ac_dry_active == false", at: "+0d02h00m40s", label: no dry in the dropout at 2:00}
+  - {check: "room.wohnzimmer.ac_dry_active == false", at: "+0d06h00m40s", label: no dry in the dropout at 6:00}
+  - {check: "room.wohnzimmer.ac_dry_active == false", at: "+0d10h00m40s", label: no dry in the dropout at 10:00}
+  - {check: "room.wohnzimmer.ac_dry_active == false", at: "+0d14h00m40s", label: no dry in the dropout at 14:00}
+  - {check: "room.wohnzimmer.ac_dry_active == false", at: "+0d18h00m40s", label: no dry in the dropout at 18:00}
+  - {check: "room.wohnzimmer.ac_dry_active == false", at: "+0d22h00m40s", label: no dry in the dropout at 22:00}
+  - {check: "room.wohnzimmer.ac_dry_active == false", at: "+1d08h09m", label: AC waits while the plug is gone}
+  - {check: "room.wohnzimmer.ac_dry_active == true", at: "+1d08h30m", label: AC dries once the plug is gone for a while}
