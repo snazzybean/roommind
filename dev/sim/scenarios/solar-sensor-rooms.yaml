@@ -3,8 +3,8 @@ description: >
   March, two radiator rooms with large windows, one facing east, one west, MPC with the
   weather forecast (cloud forecast with its usual error). Each room has a sun sensor behind
   the glass (W/m²; --set house.rooms.<room>.sensors.solar.unit=lx or "%" for the other kinds).
-  RoomMind learns the sensor's scale over the first sunny day and runs on the weather model
-  until then, afterwards the reading is the room's solar input and the learned profile shapes
+  RoomMind learns the sensor's scale over the first two days with sun and runs on the weather
+  model until then, afterwards the reading is the room's solar input and the learned profile shapes
   the forecast: the east room gets its sun in the morning, the west room in the afternoon (#303).
 tags: [solar, sensors, mpc, trv]
 refs: [303, 455]

@@ -1,8 +1,8 @@
 name: solar-sensor-covers
 description: >
   Summer, south-facing living room with an exterior venetian blind, a small AC and a sun sensor
-  behind the glass and the blind (W/m²). Day 1 the automatic shading is off, so the sensor
-  learns its scale with the blind open; from day 2 RoomMind shades. A sensor behind the blind
+  behind the glass and the blind (W/m²). The first two days the automatic shading is off, so the
+  sensor learns its scale with the blind open; from day 3 RoomMind shades. A sensor behind the blind
   drops when RoomMind shades: that must neither count the shade twice in the thermal model nor
   lower the sun RoomMind expects (the blind would open, close, open). RoomMind tells from the
   drop that the sensor sits behind the blind.
@@ -10,7 +10,7 @@ description: >
 tags: [covers, solar, sensors, ac]
 refs: [303]
 start: 2026-07-06T00:00
-duration: 4d
+duration: 5d
 location: {latitude: 52.5, longitude: 13.4, time_zone: Europe/Berlin}
 weather: {profile: hot-summer}
 house:
@@ -42,11 +42,11 @@ roommind:
       covers_auto_enabled: false
       solar_sensor: sensor.wz_sonne
 timeline:
-  - {at: "+1d03h", do: roommind.ws, type: roommind/rooms/save, area_id: wohnzimmer, covers_auto_enabled: true}
+  - {at: "+2d03h", do: roommind.ws, type: roommind/rooms/save, area_id: wohnzimmer, covers_auto_enabled: true}
 expect:
   - {invariant: no_rejected_commands}
-  - {check: "room.wohnzimmer.solar_sensor.state == 'active'", at: "+1d03h", label: scale learned on the open day}
-  - {check: "cover('cover.wohnzimmer_raffstore').position < 90", at: "+2d15h", label: shades in the afternoon}
+  - {check: "room.wohnzimmer.solar_sensor.state == 'active'", at: "+2d03h", label: scale learned on the open days}
+  - {check: "cover('cover.wohnzimmer_raffstore').position < 90", at: "+3d15h", label: shades in the afternoon}
   # No open-close cycling from a sensor behind the blind (covers-solar-south: 6 moves a day)
   - {metric: cover.max_commands_per_day, entity_id: cover.wohnzimmer_raffstore, max: 6, label: cover moves per day}
-  - {check: "room.wohnzimmer.solar_sensor.position == 'inside'", at: "+3d23h", label: sensor found behind the blind}
+  - {check: "room.wohnzimmer.solar_sensor.position == 'inside'", at: "+4d23h", label: sensor found behind the blind}
