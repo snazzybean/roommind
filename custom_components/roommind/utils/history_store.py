@@ -35,6 +35,10 @@ DETAIL_FIELDS = [
     "price",
     "price_level",
     "price_shift",
+    "shared_system_id",
+    "shared_system_schedule_active",
+    "shared_system_demand_blocked",
+    "shared_system_block_reason",
     # Runs starting at this row, summed per history bucket: the bucket keeps only its first
     # mode, its transitions lose the short runs
     "heat_starts",
@@ -138,6 +142,10 @@ class HistoryStore:
                     "price": data.get("price", ""),
                     "price_level": data.get("price_level", ""),
                     "price_shift": data.get("price_shift", ""),
+                    "shared_system_id": data.get("shared_system_id", ""),
+                    "shared_system_schedule_active": data.get("shared_system_schedule_active", ""),
+                    "shared_system_demand_blocked": data.get("shared_system_demand_blocked", ""),
+                    "shared_system_block_reason": data.get("shared_system_block_reason", ""),
                     "co2": data.get("co2", ""),
                     **{field: data.get(field, "") for field in MODEL_INPUT_FIELDS},
                     **{key: int(mode == run and previous != run) for run, key in START_FIELDS.items()},

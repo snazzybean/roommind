@@ -176,6 +176,83 @@ export class RsSettingsCompressor extends RsSettingsBase {
         ></ha-entity-picker>
         <span class="field-hint">${localize("compressor.master_entity_hint", l)}</span>
 
+        <span class="field-label">${localize("compressor.master_schedule_entity", l)}</span>
+        <ha-entity-picker
+          .hass=${this.hass}
+          .value=${group.master_schedule_entity || ""}
+          .includeDomains=${["schedule"]}
+          @value-changed=${(e: CustomEvent) => {
+            this._updateGroup(idx, "master_schedule_entity", (e.detail?.value as string) ?? "");
+          }}
+        ></ha-entity-picker>
+        <span class="field-hint">${localize("compressor.master_schedule_entity_hint", l)}</span>
+
+        ${
+          group.master_entity
+            ? html`
+                <ha-select
+                  .label=${localize("compressor.master_control_mode", l)}
+                  .value=${group.master_control_mode || "hvac_mode"}
+                  .options=${[
+                    {
+                      value: "hvac_mode",
+                      label: localize("compressor.master_control_mode_hvac", l),
+                    },
+                    {
+                      value: "target_temperature",
+                      label: localize("compressor.master_control_mode_target", l),
+                    },
+                  ]}
+                  @selected=${(e: Event) => {
+                    const v = getSelectValue(e);
+                    if (v) this._updateGroup(idx, "master_control_mode", v);
+                  }}
+                  @closed=${(e: Event) => e.stopPropagation()}
+                  fixedMenuPosition
+                ></ha-select>
+                <span class="field-hint">${localize("compressor.master_control_mode_hint", l)}</span>
+                ${
+                  group.master_control_mode === "target_temperature"
+                    ? html`
+                        <div class="threshold-grid">
+                          <rs-number-field
+                            .label=${localize("compressor.master_comfort_temperature", l)}
+                            .suffix=${"°C"}
+                            .hint=${localize("compressor.master_comfort_temperature_hint", l)}
+                            .min=${0}
+                            .max=${30}
+                            .value=${group.master_comfort_temperature ?? 19}
+                            @value-changed=${(e: CustomEvent<{ value: number }>) =>
+                              this._updateGroup(idx, "master_comfort_temperature", e.detail.value)}
+                          ></rs-number-field>
+                          <rs-number-field
+                            .label=${localize("compressor.master_eco_temperature", l)}
+                            .suffix=${"°C"}
+                            .hint=${localize("compressor.master_eco_temperature_hint", l)}
+                            .min=${0}
+                            .max=${30}
+                            .value=${group.master_eco_temperature ?? group.master_idle_temperature ?? 5}
+                            @value-changed=${(e: CustomEvent<{ value: number }>) =>
+                              this._updateGroup(idx, "master_eco_temperature", e.detail.value)}
+                          ></rs-number-field>
+                          <rs-number-field
+                            .label=${localize("compressor.master_demand_offset", l)}
+                            .suffix=${"°C"}
+                            .hint=${localize("compressor.master_demand_offset_hint", l)}
+                            .min=${0}
+                            .max=${10}
+                            .value=${group.master_demand_offset ?? 0}
+                            @value-changed=${(e: CustomEvent<{ value: number }>) =>
+                              this._updateGroup(idx, "master_demand_offset", e.detail.value)}
+                          ></rs-number-field>
+                        </div>
+                      `
+                    : nothing
+                }
+              `
+            : nothing
+        }
+
         <rs-list-row
           switch
           wrap
@@ -334,6 +411,12 @@ export class RsSettingsCompressor extends RsSettingsBase {
         min_run_minutes: 15,
         min_off_minutes: 5,
         master_entity: "",
+        master_schedule_entity: "",
+        master_control_mode: "hvac_mode",
+        master_comfort_temperature: 19,
+        master_eco_temperature: 5,
+        master_idle_temperature: 5,
+        master_demand_offset: 0,
         conflict_resolution: "heating_priority" as ConflictResolution,
         action_script: "",
         enforce_uniform_mode: false,

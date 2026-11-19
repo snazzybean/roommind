@@ -12,6 +12,7 @@ from custom_components.roommind.switch import (
     RoomMindClimateControlSwitch,
     RoomMindCoverAutoSwitch,
     RoomMindGlobalClimateControlSwitch,
+    RoomMindGlobalLearningSwitch,
     RoomMindVacationSwitch,
     _create_room_switches,
     async_setup_entry,
@@ -124,7 +125,7 @@ async def test_async_setup_entry_creates_entities_for_rooms_with_covers():
     assert coordinator.async_add_switch_entities is async_add_entities
     async_add_entities.assert_called_once()
     entities = async_add_entities.call_args[0][0]
-    assert len(entities) == 5
+    assert len(entities) == 6
     assert isinstance(entities[0], RoomMindVacationSwitch)
     assert isinstance(entities[1], RoomMindGlobalClimateControlSwitch)
     climate_switches = [e for e in entities if isinstance(e, RoomMindClimateControlSwitch)]
@@ -159,10 +160,11 @@ async def test_async_setup_entry_no_covers_still_creates_vacation_switch():
 
     async_add_entities.assert_called_once()
     entities = async_add_entities.call_args[0][0]
-    assert len(entities) == 3
+    assert len(entities) == 4
     assert isinstance(entities[0], RoomMindVacationSwitch)
     assert isinstance(entities[1], RoomMindGlobalClimateControlSwitch)
-    assert isinstance(entities[2], RoomMindClimateControlSwitch)
+    assert isinstance(entities[2], RoomMindGlobalLearningSwitch)
+    assert isinstance(entities[3], RoomMindClimateControlSwitch)
 
 
 @pytest.fixture
@@ -334,6 +336,14 @@ def test_global_climate_control_switch_ids(mock_vacation_coordinator):
     assert switch.name == "RoomMind Climate Control"
 
 
+def test_global_learning_switch_ids(mock_vacation_coordinator):
+    coordinator, _ = mock_vacation_coordinator
+    switch = RoomMindGlobalLearningSwitch(coordinator)
+    assert switch.unique_id == "roommind_learning"
+    assert switch.entity_id == "switch.roommind_learning"
+    assert switch.name == "RoomMind Learning"
+
+
 @pytest.mark.parametrize(
     ("settings", "expected"),
     [({}, True), ({"climate_control_active": True}, True), ({"climate_control_active": False}, False)],
@@ -352,4 +362,25 @@ async def test_global_climate_control_switch_saves_the_setting(mock_vacation_coo
     switch = RoomMindGlobalClimateControlSwitch(coordinator)
     await (switch.async_turn_on() if turn_on else switch.async_turn_off())
     store.async_save_settings.assert_awaited_once_with({"climate_control_active": value})
+    coordinator.async_request_refresh.assert_awaited_once()
+
+
+@pytest.mark.parametrize(
+    ("settings", "expected"),
+    [({}, True), ({"learning_enabled": True}, True), ({"learning_enabled": False}, False)],
+)
+def test_global_learning_switch_follows_the_setting(mock_vacation_coordinator, settings, expected):
+    coordinator, store = mock_vacation_coordinator
+    store.get_settings.return_value = settings
+    assert RoomMindGlobalLearningSwitch(coordinator).is_on is expected
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("turn_on", "value"), [(True, True), (False, False)])
+async def test_global_learning_switch_saves_the_setting(mock_vacation_coordinator, turn_on, value):
+    coordinator, store = mock_vacation_coordinator
+    store.async_save_settings = AsyncMock()
+    switch = RoomMindGlobalLearningSwitch(coordinator)
+    await (switch.async_turn_on() if turn_on else switch.async_turn_off())
+    store.async_save_settings.assert_awaited_once_with({"learning_enabled": value})
     coordinator.async_request_refresh.assert_awaited_once()

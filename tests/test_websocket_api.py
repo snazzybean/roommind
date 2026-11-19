@@ -2931,6 +2931,36 @@ async def test_save_settings_compressor_valid_action_script(ws_hass, store, conn
 
 
 @pytest.mark.asyncio
+async def test_save_settings_compressor_target_temperature_mode(ws_hass, store, connection):
+    """Target-temperature master settings save successfully."""
+    await store.async_load()
+
+    msg = {
+        "id": 361,
+        "type": "roommind/settings/save",
+        "compressor_groups": [
+            {
+                "id": "g1",
+                "name": "Test",
+                "members": ["climate.ac1"],
+                "master_entity": "climate.boiler",
+                "master_schedule_entity": "schedule.heating",
+                "master_control_mode": "target_temperature",
+                "master_idle_temperature": 5,
+                "master_demand_offset": 4,
+            },
+        ],
+    }
+    await _save_settings(ws_hass, connection, msg)
+
+    connection.send_result.assert_called_once()
+    saved = connection.send_result.call_args[0][1]["settings"]["compressor_groups"][0]
+    assert saved["master_control_mode"] == "target_temperature"
+    assert saved["master_idle_temperature"] == 5
+    assert saved["master_demand_offset"] == 4
+
+
+@pytest.mark.asyncio
 async def test_save_settings_compressor_backward_compat(ws_hass, store, connection):
     """Groups without new fields save successfully (no validation errors)."""
     await store.async_load()
