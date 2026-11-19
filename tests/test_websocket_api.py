@@ -1221,6 +1221,34 @@ async def test_save_settings(ws_hass, store, connection):
 
 
 @pytest.mark.asyncio
+async def test_save_settings_weather_split_fields(ws_hass, store, connection):
+    """Split weather sources persist through the settings save command."""
+    await store.async_load()
+
+    msg = {
+        "id": 12,
+        "type": "roommind/settings/save",
+        "weather_split_enabled": True,
+        "forecast_temp_entity": "weather.other",
+        "forecast_cloud_entity": "sensor.cloud",
+        "current_cloud_sensor": "sensor.cloud_now",
+        "current_wind_sensor": "sensor.wind",
+        "forecast_wind_entity": "weather.windy",
+    }
+    await _save_settings(ws_hass, connection, msg)
+
+    connection.send_result.assert_called_once()
+    result = connection.send_result.call_args[0][1]
+    settings = result["settings"]
+    assert settings["weather_split_enabled"] is True
+    assert settings["forecast_temp_entity"] == "weather.other"
+    assert settings["forecast_cloud_entity"] == "sensor.cloud"
+    assert settings["current_cloud_sensor"] == "sensor.cloud_now"
+    assert settings["current_wind_sensor"] == "sensor.wind"
+    assert settings["forecast_wind_entity"] == "weather.windy"
+
+
+@pytest.mark.asyncio
 async def test_save_settings_climate_control_refreshes_at_once(ws_hass, store, connection):
     """The panel toggle stops or resumes control and updates the switch entity now (#291)."""
     await store.async_load()

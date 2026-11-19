@@ -94,6 +94,12 @@ const SETTINGS: [keyof GlobalSettings, SettingSync][] = [
   ["control_mode", plain("controlMode", "mpc")],
   ["comfort_weight", plain("comfortWeight", 70)],
   ["weather_entity", plain("weatherEntity", "")],
+  ["weather_split_enabled", plain("weatherSplitEnabled", false)],
+  ["forecast_temp_entity", plain("forecastTempEntity", "")],
+  ["forecast_cloud_entity", plain("forecastCloudEntity", "")],
+  ["current_cloud_sensor", plain("currentCloudSensor", "")],
+  ["current_wind_sensor", plain("currentWindSensor", "")],
+  ["forecast_wind_entity", plain("forecastWindEntity", "")],
   ["outdoor_unavailable_notify", plain("outdoorUnavailableNotify", true)],
   ["prediction_enabled", plain("predictionEnabled", true)],
   // Goes out with every switch-on like switch.roommind_vacation: without it vacation does nothing.
@@ -206,6 +212,12 @@ export class RsSettings extends LitElement {
   @state() private _controlMode: "mpc" | "bangbang" = "mpc";
   @state() private _comfortWeight = 70;
   @state() private _weatherEntity = "";
+  @state() private _weatherSplitEnabled = false;
+  @state() private _forecastTempEntity = "";
+  @state() private _forecastCloudEntity = "";
+  @state() private _currentCloudSensor = "";
+  @state() private _currentWindSensor = "";
+  @state() private _forecastWindEntity = "";
   @state() private _outdoorUnavailableNotify = true;
   @state() private _predictionEnabled = true;
   @state() private _vacationActive = false;
@@ -482,6 +494,12 @@ export class RsSettings extends LitElement {
           .outdoorTempSensor=${this._outdoorTempSensor}
           .outdoorHumiditySensor=${this._outdoorHumiditySensor}
           .weatherEntity=${this._weatherEntity}
+          .weatherSplitEnabled=${this._weatherSplitEnabled}
+          .forecastTempEntity=${this._forecastTempEntity}
+          .forecastCloudEntity=${this._forecastCloudEntity}
+          .currentCloudSensor=${this._currentCloudSensor}
+          .currentWindSensor=${this._currentWindSensor}
+          .forecastWindEntity=${this._forecastWindEntity}
           .outdoorUnavailableNotify=${this._outdoorUnavailableNotify}
           @setting-changed=${this._onSettingChanged}
         ></rs-settings-sensors>`;

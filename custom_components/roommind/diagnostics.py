@@ -366,11 +366,21 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, config_entry: 
     outdoor: dict[str, Any] = {
         "temp": coordinator.outdoor_temp if coordinator else None,
         "humidity": coordinator.outdoor_humidity if coordinator else None,
+        "wind": coordinator.outdoor_wind if coordinator else None,
     }
     if coordinator:
         forecast = coordinator._weather_manager._outdoor_forecast
         outdoor["forecast_available"] = bool(forecast)
         outdoor["forecast_points"] = len(forecast) if forecast else 0
+        split = bool(settings.get("weather_split_enabled"))
+        outdoor["forecast_sources"] = {
+            field: (settings.get(setting, "") or "(main weather entity)") if split else "(main weather entity)"
+            for field, setting in (
+                ("temperature", "forecast_temp_entity"),
+                ("cloud_coverage", "forecast_cloud_entity"),
+                ("wind_speed", "forecast_wind_entity"),
+            )
+        }
 
     # Recent history (last 2 hours of detail data per room)
     recent_history: dict[str, list] = {}

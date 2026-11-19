@@ -249,6 +249,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         self.outdoor_temp_effective: float | None = None
         self.outdoor_temp_source: str = "none"
         self.outdoor_humidity: float | None = None
+        self.outdoor_wind: float | None = None
         self._outdoor_unavailable_cycles: int = 0
         self._outdoor_warning_sent: bool = False
         self._window_manager = WindowManager()
@@ -407,13 +408,10 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         # Update cover orchestrator with cloud forecast for solar trajectory prediction
         self._cover_orchestrator.set_cloud_series(WeatherManager.extract_cloud_series(outdoor_forecast))
 
-        # Compute solar irradiance once per cycle
-        cloud_coverage = None
-        weather_entity = settings.get("weather_entity")
-        if weather_entity:
-            ws = self.hass.states.get(weather_entity)
-            if ws:
-                cloud_coverage = ws.attributes.get("cloud_coverage")
+        # Compute solar irradiance once per cycle. Current cloud coverage:
+        # split sensor → weather entity → clear sky.
+        cloud_coverage = self._weather_manager.resolve_current_cloud(settings)
+        self.outdoor_wind = self._weather_manager.resolve_current_wind(settings)
         self._current_q_solar = compute_q_solar_norm(
             self.hass.config.latitude,
             self.hass.config.longitude,

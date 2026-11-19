@@ -15,6 +15,12 @@ export class RsSettingsSensors extends RsSettingsBase {
   @property({ type: String }) public outdoorTempSensor = "";
   @property({ type: String }) public outdoorHumiditySensor = "";
   @property({ type: String }) public weatherEntity = "";
+  @property({ type: Boolean }) public weatherSplitEnabled = false;
+  @property({ type: String }) public forecastTempEntity = "";
+  @property({ type: String }) public forecastCloudEntity = "";
+  @property({ type: String }) public currentCloudSensor = "";
+  @property({ type: String }) public currentWindSensor = "";
+  @property({ type: String }) public forecastWindEntity = "";
   @property({ type: Boolean }) public outdoorUnavailableNotify = true;
 
   private _filterTemperature = (entity: HassEntity): boolean => {
@@ -23,6 +29,16 @@ export class RsSettingsSensors extends RsSettingsBase {
 
   private _filterHumidity = (entity: HassEntity): boolean => {
     return entity.attributes?.device_class === "humidity";
+  };
+
+  private _filterWeatherOrTempSensor = (entity: HassEntity): boolean => {
+    return (
+      entity.entity_id.startsWith("weather.") || entity.attributes?.device_class === "temperature"
+    );
+  };
+
+  private _filterWeatherOrSensor = (entity: HassEntity): boolean => {
+    return entity.entity_id.startsWith("weather.") || entity.entity_id.startsWith("sensor.");
   };
 
   private _getSensorValue(entityId: string): number | null {
@@ -120,6 +136,95 @@ export class RsSettingsSensors extends RsSettingsBase {
         <rs-list-row
           switch
           wrap
+          .heading=${localize("settings.weather_split_toggle", l)}
+          .secondary=${localize("settings.weather_split_toggle_hint", l)}
+          .checked=${this.weatherSplitEnabled}
+          @toggle-changed=${(e: CustomEvent<boolean>) =>
+            this._fire("weatherSplitEnabled", e.detail)}
+        ></rs-list-row>
+        <div class="sensor-grid split-grid">
+          <div class="sensor-field">
+            <ha-entity-picker
+              .hass=${this.hass}
+              .value=${this.forecastTempEntity}
+              .includeDomains=${["weather", "sensor"]}
+              .entityFilter=${this._filterWeatherOrTempSensor}
+              .label=${localize("settings.forecast_temp_label", l)}
+              .disabled=${!this.weatherSplitEnabled}
+              allow-custom-entity
+              @value-changed=${(e: CustomEvent) => {
+                const v = (e.detail?.value as string) ?? "";
+                if (v !== this.forecastTempEntity) this._fire("forecastTempEntity", v);
+              }}
+            ></ha-entity-picker>
+          </div>
+          <div class="sensor-field">
+            <ha-entity-picker
+              .hass=${this.hass}
+              .value=${this.currentCloudSensor}
+              .includeDomains=${["sensor"]}
+              .label=${localize("settings.current_cloud_label", l)}
+              .disabled=${!this.weatherSplitEnabled}
+              allow-custom-entity
+              @value-changed=${(e: CustomEvent) => {
+                const v = (e.detail?.value as string) ?? "";
+                if (v !== this.currentCloudSensor) this._fire("currentCloudSensor", v);
+              }}
+            ></ha-entity-picker>
+          </div>
+          <div class="sensor-field">
+            <ha-entity-picker
+              .hass=${this.hass}
+              .value=${this.forecastCloudEntity}
+              .includeDomains=${["weather", "sensor"]}
+              .entityFilter=${this._filterWeatherOrSensor}
+              .label=${localize("settings.forecast_cloud_label", l)}
+              .disabled=${!this.weatherSplitEnabled}
+              allow-custom-entity
+              @value-changed=${(e: CustomEvent) => {
+                const v = (e.detail?.value as string) ?? "";
+                if (v !== this.forecastCloudEntity) this._fire("forecastCloudEntity", v);
+              }}
+            ></ha-entity-picker>
+          </div>
+          <div class="sensor-field">
+            <ha-entity-picker
+              .hass=${this.hass}
+              .value=${this.currentWindSensor}
+              .includeDomains=${["sensor"]}
+              .label=${localize("settings.current_wind_label", l)}
+              .disabled=${!this.weatherSplitEnabled}
+              allow-custom-entity
+              @value-changed=${(e: CustomEvent) => {
+                const v = (e.detail?.value as string) ?? "";
+                if (v !== this.currentWindSensor) this._fire("currentWindSensor", v);
+              }}
+            ></ha-entity-picker>
+          </div>
+          <div class="sensor-field">
+            <ha-entity-picker
+              .hass=${this.hass}
+              .value=${this.forecastWindEntity}
+              .includeDomains=${["weather", "sensor"]}
+              .entityFilter=${this._filterWeatherOrSensor}
+              .label=${localize("settings.forecast_wind_label", l)}
+              .disabled=${!this.weatherSplitEnabled}
+              allow-custom-entity
+              @value-changed=${(e: CustomEvent) => {
+                const v = (e.detail?.value as string) ?? "";
+                if (v !== this.forecastWindEntity) this._fire("forecastWindEntity", v);
+              }}
+            ></ha-entity-picker>
+          </div>
+        </div>
+        <span class="field-hint">${localize("settings.weather_split_source_hint", l)}</span>
+        <span class="field-hint">${localize("settings.weather_split_wind_note", l)}</span>
+      </div>
+
+      <div class="settings-section">
+        <rs-list-row
+          switch
+          wrap
           .heading=${localize("settings.outdoor_unavailable_notify", l)}
           .secondary=${localize("settings.outdoor_unavailable_notify_hint", l)}
           .checked=${this.outdoorUnavailableNotify}
@@ -137,6 +242,9 @@ export class RsSettingsSensors extends RsSettingsBase {
         display: grid;
         grid-template-columns: 1fr 1fr;
         gap: var(--rs-space-4);
+      }
+      .split-grid {
+        margin-top: var(--rs-space-4);
       }
       .sensor-field {
         min-width: 0;

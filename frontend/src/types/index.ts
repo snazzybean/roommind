@@ -230,6 +230,12 @@ export interface GlobalSettings {
   control_mode?: "mpc" | "bangbang";
   comfort_weight?: number;
   weather_entity?: string;
+  weather_split_enabled?: boolean;
+  forecast_temp_entity?: string;
+  forecast_cloud_entity?: string;
+  current_cloud_sensor?: string;
+  current_wind_sensor?: string;
+  forecast_wind_entity?: string;
   outdoor_unavailable_notify?: boolean;
   climate_control_active?: boolean;
   learning_disabled_rooms?: string[];
