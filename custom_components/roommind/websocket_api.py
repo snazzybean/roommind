@@ -408,6 +408,7 @@ async def websocket_list_rooms(
             "humidity_ventilate": live.get("humidity_ventilate", False),
             "humidity_vent_blocked": live.get("humidity_vent_blocked", False),
             "dehumidifier_active": live.get("dehumidifier_active", False),
+            "ac_dry_active": live.get("ac_dry_active", False),
             "humidifier_active": live.get("humidifier_active", False),
             # Sun sensor (#303): kind (irradiance/illuminance/percent) and learning/active/unavailable/unsupported
             "solar_sensor": live.get("solar_sensor"),

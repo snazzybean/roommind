@@ -189,6 +189,16 @@ describe("roomHints humidity (#518, #526)", () => {
     expect(hintText(vent[0], "de")).toBe("Luftfeuchte 80 %, Lüftung läuft");
   });
 
+  test("an air conditioner drying the room (#440)", () => {
+    const hints = roomHints(
+      room({ current_humidity: 68, humidity_high: true, ac_dry_active: true }),
+      "controlled",
+      ctx,
+    );
+    expect(hintText(hints[0], "de")).toBe("Luftfeuchte 68 %, Klimaanlage entfeuchtet");
+    expect(hints[0].severity).toBe("info");
+  });
+
   test("outdoor air wetter, too dry and fine", () => {
     const wetter = roomHints(
       room({ current_humidity: 66, humidity_high: true, humidity_vent_blocked: true }),

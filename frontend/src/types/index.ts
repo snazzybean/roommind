@@ -68,6 +68,8 @@ export interface RoomLiveData {
   humidity_vent_blocked?: boolean;
   /** RoomMind runs the room's dehumidifier / humidifier. */
   dehumidifier_active?: boolean;
+  /** An AC runs in dry for the too humid room (#440). */
+  ac_dry_active?: boolean;
   humidifier_active?: boolean;
   /** Sun sensor (#303); null without one. */
   solar_sensor?: SolarSensorLive | null;

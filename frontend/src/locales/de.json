@@ -1083,6 +1083,7 @@
   "card.hint.humidity_high": "Luftfeuchte {value} %, zu feucht",
   "card.hint.humidity_venting": "Luftfeuchte {value} %, Lüftung läuft",
   "card.hint.humidity_dehumidifying": "Luftfeuchte {value} %, Entfeuchter läuft",
+  "card.hint.humidity_ac_drying": "Luftfeuchte {value} %, Klimaanlage entfeuchtet",
   "card.hint.humidity_outdoor_wetter": "Luftfeuchte {value} %, draußen feuchter",
   "card.hint.humidity_low": "Luftfeuchte {value} %, zu trocken",
   "card.hint.humidity_humidifying": "Luftfeuchte {value} %, Befeuchter läuft",

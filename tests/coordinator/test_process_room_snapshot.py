@@ -98,6 +98,8 @@ NORMAL_ROOM_KEYS = {
     "humidity_vent_blocked",
     "dehumidifier_active",
     "humidifier_active",
+    "ac_dry_active",
+    "ac_dry_entities",
 }
 
 OUTDOOR_ROOM_KEYS = {
@@ -158,6 +160,8 @@ OUTDOOR_ROOM_KEYS = {
     "humidity_vent_blocked",
     "dehumidifier_active",
     "humidifier_active",
+    "ac_dry_active",
+    "ac_dry_entities",
 }
 
 

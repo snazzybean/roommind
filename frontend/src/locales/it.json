@@ -1083,6 +1083,7 @@
   "card.hint.humidity_high": "Umidità {value} %, troppo umida",
   "card.hint.humidity_venting": "Umidità {value} %, ventilazione attiva",
   "card.hint.humidity_dehumidifying": "Umidità {value} %, deumidificatore attivo",
+  "card.hint.humidity_ac_drying": "Umidità {value} %, condizionatore in deumidificazione",
   "card.hint.humidity_outdoor_wetter": "Umidità {value} %, fuori più umido",
   "card.hint.humidity_low": "Umidità {value} %, troppo secca",
   "card.hint.humidity_humidifying": "Umidità {value} %, umidificatore attivo",

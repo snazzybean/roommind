@@ -438,16 +438,19 @@ function humidityHint(live: NonNullable<RoomConfig["live"]>, language: string): 
   if (live.humidity_high) {
     key = live.dehumidifier_active
       ? "card.hint.humidity_dehumidifying"
-      : live.ventilation_active && live.humidity_ventilate
-        ? "card.hint.humidity_venting"
-        : live.humidity_vent_blocked
-          ? "card.hint.humidity_outdoor_wetter"
-          : "card.hint.humidity_high";
+      : live.ac_dry_active
+        ? "card.hint.humidity_ac_drying"
+        : live.ventilation_active && live.humidity_ventilate
+          ? "card.hint.humidity_venting"
+          : live.humidity_vent_blocked
+            ? "card.hint.humidity_outdoor_wetter"
+            : "card.hint.humidity_high";
   } else {
     key = live.humidifier_active ? "card.hint.humidity_humidifying" : "card.hint.humidity_low";
   }
   const running =
     key === "card.hint.humidity_dehumidifying" ||
+    key === "card.hint.humidity_ac_drying" ||
     key === "card.hint.humidity_venting" ||
     key === "card.hint.humidity_humidifying";
   return {

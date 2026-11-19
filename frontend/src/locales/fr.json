@@ -1083,6 +1083,7 @@
   "card.hint.humidity_high": "Humidité {value} %, trop humide",
   "card.hint.humidity_venting": "Humidité {value} %, ventilation en marche",
   "card.hint.humidity_dehumidifying": "Humidité {value} %, déshumidificateur en marche",
+  "card.hint.humidity_ac_drying": "Humidité {value} %, climatiseur en déshumidification",
   "card.hint.humidity_outdoor_wetter": "Humidité {value} %, plus humide dehors",
   "card.hint.humidity_low": "Humidité {value} %, trop sèche",
   "card.hint.humidity_humidifying": "Humidité {value} %, humidificateur en marche",

@@ -97,6 +97,23 @@ HUMIDITY_DEVICE_MIN_OFF_MINUTES = 15
 HUMIDITY_VENT_START_MARGIN = 2.0
 HUMIDITY_VENT_KEEP_MARGIN = 1.0
 
+# Air conditioner in dry while a room is too humid and needs neither heating nor cooling (#440).
+# Dry cools too: it ends AC_DRY_STOP_MARGIN_K above the heat target (and never more than
+# AC_DRY_MAX_BELOW_COOL_K below the cool target, so a wide eco band is not cooled through) and
+# starts again from AC_DRY_START_MARGIN_K above it
+AC_DRY_STOP_MARGIN_K = 0.5
+AC_DRY_START_MARGIN_K = 1.0
+AC_DRY_MAX_BELOW_COOL_K = 3.0
+AC_DRY_MIN_RUN_MINUTES = 10
+# Pause after dry reached its stop point: the air warms back to the walls within minutes
+AC_DRY_MIN_OFF_MINUTES = 15
+# No dry this long after the room heated: it would take back what the heating just brought
+AC_DRY_AFTER_HEATING_MINUTES = 60
+# The model learns again this long after dry: the air warms back to the walls meanwhile
+AC_DRY_SETTLE_MINUTES = 30
+# A unit that does not show dry this long after the switch does not take it
+AC_DRY_REPORT_SECONDS = 300
+
 # Context identifier for RoomMind-initiated service calls.
 # Automations can check: trigger.context.parent_id == "roommind"
 ROOMMIND_CONTEXT_ID = "roommind"

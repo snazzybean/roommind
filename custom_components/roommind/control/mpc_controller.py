@@ -967,6 +967,40 @@ async def async_idle_device(
     return False
 
 
+async def async_climate_command(
+    hass: HomeAssistant, entity_id: str, service: str, data: dict, *, area_id: str = "unknown"
+) -> bool:
+    """Send one climate call as RoomMind and note it in the command cache; False if it failed.
+
+    For managers that drive a device outside ``async_apply`` (AC dry, #440): the cache then
+    knows the device left its idle state, so an IR unit still gets the idle action afterwards.
+    """
+    try:
+        await hass.services.async_call(
+            "climate",
+            service,
+            {"entity_id": entity_id, **data},
+            blocking=True,
+            context=make_roommind_context(),
+        )
+    except Exception:  # noqa: BLE001
+        _LOGGER.warning("Area '%s': climate.%s%s failed on '%s'", area_id, service, data, entity_id, exc_info=True)
+        return False
+    _remember_command(entity_id, service, data)
+    return True
+
+
+def device_setpoint_ha(hass: HomeAssistant, state: Any, celsius: float) -> float:
+    """A room temperature as setpoint in the device's units: snapped to its step, within its limits."""
+    value = celsius_to_ha_temp(hass, celsius)
+    attrs = state.attributes if state is not None else {}
+    value = _snap_to_step(value, _resolve_step(hass, attrs))
+    for limit, pick in (("min_temp", max), ("max_temp", min)):
+        if attrs.get(limit) is not None:
+            value = pick(value, float(attrs[limit]))
+    return value
+
+
 def boost_cap_ha(hass: HomeAssistant, state: Any) -> float | None:
     """Highest proportional heating setpoint a device gets, in HA units; None without a max_temp.
 

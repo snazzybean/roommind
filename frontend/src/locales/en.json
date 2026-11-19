@@ -1083,6 +1083,7 @@
   "card.hint.humidity_high": "Humidity {value} %, too humid",
   "card.hint.humidity_venting": "Humidity {value} %, ventilation on",
   "card.hint.humidity_dehumidifying": "Humidity {value} %, dehumidifier on",
+  "card.hint.humidity_ac_drying": "Humidity {value} %, air conditioner drying",
   "card.hint.humidity_outdoor_wetter": "Humidity {value} %, more humid outside",
   "card.hint.humidity_low": "Humidity {value} %, too dry",
   "card.hint.humidity_humidifying": "Humidity {value} %, humidifier on",

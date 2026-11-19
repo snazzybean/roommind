@@ -94,6 +94,7 @@ class AcCoilDryManager:
         force_off: bool,
         can_activate: Callable[[str], bool],
         group_conflicts: dict[str, frozenset[str]] | None = None,
+        drying_eids: set[str] | None = None,
     ) -> CoilDryRoomResult:
         """Advance the state machine for every AC in this room.
 
@@ -103,6 +104,9 @@ class AcCoilDryManager:
         ``group_conflicts`` lists per device the hvac modes its uniform-mode
         compressor group rules out: a blow phase in one of them does not start
         and a running one ends, else it keeps the outdoor unit from heating (#533).
+
+        ``drying_eids`` run in dry for a too humid room (#440): that wets the coil like
+        cooling, and no run starts meanwhile (a fan_only blow would bring the water back).
         """
         result = CoilDryRoomResult()
         now = time.time()
@@ -112,8 +116,12 @@ class AcCoilDryManager:
             self._eid_to_area[eid] = area_id
             st = self._states.setdefault(eid, CoilDryState())
 
+            drying = eid in (drying_eids or ())
             is_cooling = (
-                mode == MODE_COOLING and commandable and eid not in compressor_forced_off and eid not in exclude_eids
+                (mode == MODE_COOLING or drying)
+                and commandable
+                and eid not in compressor_forced_off
+                and eid not in exclude_eids
             )
 
             self._update_wetness(st, now, mode=mode, commandable=commandable, is_cooling=is_cooling)
@@ -136,17 +144,21 @@ class AcCoilDryManager:
                     commandable=commandable,
                     force_off=force_off,
                 )
-            elif cfg.mode not in conflicts and self._should_start(
-                eid,
-                st,
-                cfg,
-                devices,
-                mode=mode,
-                commandable=commandable,
-                force_off=force_off,
-                compressor_forced_on=compressor_forced_on,
-                exclude_eids=exclude_eids,
-                can_activate=can_activate,
+            elif (
+                not drying
+                and cfg.mode not in conflicts
+                and self._should_start(
+                    eid,
+                    st,
+                    cfg,
+                    devices,
+                    mode=mode,
+                    commandable=commandable,
+                    force_off=force_off,
+                    compressor_forced_on=compressor_forced_on,
+                    exclude_eids=exclude_eids,
+                    can_activate=can_activate,
+                )
             ):
                 await self._start_run(eid, st, cfg, area_id, now, devices, force_off=force_off)
 

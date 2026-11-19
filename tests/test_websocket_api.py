@@ -3975,6 +3975,7 @@ async def test_list_rooms_forwards_humidity_control(ws_hass, store, connection):
         "humidity_vent_blocked",
         "dehumidifier_active",
         "humidifier_active",
+        "ac_dry_active",
     )
     mock_coordinator = MagicMock()
     mock_coordinator.rooms = {"bath": dict.fromkeys(keys, True)}

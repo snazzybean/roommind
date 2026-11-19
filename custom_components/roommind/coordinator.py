@@ -79,6 +79,7 @@ from .control.residual_heat import compute_residual_heat, mean_rebound, residual
 from .control.solar import compute_q_solar_norm
 from .control.thermal_model import RoomModelManager
 from .managers.ac_coil_dry_manager import AcCoilDryManager, CoilDryRoomResult
+from .managers.ac_dry_manager import AcDryManager, AcDryRoomResult, dry_stop_temp
 from .managers.air_quality_manager import AirQualityTracker, VentilationController
 from .managers.compressor_group_manager import (
     UNIFORM_MODE_CONFLICTS,
@@ -119,6 +120,7 @@ from .utils.device_utils import (
     configured_valves,
     get_ac_eids,
     get_all_entity_ids,
+    get_coil_dry_config,
     get_direct_setpoint_eids,
     get_setpoint_offset,
     get_setpoint_offsets,
@@ -256,6 +258,8 @@ _NO_HUMIDITY_CONTROL: dict[str, Any] = {
     "humidity_vent_blocked": False,
     "dehumidifier_active": False,
     "humidifier_active": False,
+    "ac_dry_active": False,
+    "ac_dry_entities": [],
 }
 
 
@@ -333,6 +337,8 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         self._compressor_manager = CompressorGroupManager()
         # AC evaporator drying (anti-odour): bounded fan run after cooling
         self._coil_dry_manager = AcCoilDryManager(hass)
+        # ACs in dry while a room is too humid and needs neither heating nor cooling (#440)
+        self._ac_dry = AcDryManager(hass)
         # Heat source orchestration state (per room)
         self._heat_source_states: dict[str, str] = {}
         # Track which rooms already have entity platform entities registered
@@ -444,6 +450,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 self._cover_orchestrator._model_manager = self._model_manager
             self._valve_manager.load_actuation_data(settings.get("valve_last_actuation", {}))
             self._coil_dry_manager.load_state(settings.get("coil_dry_state", {}))
+            self._ac_dry.load_state(settings.get("ac_dry_state", {}))
             self._head_offsets.load_state(settings.get("ac_head_offsets", {}))
             self._ventilation.load_state(settings.get("ventilation_state", {}))
             self._humidity_devices.load_state(settings.get("humidity_device_state", {}))
@@ -653,6 +660,10 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         if self._coil_dry_manager.state_dirty:
             await store.async_save_settings({"coil_dry_state": self._coil_dry_manager.get_state()})
             self._coil_dry_manager.state_dirty = False
+        self._ac_dry.prune(set(build_rooms_devices_map(stored_rooms)))
+        if self._ac_dry.state_dirty:
+            await store.async_save_settings({"ac_dry_state": self._ac_dry.get_state()})
+            self._ac_dry.state_dirty = False
 
         # Sun sensors: a calibration, a new sensor or a found position is saved at once,
         # the learned profile with the thermal data
@@ -1532,7 +1543,31 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             force_off=force_off,
             can_activate=self._compressor_manager.check_can_activate,
             group_conflicts=compressor_conflicting_modes,
+            drying_eids=self._ac_dry.running_eids(area_id),
         )
+        ac_dry = await self._async_process_ac_dry(
+            area_id,
+            room,
+            settings,
+            controller,
+            targets,
+            mode=mode,
+            too_humid=humidity_control["humidity_high"],
+            has_external_sensor=has_external_sensor,
+            climate_active=climate_active,
+            waiting_for_data=waiting_for_data,
+            window_open=window_open,
+            force_off=force_off,
+            current_temp=current_temp,
+            compressor_forced_on=compressor_forced_on,
+            blocked_eids=cycling_eids | coil_dry.controlled_eids,
+        )
+        humidity_control["ac_dry_active"] = ac_dry.active
+        if compressor_protection_reason == "min_run" and compressor_forced_on <= ac_dry.drying_eids:
+            # The group's min run only keeps a unit drying: the room shows dry, not compressor protection
+            compressor_protection_reason = None
+            compressor_protection_until = None
+        humidity_control["ac_dry_entities"] = sorted(ac_dry.drying_eids)
 
         switch_off = area_id in self._rooms_to_switch_off and self._take_room_switch_off(area_id, climate_active)
         if switch_off:
@@ -1566,7 +1601,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                     targets,
                     power_fraction=power_fraction,
                     current_temp=current_temp,
-                    exclude_eids=cycling_eids | coil_dry.controlled_eids,
+                    exclude_eids=cycling_eids | coil_dry.controlled_eids | ac_dry.excluded_eids,
                     heating_boost_target=device_max_temp,
                     ac_heating_boost_target=ac_device_max_temp,
                     cooling_boost_target=device_min_temp,
@@ -1605,8 +1640,8 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                         )
                     ) or self._compressor_manager.recently_started(eid, COMPRESSOR_STATE_SETTLE_SECONDS)
                     self._compressor_manager.update_member(eid, actually_on)
-                elif eid in coil_dry.compressor_active_eids:
-                    # coil_dry_mode="dry" really runs the compressor
+                elif eid in coil_dry.compressor_active_eids or eid in ac_dry.drying_eids:
+                    # coil_dry_mode="dry" and dry for humidity really run the compressor
                     self._compressor_manager.update_member(eid, True)
                 elif eid in plan_parked_eids:
                     # A listed device is stopped by the plan; one the plan leaves out
@@ -1689,6 +1724,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             heat_source_plan=heat_source_plan,
             climate_active=climate_active,
             coil_dry_skip_training=coil_dry.skip_ekf_training,
+            ac_drying=ac_dry.active or (ac_dry.settling and mode == MODE_IDLE),
             compressor_held=compressor_forced_on,
         )
 
@@ -1825,6 +1861,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         q_rebound: float | None = None,
         climate_active: bool,
         coil_dry_skip_training: bool = False,
+        ac_drying: bool = False,
         compressor_held: set[str] | None = None,
     ) -> tuple[str, float]:
         """Observe device state, train EKF, compute display mode.
@@ -1954,6 +1991,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         if (
             learning_active
             and not coil_dry_skip_training
+            and not ac_drying
             and hold_running is None
             and current_temp_raw is not None
             and self.outdoor_temp_effective is not None
@@ -1985,6 +2023,10 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             # A held unit or a coil dry run keeps the old resume (learn the change across the
             # pause): in the sim it offsets the air relaxing after a heating run, a resync
             # gave beta_s 3.2 -> 5.0 in compressor-hold-mixed-room.
+            # Dry for humidity (#440) runs for hours: learning its whole change as one step dragged
+            # alpha up 5x (sim ac-dry-humid-summer), so the model resyncs after it. Idle steps of
+            # the first 30 min after it are left out too: the air warming back to the walls went
+            # into beta_s (3.1 vs 1.2) and, as rebound charge, into beta_c (ratio 4.7, sim ac-dry-cooling-day)
             device_pause = hold_running is not None or coil_dry_skip_training
             observed = learning_active and current_temp_raw is not None and self.outdoor_temp_effective is not None
             self._ekf_training.clear(area_id, resync=not (device_pause and observed))
@@ -2954,6 +2996,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 self._humidity.vented_before(area_id)
                 and self._ventilation.is_running(room.get("ventilation_entity") or "")
             )
+            or bool(self._ac_dry.running_eids(area_id))
         ):
             assume = HUMIDITY_HIGH
         level = self._humidity.evaluate(area_id, current_humidity, low, high, time.time(), assume=assume)
@@ -2969,6 +3012,78 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         else:
             self._humidity.stop_venting(area_id)
         return result
+
+    async def _async_process_ac_dry(
+        self,
+        area_id: str,
+        room: dict,
+        settings: dict,
+        controller: MPCController,
+        targets: TargetTemps,
+        *,
+        mode: str,
+        too_humid: bool,
+        has_external_sensor: bool,
+        climate_active: bool,
+        waiting_for_data: bool,
+        window_open: bool,
+        force_off: bool,
+        current_temp: float | None,
+        compressor_forced_on: set[str],
+        blocked_eids: set[str],
+    ) -> AcDryRoomResult:
+        """Run the room's ACs in dry while it is too humid and needs neither heating nor cooling (#440).
+
+        Only with a room sensor (in Managed mode the unit regulates itself, idle means nothing),
+        an upper humidity limit and no dehumidifier of the room's own that reads (that one is
+        the tool the user picked; the AC steps in while it is unavailable), and only where the
+        room may cool now: dry is a cooling cycle, so heat only rooms and an outdoor temperature
+        below the cooling minimum keep it off.
+        """
+        dehumidifier = room.get("dehumidifier_entity") or ""
+        dehumidifier_state = self.hass.states.get(dehumidifier) if dehumidifier else None
+        own_dehumidifier = dehumidifier_state is not None and dehumidifier_state.state not in ("unavailable", "unknown")
+        allowed = (
+            has_external_sensor
+            and humidity_regulated(room)
+            and humidity_limits(room)[1] is not None
+            and not own_dehumidifier
+            and not window_open
+            and not force_off
+            and room.get("climate_mode", "auto") != CLIMATE_MODE_HEAT_ONLY
+        )
+        heat = controller.direct_target(MODE_HEATING, targets.heat) if targets.heat is not None else None
+        own_eids = set(get_all_entity_ids(room.get("devices", [])))
+        group_conflicts = (
+            {
+                eid: self._compressor_manager.conflicting_modes(eid, resting=False)
+                for eid in get_ac_eids(room.get("devices", []))
+            }
+            if climate_active
+            else {}
+        )
+        return await self._ac_dry.async_process_room(
+            area_id=area_id,
+            room=room,
+            mode=mode,
+            too_humid=too_humid,
+            allowed=allowed,
+            may_cool=controller.can_heat_cool()[1],
+            control_active=climate_active,
+            waiting=waiting_for_data,
+            room_temp=current_temp,
+            stop_temp=dry_stop_temp(heat, targets.cool, room.get("climate_mode", "auto")),
+            compressor_forced_on=compressor_forced_on,
+            blocked_eids=blocked_eids,
+            group_conflicts=group_conflicts,
+            can_start=lambda eid: (
+                self._compressor_manager.check_can_activate(eid)
+                and not self._held_by_uniform_group(eid, "cool", own_eids)
+            ),
+            # Coil dry runs after dry (it wetted the coil) and ends in the idle action
+            coil_dry_follows=lambda eid: get_coil_dry_config(room.get("devices", []), eid, settings).enabled,
+            switched_off=force_off,
+        )
 
     async def _async_reconcile_ventilation(self, settings: dict, room_states: dict[str, dict]) -> None:
         """Run each room's ventilation entity while its air is bad (#267).
@@ -3220,6 +3335,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         self._heat_source_states.pop(area_id, None)
         self._coil_dry_manager.remove_room(area_id)
         self._room_solar.pop(area_id, None)
+        self._ac_dry.remove_room(area_id)
 
     def cleanup_orphaned_entities(self) -> None:
         """Remove entities that no longer match any registered entity type.
@@ -3326,6 +3442,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             return []
         member_set = set(members)
         modes: list[str] = []
+        drying = False
         for area_id, room in rooms_config.items():
             if not room.get("climate_control_enabled", True):
                 continue
@@ -3338,6 +3455,8 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             if not rs:
                 continue
             commanded = rs.get("group_wanted_mode") or rs.get("commanded_mode", rs.get("mode", MODE_IDLE))
+            if commanded == MODE_IDLE and member_set & set(rs.get("ac_dry_entities") or ()):
+                drying = True
             if rs.get("managed_follows_group"):
                 # Its heating is a placeholder: it counts with what its units do or read against its band
                 doing = {
@@ -3356,6 +3475,9 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 continue
 
             modes.append(commanded)
+        # A unit in dry needs the outdoor unit cooling, but never against a room that heats (#440)
+        if drying and MODE_HEATING not in modes:
+            modes.append(MODE_COOLING)
         return modes
 
     def _managed_vote(self, state: Any, heat_target: float | None, cool_target: float | None) -> str:
@@ -3526,6 +3648,8 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             state = self.hass.states.get(eid)
             if state is not None and state.state not in ("off", "unavailable", "unknown"):
                 return
+            if self._ac_dry.is_running(eid):
+                return  # switched to dry this cycle, its state not shown yet
 
         member_set = set(group.members)
         wake_eid: str | None = None
