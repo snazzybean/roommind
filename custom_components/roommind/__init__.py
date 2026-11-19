@@ -150,8 +150,10 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if unload_ok:
         await _async_release_all_valves(hass)
     if unload_ok:
+        coordinator = hass.data[DOMAIN].pop("coordinator", None)
+        if coordinator is not None:
+            coordinator.cancel_master_delay_timers()
         hass.data[DOMAIN].pop(entry.entry_id)
-        hass.data[DOMAIN].pop("coordinator", None)
 
     # Remove panel if no entries remain
     if not hass.data[DOMAIN]:
