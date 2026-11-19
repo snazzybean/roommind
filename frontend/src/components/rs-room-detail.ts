@@ -119,6 +119,7 @@ const ROOM_FIELDS: [string, RoomFieldSync][] = [
   ["solar_sensor", plain("_solarSensor", (c) => c?.solar_sensor ?? "")],
   ["room_fan_entity", plain("_roomFanEntity", (c) => c?.room_fan_entity ?? "")],
   ["room_fan_mode", plain("_roomFanMode", (c) => c?.room_fan_mode ?? "both")],
+  ["ac_dry_enabled", plain("_acDryEnabled", (c) => c?.ac_dry_enabled ?? true)],
   ["preheat_enabled", plain("_preheatEnabled", (c) => c?.preheat_enabled ?? true)],
   [
     "follow_device_setpoint",
@@ -269,6 +270,7 @@ export class RsRoomDetail extends LitElement {
   @state() private _solarSensor = "";
   @state() private _roomFanEntity = "";
   @state() private _roomFanMode: RoomFanMode = "both";
+  @state() private _acDryEnabled = true;
   @state() private _selectedWindowSensors: Set<string> = new Set();
   @state() private _windowOpenDelay = 0;
   @state() private _windowCloseDelay = 0;
@@ -812,6 +814,8 @@ export class RsRoomDetail extends LitElement {
         .roomFanEntity=${this._roomFanEntity}
         .roomFanMode=${this._roomFanMode}
         .roomFanChoice=${this._roomFanChoice()}
+        .acDryEnabled=${this._acDryEnabled}
+        .acDryChoice=${this._acDryChoice()}
         .live=${this.config?.live}
         .windowSensors=${this._selectedWindowSensors}
         .windowOpenDelay=${this._windowOpenDelay}
@@ -1015,6 +1019,8 @@ export class RsRoomDetail extends LitElement {
             .roomFanEntity=${this._roomFanEntity}
             .roomFanMode=${this._roomFanMode}
             .roomFanChoice=${this._roomFanChoice()}
+            .acDryEnabled=${this._acDryEnabled}
+            .acDryChoice=${this._acDryChoice()}
             .live=${this.config?.live}
             .windowSensors=${this._selectedWindowSensors}
             .windowOpenDelay=${this._windowOpenDelay}
@@ -1302,6 +1308,19 @@ export class RsRoomDetail extends LitElement {
     return this._climateMode === "auto" && this._devices.some((d) => d.type === "ac");
   }
 
+  /**
+   * AC dry is offered where it can run: room sensor, not heat only, an AC listing `dry` (#440).
+   * Once switched off it stays visible while the room has an AC, so it can be switched back on.
+   */
+  private _acDryChoice(): boolean {
+    if (!this._selectedTempSensor || this._climateMode === "heat_only") return false;
+    return this._devices.some((d) => {
+      if (d.type !== "ac") return false;
+      const modes = this.hass.states[d.entity_id]?.attributes?.hvac_modes;
+      return !this._acDryEnabled || (Array.isArray(modes) && modes.includes("dry"));
+    });
+  }
+
   private _onSensorChanged(
     e: CustomEvent<{ key: string; value: string | string[] | number | boolean | null }>,
   ) {
@@ -1340,6 +1359,8 @@ export class RsRoomDetail extends LitElement {
       this._roomFanEntity = value as string;
     } else if (key === "room_fan_mode") {
       this._roomFanMode = value as RoomFanMode;
+    } else if (key === "ac_dry_enabled") {
+      this._acDryEnabled = value as boolean;
     } else if (key === "window_sensors") {
       this._selectedWindowSensors = new Set(value as string[]);
     } else if (key === "window_open_delay") {

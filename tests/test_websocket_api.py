@@ -4132,6 +4132,22 @@ async def test_save_room_room_fan_fields(ws_hass, store, connection):
     assert store.get_room("living")["room_fan_mode"] == "heat"
 
 
+@pytest.mark.asyncio
+async def test_save_room_ac_dry_enabled(ws_hass, store, connection):
+    """AC dry switch (#440): on for new rooms, stored when switched off."""
+    import voluptuous as vol
+
+    await store.async_load()
+    msg = {"type": "roommind/rooms/save", "area_id": "living"}
+    await _save_room(ws_hass, connection, {**msg, "id": 2, "comfort_heat": 21.0})
+    assert store.get_room("living")["ac_dry_enabled"] is True
+    await _save_room(ws_hass, connection, {**msg, "id": 3, "ac_dry_enabled": False})
+    connection.send_error.assert_not_called()
+    assert store.get_room("living")["ac_dry_enabled"] is False
+    with pytest.raises(vol.Invalid):
+        websocket_save_room._ws_schema({**msg, "id": 4, "ac_dry_enabled": "maybe"})
+
+
 def test_room_fan_schema():
     """Room fan (#266): fan/switch/input_boolean, mode heat/cool/both."""
     import voluptuous as vol

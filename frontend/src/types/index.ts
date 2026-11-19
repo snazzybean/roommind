@@ -196,6 +196,8 @@ export interface RoomConfig {
   /** fan.*, switch.* or input_boolean.* RoomMind runs while the room heats or cools (#266). */
   room_fan_entity?: string;
   room_fan_mode?: RoomFanMode;
+  /** An AC with `dry` may dry the room past humidity_max (#440); missing = on. */
+  ac_dry_enabled?: boolean;
   preheat_enabled?: boolean;
   /** K the schedule target may move with the electricity price, 0 = off. */
   price_shift?: number;

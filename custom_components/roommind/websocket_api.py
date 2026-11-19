@@ -187,6 +187,7 @@ _ROOM_SAVE_FIELDS = (
     "solar_sensor",
     "room_fan_entity",
     "room_fan_mode",
+    "ac_dry_enabled",
 )
 
 # Same limits as the room climate entity; also turns away nan/inf
@@ -625,6 +626,7 @@ async def websocket_list_rooms(
             "", vol.All(str, vol.Match(rf"^({'|'.join(VENTILATION_DOMAINS)})\.[a-z0-9_]+$"))
         ),
         vol.Optional("room_fan_mode"): vol.In(ROOM_FAN_MODES),
+        vol.Optional("ac_dry_enabled"): bool,
     }
 )
 @websocket_api.async_response

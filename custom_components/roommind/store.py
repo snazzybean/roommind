@@ -311,6 +311,7 @@ class RoomMindStore:
             "solar_sensor": config.get("solar_sensor", ""),
             "room_fan_entity": config.get("room_fan_entity", ""),
             "room_fan_mode": config.get("room_fan_mode", DEFAULT_ROOM_FAN_MODE),
+            "ac_dry_enabled": config.get("ac_dry_enabled", True),
         }
         _single_temps_to_cool_side(room, config, room["climate_mode"])
         # Directional device sync for new rooms (truthiness check, not just presence)

@@ -116,6 +116,10 @@ export class RsSensorSection extends LitElement {
   @property({ type: String }) public roomFanMode: RoomFanMode = "both";
   /** The room can heat and cool: the fan's heat/cool/both choice is offered. */
   @property({ type: Boolean }) public roomFanChoice = false;
+  /** An AC may dry the room past the upper humidity limit (#440). */
+  @property({ type: Boolean }) public acDryEnabled = true;
+  /** The room has an AC that can dry (see rs-room-detail `_acDryChoice`): the switch is offered. */
+  @property({ type: Boolean }) public acDryChoice = false;
   /** Live state of the room: air quality judgement and whether RoomMind runs the ventilation. */
   @property({ attribute: false }) public live?: RoomLiveData;
   @property({ type: String }) public heatingSystemType = "";
@@ -1084,6 +1088,20 @@ export class RsSensorSection extends LitElement {
                 @value-changed=${(e: CustomEvent<{ value: number }>) =>
                   this._fireSensorChanged("humidity_max", e.detail.value)}
               ></rs-number-field>`
+            : nothing
+        }
+        ${
+          high && this.acDryChoice
+            ? html`<rs-list-row
+                switch
+                wrap
+                .heading=${localize("sensors.ac_dry", l)}
+                .checked=${this.acDryEnabled}
+                @toggle-changed=${(e: CustomEvent<boolean>) =>
+                  this._fireSensorChanged("ac_dry_enabled", e.detail)}
+              >
+                <rs-info-icon slot="end" .text=${localize("sensors.ac_dry_info", l)}></rs-info-icon>
+              </rs-list-row>`
             : nothing
         }
         <rs-list-row

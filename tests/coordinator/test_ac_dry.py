@@ -317,3 +317,27 @@ async def test_unit_switched_from_dry_to_cool_on_the_remote_is_taken_over(hass, 
     await _cycle(coordinator)
     _, override = store.async_update_room.await_args.args
     assert override["override_cool"] == 22.0
+
+
+@pytest.mark.asyncio
+async def test_room_switch_off_keeps_the_ac_out_of_dry(hass, mock_config_entry):
+    coordinator, _, _, _, calls = _setup(hass, mock_config_entry, {**AC_ROOM, "ac_dry_enabled": False})
+    room = await _cycle(coordinator)
+    assert room["humidity_high"] is True and room["ac_dry_active"] is False
+    assert not any(data.get("hvac_mode") == "dry" for _, data in _ac_calls(calls))
+
+
+@pytest.mark.asyncio
+async def test_room_switch_off_ends_a_running_dry_and_gives_the_setback_back(hass, mock_config_entry):
+    devices_cfg = [{"entity_id": AC, "type": "ac", "role": "auto", "idle_action": "setback"}]
+    room_cfg = {**AC_ROOM, "devices": devices_cfg}
+    coordinator, store, devices, _, calls = _setup(
+        hass, mock_config_entry, room_cfg, **{AC: _ac(state="cool", temperature=27.0)}
+    )
+    assert (await _cycle(coordinator))["ac_dry_active"] is True
+    store.get_rooms.return_value = {AREA: {**room_cfg, "ac_dry_enabled": False}}
+    calls.clear()
+    room = await _cycle(coordinator)
+    assert room["ac_dry_active"] is False
+    assert _ac_calls(calls) == [("set_temperature", {"hvac_mode": "cool", "temperature": 27.0})]
+    assert devices[AC].state == "cool"

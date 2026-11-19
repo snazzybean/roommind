@@ -3055,9 +3055,9 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         """Run the room's ACs in dry while it is too humid and needs neither heating nor cooling (#440).
 
         Only with a room sensor (in Managed mode the unit regulates itself, idle means nothing),
-        an upper humidity limit and no dehumidifier of the room's own that reads (that one is
-        the tool the user picked; the AC steps in once it was unavailable for some minutes), and only where the
-        room may cool now: dry is a cooling cycle, so heat only rooms and an outdoor temperature
+        an upper humidity limit, the room's ``ac_dry_enabled`` (default on) and no dehumidifier
+        of the room's own that reads (that one is the tool the user picked; the AC steps in once
+        it was unavailable for some minutes), and only where the room may cool now: dry is a cooling cycle, so heat only rooms and an outdoor temperature
         below the cooling minimum keep it off.
         """
         dehumidifier = room.get("dehumidifier_entity") or ""
@@ -3071,6 +3071,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             has_external_sensor
             and humidity_regulated(room)
             and humidity_limits(room)[1] is not None
+            and room.get("ac_dry_enabled", True)
             and not force_off
             and room.get("climate_mode", "auto") != CLIMATE_MODE_HEAT_ONLY
         )

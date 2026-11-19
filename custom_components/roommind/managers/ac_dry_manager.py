@@ -1,13 +1,14 @@
 """Air conditioners in dry while a room is too humid and needs neither heating nor cooling (#440).
 
 Rooms with an upper humidity limit and no dehumidifier of their own (or one unreadable for
-``AC_DRY_DEHUMIDIFIER_GONE_MINUTES``) let an AC that offers ``dry`` run in it while the room is too humid and the controller idles. Heating and cooling
-always come first: the room's mode is decided before, and a room that heats or cools ends dry
-in the same cycle, ``async_apply`` then switches the unit. Dry cools as well, so it keeps to the
-room's band: it ends ``AC_DRY_STOP_MARGIN_K`` above the heat target and starts again only
-``AC_DRY_START_MARGIN_K`` above it, and not within ``AC_DRY_AFTER_HEATING_MINUTES`` of the room
-heating. Like coil dry, a running unit is left out of ``async_apply`` and counts as a running
-member of its compressor group.
+``AC_DRY_DEHUMIDIFIER_GONE_MINUTES``) let an AC that offers ``dry`` run in it while the room is
+too humid and the controller idles. Heating and cooling always come first: the room's mode is
+decided before, and a room that heats or cools ends dry in the same cycle, ``async_apply`` then
+switches the unit. Dry cools as well, so it keeps to the room's band: it ends
+``AC_DRY_STOP_MARGIN_K`` above the heat target and starts again only ``AC_DRY_START_MARGIN_K``
+above it, and not within ``AC_DRY_AFTER_HEATING_MINUTES`` of the room heating. Like coil dry, a
+running unit is left out of ``async_apply`` and counts as a running member of its compressor
+group.
 
 The unit gets the stop point as its setpoint: most units dry like they cool, down to the
 setpoint, so one left at its setback (cool 27 °C) would not dry at all, and the unit stops by
@@ -152,13 +153,13 @@ class AcDryManager:
     ) -> AcDryRoomResult:
         """Advance dry for every AC of the room.
 
-        ``allowed``: the room may dry at all (Full Control, upper limit, not switched off, not
-        heat only). ``window_open`` ends a run at once and gives no setback
-        back: the window pause in async_apply takes the unit over in the same cycle.
+        ``allowed``: the room may dry at all (Full Control, upper limit, switch on, not switched
+        off, not heat only). ``window_open`` ends a run at once and gives no setback back: the
+        window pause in async_apply takes the unit over in the same cycle.
         ``dehumidifier_reads``: None without a dehumidifier of the room's own; it is the tool the
         user picked, so an AC only starts once it was unreadable for
-        ``AC_DRY_DEHUMIDIFIER_GONE_MINUTES``, and a run ends after its min run once it is back. ``may_cool``: the outdoor limit lets the
-        room cool now; asked only for a start, a reading going back and forth over the cooling
+        ``AC_DRY_DEHUMIDIFIER_GONE_MINUTES``, and a run ends after its min run once it is back.
+        ``may_cool``: the outdoor limit lets the room cool now; asked only for a start, a reading going back and forth over the cooling
         minimum must not end a run. ``coil_dry_follows``: units whose coil dry takes over after
         dry, they get no setback back. ``switched_off``: the room's schedule or presence switches
         it off, async_apply sends the off. ``control_active``: climate control on for the
