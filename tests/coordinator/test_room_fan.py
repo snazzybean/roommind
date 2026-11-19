@@ -57,7 +57,7 @@ async def _cycle(coordinator):
 def _age(coordinator, seconds):
     """Let time pass for the fan: its min run and the room's post-run."""
     coordinator._room_fans._owned = {e: t - seconds for e, t in coordinator._room_fans._owned.items()}
-    coordinator._room_fan._heated_at = {a: t - seconds for a, t in coordinator._room_fan._heated_at.items()}
+    coordinator._room_fan._ran = {a: (m, t - seconds) for a, (m, t) in coordinator._room_fan._ran.items()}
 
 
 @pytest.mark.asyncio
@@ -175,9 +175,9 @@ async def test_failing_room_fan_reconcile_does_not_break_the_cycle(hass, mock_co
 async def test_forget_room_drops_the_post_run(hass, mock_config_entry):
     coordinator, _, _, _ = _setup(hass, mock_config_entry, ROOM)
     await _cycle(coordinator)
-    assert AREA in coordinator._room_fan._heated_at
+    assert AREA in coordinator._room_fan._ran
     reg = MagicMock()
     reg.entities.values.return_value = []
     with patch("homeassistant.helpers.entity_registry.async_get", return_value=reg):
         coordinator._forget_room(AREA)
-    assert AREA not in coordinator._room_fan._heated_at
+    assert AREA not in coordinator._room_fan._ran

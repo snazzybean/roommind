@@ -1054,7 +1054,7 @@
   "sensors.ventilation_running": "running for the air quality",
   "detail.sensors.room_fan": "Room fan",
   "sensors.room_fan_info": "A ceiling or standing fan (fan, switch or input_boolean) that spreads the heat of the radiator or the cold of the AC through the room. RoomMind only switches it on and off; the speed stays as you set it.",
-  "sensors.room_fan_note": "RoomMind switches it on while it heats or cools the room. After heating it keeps running for 10 minutes, with radiators up to 30 minutes while they still give off heat; not after underfloor heating. Each run lasts at least 10 minutes. With the window open or climate control off it stays off. If you switch it off, it stays off until the heating or cooling is over; if you switch it on yourself, RoomMind leaves it on.",
+  "sensors.room_fan_note": "RoomMind switches it on while it heats or cools the room. After a run it keeps going for 10 minutes, after radiator heating up to 30 minutes while the radiators still give off heat, not after underfloor heating. Each run lasts at least 10 minutes. With the window open or climate control off it stays off. If you switch it off, it stays off until the heating or cooling is over; if you switch it on yourself, RoomMind leaves it on.",
   "sensors.no_room_fan": "None.",
   "sensors.room_fan_when": "Runs while",
   "sensors.room_fan_when_info": "Heating: spreads the heat and goes on briefly afterwards. Cooling: moves the cool air; the breeze feels cooler too.",

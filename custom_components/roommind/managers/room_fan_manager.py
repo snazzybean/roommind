@@ -3,7 +3,8 @@
 A ceiling or standing fan (``room_fan_entity``) spreads the heat of a radiator or the cold of an
 AC through the room. It runs while the room actually heats or cools (the shown mode: in Managed
 Mode what the device reports, a unit held for its min run counts), per room for heating,
-cooling or both. After heating it goes on while the heater still gives off heat. On/off only:
+cooling or both. After a run it goes on a little, after heating while the heater still gives
+off heat. On/off only:
 the speed stays as the user set it. Switching, minimum run and a hand on the switch are the
 ``VentilationController`` of #267 on its own instance.
 """
@@ -21,7 +22,7 @@ from ..const import (
     ROOM_FAN_HEAT,
     ROOM_FAN_MODES,
     ROOM_FAN_POST_HEAT_MAX_MINUTES,
-    ROOM_FAN_POST_HEAT_MINUTES,
+    ROOM_FAN_POST_RUN_MINUTES,
 )
 
 _UNDERFLOOR = "underfloor"
@@ -34,48 +35,48 @@ def room_fan_mode(room: dict) -> str:
 
 
 class RoomFanTracker:
-    """Per room: when it last heated, the start of the fan's post-run (in memory)."""
+    """Per room: how and when it last ran its fan for a run, the start of the post-run (in memory)."""
 
     def __init__(self) -> None:
-        self._heated_at: dict[str, float] = {}
+        self._ran: dict[str, tuple[str, float]] = {}
 
     def wants(self, area_id: str, room: dict, rs: dict, now: float) -> bool:
         fan_mode = room_fan_mode(room)
-        heats = fan_mode != ROOM_FAN_COOL
         mode = rs.get("mode")
-        if mode == MODE_HEATING and heats:
-            self._heated_at[area_id] = now
+        if mode in (MODE_HEATING, MODE_COOLING):
+            if fan_mode == (ROOM_FAN_COOL if mode == MODE_HEATING else ROOM_FAN_HEAT):
+                # The other way than the fan is for: ends a post-run too
+                self._ran.pop(area_id, None)
+                return False
+            self._ran[area_id] = (mode, now)
             return True
-        if mode == MODE_COOLING:
-            self._heated_at.pop(area_id, None)
-            return fan_mode != ROOM_FAN_HEAT
-        if mode == MODE_HEATING:
-            self._heated_at.pop(area_id, None)
+        if area_id not in self._ran:
             return False
-        since = self._heated_at.get(area_id)
-        if since is None:
-            return False
+        ran, since = self._ran[area_id]
         elapsed = now - since
         system = room.get("heating_system_type", "")
-        # The stop cycle shows no afterglow yet (computed from the previous mode), hence the fixed
-        # minutes first. A screed glows for hours: no post-run, the fan ran through the long run
-        if system != _UNDERFLOOR and (
-            elapsed < ROOM_FAN_POST_HEAT_MINUTES * 60
-            or (
-                system == HEATING_SYSTEM_RADIATOR
-                and elapsed < ROOM_FAN_POST_HEAT_MAX_MINUTES * 60
-                and rs.get("q_residual", 0.0) > 0.0
+        if ran == MODE_COOLING:
+            keep = elapsed < ROOM_FAN_POST_RUN_MINUTES * 60
+        else:
+            # The stop cycle shows no afterglow yet (computed from the previous mode), hence the
+            # fixed minutes first. A screed glows for hours: no post-run there
+            keep = system != _UNDERFLOOR and (
+                elapsed < ROOM_FAN_POST_RUN_MINUTES * 60
+                or (
+                    system == HEATING_SYSTEM_RADIATOR
+                    and elapsed < ROOM_FAN_POST_HEAT_MAX_MINUTES * 60
+                    and rs.get("q_residual", 0.0) > 0.0
+                )
             )
-        ):
-            return True
-        del self._heated_at[area_id]
-        return False
+        if not keep:
+            del self._ran[area_id]
+        return keep
 
     def forget(self, area_id: str) -> None:
-        self._heated_at.pop(area_id, None)
+        self._ran.pop(area_id, None)
 
     def retain(self, area_ids: set[str]) -> None:
-        self._heated_at = {a: t for a, t in self._heated_at.items() if a in area_ids}
+        self._ran = {a: v for a, v in self._ran.items() if a in area_ids}
 
     def remove_room(self, area_id: str) -> None:
         self.forget(area_id)

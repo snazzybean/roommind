@@ -1054,7 +1054,7 @@
   "sensors.ventilation_running": "läuft wegen der Luftqualität",
   "detail.sensors.room_fan": "Raumlüfter",
   "sensors.room_fan_info": "Ein Decken- oder Standventilator (fan, switch oder input_boolean), der die Wärme des Heizkörpers oder die Kälte der Klimaanlage im Raum verteilt. RoomMind schaltet ihn nur ein und aus, die Stufe bleibt, wie du sie eingestellt hast.",
-  "sensors.room_fan_note": "RoomMind schaltet ihn ein, solange es den Raum heizt oder kühlt. Nach dem Heizen läuft er 10 Minuten nach, bei Heizkörpern bis zu 30 Minuten, solange sie noch Wärme abgeben; nach der Fußbodenheizung nicht. Jeder Lauf dauert mindestens 10 Minuten. Bei offenem Fenster oder ausgeschalteter Klimasteuerung bleibt er aus. Schaltest du ihn aus, bleibt er aus, bis das Heizen oder Kühlen vorbei ist; schaltest du ihn selbst ein, lässt RoomMind ihn an.",
+  "sensors.room_fan_note": "RoomMind schaltet ihn ein, solange es den Raum heizt oder kühlt. Nach einem Lauf läuft er 10 Minuten nach, nach dem Heizen mit Heizkörpern bis zu 30 Minuten, solange sie noch Wärme abgeben, nach der Fußbodenheizung nicht. Jeder Lauf dauert mindestens 10 Minuten. Bei offenem Fenster oder ausgeschalteter Klimasteuerung bleibt er aus. Schaltest du ihn aus, bleibt er aus, bis das Heizen oder Kühlen vorbei ist; schaltest du ihn selbst ein, lässt RoomMind ihn an.",
   "sensors.no_room_fan": "Keiner.",
   "sensors.room_fan_when": "Läuft beim",
   "sensors.room_fan_when_info": "Heizen: verteilt die Wärme und läuft kurz nach. Kühlen: bewegt die kühle Luft, der Luftzug fühlt sich zusätzlich kühler an.",

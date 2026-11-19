@@ -9,7 +9,7 @@ from custom_components.roommind.const import (
     MODE_HEATING,
     MODE_IDLE,
     ROOM_FAN_POST_HEAT_MAX_MINUTES,
-    ROOM_FAN_POST_HEAT_MINUTES,
+    ROOM_FAN_POST_RUN_MINUTES,
 )
 from custom_components.roommind.managers.room_fan_manager import (
     RoomFanTracker,
@@ -80,7 +80,7 @@ def test_post_run_after_heating_lasts_the_fixed_minutes_without_afterglow(system
     tracker = RoomFanTracker()
     _claims(tracker, _room(system=system), {"mode": MODE_HEATING}, 0.0)
     rs = {"mode": MODE_IDLE, "q_residual": 0.0}
-    end = ROOM_FAN_POST_HEAT_MINUTES * 60
+    end = ROOM_FAN_POST_RUN_MINUTES * 60
     assert _claims(tracker, _room(system=system), rs, end - 1)[0][FAN] is True
     assert _claims(tracker, _room(system=system), rs, end)[0][FAN] is False
 
@@ -89,7 +89,7 @@ def test_radiator_post_run_follows_the_afterglow_up_to_the_cap():
     tracker = RoomFanTracker()
     _claims(tracker, _room(), {"mode": MODE_HEATING}, 0.0)
     glowing = {"mode": MODE_IDLE, "q_residual": 0.05}
-    assert _claims(tracker, _room(), glowing, ROOM_FAN_POST_HEAT_MINUTES * 60 + 60)[0][FAN] is True
+    assert _claims(tracker, _room(), glowing, ROOM_FAN_POST_RUN_MINUTES * 60 + 60)[0][FAN] is True
     cap = ROOM_FAN_POST_HEAT_MAX_MINUTES * 60
     assert _claims(tracker, _room(), glowing, cap - 1)[0][FAN] is True
     assert _claims(tracker, _room(), glowing, cap)[0][FAN] is False
@@ -98,7 +98,7 @@ def test_radiator_post_run_follows_the_afterglow_up_to_the_cap():
 def test_radiator_post_run_ends_with_the_afterglow_and_does_not_come_back():
     tracker = RoomFanTracker()
     _claims(tracker, _room(), {"mode": MODE_HEATING}, 0.0)
-    t = ROOM_FAN_POST_HEAT_MINUTES * 60 + 60
+    t = ROOM_FAN_POST_RUN_MINUTES * 60 + 60
     assert _claims(tracker, _room(), {"mode": MODE_IDLE, "q_residual": 0.0}, t)[0][FAN] is False
     assert _claims(tracker, _room(), {"mode": MODE_IDLE, "q_residual": 0.05}, t + 30)[0][FAN] is False
 
@@ -111,10 +111,20 @@ def test_underfloor_has_no_post_run():
     assert _claims(tracker, room, {"mode": MODE_IDLE, "q_residual": 0.8}, 30.0)[0][FAN] is False
 
 
-def test_no_post_run_after_cooling():
+def test_short_post_run_after_cooling_bridges_the_pauses_between_ac_runs():
     tracker = RoomFanTracker()
     _claims(tracker, _room(), {"mode": MODE_COOLING}, 0.0)
-    assert _claims(tracker, _room(), {"mode": MODE_IDLE}, 30.0)[0][FAN] is False
+    end = ROOM_FAN_POST_RUN_MINUTES * 60
+    # No afterglow after cooling: q_residual does not stretch it
+    assert _claims(tracker, _room(), {"mode": MODE_IDLE, "q_residual": 0.2}, end - 1)[0][FAN] is True
+    assert _claims(tracker, _room(), {"mode": MODE_IDLE, "q_residual": 0.2}, end)[0][FAN] is False
+
+
+def test_heating_ends_a_cool_post_run_of_a_cooling_fan():
+    tracker = RoomFanTracker()
+    _claims(tracker, _room("cool"), {"mode": MODE_COOLING}, 0.0)
+    assert _claims(tracker, _room("cool"), {"mode": MODE_HEATING}, 30.0)[0][FAN] is False
+    assert _claims(tracker, _room("cool"), {"mode": MODE_IDLE}, 60.0)[0][FAN] is False
 
 
 def test_cooling_ends_a_heat_post_run():

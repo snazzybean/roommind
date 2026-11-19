@@ -123,10 +123,11 @@ DEFAULT_ROOM_FAN_MODE = ROOM_FAN_BOTH
 # No compressor behind it, only noise and relay wear: shorter than the humidity devices
 ROOM_FAN_MIN_RUN_MINUTES = 10
 ROOM_FAN_MIN_OFF_MINUTES = 5
-# After heating the fan goes on while the heater still gives off heat: this long after every heat
-# source but underfloor (the radiator profile's decay time), in radiator rooms up to the cap while
-# the learned afterglow lasts. Past the cap the little heat left is not worth a draught in winter
-ROOM_FAN_POST_HEAT_MINUTES = 10
+# After a run the fan goes on this long (the radiator profile's decay time): it bridges the short
+# pauses between AC runs and spreads the heat a radiator still gives off. Not after underfloor
+# heating (the fan ran through the long run). In radiator rooms up to the cap while the learned
+# afterglow lasts; past it the little heat left is not worth a draught in winter
+ROOM_FAN_POST_RUN_MINUTES = 10
 ROOM_FAN_POST_HEAT_MAX_MINUTES = 30
 
 # Context identifier for RoomMind-initiated service calls.
