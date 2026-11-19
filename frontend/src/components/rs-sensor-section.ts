@@ -420,7 +420,7 @@ export class RsSensorSection extends LitElement {
       "mdi:ceiling-fan",
       [
         localize("detail.sensors.room_fan", l),
-        this.roomFanChoice ? localize(when.key, l) : "",
+        this.roomFanChoice || this.roomFanMode !== "both" ? localize(when.key, l) : "",
         active ? localize("sensors.room_fan_running", l) : "",
       ]
         .filter(Boolean)
@@ -956,7 +956,8 @@ export class RsSensorSection extends LitElement {
 
   /** Heating, cooling or both; only where the room can do both, else the fan simply follows what it does. */
   private _renderRoomFanSettings(l: string) {
-    if (!this.roomFanEntity || !this.roomFanChoice) return nothing;
+    // A choice left from before the room lost one direction stays visible, or the fan would never run
+    if (!this.roomFanEntity || (!this.roomFanChoice && this.roomFanMode === "both")) return nothing;
     return html`<rs-field
       .label=${localize("sensors.room_fan_when", l)}
       .info=${localize("sensors.room_fan_when_info", l)}
