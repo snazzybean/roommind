@@ -392,8 +392,7 @@ export class RsAnalyticsChart extends LitElement {
       ["master_gate", "analytics.learning_paused_master_gate", "var(--rs-warn)"],
       ["outdoor_unavailable", "analytics.learning_paused_outdoor", "var(--secondary-text-color)"],
     ];
-    const hasLearningData = points.some((p) => p.learning_pause_reason != null);
-    if (!hasLearningData) return nothing;
+    if (points.length === 0 || this.isOutdoor) return nothing;
 
     const start = this.rangeStart;
     const length = Math.max(this.rangeEnd - start, 1);
@@ -406,6 +405,7 @@ export class RsAnalyticsChart extends LitElement {
         timeSpans(points, (p) => p.learning_pause_reason === state),
       ] as const)
       .filter(([, , , spans]) => spans.some(([a, b]) => b > start && a < this.rangeEnd));
+    const activeLabel = localize("analytics.learning_active", this.language);
 
     return html`
       <div class="master-gate-timeline learning-timeline" aria-label=${localize("analytics.learning_state", this.language)}>
@@ -423,6 +423,7 @@ export class RsAnalyticsChart extends LitElement {
           )}
         </div>
         <div class="master-gate-key">
+          <span><i style="background: var(--rs-ok)"></i>${activeLabel}</span>
           ${visibleStates.map(
             ([, labels, colours]) => html`<span><i style="background: ${colours}"></i>${labels}</span>`,
           )}

@@ -657,6 +657,7 @@
   "analytics.master_gate_learning_paused": "Gate principal : Éco · apprentissage en pause",
   "analytics.master_gate_unavailable": "Planning principal indisponible",
   "analytics.learning_state": "État de l'apprentissage",
+  "analytics.learning_active": "Apprentissage actif",
   "analytics.learning_paused_global": "Apprentissage global en pause",
   "analytics.learning_paused_room": "Apprentissage de cette pièce en pause",
   "analytics.learning_paused_master_gate": "Apprentissage en pause à cause du gate principal",

@@ -657,6 +657,7 @@
   "analytics.master_gate_learning_paused": "Gate principale: Eco · apprendimento in pausa",
   "analytics.master_gate_unavailable": "Programmazione principale non disponibile",
   "analytics.learning_state": "Stato dell'apprendimento",
+  "analytics.learning_active": "Apprendimento attivo",
   "analytics.learning_paused_global": "Apprendimento globale in pausa",
   "analytics.learning_paused_room": "Apprendimento di questa stanza in pausa",
   "analytics.learning_paused_master_gate": "Apprendimento in pausa per il gate principale",

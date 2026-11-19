@@ -657,6 +657,7 @@
   "analytics.master_gate_learning_paused": "Zentrales Gate: Eco · Lernen pausiert",
   "analytics.master_gate_unavailable": "Zentrale Heizungszeitplanung nicht verfügbar",
   "analytics.learning_state": "Lernstatus",
+  "analytics.learning_active": "Lernen aktiv",
   "analytics.learning_paused_global": "Lernen global pausiert",
   "analytics.learning_paused_room": "Lernen für diesen Raum pausiert",
   "analytics.learning_paused_master_gate": "Lernen durch zentrales Gate pausiert",

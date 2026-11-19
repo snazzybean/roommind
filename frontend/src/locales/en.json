@@ -657,6 +657,7 @@
   "analytics.master_gate_learning_paused": "Master gate: Eco · learning paused",
   "analytics.master_gate_unavailable": "Master schedule unavailable",
   "analytics.learning_state": "Learning state",
+  "analytics.learning_active": "Learning active",
   "analytics.learning_paused_global": "Learning paused globally",
   "analytics.learning_paused_room": "Learning paused for this room",
   "analytics.learning_paused_master_gate": "Learning paused by master gate",
