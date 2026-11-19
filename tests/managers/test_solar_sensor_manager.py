@@ -418,3 +418,15 @@ def test_the_clamp_follows_clear_sky_not_the_cloud_forecast():
     hass.set(SENSOR, _state(1000 * clear, reported=t))
     out = mgr.update("room", SENSOR, clear * 0.2, 1.0, t)
     assert out.q_now == pytest.approx(clear, rel=1e-6)
+
+
+def test_a_sliver_of_a_second_day_does_not_count():
+    """Day one in full, then only minutes of the next: one day's nowcast error would set the scale alone."""
+    hass = _Hass()
+    mgr = SolarSensorManager(hass)
+    _, ts = _run(mgr, hass, DAY0, 24, lambda ts, q, sf: 1000.0 * q)
+    noon = ts + 12 * 3600
+    _run(mgr, hass, noon, 0.1, lambda ts, q, sf: 1000.0 * q)
+    hass.set(SENSOR, _state(0, reported=ts + 86000))
+    mgr.update("room", SENSOR, 0.0, 1.0, ts + 86000)
+    assert mgr.status("room")["state"] == "learning"

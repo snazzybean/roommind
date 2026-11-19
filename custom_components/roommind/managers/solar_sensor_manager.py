@@ -148,7 +148,8 @@ class _SensorState:
     cal_model: list[float] = field(default_factory=_zeros)
     cal_hours: list[float] = field(default_factory=_zeros)
     cal_sun: list[float] = field(default_factory=_zeros)
-    cal_days: list[int] = field(default_factory=list)
+    # [utc day, model sun-hours] per calibration day
+    cal_days: list[list[float]] = field(default_factory=list)
     profile: list[float] = field(default_factory=lambda: [1.0] * SOLAR_SENSOR_PROFILE_BINS)
     weight: list[float] = field(default_factory=_zeros)
     position: str | None = None
@@ -219,8 +220,10 @@ class SolarSensorManager:
                 st.cal_model[b] += q_model * dt_h
                 st.cal_hours[b] += dt_h
                 day = int(now // 86400)
-                if day not in st.cal_days:
-                    st.cal_days = [*st.cal_days, day]
+                if st.cal_days and st.cal_days[-1][0] == day:
+                    st.cal_days[-1][1] += q_model * dt_h
+                else:
+                    st.cal_days = [*st.cal_days, [day, q_model * dt_h]]
             if q_model < SOLAR_SENSOR_USE_MIN_Q:
                 # Dusk, never full daylight: the input does not jump (and midnight sun still ends it)
                 self._finish_calibration(area_id, st)
@@ -306,7 +309,9 @@ class SolarSensorManager:
         """At night after enough sun: fix the scale and seed the profile from the calibration days."""
         model = sum(st.cal_model)
         raw = sum(st.cal_raw)
-        if model < SOLAR_SENSOR_CALIBRATION_SUN_H or raw <= 0.0 or len(st.cal_days) < _CALIBRATION_MIN_DAYS:
+        # Each counted day brings a fair share of the sun, so one day's nowcast error is at most half the scale
+        full_days = sum(1 for _, sun in st.cal_days if sun >= SOLAR_SENSOR_CALIBRATION_SUN_H / _CALIBRATION_MIN_DAYS)
+        if model < SOLAR_SENSOR_CALIBRATION_SUN_H or raw <= 0.0 or full_days < _CALIBRATION_MIN_DAYS:
             return
         # Most of the sun's path seen: a room shaded every afternoon would get a scale from the morning alone
         seen = sum(1 for h in st.cal_hours if h >= _MIN_BIN_H)
@@ -419,7 +424,7 @@ class SolarSensorManager:
                 cal = d.get("cal")
                 if st.scale is None and cal and len(cal) == 4 and all(len(c) == n for c in cal):
                     st.cal_raw, st.cal_model, st.cal_hours, st.cal_sun = ([float(v) for v in c] for c in cal)
-                    st.cal_days = [int(v) for v in d.get("cal_days", [])]
+                    st.cal_days = [[int(day), float(sun)] for day, sun in d.get("cal_days", [])]
                 if len(d.get("profile") or []) == n and len(d.get("weight") or []) == n:
                     st.profile = [float(v) for v in d["profile"]]
                     st.weight = [float(v) for v in d["weight"]]
