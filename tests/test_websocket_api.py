@@ -4537,3 +4537,17 @@ async def test_save_settings_extra_tiers(ws_hass, store, connection):
     }
     await _save_settings(ws_hass, connection, bad3)
     assert connection.send_error.call_args[0][1] == "invalid_tou_rule"
+
+    # The add button's DRAFT (valid id and name, empty entity) must save: the
+    # row is completed or deleted in place, and the manager keeps it inert.
+    connection.send_result.reset_mock()
+    connection.send_error.reset_mock()
+    draft = {
+        "id": 124,
+        "type": "roommind/settings/save",
+        "tou_extra_tiers": [{**gen, "id": "draft", "entity_id": ""}],
+    }
+    await _save_settings(ws_hass, connection, draft)
+    connection.send_result.assert_called_once()
+    connection.send_error.assert_not_called()
+    assert [t["id"] for t in store.get_settings()["tou_extra_tiers"]] == ["draft"]

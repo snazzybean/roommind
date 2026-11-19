@@ -370,8 +370,9 @@ def _tou_extra_tiers_error(entries: list) -> str | None:
         seen.add(tid)
         if not str(entry.get("name") or "").strip():
             return "Extra tiers need a name"
-        if not str(entry.get("entity_id") or ""):
-            return f"Tier '{tid}' needs a sensing entity"
+        # An empty entity_id is a valid DRAFT: the add button creates one so the
+        # user can name and bind it in place. Such rows stay inert (the manager
+        # treats them as never-holding) until sensing is attached.
         kind = str(entry.get("kind") or "binary_on")
         if kind == "state" and not [str(s) for s in entry.get("states") or [] if str(s).strip()]:
             return f"Tier '{tid}': state activation needs at least one state"

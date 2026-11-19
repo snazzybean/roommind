@@ -2288,6 +2288,39 @@ async def test_extra_tiers_override_the_grid_tariff() -> None:
 
 
 @pytest.mark.asyncio
+async def test_draft_extra_tier_is_inert_but_listed() -> None:
+    """A registered tier without a sensing entity (the add-button draft) never
+    overrides the grid tariff, but does appear in the dictionary so the user
+    can see it and finish binding it."""
+    states = {"sensor.period": "ulo_off_peak", "sensor.rate": "0.0638"}
+    hass = _make_hass(states)
+    mgr = TouManager(hass)
+    settings = {
+        "tou_enabled": True,
+        "tou_period_entity": "sensor.period",
+        "tou_rate_entity": "sensor.rate",
+        "tou_extra_tiers": [
+            {
+                "id": "draft",
+                "name": "New energy tier",
+                "entity_id": "",
+                "kind": "binary_on",
+                "cost": 0.42,
+            }
+        ],
+    }
+    timeline = await mgr.async_build_timeline(settings)
+    assert timeline is not None and timeline.current_tier == TOU_TIER_OFF
+    snap = mgr.snapshot()
+    assert snap["tier"] == TOU_TIER_OFF and snap["source"] != "extra_tiers"
+    # The dictionary lists the draft: labelled, priced by its typed cost, and
+    # flagged not-current — custom tiers show up there even before binding.
+    row = mgr.tier_info(settings)["tiers"]["draft"]
+    assert row["label"] == "New energy tier"
+    assert row["rate"] == 0.42 and row["kind"] == "source" and row["current"] is False
+
+
+@pytest.mark.asyncio
 async def test_extra_tier_activation_shapes_and_debounce() -> None:
     """State lists (Generac wording) and numeric thresholds (solar watts)
     activate tiers; a short-lived flip is smoothed by ``for_seconds``."""
