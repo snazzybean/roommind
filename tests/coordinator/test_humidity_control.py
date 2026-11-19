@@ -336,3 +336,19 @@ async def test_rooms_venting_for_humidity_are_persisted(hass, mock_config_entry)
     coordinator._ventilation._owned[FAN] = time.time() - 3600
     await _cycle(coordinator)
     store.async_save_settings.assert_any_await({"humidity_vent_rooms": []})
+
+
+@pytest.mark.asyncio
+async def test_a_fan_run_for_humidity_does_not_seed_bad_air_after_a_restart(hass, mock_config_entry):
+    """The fan ran for humidity, CO2 sits under its threshold: after the restart the air is not bad."""
+    coordinator, _, _, calls = _setup(
+        hass,
+        mock_config_entry,
+        {**BATH, "co2_sensor": CO2},
+        settings={"ventilation_state": {FAN: time.time() - 3600}, "humidity_vent_rooms": [AREA]},
+        humidity="50",
+        **{CO2: "850", FAN: "on"},
+    )
+    room = await _cycle(coordinator)
+    assert room["air_quality_bad"] is False and room["humidity_high"] is False
+    assert _switch_calls(calls, FAN) == [("fan", "turn_off", FAN)]

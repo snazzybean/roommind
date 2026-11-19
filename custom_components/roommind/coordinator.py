@@ -2963,8 +2963,10 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         now = time.time()
         result = dict(_NO_AIR_QUALITY)
         bad: list[str] = []
-        # A run RoomMind started before a restart or reload: its air was bad then
-        venting = self._ventilation.is_running(room.get("ventilation_entity") or "")
+        # A run RoomMind started before a restart or reload: its air was bad then, unless it ran for humidity
+        venting = self._ventilation.is_running(
+            room.get("ventilation_entity") or ""
+        ) and not self._humidity.vented_before(area_id)
         for kind, threshold in (
             ("co2", room.get("co2_threshold") or DEFAULT_CO2_THRESHOLD),
             ("voc", room.get("voc_threshold")),
