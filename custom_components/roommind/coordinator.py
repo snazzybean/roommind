@@ -897,6 +897,9 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             changes = self.device_setpoints.observe(
                 eid, state.state, state.attributes, *self._setpoint_tolerances(state)
             )
+            if state.state == "dry" and self._ac_dry.is_running(eid):
+                # RoomMind's dry runs to its stop point: the remote moves how far it dries, not the room band
+                continue
             offset = get_setpoint_offset(devices, eid) if full_control else 0.0
             for attr, (before, after) in changes.items():
                 side = _setpoint_side(attr, state, device.get("type", ""), climate_mode)

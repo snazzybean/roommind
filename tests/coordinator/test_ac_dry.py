@@ -264,3 +264,56 @@ def test_drying_room_asks_the_master_for_cooling_unless_a_room_heats(hass, mock_
     states[AREA] = {"mode": "idle"}
     states["bed"] = {"mode": "idle"}
     assert coordinator._collect_member_room_modes(members, states, rooms, {}) == ["idle", "idle"]
+
+
+async def _follow_setup(hass, mock_config_entry, monkeypatch):
+    """A room taking device setpoints over, its AC drying; RoomMind's own sends reach the tracker."""
+    clock = [time.time()]
+    monkeypatch.setattr(ac_dry_mod.time, "time", lambda: clock[0])
+    coordinator, store, devices, world, calls = _setup(
+        hass, mock_config_entry, {**AC_ROOM, "follow_device_setpoint": True}
+    )
+    coordinator.device_setpoints._now = lambda: clock[0]
+    store.async_update_room = AsyncMock()
+    send = hass.services.async_call.side_effect
+
+    async def _noted(domain, service, data, **kw):
+        coordinator.device_setpoints.note_command(data["entity_id"], service, data, switch_to=data.get("hvac_mode"))
+        await send(domain, service, data, **kw)
+
+    hass.services.async_call = AsyncMock(side_effect=_noted)
+    assert (await _cycle(coordinator))["ac_dry_active"] is True
+    clock[0] += 600
+    await _cycle(coordinator)
+    return coordinator, store, devices, world, calls, clock
+
+
+@pytest.mark.asyncio
+async def test_setpoint_turned_on_a_drying_unit_is_no_cooling_override(hass, mock_config_entry, monkeypatch):
+    """The remote moves how far the unit dries, not the room band: no override, the unit keeps the value."""
+    coordinator, store, devices, world, calls, clock = await _follow_setup(hass, mock_config_entry, monkeypatch)
+    devices[AC].attributes["temperature"] = 22.0
+    calls.clear()
+    clock[0] += 30
+    room = await _cycle(coordinator)
+    store.async_update_room.assert_not_awaited()
+    assert room["ac_dry_active"] is True and room["override_active"] is False
+    assert devices[AC].state == "dry" and _ac_calls(calls) == []
+    # Nor later, once dry has ended
+    world["humidity"] = "50"
+    clock[0] += 600
+    assert (await _cycle(coordinator))["ac_dry_active"] is False
+    clock[0] += 30
+    await _cycle(coordinator)
+    store.async_update_room.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_unit_switched_from_dry_to_cool_on_the_remote_is_taken_over(hass, mock_config_entry, monkeypatch):
+    coordinator, store, devices, _, _, clock = await _follow_setup(hass, mock_config_entry, monkeypatch)
+    devices[AC].state = "cool"
+    devices[AC].attributes["temperature"] = 22.0
+    clock[0] += 30
+    await _cycle(coordinator)
+    _, override = store.async_update_room.await_args.args
+    assert override["override_cool"] == 22.0
