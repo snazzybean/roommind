@@ -152,6 +152,7 @@ def _csv_to_points(rows: list[dict]) -> list[dict]:
                 "shared_system_schedule_active": row.get("shared_system_schedule_active", "") in ("True", "true", "1"),
                 "shared_system_demand_blocked": row.get("shared_system_demand_blocked", "") in ("True", "true", "1"),
                 "shared_system_block_reason": row.get("shared_system_block_reason", ""),
+                "learning_pause_reason": row.get("learning_pause_reason", ""),
                 "heat_starts": _safe_int(row.get("heat_starts", "")),
                 "cool_starts": _safe_int(row.get("cool_starts", "")),
                 "room_temp_max": _safe_float(row.get("room_temp_max", "")),

@@ -4,7 +4,7 @@
 import { LitElement, html, css, nothing, type PropertyValues } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import type { HomeAssistant, AnalyticsData, AnalyticsDataPoint } from "../../types";
-import { localize } from "../../utils/localize";
+import { localize, type TranslationKey } from "../../utils/localize";
 import { tokens } from "../../styles/tokens";
 import "../shared/rs-list-card";
 import "../shared/rs-info-icon";
@@ -258,6 +258,7 @@ export class RsAnalyticsChart extends LitElement {
                   )}
                 </div>
                 ${this._renderMasterGateTimeline(points)}
+                ${this._renderLearningTimeline(points)}
                 ${this._renderSeriesLegend(allSeries)}
                 <div class="zoom-hint">
                   ${localize(this._touch ? "analytics.zoom_hint_touch" : "analytics.zoom_hint", l)}
@@ -380,6 +381,52 @@ export class RsAnalyticsChart extends LitElement {
             </button>
           `;
         })}
+      </div>
+    `;
+  }
+
+  private _renderLearningTimeline(points: AnalyticsDataPoint[]) {
+    const pauseStates: Array<[NonNullable<AnalyticsDataPoint["learning_pause_reason"]>, string, string]> = [
+      ["global", "analytics.learning_paused_global", "var(--rs-heat)"],
+      ["room", "analytics.learning_paused_room", "var(--rs-cool)"],
+      ["master_gate", "analytics.learning_paused_master_gate", "var(--rs-warn)"],
+      ["outdoor_unavailable", "analytics.learning_paused_outdoor", "var(--secondary-text-color)"],
+    ];
+    const hasLearningData = points.some((p) => p.learning_pause_reason != null);
+    if (!hasLearningData) return nothing;
+
+    const start = this.rangeStart;
+    const length = Math.max(this.rangeEnd - start, 1);
+    const pct = (ms: number) => Math.min(Math.max(((ms - start) / length) * 100, 0), 100);
+    const visibleStates = pauseStates
+      .map(([state, key, colour]) => [
+        state,
+        localize(key as TranslationKey, this.language),
+        colour,
+        timeSpans(points, (p) => p.learning_pause_reason === state),
+      ] as const)
+      .filter(([, , , spans]) => spans.some(([a, b]) => b > start && a < this.rangeEnd));
+
+    return html`
+      <div class="master-gate-timeline learning-timeline" aria-label=${localize("analytics.learning_state", this.language)}>
+        <div class="master-gate-heading">${localize("analytics.learning_state", this.language)}</div>
+        <div class="master-gate-track learning-track">
+          ${visibleStates.flatMap(([, labels, colours, spans]) =>
+            spans
+              .filter(([a, b]) => b > start && a < this.rangeEnd)
+              .map(
+                ([a, b]) => html`<i
+                  title=${labels}
+                  style="left: ${pct(a)}%; width: ${pct(b) - pct(a)}%; background: ${colours}"
+                ></i>`,
+              ),
+          )}
+        </div>
+        <div class="master-gate-key">
+          ${visibleStates.map(
+            ([, labels, colours]) => html`<span><i style="background: ${colours}"></i>${labels}</span>`,
+          )}
+        </div>
       </div>
     `;
   }
@@ -521,6 +568,10 @@ export class RsAnalyticsChart extends LitElement {
         top: 0;
         bottom: 0;
         min-width: 2px;
+      }
+
+      .learning-track {
+        background: var(--rs-ok);
       }
 
       .master-gate-key {

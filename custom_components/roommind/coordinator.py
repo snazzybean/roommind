@@ -579,6 +579,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                             "shared_system_schedule_active": rs.get("shared_system_schedule_active", ""),
                             "shared_system_demand_blocked": rs.get("shared_system_demand_blocked", False),
                             "shared_system_block_reason": rs.get("shared_system_block_reason", ""),
+                            "learning_pause_reason": rs.get("learning_pause_reason", ""),
                             "co2": rs.get("co2"),
                             **self._model_inputs.get(area_id, {}),
                         },
@@ -1761,6 +1762,17 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             shared_system_schedule_blocked=shared_system_gate,
         )
 
+        if not settings.get("learning_enabled", True):
+            learning_pause_reason = "global"
+        elif area_id in settings.get("learning_disabled_rooms", []):
+            learning_pause_reason = "room"
+        elif shared_system_gate:
+            learning_pause_reason = "master_gate"
+        elif self.outdoor_temp_effective is None and not room.get("is_outdoor", False):
+            learning_pause_reason = "outdoor_unavailable"
+        else:
+            learning_pause_reason = ""
+
         room_state = self._build_room_state_dict(
             area_id=area_id,
             room=room,
@@ -1821,6 +1833,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             shared_system_schedule_active=(not shared_system_gate if shared_system_id else None),
             shared_system_demand_blocked=bool(shared_system_gate),
             shared_system_block_reason="master_schedule" if shared_system_gate else "",
+            learning_pause_reason=learning_pause_reason,
         )
         # Sun sensor (#303), only in rooms with one: what the room gets behind its covers, and the status
         solar_status = self._solar_sensors.status(area_id)
@@ -2249,6 +2262,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         shared_system_schedule_active: bool | None = None,
         shared_system_demand_blocked: bool = False,
         shared_system_block_reason: str = "",
+        learning_pause_reason: str = "",
     ) -> dict:
         """Build the final room state dictionary."""
         _room_devices = room.get("devices", [])
@@ -2371,6 +2385,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             "shared_system_schedule_active": shared_system_schedule_active,
             "shared_system_demand_blocked": shared_system_demand_blocked,
             "shared_system_block_reason": shared_system_block_reason,
+            "learning_pause_reason": learning_pause_reason,
             "coil_dry_active": bool(coil_dry and coil_dry.active),
             "coil_dry_phase": coil_dry.phase if coil_dry else None,
             "coil_dry_until": coil_dry.until if coil_dry else None,

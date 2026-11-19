@@ -410,6 +410,7 @@ export interface AnalyticsDataPoint {
   shared_system_schedule_active?: boolean | null;
   shared_system_demand_blocked?: boolean;
   shared_system_block_reason?: string;
+  learning_pause_reason?: "" | "global" | "room" | "master_gate" | "outdoor_unavailable";
 }
 
 export interface RunOvershoot {
