@@ -979,7 +979,7 @@
   "tou.source_kind.state": "State is one of",
   "tou.source_threshold": "Threshold",
   "tou.source_states": "States (comma-separated, e.g. Running, Exercising)",
-  "tou.source_for": "Sustained for (seconds)",
+  "tou.source_for": "For at least",
   "tou.source_cost": "Cost per kWh",
   "tou.source_enabled": "Active",
   "settings.tou_title": "Energy price",

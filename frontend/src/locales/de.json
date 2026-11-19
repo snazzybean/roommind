@@ -979,7 +979,7 @@
   "tou.source_kind.state": "Zustand einer dieser Werte ist",
   "tou.source_threshold": "Schwellwert",
   "tou.source_states": "Zustände (Komma-getrennt, z. B. Running, Exercising)",
-  "tou.source_for": "Anhaltend für (Sekunden)",
+  "tou.source_for": "Für mindestens",
   "tou.source_cost": "Kosten pro kWh",
   "tou.source_enabled": "Aktiv",
   "settings.tou_title": "Energiepreis",

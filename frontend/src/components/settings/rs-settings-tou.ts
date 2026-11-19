@@ -44,6 +44,7 @@ import {
   toDisplayDelta,
 } from "../../utils/temperature";
 import { RsSettingsBase } from "./rs-settings-base";
+import "../shared/rs-duration-field";
 
 const TOU_TIERS: TouTier[] = ["peak", "mid", "off", "ultra_low"];
 const ANY_TIER = "__any";
@@ -1106,17 +1107,11 @@ export class RsSettingsTou extends RsSettingsBase {
                     ></ha-textfield>`
                   : html`<div></div>`
             }
-            <ha-textfield
-              type="number"
+            <rs-duration-field
               .label=${localize("tou.source_for", l)}
-              .value=${String(t.for_seconds ?? 300)}
-              min="0"
-              step="30"
-              @change=${(e: Event) =>
-                set(i, {
-                  for_seconds: Math.max(0, parseInt((e.target as HTMLInputElement).value, 10) || 0),
-                })}
-            ></ha-textfield>
+              .value=${t.for_seconds ?? 300}
+              @value-changed=${(e: CustomEvent) => set(i, { for_seconds: e.detail.value })}
+            ></rs-duration-field>
             <ha-textfield
               type="number"
               .label=${localize("tou.source_cost", l)}

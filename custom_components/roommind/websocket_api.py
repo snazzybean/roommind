@@ -1321,7 +1321,7 @@ async def websocket_get_settings(
                 vol.Optional("kind", default="binary_on"): vol.In(TOU_EXTRA_TIER_KINDS),
                 vol.Optional("threshold", default=0.0): vol.Coerce(float),
                 vol.Optional("states", default=[]): [str],
-                vol.Optional("for_seconds", default=120): vol.All(vol.Coerce(int), vol.Range(min=0, max=3600)),
+                vol.Optional("for_seconds", default=120): vol.All(vol.Coerce(float), vol.Range(min=0, max=3600)),
                 vol.Optional("cost"): vol.Any(None, vol.Coerce(float)),
                 vol.Optional("unit", default=""): str,
                 vol.Optional("enabled", default=True): bool,

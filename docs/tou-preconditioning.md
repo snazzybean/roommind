@@ -247,8 +247,9 @@ pre-conditioning, coasting, price weighting) applies to it unchanged:
   or on/off signal; `Value is above` / `Value is below` for a number
   compared to a threshold — the direction is yours, because meter sign
   conventions differ per integration and RoomMind never guesses; `State is
-  one of` for a state name from the sensor's own vocabulary. **Sustained
-  for** debounces chatter: a generator reaching steady speed or an inverter
+  one of` for a state name from the sensor's own vocabulary. **For at least**
+  debounces chatter (hh:mm:ss plus a milliseconds box — the same idiom as an
+  automation trigger's `for:`): a generator reaching steady speed or an inverter
   hovering at standby must not strobe the tariff. While a source holds, its
   boundaries anchor `· starts` / `· ends` rules, and "until the next period
   change" means exactly that: the window closes when the flag drops.

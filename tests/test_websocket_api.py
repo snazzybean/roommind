@@ -4545,9 +4545,10 @@ async def test_save_settings_extra_tiers(ws_hass, store, connection):
     draft = {
         "id": 124,
         "type": "roommind/settings/save",
-        "tou_extra_tiers": [{**gen, "id": "draft", "entity_id": ""}],
+        "tou_extra_tiers": [{**gen, "id": "draft", "entity_id": "", "for_seconds": 0.25}],
     }
     await _save_settings(ws_hass, connection, draft)
     connection.send_result.assert_called_once()
     connection.send_error.assert_not_called()
     assert [t["id"] for t in store.get_settings()["tou_extra_tiers"]] == ["draft"]
+    assert store.get_settings()["tou_extra_tiers"][0]["for_seconds"] == 0.25
