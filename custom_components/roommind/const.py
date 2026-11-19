@@ -409,6 +409,19 @@ CONFLICT_RESOLUTIONS = [
     CONFLICT_RESOLUTION_OUTDOOR_TEMP,
 ]
 DEFAULT_CONFLICT_RESOLUTION = CONFLICT_RESOLUTION_HEATING_PRIORITY
+# Master device of a group: a climate entity gets a mode (and optional setpoints), a switch is turned on/off
+MASTER_ENTITY_DOMAINS = ("climate", "switch", "input_boolean")
+# How a climate master is switched off: hvac_mode off, or only its off temperature in its heat mode
+MASTER_OFF_MODE_OFF = "off"
+MASTER_OFF_MODE_TEMPERATURE = "temperature"
+MASTER_OFF_MODES = [MASTER_OFF_MODE_OFF, MASTER_OFF_MODE_TEMPERATURE]
+# Start delay and run-on of a master device, in seconds
+MAX_MASTER_DELAY_S = 3600
+# Setpoints sent to a climate master (its own unit, e.g. a boiler's flow temperature)
+MIN_MASTER_TEMPERATURE = 5.0
+MAX_MASTER_TEMPERATURE = 90.0
+# Setpoints closer than this count as already set
+MASTER_TEMPERATURE_TOLERANCE = 0.05
 
 
 # Far-future sentinel: vacation active indefinitely (year 2999)

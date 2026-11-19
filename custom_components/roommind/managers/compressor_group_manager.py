@@ -14,6 +14,7 @@ from ..const import (
     DEFAULT_COMPRESSOR_MIN_OFF_MINUTES,
     DEFAULT_COMPRESSOR_MIN_RUN_MINUTES,
     DEFAULT_CONFLICT_RESOLUTION,
+    MASTER_OFF_MODE_OFF,
     UNIFORM_SWITCH_MAX_WAIT_S,
 )
 
@@ -40,6 +41,20 @@ class CompressorGroupConfig:
     conflict_resolution: str = "heating_priority"
     action_script: str = ""
     enforce_uniform_mode: bool = False
+    # The master runs only while at least this many member rooms want its action
+    min_rooms: int = 1
+    # A wanted switch must hold this long before the master follows: on (start delay), off (run-on)
+    start_delay_seconds: float = 0.0
+    run_on_seconds: float = 0.0
+    # Climate master only: setpoint when heating, setpoint when off, and whether off keeps its heat mode
+    on_temperature: float | None = None
+    off_temperature: float | None = None
+    off_mode: str = MASTER_OFF_MODE_OFF
+
+    @property
+    def master_domain(self) -> str:
+        """Domain of the master entity ("" without one)."""
+        return self.master_entity.split(".", 1)[0] if self.master_entity else ""
 
 
 @dataclass
@@ -64,6 +79,9 @@ class CompressorGroupState:
     master_on_since: float | None = None
     master_off_since: float | None = None
     member_started_at: dict[str, float] = field(default_factory=dict)
+    # Start delay / run-on: the action the rooms want, and since when (monotonic)
+    delay_wanted: str | None = None
+    delay_wanted_since: float | None = None
 
 
 class CompressorGroupManager:
@@ -90,6 +108,12 @@ class CompressorGroupManager:
                 conflict_resolution=g.get("conflict_resolution", DEFAULT_CONFLICT_RESOLUTION),
                 action_script=g.get("action_script", ""),
                 enforce_uniform_mode=g.get("enforce_uniform_mode", False),
+                min_rooms=max(1, int(g.get("min_rooms", 1) or 1)),
+                start_delay_seconds=float(g.get("start_delay_seconds", 0) or 0),
+                run_on_seconds=float(g.get("run_on_seconds", 0) or 0),
+                on_temperature=g.get("on_temperature"),
+                off_temperature=g.get("off_temperature"),
+                off_mode=g.get("off_mode", MASTER_OFF_MODE_OFF) or MASTER_OFF_MODE_OFF,
             )
             for eid in g.get("members", []):
                 new_entity_map[eid] = gid
@@ -315,6 +339,45 @@ class CompressorGroupManager:
         if state is not None and state.last_mode_action is None and action in UNIFORM_MODE_CONFLICTS:
             state.last_mode_action = action
 
+    def delayed_action(self, group_id: str, wanted: str) -> tuple[str, float]:
+        """Apply the group's start delay and run-on to the action the rooms want.
+
+        Returns the action the master follows now and the seconds until a held-back
+        switch is due (0 when none waits). A switch to an active action waits the start
+        delay, a switch to idle the run-on; a wish that returns to the applied action
+        within the wait switches nothing. Without a known applied action (startup) the
+        wish applies at once.
+        """
+        group = self._groups.get(group_id)
+        state = self._states.get(group_id)
+        if group is None or state is None:
+            return wanted, 0.0
+        now = monotonic()
+        if wanted != state.delay_wanted:
+            state.delay_wanted = wanted
+            state.delay_wanted_since = now
+        applied = state.master_action
+        if applied is None or wanted == applied:
+            return wanted, 0.0
+        delay = group.run_on_seconds if wanted == "idle" else group.start_delay_seconds
+        since = state.delay_wanted_since if state.delay_wanted_since is not None else now
+        left = delay - (now - since)
+        if left <= 0:
+            return wanted, 0.0
+        return applied, left
+
+    def delay_pending(self, group_id: str) -> tuple[str, float] | None:
+        """The switch a start delay or run-on holds back and its seconds left, else None."""
+        group = self._groups.get(group_id)
+        state = self._states.get(group_id)
+        if group is None or state is None or state.delay_wanted is None or state.delay_wanted_since is None:
+            return None
+        if state.master_action is None or state.delay_wanted == state.master_action:
+            return None
+        delay = group.run_on_seconds if state.delay_wanted == "idle" else group.start_delay_seconds
+        left = delay - (monotonic() - state.delay_wanted_since)
+        return (state.delay_wanted, left) if left > 0 else None
+
     def check_master_can_switch(self, group_id: str, new_action: str) -> bool:
         """Check if the master device is allowed to switch to *new_action*.
 
@@ -380,13 +443,19 @@ def resolve_master_action(
     conflict_resolution: str,
     outdoor_temp: float | None,
     outdoor_heating_max: float,
+    min_rooms: int = 1,
 ) -> str:
     """Determine master entity action from aggregate room modes.
 
+    A side counts only when at least *min_rooms* rooms want it.
     Returns "heat", "cool", or "idle".
     """
     n_heating = sum(1 for m in room_modes if m == "heating")
     n_cooling = sum(1 for m in room_modes if m == "cooling")
+    if n_heating < min_rooms:
+        n_heating = 0
+    if n_cooling < min_rooms:
+        n_cooling = 0
 
     if n_heating == 0 and n_cooling == 0:
         return "idle"

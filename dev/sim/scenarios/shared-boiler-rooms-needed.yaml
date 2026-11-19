@@ -1,0 +1,90 @@
+name: shared-boiler-rooms-needed
+description: >
+  A gas boiler as the main device of a shared system group: on once two rooms want
+  heat for 2 minutes (start delay), off 10 minutes after fewer do (run-on), with a flow
+  setpoint when on and a low one when off. The guest room heats all day but is not in
+  the group, so it never runs the boiler alone.
+tags: [trv, compressor-group, master]
+start: 2026-01-12T00:00
+duration: 3d
+location: {latitude: 52.5, longitude: 13.4, time_zone: Europe/Berlin}
+weather: {profile: temperate}
+house:
+  building: bestand_teilsaniert
+  outdoor: {sensors: {temperature: sensor.aussen_temp}}
+  rooms:
+    wohnzimmer:
+      floor_area_m2: 24
+      initial: {temperature: 19.0}
+      devices:
+        - {entity_id: climate.wz_trv, profile: generic_trv}
+        - {entity_id: climate.kessel, profile: generic_boiler}
+      sensors: {temperature: {entity_id: sensor.wz_temp}}
+    buero:
+      floor_area_m2: 12
+      initial: {temperature: 19.0}
+      devices: [{entity_id: climate.bu_trv, profile: generic_trv}]
+      sensors: {temperature: {entity_id: sensor.bu_temp}}
+    schlafzimmer:
+      floor_area_m2: 14
+      initial: {temperature: 18.0}
+      devices: [{entity_id: climate.sz_trv, profile: generic_trv}]
+      sensors: {temperature: {entity_id: sensor.sz_temp}}
+    gast:
+      floor_area_m2: 10
+      initial: {temperature: 19.0}
+      devices: [{entity_id: climate.ga_trv, profile: generic_trv}]
+      sensors: {temperature: {entity_id: sensor.ga_temp}}
+helpers:
+  schedule:
+    plan_wohnen: {daily: ["06:00-22:00@21"]}
+    plan_buero: {weekdays: ["08:00-17:00@21"], weekend: []}
+    plan_schlafen: {daily: ["20:30-23:00@19"]}
+    plan_gast: {daily: ["00:00-23:59@21"]}
+roommind:
+  settings:
+    outdoor_temp_sensor: sensor.aussen_temp
+    compressor_groups:
+      - id: kessel
+        name: Kessel
+        members: [climate.wz_trv, climate.bu_trv, climate.sz_trv]
+        master_entity: climate.kessel
+        min_run_minutes: 1
+        min_off_minutes: 1
+        min_rooms: 2
+        start_delay_seconds: 120
+        run_on_seconds: 600
+        on_temperature: 60
+        off_temperature: 10
+  rooms:
+    wohnzimmer:
+      devices: [{entity_id: climate.wz_trv, type: trv, heating_system_type: radiator}]
+      temperature_sensor: sensor.wz_temp
+      climate_mode: heat_only
+      schedules: [{entity_id: schedule.plan_wohnen}]
+      comfort_temp: 21.0
+      eco_temp: 17.0
+    buero:
+      devices: [{entity_id: climate.bu_trv, type: trv, heating_system_type: radiator}]
+      temperature_sensor: sensor.bu_temp
+      climate_mode: heat_only
+      schedules: [{entity_id: schedule.plan_buero}]
+      comfort_temp: 21.0
+      eco_temp: 17.0
+    schlafzimmer:
+      devices: [{entity_id: climate.sz_trv, type: trv, heating_system_type: radiator}]
+      temperature_sensor: sensor.sz_temp
+      climate_mode: heat_only
+      schedules: [{entity_id: schedule.plan_schlafen}]
+      comfort_temp: 19.0
+      eco_temp: 16.0
+    gast:
+      devices: [{entity_id: climate.ga_trv, type: trv, heating_system_type: radiator}]
+      temperature_sensor: sensor.ga_temp
+      climate_mode: heat_only
+      schedules: [{entity_id: schedule.plan_gast}]
+      comfort_temp: 21.0
+      eco_temp: 17.0
+expect:
+  - {invariant: master_rooms_and_delays}
+  - {invariant: target_never_empty}

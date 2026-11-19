@@ -6,6 +6,7 @@ from helpers import scenario
 
 from roommind_sim.analysis.invariants import (
     hold_shows_running_unit,
+    master_rooms_and_delays,
     max_commands_per_hour,
     min_run_commanded,
     min_run_hold_keeps_setpoint,
@@ -342,3 +343,57 @@ def test_uniform_group_counts_fan_and_dry_against_heat_533():
     for s in run.samples:
         s["devices"]["climate.b"]["mode"] = "cool"
     assert uniform_group_one_mode(run) == []
+
+
+def _master_run(states: list[tuple[int, bool]], start_s: int = 120, run_on_s: int = 600) -> RunData:
+    """Every 30 s: (heating member rooms, boiler on); two rooms needed."""
+    rooms = {
+        "a": {"devices": [{"entity_id": "climate.a", "profile": "generic_trv"}]},
+        "b": {"devices": [{"entity_id": "climate.b", "profile": "generic_trv"}]},
+    }
+    scn = load_scenario_dict(scenario(rooms))
+    t0 = scn.start
+    observer = [
+        {
+            "t": t0 + 30 * i,
+            "rooms": {"a": {"mode": "heating" if n >= 1 else "idle"}, "b": {"mode": "heating" if n >= 2 else "idle"}},
+        }
+        for i, (n, _on) in enumerate(states)
+    ]
+    samples = [
+        {"t": t0 + 30 * i, "devices": {"climate.kessel": {"mode": "heat" if on else "off"}}}
+        for i, (_n, on) in enumerate(states)
+    ]
+    group = {
+        "id": "g",
+        "members": ["climate.a", "climate.b"],
+        "master_entity": "climate.kessel",
+        "min_rooms": 2,
+        "start_delay_seconds": start_s,
+        "run_on_seconds": run_on_s,
+    }
+    storage = {
+        "settings": {"compressor_groups": [group]},
+        "rooms": {"a": {"devices": [{"entity_id": "climate.a"}]}, "b": {"devices": [{"entity_id": "climate.b"}]}},
+    }
+    return RunData(None, scn, samples, observer, [], t0 + 30 * len(states), storage)  # type: ignore[arg-type]
+
+
+def test_master_follows_rooms_needed_and_delays():
+    # Two rooms from 0 s, on after 120 s; one room from 300 s, off after the 600 s run-on
+    states = [(2, i * 30 >= 120) for i in range(10)] + [(1, True)] * 20 + [(1, False)] * 3
+    assert master_rooms_and_delays(_master_run(states)) == []
+
+
+def test_master_on_or_off_too_early():
+    early_on = [(1, False)] * 5 + [(2, False), (2, True)] + [(2, True)] * 5
+    assert "on before enough rooms" in master_rooms_and_delays(_master_run(early_on))[0].detail
+    early_off = [(2, True)] * 3 + [(1, True), (1, False)]
+    assert "off before the run-on" in master_rooms_and_delays(_master_run(early_off))[0].detail
+
+
+def test_master_stuck_is_a_violation_but_a_turned_wish_restarts_the_clock():
+    assert "still off" in master_rooms_and_delays(_master_run([(2, False)] * 20))[0].detail
+    # Off after the run-on just as demand returns: on again after the start delay, not stuck
+    back = [(2, True)] * 2 + [(1, True)] * 20 + [(2, False)] * 4 + [(2, True)] * 6
+    assert master_rooms_and_delays(_master_run(back)) == []
