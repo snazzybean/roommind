@@ -114,6 +114,21 @@ AC_DRY_SETTLE_MINUTES = 30
 # A unit that does not show dry this long after the switch does not take it
 AC_DRY_REPORT_SECONDS = 300
 
+# Room fan (#266): a ceiling or standing fan that runs while RoomMind heats and/or cools the room
+ROOM_FAN_HEAT = "heat"
+ROOM_FAN_COOL = "cool"
+ROOM_FAN_BOTH = "both"
+ROOM_FAN_MODES = (ROOM_FAN_HEAT, ROOM_FAN_COOL, ROOM_FAN_BOTH)
+DEFAULT_ROOM_FAN_MODE = ROOM_FAN_BOTH
+# No compressor behind it, only noise and relay wear: shorter than the humidity devices
+ROOM_FAN_MIN_RUN_MINUTES = 10
+ROOM_FAN_MIN_OFF_MINUTES = 5
+# After heating the fan goes on while the heater still gives off heat: this long after every heat
+# source but underfloor (the radiator profile's decay time), in radiator rooms up to the cap while
+# the learned afterglow lasts. Past the cap the little heat left is not worth a draught in winter
+ROOM_FAN_POST_HEAT_MINUTES = 10
+ROOM_FAN_POST_HEAT_MAX_MINUTES = 30
+
 # Context identifier for RoomMind-initiated service calls.
 # Automations can check: trigger.context.parent_id == "roommind"
 ROOMMIND_CONTEXT_ID = "roommind"

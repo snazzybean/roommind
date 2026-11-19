@@ -19,6 +19,7 @@ from .const import (
     DEFAULT_HEAT_SOURCE_OUTDOOR_THRESHOLD,
     DEFAULT_HEAT_SOURCE_PRIMARY_DELTA,
     DEFAULT_OCCUPANCY_ECO_DELAY_MINUTES,
+    DEFAULT_ROOM_FAN_MODE,
     DOMAIN,
 )
 from .utils.device_utils import (
@@ -308,6 +309,8 @@ class RoomMindStore:
             "dehumidifier_entity": config.get("dehumidifier_entity", ""),
             "humidifier_entity": config.get("humidifier_entity", ""),
             "solar_sensor": config.get("solar_sensor", ""),
+            "room_fan_entity": config.get("room_fan_entity", ""),
+            "room_fan_mode": config.get("room_fan_mode", DEFAULT_ROOM_FAN_MODE),
         }
         _single_temps_to_cool_side(room, config, room["climate_mode"])
         # Directional device sync for new rooms (truthiness check, not just presence)

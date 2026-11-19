@@ -3841,6 +3841,7 @@ async def test_save_room_limits_with_the_gap_and_cleared_ones_pass(ws_hass, stor
     [
         {"ventilation_entity": "switch.plug", "dehumidifier_entity": "switch.plug"},
         {"dehumidifier_entity": "switch.plug", "humidifier_entity": "switch.plug"},
+        {"ventilation_entity": "fan.ceiling", "room_fan_entity": "fan.ceiling"},
     ],
 )
 async def test_save_room_one_role_per_entity(ws_hass, store, connection, fields):
@@ -3867,6 +3868,9 @@ async def test_save_room_one_role_per_entity_against_the_stored_room(ws_hass, st
         ({"humidifier_entity": "switch.plug"}, {"ventilation_entity": "switch.plug"}, False),
         ({"dehumidifier_entity": "switch.plug"}, {"dehumidifier_entity": "switch.plug"}, True),
         ({"ventilation_entity": "fan.hall"}, {"ventilation_entity": "fan.hall"}, True),
+        ({"room_fan_entity": "fan.hall"}, {"ventilation_entity": "fan.hall"}, False),
+        ({"dehumidifier_entity": "switch.plug"}, {"room_fan_entity": "switch.plug"}, False),
+        ({"room_fan_entity": "fan.hall"}, {"room_fan_entity": "fan.hall"}, True),
     ],
 )
 async def test_save_room_one_role_per_entity_across_rooms(ws_hass, store, connection, first, second, ok):
@@ -4112,3 +4116,40 @@ def test_custom_override_stays_within_the_climate_entity_limits(side):
         with pytest.raises(vol.Invalid):
             schema({**base, side: value})
     assert schema({**base, side: 5})[side] == 5.0
+
+
+@pytest.mark.asyncio
+async def test_save_room_room_fan_fields(ws_hass, store, connection):
+    """Room fan (#266): fan/switch/input_boolean and heat/cool/both; stored, defaults for new rooms."""
+    await store.async_load()
+    msg = {"type": "roommind/rooms/save", "area_id": "living"}
+    await _save_room(ws_hass, connection, {**msg, "id": 2, "comfort_heat": 21.0})
+    assert store.get_room("living")["room_fan_entity"] == ""
+    assert store.get_room("living")["room_fan_mode"] == "both"
+    await _save_room(ws_hass, connection, {**msg, "id": 3, "room_fan_entity": "fan.ceiling", "room_fan_mode": "heat"})
+    connection.send_error.assert_not_called()
+    assert store.get_room("living")["room_fan_entity"] == "fan.ceiling"
+    assert store.get_room("living")["room_fan_mode"] == "heat"
+
+
+def test_room_fan_schema():
+    """Room fan (#266): fan/switch/input_boolean, mode heat/cool/both."""
+    import voluptuous as vol
+
+    schema = websocket_save_room._ws_schema
+    base = {"type": "roommind/rooms/save", "id": 1, "area_id": "living"}
+    for eid in ("", "fan.ceiling", "switch.plug", "input_boolean.fan"):
+        assert schema({**base, "room_fan_entity": eid})["room_fan_entity"] == eid
+    for mode in ("heat", "cool", "both"):
+        assert schema({**base, "room_fan_mode": mode})["room_fan_mode"] == mode
+    for bad in ({"room_fan_entity": "climate.living"}, {"room_fan_mode": "dry"}, {"room_fan_mode": ""}):
+        with pytest.raises(vol.Invalid):
+            schema({**base, **bad})
+
+
+@pytest.mark.asyncio
+async def test_save_room_room_fan_rejects_own_entity(ws_hass, store, connection):
+    await store.async_load()
+    msg = {"id": 2, "type": "roommind/rooms/save", "area_id": "living"}
+    await _save_room(ws_hass, connection, {**msg, "room_fan_entity": "switch.roommind_living_climate_control"})
+    connection.send_error.assert_called_once()

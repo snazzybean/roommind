@@ -34,6 +34,7 @@ from .const import (
     MIN_TARGET_TEMP,
     OVERRIDE_CUSTOM,
     OVERRIDE_TYPES,
+    ROOM_FAN_MODES,
     VENTILATION_DOMAINS,
     build_override_live,
     is_override_suppressed,
@@ -184,6 +185,8 @@ _ROOM_SAVE_FIELDS = (
     "dehumidifier_entity",
     "humidifier_entity",
     "solar_sensor",
+    "room_fan_entity",
+    "room_fan_mode",
 )
 
 # Same limits as the room climate entity; also turns away nan/inf
@@ -280,6 +283,7 @@ def _validate_no_own_entities(config: dict, own_prefix: str) -> str | None:
         "ventilation_entity",
         *_HUMIDITY_DEVICE_FIELDS,
         "solar_sensor",
+        "room_fan_entity",
     ):
         eid = config.get(field, "")
         if eid and eid.split(".", 1)[-1].startswith(own_prefix):
@@ -297,8 +301,9 @@ def _validate_humidity_control(
     """Check the merged room: limits apart by the gap, one role per entity, the right direction (#518).
 
     Returns ``(error code, message)`` or None. Checked after the merge, because the auto-save sends
-    one field at a time. An entity keeps one role across all rooms: the ventilation and the
-    humidity devices run on separate controllers, which must not fight over one switch. The
+    one field at a time. An entity keeps one role across all rooms: the ventilation, the
+    humidity devices and the room fans (#266) run on separate controllers, which must not fight
+    over one switch. The
     device class is only checked for a field sent now, so a device that reports its class
     later never blocks other saves of the room.
     """
@@ -308,10 +313,13 @@ def _validate_humidity_control(
             websocket_api.ERR_INVALID_FORMAT,
             f"The upper humidity limit must be at least {HUMIDITY_LIMIT_GAP} % above the lower one",
         )
-    role_fields = ("ventilation_entity", *_HUMIDITY_DEVICE_FIELDS)
+    role_fields = ("ventilation_entity", *_HUMIDITY_DEVICE_FIELDS, "room_fan_entity")
     roles = [room.get(f) for f in role_fields if room.get(f)]
     if len(roles) != len(set(roles)):
-        return "invalid_entity", "An entity can only be the ventilation, the dehumidifier or the humidifier"
+        return (
+            "invalid_entity",
+            "An entity can only be the ventilation, the dehumidifier, the humidifier or the room fan",
+        )
     for other_id, other in rooms.items():
         if other_id == area_id:
             continue
@@ -403,6 +411,7 @@ async def websocket_list_rooms(
             "air_quality_bad": live.get("air_quality_bad", False),
             "air_quality_reason": live.get("air_quality_reason"),
             "ventilation_active": live.get("ventilation_active", False),
+            "room_fan_active": live.get("room_fan_active", False),
             "humidity_high": live.get("humidity_high", False),
             "humidity_low": live.get("humidity_low", False),
             "humidity_ventilate": live.get("humidity_ventilate", False),
@@ -612,6 +621,10 @@ async def websocket_list_rooms(
         vol.Optional("humidifier_entity"): vol.Any(
             "", vol.All(str, vol.Match(rf"^({'|'.join(HUMIDITY_DEVICE_DOMAINS)})\.[a-z0-9_]+$"))
         ),
+        vol.Optional("room_fan_entity"): vol.Any(
+            "", vol.All(str, vol.Match(rf"^({'|'.join(VENTILATION_DOMAINS)})\.[a-z0-9_]+$"))
+        ),
+        vol.Optional("room_fan_mode"): vol.In(ROOM_FAN_MODES),
     }
 )
 @websocket_api.async_response

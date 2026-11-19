@@ -49,6 +49,8 @@ from .const import (
     OUTDOOR_UNAVAILABLE_NOTIFY_CYCLES,
     OVERRIDE_CUSTOM,
     OVERRIDE_TURN_ON_REFRESH_DELAY_S,
+    ROOM_FAN_MIN_OFF_MINUTES,
+    ROOM_FAN_MIN_RUN_MINUTES,
     SCHEDULE_STATE_ON,
     TARGET_REASON_AWAY,
     TARGET_REASON_OVERRIDE,
@@ -110,6 +112,7 @@ from .managers.residual_heat_tracker import (
     ResidualHeatLearner,
     ResidualHeatTracker,
 )
+from .managers.room_fan_manager import RoomFanTracker, room_fan_claims
 from .managers.solar_sensor_manager import RoomSolar, SolarSensorManager
 from .managers.valve_manager import ValveManager
 from .managers.weather_manager import WeatherManager
@@ -397,6 +400,14 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         self._humidity_vent_rooms_saved: list[str] = []
         self._solar_sensors = SolarSensorManager(hass)
         self._room_solar: dict[str, RoomSolar] = {}
+        # Room fans RoomMind runs while it heats or cools the room (#266)
+        self._room_fan = RoomFanTracker()
+        self._room_fans = VentilationController(
+            hass,
+            label="Room fan",
+            min_run_s=ROOM_FAN_MIN_RUN_MINUTES * 60,
+            min_off_s=ROOM_FAN_MIN_OFF_MINUTES * 60,
+        )
         # Per-entity cache of schedule blocks; fallback when schedule.get_schedule fails (#308)
         self._schedule_blocks_cache: dict[str, dict] = {}
         # Entity platform callbacks, set by platform async_setup_entry
@@ -457,6 +468,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             self._humidity.load_venting_rooms(settings.get("humidity_vent_rooms", []))
             self._humidity_vent_rooms_saved = self._humidity.vented_rooms()
             self._solar_sensors.load_state(settings.get("solar_sensor_state", {}))
+            self._room_fans.load_state(settings.get("room_fan_state", {}))
             self._model_loaded = True
 
         # Initialize history store (once)
@@ -503,6 +515,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
 
         await self._async_reconcile_ventilation(settings, room_states)
         await self._async_reconcile_humidity_devices(settings, room_states)
+        await self._async_reconcile_room_fans(settings, room_states)
 
         # Control master devices based on aggregate room demand
         await self._async_control_master_devices(room_states, rooms, settings)
@@ -1804,6 +1817,8 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             room_state["managed_follows_group"] = True
         room_state.update(air_quality)
         room_state.update(humidity_control)
+        if waiting_for_data:
+            room_state["waiting_for_data"] = True
         return room_state
 
     def room_solar(self, area_id: str) -> RoomSolar | None:
@@ -3159,6 +3174,31 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             self._humidity_devices.dirty = False
             self._humidity_vent_rooms_saved = venting
 
+    async def _async_reconcile_room_fans(self, settings: dict, room_states: dict[str, dict]) -> None:
+        """Run each room's fan while the room heats or cools, as set per room (#266).
+
+        Like the humidity devices: against the live store, nothing for rooms under climate control
+        off (an owned fan goes off once), an open window switches it off at once.
+        """
+        rooms = rooms_with_area(self.hass, self.hass.data[DOMAIN]["store"].get_rooms())
+        controlled = (
+            {a: r for a, r in rooms.items() if r.get("climate_control_enabled", True)}
+            if settings.get("climate_control_active", True)
+            else {}
+        )
+        now = time.time()
+        wanted, blocked = room_fan_claims(controlled, room_states, self._room_fan, now, self._room_fans.is_running)
+        try:
+            await self._room_fans.async_reconcile(wanted, now, blocked)
+        except Exception:  # noqa: BLE001
+            _LOGGER.warning("Room fan control failed", exc_info=True)
+        for area_id, rs in room_states.items():
+            entity_id = (rooms.get(area_id) or {}).get("room_fan_entity")
+            rs["room_fan_active"] = bool(entity_id and self._room_fans.is_running(entity_id))
+        if self._room_fans.dirty:
+            await self.hass.data[DOMAIN]["store"].async_save_settings({"room_fan_state": self._room_fans.get_state()})
+            self._room_fans.dirty = False
+
     async def _async_record_recent_temps(self, room_states: dict[str, dict]) -> None:
         """Feed the short series the dashboard cards draw; seeded from the history once per room."""
         now = time.time()
@@ -3331,6 +3371,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         self._air_quality_entity_areas.discard(area_id)
         self._air_quality.remove_room(area_id)
         self._humidity.remove_room(area_id)
+        self._room_fan.remove_room(area_id)
         self._climate_entity_areas.discard(area_id)
         self._heat_source_states.pop(area_id, None)
         self._coil_dry_manager.remove_room(area_id)
