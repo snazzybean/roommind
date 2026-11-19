@@ -30,7 +30,7 @@ is unknown and RoomMind shapes nothing — never guesses.
 ## How far RoomMind can see into the future
 
 Choose **Plan the tariff future from**. The future view is what enables
-pre-conditioning, coasting and the tariff schedule rows; **No future view**
+pre-conditioning, coasting and the energy price rule rows; **No future view**
 means only shaping of the currently active tier:
 
 - **Tariff calendars** (recommended) — bind a `calendar.*` per tier and
@@ -86,7 +86,7 @@ Each room (except outdoor rooms) has two independent switches:
   model, so the room coasts on stored heat and lands back on comfort when
   the stretch ends. Presence does not gate the store — the pre-charge often
   runs while the house is empty, which is exactly when energy is cheap.
-- **Enable tariff schedule for this room** (the *Tariff schedule* section on
+- **Enable energy price rules for this room** (the *Energy price rules* section on
   the card) — the rules layer (see below). A room without the store can
   still steer purely by rules.
 
@@ -127,7 +127,7 @@ move targets, but nothing is timed against the tariff.
 
 ## Tariff rules (device card)
 
-The *Tariff schedule* section steers by tariff **periods** instead of the
+The *Energy price rules* section steers by tariff **periods** instead of the
 clock. Each row is a temporary override of the schedule target, anchored on
 a tier boundary, and reads as a sentence:
 
