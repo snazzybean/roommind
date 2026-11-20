@@ -160,3 +160,14 @@ def test_tau_zero_returns_zero():
     with patch.object(rh, "HEATING_SYSTEM_PROFILES", fake_profiles):
         result = rh.compute_residual_heat(5.0, "zero_tau", 1.0, 60.0)
     assert result == 0.0
+
+
+def test_afterglow_never_exceeds_the_run_power():
+    """A closed valve cannot release more than the run delivered."""
+    from custom_components.roommind.control.residual_heat import compute_residual_heat
+
+    assert compute_residual_heat(0.0, "radiator", 1.0, 30.0, scale=11.0) == 1.0
+    assert compute_residual_heat(0.0, "radiator", 0.6, 30.0, scale=11.0) == 0.6
+    # Below the cap the profile is unchanged, and the decay still applies
+    assert compute_residual_heat(0.0, "radiator", 1.0, 30.0) == 0.3 * (1.0 - math.exp(-2.0))
+    assert compute_residual_heat(60.0, "radiator", 1.0, 30.0, scale=11.0, tau_minutes=40.0) < 1.0

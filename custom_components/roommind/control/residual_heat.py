@@ -52,8 +52,8 @@ def compute_residual_heat(
             profile's ``tau_minutes``. The charge time stays the profile's.
 
     Returns:
-        Residual heat fraction in [0, initial_fraction * scale].  Returns 0.0 for unknown or empty
-        system types (backwards-compatible default).
+        Residual heat fraction in [0, min(initial_fraction * scale, last_power_fraction)].
+        Returns 0.0 for unknown or empty system types (backwards-compatible default).
     """
     profile = HEATING_SYSTEM_PROFILES.get(system_type)
     if not profile or elapsed_minutes < 0:
@@ -73,6 +73,11 @@ def compute_residual_heat(
         charge_fraction = 1.0  # assume fully charged if duration unknown
 
     q = initial * scale * charge_fraction * math.exp(-elapsed_minutes / tau) * last_power_fraction
+    # A closed valve cannot make the emitter give off more than the run delivered. With a
+    # learned scale far above the profile (sensor lagging the radiator) the afterglow came out
+    # at up to 3x the heating rate, so stopping looked better than heating: short pulses that
+    # ended before the reading moved, and idling below the target while the heat faded.
+    q = min(q, last_power_fraction)
     return q if q >= RESIDUAL_HEAT_CUTOFF else 0.0
 
 
