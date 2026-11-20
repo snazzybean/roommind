@@ -95,7 +95,11 @@ export interface RoomLiveData {
   cover_reason?: string;
   active_cover_schedule_index: number;
   active_heat_sources: string | null;
-  learning_paused_reason: "outdoor_unavailable" | null;
+  learning_paused_reason: "outdoor_unavailable" | "global_disabled" | null;
+  shared_system_id?: string | null;
+  shared_system_schedule_active?: boolean | null;
+  shared_system_demand_blocked?: boolean;
+  shared_system_block_reason?: string;
   /** Model updates so far (one per ~3 min of learning). */
   n_observations?: number;
   /** `n_observations` when "learn faster" was last used, null if never (counts the fade). */
@@ -160,6 +164,12 @@ export interface CompressorGroup {
   min_run_minutes: number;
   min_off_minutes: number;
   master_entity: string;
+  master_schedule_entity?: string;
+  master_control_mode?: "hvac_mode" | "target_temperature";
+  master_comfort_temperature?: number;
+  master_eco_temperature?: number;
+  master_idle_temperature?: number;
+  master_demand_offset?: number;
   conflict_resolution: ConflictResolution;
   action_script: string;
   enforce_uniform_mode: boolean;
@@ -269,6 +279,7 @@ export interface GlobalSettings {
   outdoor_cooling_min?: number;
   outdoor_heating_max?: number;
   control_mode?: "mpc" | "bangbang";
+  learning_enabled?: boolean;
   comfort_weight?: number;
   weather_entity?: string;
   outdoor_unavailable_notify?: boolean;
@@ -394,6 +405,12 @@ export interface AnalyticsDataPoint {
   price_level?: string;
   /** Heat-side shift the electricity price applied (cool side moves the other way). */
   price_shift?: number | null;
+  /** Shared-system state recorded for rooms in a master heating group. */
+  shared_system_id?: string | null;
+  shared_system_schedule_active?: boolean | null;
+  shared_system_demand_blocked?: boolean;
+  shared_system_block_reason?: string;
+  learning_pause_reason?: "" | "global" | "room" | "master_gate" | "outdoor_unavailable";
 }
 
 export interface RunOvershoot {

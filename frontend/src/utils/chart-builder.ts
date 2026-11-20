@@ -691,7 +691,7 @@ export function placeEventStrips(
 ): Array<Record<string, unknown>> {
   const top = yMin + (yMax - yMin) * EVENT_STRIP_SHARE;
   return series.map((s) =>
-    s.id === "heating_events" || s.id === "cooling_events"
+    (s.id as string).endsWith("_events")
       ? {
           ...s,
           data: (s.data as Array<[number, number | null]>).map(([t, v]) => [

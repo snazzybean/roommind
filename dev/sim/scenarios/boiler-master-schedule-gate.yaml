@@ -1,0 +1,57 @@
+name: boiler-master-schedule-gate
+description: >
+  A room can request heat overnight, but the boiler master is gated by a separate
+  central-heating schedule. Room demand and learning state remain visible while the
+  shared system is blocked.
+tags: [trv, boiler, schedule]
+start: 2026-01-12T00:00
+duration: 1d
+location: {latitude: 52.5, longitude: 13.4, time_zone: Europe/Berlin}
+weather: {profile: temperate}
+house:
+  building: bestand_teilsaniert
+  outdoor: {sensors: {temperature: sensor.aussen_temp}}
+  rooms:
+    wohnzimmer:
+      name: Wohnzimmer
+      floor_area_m2: 22
+      exterior_wall_m2: 12
+      initial: {temperature: 17.0}
+      devices:
+        - {entity_id: climate.wohnzimmer_trv, profile: generic_trv}
+        - {entity_id: climate.heizung_kessel, profile: generic_boiler}
+      sensors:
+        temperature: {entity_id: sensor.wohnzimmer_temp}
+helpers:
+  schedule:
+    room_heating: {daily: ["00:00-23:59"]}
+    master_heating: {weekdays: ["08:00-22:00@20"], weekend: ["08:00-22:00@20"]}
+roommind:
+  settings:
+    outdoor_temp_sensor: sensor.aussen_temp
+    weather_entity: weather.simhome
+    control_mode: mpc
+    compressor_groups:
+      - id: kessel
+        name: Kessel
+        members: [climate.wohnzimmer_trv]
+        master_entity: climate.heizung_kessel
+        master_schedule_entity: schedule.master_heating
+        master_control_mode: target_temperature
+        master_idle_temperature: 5
+        min_run_minutes: 5
+        min_off_minutes: 5
+  rooms:
+    wohnzimmer:
+      devices: [{entity_id: climate.wohnzimmer_trv, type: trv, heating_system_type: radiator}]
+      temperature_sensor: sensor.wohnzimmer_temp
+      climate_mode: heat_only
+      schedules: [{entity_id: schedule.room_heating}]
+      comfort_temp: 21.0
+      eco_temp: 18.0
+expect:
+  - {check: "room.wohnzimmer.commanded_mode == 'heating'", at: "+0d02h00m", label: room still requests heat overnight}
+  - {check: "room.wohnzimmer.shared_system_schedule_active == false", at: "+0d02h00m", label: master schedule is inactive overnight}
+  - {check: "room.wohnzimmer.shared_system_demand_blocked == true", at: "+0d02h00m", label: boiler demand is blocked overnight}
+  - {check: "room.wohnzimmer.shared_system_schedule_active == true", at: "+0d10h00m", label: master schedule is active in the morning}
+  - {check: "room.wohnzimmer.shared_system_demand_blocked == false", at: "+0d10h00m", label: boiler demand is allowed in the morning}

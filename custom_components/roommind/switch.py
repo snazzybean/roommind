@@ -37,6 +37,7 @@ async def async_setup_entry(
     entities: list[SwitchEntity] = [
         RoomMindVacationSwitch(coordinator),
         RoomMindGlobalClimateControlSwitch(coordinator),
+        RoomMindGlobalLearningSwitch(coordinator),
     ]
 
     rooms = rooms_with_area(hass, store.get_rooms())
@@ -176,4 +177,32 @@ class RoomMindGlobalClimateControlSwitch(CoordinatorEntity, SwitchEntity):
     async def async_turn_off(self, **kwargs: Any) -> None:
         store = self.coordinator.hass.data[DOMAIN]["store"]
         await store.async_save_settings({"climate_control_active": False})
+        await self.coordinator.async_request_refresh()
+
+
+class RoomMindGlobalLearningSwitch(CoordinatorEntity, SwitchEntity):
+    """Switch to pause all model learning without stopping climate control."""
+
+    _attr_has_entity_name = True
+
+    def __init__(self, coordinator: RoomMindCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{DOMAIN}_learning"
+        self._attr_name = "RoomMind Learning"
+        self._attr_icon = "mdi:school"
+        self.entity_id = f"switch.{DOMAIN}_learning"
+
+    @property
+    def is_on(self) -> bool:
+        store = self.coordinator.hass.data[DOMAIN]["store"]
+        return bool(store.get_settings().get("learning_enabled", True))
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        store = self.coordinator.hass.data[DOMAIN]["store"]
+        await store.async_save_settings({"learning_enabled": True})
+        await self.coordinator.async_request_refresh()
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        store = self.coordinator.hass.data[DOMAIN]["store"]
+        await store.async_save_settings({"learning_enabled": False})
         await self.coordinator.async_request_refresh()

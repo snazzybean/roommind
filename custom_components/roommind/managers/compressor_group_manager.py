@@ -37,6 +37,11 @@ class CompressorGroupConfig:
     min_run_seconds: float
     min_off_seconds: float
     master_entity: str = ""
+    master_schedule_entity: str = ""
+    master_control_mode: str = "hvac_mode"
+    master_comfort_temperature: float = 19.0
+    master_eco_temperature: float = 5.0
+    master_demand_offset: float = 0.0
     conflict_resolution: str = "heating_priority"
     action_script: str = ""
     enforce_uniform_mode: bool = False
@@ -61,6 +66,7 @@ class CompressorGroupState:
     switch_ignored: dict[str, str] = field(default_factory=dict)
     # Uniform-mode group whose master can't be read: its applied mode is not trusted meanwhile
     master_unreadable: bool = False
+    master_schedule_blocked: bool = False
     master_on_since: float | None = None
     master_off_since: float | None = None
     member_started_at: dict[str, float] = field(default_factory=dict)
@@ -87,6 +93,14 @@ class CompressorGroupManager:
                 min_run_seconds=g.get("min_run_minutes", DEFAULT_COMPRESSOR_MIN_RUN_MINUTES) * 60,
                 min_off_seconds=g.get("min_off_minutes", DEFAULT_COMPRESSOR_MIN_OFF_MINUTES) * 60,
                 master_entity=g.get("master_entity", ""),
+                master_schedule_entity=g.get("master_schedule_entity", ""),
+                master_control_mode=g.get("master_control_mode", "hvac_mode"),
+                master_comfort_temperature=g.get("master_comfort_temperature", 19.0),
+                master_eco_temperature=g.get(
+                    "master_eco_temperature",
+                    g.get("master_idle_temperature", 5.0),
+                ),
+                master_demand_offset=g.get("master_demand_offset", 0.0),
                 conflict_resolution=g.get("conflict_resolution", DEFAULT_CONFLICT_RESOLUTION),
                 action_script=g.get("action_script", ""),
                 enforce_uniform_mode=g.get("enforce_uniform_mode", False),
@@ -354,6 +368,12 @@ class CompressorGroupManager:
             state.desired_action = action
             if action in UNIFORM_MODE_CONFLICTS:
                 state.last_mode_action = action
+
+    def set_master_schedule_blocked(self, group_id: str, blocked: bool) -> None:
+        """Record whether the group's master schedule blocks shared-system demand."""
+        state = self._states.get(group_id)
+        if state is not None:
+            state.master_schedule_blocked = blocked
 
     def set_master_action(self, group_id: str, action: str) -> None:
         """Record the master entity's resolved action after commands are sent."""

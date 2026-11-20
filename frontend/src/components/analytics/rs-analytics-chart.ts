@@ -3,8 +3,8 @@
  */
 import { LitElement, html, css, nothing, type PropertyValues } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
-import type { HomeAssistant, AnalyticsData } from "../../types";
-import { localize } from "../../utils/localize";
+import type { HomeAssistant, AnalyticsData, AnalyticsDataPoint } from "../../types";
+import { localize, type TranslationKey } from "../../utils/localize";
 import { tokens } from "../../styles/tokens";
 import "../shared/rs-list-card";
 import "../shared/rs-info-icon";
@@ -24,6 +24,9 @@ import {
 import { humidityVisualMap, type HumidityColors } from "../../utils/humidity";
 import { tempUnit, toDisplayDelta } from "../../utils/temperature";
 import { formatNumber } from "../../utils/format";
+import { timeSpans } from "../../utils/analytics-spans";
+
+type MasterGateState = "comfort" | "eco" | "paused" | "unavailable";
 
 // Series drawn for another legend entry: hiding that entry hides them too
 const LEGEND_OWNER: Record<string, string> = {
@@ -195,7 +198,7 @@ export class RsAnalyticsChart extends LitElement {
     const plotted =
       mainAxis.min != null && mainAxis.max != null
         ? placeEventStrips(displaySeries, mainAxis.min, mainAxis.max)
-        : displaySeries.filter((s) => s.id !== "heating_events" && s.id !== "cooling_events");
+        : displaySeries.filter((s) => !(s.id as string).endsWith("_events"));
     const visualMaps: Array<Record<string, unknown>> = [];
     const humidity = displaySeries.find((s) => s.id === "humidity");
     if (humidity) {
@@ -254,6 +257,8 @@ export class RsAnalyticsChart extends LitElement {
                       </div>`,
                   )}
                 </div>
+                ${this._renderMasterGateTimeline(points)}
+                ${this._renderLearningTimeline(points)}
                 ${this._renderSeriesLegend(allSeries)}
                 <div class="zoom-hint">
                   ${localize(this._touch ? "analytics.zoom_hint_touch" : "analytics.zoom_hint", l)}
@@ -265,6 +270,86 @@ export class RsAnalyticsChart extends LitElement {
               </div>`
         }
       </rs-list-card>
+    `;
+  }
+
+  private _renderMasterGateTimeline(points: AnalyticsDataPoint[]) {
+    const sharedPoints = points.filter((p) => !!p.shared_system_id);
+    if (sharedPoints.length === 0) return nothing;
+
+    const states: Array<[MasterGateState, Array<[number, number]>]> = [
+      [
+        "comfort",
+        timeSpans(
+          sharedPoints,
+          (p) => p.shared_system_schedule_active === true && !p.shared_system_demand_blocked,
+        ),
+      ],
+      [
+        "eco",
+        timeSpans(
+          sharedPoints,
+          (p) => p.shared_system_schedule_active === false && !p.shared_system_demand_blocked,
+        ),
+      ],
+      [
+        "paused",
+        timeSpans(
+          sharedPoints,
+          (p) =>
+            p.shared_system_demand_blocked === true &&
+            p.shared_system_block_reason !== "master_schedule_unavailable",
+        ),
+      ],
+      [
+        "unavailable",
+        timeSpans(
+          sharedPoints,
+          (p) =>
+            p.shared_system_demand_blocked === true &&
+            p.shared_system_block_reason === "master_schedule_unavailable",
+        ),
+      ],
+    ];
+    const start = this.rangeStart;
+    const length = Math.max(this.rangeEnd - start, 1);
+    const pct = (ms: number) => Math.min(Math.max(((ms - start) / length) * 100, 0), 100);
+    const labels: Record<MasterGateState, string> = {
+      comfort: localize("analytics.master_gate_comfort", this.language),
+      eco: localize("analytics.master_gate_eco", this.language),
+      paused: localize("analytics.master_gate_learning_paused", this.language),
+      unavailable: localize("analytics.master_gate_unavailable", this.language),
+    };
+    const colours: Record<MasterGateState, string> = {
+      comfort: "var(--rs-ok)",
+      eco: "var(--secondary-text-color)",
+      paused: "var(--rs-heat)",
+      unavailable: "var(--rs-cool)",
+    };
+    const visibleStates = states.filter(([, spans]) => spans.some(([a, b]) => b > start && a < this.rangeEnd));
+
+    return html`
+      <div class="master-gate-timeline" aria-label=${localize("analytics.master_gate", this.language)}>
+        <div class="master-gate-heading">${localize("analytics.master_gate", this.language)}</div>
+        <div class="master-gate-track">
+          ${visibleStates.flatMap(([state, spans]) =>
+            spans
+              .filter(([a, b]) => b > start && a < this.rangeEnd)
+              .map(
+                ([a, b]) => html`<i
+                  title=${labels[state]}
+                  style="left: ${pct(a)}%; width: ${pct(b) - pct(a)}%; background: ${colours[state]}"
+                ></i>`,
+              ),
+          )}
+        </div>
+        <div class="master-gate-key">
+          ${visibleStates.map(
+            ([state]) =>
+              html`<span><i style="background: ${colours[state]}"></i>${labels[state]}</span>`,
+          )}
+        </div>
+      </div>
     `;
   }
 
@@ -296,6 +381,53 @@ export class RsAnalyticsChart extends LitElement {
             </button>
           `;
         })}
+      </div>
+    `;
+  }
+
+  private _renderLearningTimeline(points: AnalyticsDataPoint[]) {
+    const pauseStates: Array<[NonNullable<AnalyticsDataPoint["learning_pause_reason"]>, string, string]> = [
+      ["global", "analytics.learning_paused_global", "var(--rs-heat)"],
+      ["room", "analytics.learning_paused_room", "var(--rs-cool)"],
+      ["master_gate", "analytics.learning_paused_master_gate", "var(--rs-warn)"],
+      ["outdoor_unavailable", "analytics.learning_paused_outdoor", "var(--secondary-text-color)"],
+    ];
+    if (points.length === 0 || this.isOutdoor) return nothing;
+
+    const start = this.rangeStart;
+    const length = Math.max(this.rangeEnd - start, 1);
+    const pct = (ms: number) => Math.min(Math.max(((ms - start) / length) * 100, 0), 100);
+    const visibleStates = pauseStates
+      .map(([state, key, colour]) => [
+        state,
+        localize(key as TranslationKey, this.language),
+        colour,
+        timeSpans(points, (p) => p.learning_pause_reason === state),
+      ] as const)
+      .filter(([, , , spans]) => spans.some(([a, b]) => b > start && a < this.rangeEnd));
+    const activeLabel = localize("analytics.learning_active", this.language);
+
+    return html`
+      <div class="master-gate-timeline learning-timeline" aria-label=${localize("analytics.learning_state", this.language)}>
+        <div class="master-gate-heading">${localize("analytics.learning_state", this.language)}</div>
+        <div class="master-gate-track learning-track">
+          ${visibleStates.flatMap(([, labels, colours, spans]) =>
+            spans
+              .filter(([a, b]) => b > start && a < this.rangeEnd)
+              .map(
+                ([a, b]) => html`<i
+                  title=${labels}
+                  style="left: ${pct(a)}%; width: ${pct(b) - pct(a)}%; background: ${colours}"
+                ></i>`,
+              ),
+          )}
+        </div>
+        <div class="master-gate-key">
+          <span><i style="background: var(--rs-ok)"></i>${activeLabel}</span>
+          ${visibleStates.map(
+            ([, labels, colours]) => html`<span><i style="background: ${colours}"></i>${labels}</span>`,
+          )}
+        </div>
       </div>
     `;
   }
@@ -412,6 +544,55 @@ export class RsAnalyticsChart extends LitElement {
         font-size: 12px;
         text-align: center;
         color: var(--secondary-text-color);
+      }
+
+      .master-gate-timeline {
+        margin: 8px 16px 0;
+        font-size: 12px;
+      }
+
+      .master-gate-heading {
+        margin-bottom: 4px;
+        color: var(--secondary-text-color);
+      }
+
+      .master-gate-track {
+        position: relative;
+        height: 10px;
+        border-radius: 5px;
+        background: var(--rs-fill);
+        overflow: hidden;
+      }
+
+      .master-gate-track i {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        min-width: 2px;
+      }
+
+      .learning-track {
+        background: var(--rs-ok);
+      }
+
+      .master-gate-key {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 2px 10px;
+        margin-top: 4px;
+        color: var(--secondary-text-color);
+      }
+
+      .master-gate-key span {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+      }
+
+      .master-gate-key i {
+        width: 8px;
+        height: 8px;
+        border-radius: 2px;
       }
 
       .series-legend {

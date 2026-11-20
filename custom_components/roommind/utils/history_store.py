@@ -35,6 +35,11 @@ DETAIL_FIELDS = [
     "price",
     "price_level",
     "price_shift",
+    "shared_system_id",
+    "shared_system_schedule_active",
+    "shared_system_demand_blocked",
+    "shared_system_block_reason",
+    "learning_pause_reason",
     # Runs starting at this row, summed per history bucket: the bucket keeps only its first
     # mode, its transitions lose the short runs
     "heat_starts",
@@ -138,6 +143,11 @@ class HistoryStore:
                     "price": data.get("price", ""),
                     "price_level": data.get("price_level", ""),
                     "price_shift": data.get("price_shift", ""),
+                    "shared_system_id": data.get("shared_system_id", ""),
+                    "shared_system_schedule_active": data.get("shared_system_schedule_active", ""),
+                    "shared_system_demand_blocked": data.get("shared_system_demand_blocked", ""),
+                    "shared_system_block_reason": data.get("shared_system_block_reason", ""),
+                    "learning_pause_reason": data.get("learning_pause_reason", ""),
                     "co2": data.get("co2", ""),
                     **{field: data.get(field, "") for field in MODEL_INPUT_FIELDS},
                     **{key: int(mode == run and previous != run) for run, key in START_FIELDS.items()},
@@ -267,6 +277,11 @@ class HistoryStore:
                 "device_setpoint": bucket[0].get("device_setpoint", ""),
                 "target_reason": bucket[0].get("target_reason", ""),
                 "price_level": bucket[0].get("price_level", ""),
+                "shared_system_id": bucket[0].get("shared_system_id", ""),
+                "shared_system_schedule_active": bucket[0].get("shared_system_schedule_active", ""),
+                "shared_system_demand_blocked": bucket[0].get("shared_system_demand_blocked", ""),
+                "shared_system_block_reason": bucket[0].get("shared_system_block_reason", ""),
+                "learning_pause_reason": bucket[0].get("learning_pause_reason", ""),
             }
             for field in (
                 "room_temp",

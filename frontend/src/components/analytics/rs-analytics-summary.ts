@@ -53,6 +53,7 @@ export class RsAnalyticsSummary extends LitElement {
           <div class="body">
             ${this._renderComfort(s)}
             <div class="tiles">
+              ${this._sharedSystemTile()}
               ${
                 this.canHeat || s.heating_hours > 0
                   ? this._runTile("heat", s.heating_hours, s.heating_starts, s.heat_overshoot)
@@ -211,6 +212,23 @@ export class RsAnalyticsSummary extends LitElement {
         timeSpans(this.points, (p) => p.window_open),
         "var(--secondary-text-color)",
       )}
+    </rs-stat-tile>`;
+  }
+
+  private _sharedSystemTile() {
+    const sharedPoints = this.points.filter((p) => !!p.shared_system_id);
+    if (sharedPoints.length === 0) return nothing;
+    const paused = timeSpans(sharedPoints, (p) => p.shared_system_demand_blocked === true);
+    const pausedHours = paused.reduce((total, [start, end]) => total + (end - start), 0) / 3_600_000;
+    const l = this.language;
+    return html`<rs-stat-tile
+      icon="mdi:boiler"
+      tone=${pausedHours > 0 ? "heat" : "ok"}
+      .label=${localize("analytics.master_gate", l)}
+      .value=${formatHours(pausedHours, this.language)}
+      .sub=${localize("analytics.master_gate_paused_summary", l)}
+    >
+      ${this._strip(paused, "var(--rs-heat)")}
     </rs-stat-tile>`;
   }
 
