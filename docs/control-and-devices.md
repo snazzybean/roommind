@@ -124,6 +124,15 @@ How it behaves:
 - In such a room the valve closes at the latest 0.5 °C above the target. In mixed rooms the valve follows the heating power of the normal on/off rules.
 - During the first days, while the room model learns, RoomMind controls the room with simple on/off rules and the valve opens fully when heating.
 
+### TRVs with a single valve position entity
+
+Some TRVs have one `number` entity that is the valve position itself and no second value, for example the Bosch Radiator Thermostat II (BTH-RA) in Zigbee2MQTT (`pi_heating_demand`). Set `Second value is` to `Not present` and pick that entity as the valve position.
+
+These TRVs differ from the ones above in two ways:
+
+- A written position holds only for a while: a BTH-RA moves the valve by its own controller again 15 minutes after the last write. RoomMind therefore sends the position it holds again every 10 minutes, also when it has not changed.
+- There is no device default to hand back. When the room stops heating or RoomMind lets go of the valve, it sets the position to 0 % (closed), and the TRV's own controller takes over by itself. A valve RoomMind does not hold is never written.
+
 A valve does not deliver heat in proportion to its opening: many radiators give most of their output at a small opening. RoomMind learns the room's response at the openings it actually uses.
 
 ## Idle Behavior: Off, Fan Only, Setback

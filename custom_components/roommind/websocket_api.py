@@ -101,7 +101,11 @@ def _number_entity_or_empty(value: object) -> str:
 
 
 def _validate_device_valve(device: dict) -> dict:
-    """Direct valve control (#413) is for TRVs; it takes effect once both degree entities are set."""
+    """Direct valve control (#413) is for TRVs.
+
+    It takes effect once both degree entities are set, or the opening entity alone with
+    ``valve_closing_mode`` ``single`` (#537).
+    """
     opening, closing = device.get("valve_opening_entity"), device.get("valve_closing_entity")
     if (opening or closing) and device.get("type") != "trv":
         raise vol.Invalid("direct valve control is only supported for TRVs (type='trv')")

@@ -76,3 +76,15 @@ export function fanModeLabel(hass: HomeAssistant, mode: string, stateObj?: HassE
   const st = stateObj ?? { entity_id: "climate.roommind_fan_mode", state: "", attributes: {} };
   return hass.formatEntityAttributeValue?.(st, "fan_mode", mode) || mode;
 }
+
+/**
+ * A TRV with direct valve control: both valve entities, or the opening entity alone when the
+ * TRV has a single valve position entity (`valve_closing_mode: "single"`).
+ */
+export function hasDirectValve(device: DeviceConfig): boolean {
+  return (
+    device.type === "trv" &&
+    !!device.valve_opening_entity &&
+    (!!device.valve_closing_entity || device.valve_closing_mode === "single")
+  );
+}

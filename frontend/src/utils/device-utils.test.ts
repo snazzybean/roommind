@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { DeviceConfig, HomeAssistant } from "../types";
-import { deviceAbilities, modeFits } from "./device-utils";
+import { deviceAbilities, hasDirectValve, modeFits } from "./device-utils";
 
 const ac = (entity_id: string) => ({ entity_id, type: "ac", role: "auto" }) as DeviceConfig;
 const trv = (entity_id: string) => ({ entity_id, type: "trv", role: "auto" }) as DeviceConfig;
@@ -48,5 +48,33 @@ describe("deviceAbilities", () => {
       cool: false,
       mixed: false,
     });
+  });
+});
+
+describe("hasDirectValve", () => {
+  const opening = "number.trv_valve_opening_degree";
+  const closing = "number.trv_valve_closing_degree";
+
+  test("needs both valve entities", () => {
+    expect(hasDirectValve(trv("climate.trv"))).toBe(false);
+    expect(hasDirectValve({ ...trv("climate.trv"), valve_opening_entity: opening })).toBe(false);
+    expect(
+      hasDirectValve({
+        ...trv("climate.trv"),
+        valve_opening_entity: opening,
+        valve_closing_entity: closing,
+      }),
+    ).toBe(true);
+  });
+
+  test("a single valve position entity is enough in single mode", () => {
+    const single = {
+      ...trv("climate.trv"),
+      valve_opening_entity: "number.trv_pi_heating_demand",
+      valve_closing_mode: "single",
+    } as DeviceConfig;
+    expect(hasDirectValve(single)).toBe(true);
+    expect(hasDirectValve({ ...single, valve_opening_entity: undefined })).toBe(false);
+    expect(hasDirectValve({ ...single, type: "ac" })).toBe(false);
   });
 });
