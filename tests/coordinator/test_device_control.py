@@ -209,6 +209,46 @@ class TestComputeDeviceSetpoint:
         )
         assert result == 22.5
 
+    def test_all_direct_large_offset_clamped_to_trv_max(self, hass, mock_config_entry):
+        """Target 21 + offset 10 shows the 30 °C the TRV gets, not 31 (#543)."""
+        coordinator = _create_coordinator(hass, mock_config_entry)
+        result = coordinator._compute_device_setpoint(
+            "heating", 1.0, 19.0, 21.0, True, device_max_temp=30.0, all_direct=True, direct_offset=10.0
+        )
+        assert result == 30.0
+
+    def test_all_direct_negative_offset_clamped_to_ac_min(self, hass, mock_config_entry):
+        coordinator = _create_coordinator(hass, mock_config_entry)
+        result = coordinator._compute_device_setpoint(
+            "cooling",
+            1.0,
+            27.0,
+            24.0,
+            True,
+            device_min_temp=16.0,
+            has_thermostats=False,
+            has_acs=True,
+            all_direct=True,
+            direct_offset=-10.0,
+        )
+        assert result == 16.0
+
+    def test_all_direct_ac_heating_clamped_to_ac_max(self, hass, mock_config_entry):
+        coordinator = _create_coordinator(hass, mock_config_entry)
+        result = coordinator._compute_device_setpoint(
+            "heating",
+            1.0,
+            19.0,
+            24.0,
+            True,
+            ac_device_max_temp=30.0,
+            has_thermostats=False,
+            has_acs=True,
+            all_direct=True,
+            direct_offset=8.0,
+        )
+        assert result == 30.0
+
 
 class TestComputeDeviceSetpointOrchestrated:
     """Tests for _compute_device_setpoint_orchestrated with direct_eids."""
@@ -300,6 +340,23 @@ class TestComputeDeviceSetpointOrchestrated:
             direct_offsets={"climate.heater": -1.0},
         )
         assert result == 20.0
+
+    @pytest.mark.parametrize(("device_type", "expected"), [("thermostat", 30.0), ("ac", 28.0)])
+    def test_direct_large_offset_clamped_to_device_max(self, hass, mock_config_entry, device_type, expected):
+        """Target 21 + offset 10 is shown within the running device's max_temp, as sent (#543)."""
+        coordinator = _create_coordinator(hass, mock_config_entry)
+        cmd = MagicMock(active=True, entity_id="climate.heater", device_type=device_type, power_fraction=1.0)
+        plan = MagicMock(commands=[cmd])
+        result = coordinator._compute_device_setpoint_orchestrated(
+            plan,
+            20.0,
+            21.0,
+            30.0,
+            28.0,
+            direct_eids={"climate.heater"},
+            direct_offsets={"climate.heater": 10.0},
+        )
+        assert result == expected
 
 
 class TestReadDeviceTemp:

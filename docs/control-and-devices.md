@@ -95,7 +95,7 @@ Example: the room target is 24°C. While cooling, the device thinks the room is 
 
 A TRV that measures on its body, next to the radiator, can read several degrees above the room once the radiator is hot and close on its own before the room is warm. A larger positive offset keeps its valve open, so the room sensor decides when to stop.
 
-With the `Setback` idle action the idle setpoint is the target + offset - 2 °C while heating (target + offset + 2 °C while cooling), so a large offset keeps the device working while idle: offset +10 and target 21 °C give 29 °C. With large offsets use `Turn off` (or `Low setpoint` on a TRV) as the idle action.
+On an AC with the `Setback` idle action the idle setpoint is the target + offset - 2 °C while heating (target + offset + 2 °C while cooling), so a large offset keeps the AC working while idle: offset +10 and target 21 °C give 29 °C. With large offsets use `Turn off` as the idle action. TRVs only offer `Turn off` and `Low setpoint`, which do not use the offset.
 
 The offset is applied before the device limits (`min_temp`/`max_temp`) and the step rounding, and it is kept for the `Setback` idle action. It has no effect in `Proportional` mode. The field is only offered in rooms with an external room sensor, because Managed rooms have no reference to correct against; an old value stays ignored there. On Fahrenheit systems the field is shown in °F.
 

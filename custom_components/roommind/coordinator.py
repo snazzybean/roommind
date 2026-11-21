@@ -195,6 +195,15 @@ def _within_boost_cap(setpoint: float, cap: float | None, floor: float) -> float
     return min(setpoint, max(cap, floor))
 
 
+def _within_device_range(setpoint: float, lo: float | None, hi: float | None) -> float:
+    """A displayed direct setpoint (target + offset) within the device's min_temp/max_temp, as sent."""
+    if hi is not None:
+        setpoint = min(setpoint, hi)
+    if lo is not None:
+        setpoint = max(setpoint, lo)
+    return setpoint
+
+
 def _uniform_mode(state: Any) -> str | None:
     """The mode a unit holds on the shared circuit; heat_cool/auto by what it is doing (#533)."""
     if state is None:
@@ -2303,7 +2312,10 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         cmd = active_cmds[0]
         if direct_eids and cmd.entity_id in direct_eids:
             base = direct_target if direct_target is not None else target_temp
-            return base + (direct_offsets or {}).get(cmd.entity_id, 0.0)
+            sp = base + (direct_offsets or {}).get(cmd.entity_id, 0.0)
+            if cmd.device_type == "thermostat":
+                return _within_device_range(sp, None, device_max_temp)
+            return _within_device_range(sp, None, ac_device_max_temp)
         if cmd.device_type == "thermostat":
             boost = device_max_temp if device_max_temp is not None else HEATING_BOOST_TARGET
             cap = boost_caps[0]
@@ -2346,7 +2358,11 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         if not has_external_sensor or current_temp is None or target_temp is None:
             return None
         if all_direct:
-            return (direct_target if direct_target is not None else target_temp) + direct_offset
+            sp = (direct_target if direct_target is not None else target_temp) + direct_offset
+            # As _call() clamps it: TRV range while a TRV room heats, else the AC range
+            if has_thermostats and mode != MODE_COOLING:
+                return _within_device_range(sp, None, device_max_temp)
+            return _within_device_range(sp, device_min_temp, ac_device_max_temp)
 
         if mode == MODE_HEATING:
             # A room with TRVs shows the TRV setpoint, else the AC heating one (as async_apply sends it, #507)
