@@ -280,6 +280,55 @@ class TestBuildAnalyticsData:
         assert forecast.call_args.kwargs["room_vacant"] is True
 
     @pytest.mark.asyncio
+    async def test_forecast_gets_the_expected_occupancy(self):
+        """The chart forecast follows the expected window the control loop used, not the schedule."""
+        from custom_components.roommind.utils.expected_occupancy import ExpectedOccupancy
+
+        hass = MagicMock()
+
+        async def mock_executor(fn, *args, **kwargs):
+            return fn(*args, **kwargs)
+
+        hass.async_add_executor_job = mock_executor
+        store = MagicMock()
+        store.get_settings.return_value = {}
+        store.get_room.return_value = {}
+        expected = ExpectedOccupancy(probability=lambda _ts: 0.9, threshold=0.5)
+        coordinator = MagicMock()
+        coordinator.rooms = {"living_room": {}}
+        coordinator.expected_occupancy.return_value = expected
+        coordinator._history_store.read_detail.return_value = []
+        coordinator._history_store.read_history.return_value = []
+
+        with patch(
+            "custom_components.roommind.services.analytics_service._compute_target_forecast",
+            new_callable=AsyncMock,
+            return_value=[],
+        ) as forecast:
+            await build_analytics_data(hass, "living_room", "12h", store, coordinator)
+        assert forecast.call_args.kwargs["expected_occupancy"] is expected
+
+    @pytest.mark.asyncio
+    async def test_forecast_follows_the_expected_window(self):
+        from custom_components.roommind.utils.expected_occupancy import ExpectedOccupancy
+
+        hass = MagicMock()
+        hass.config.units.temperature_unit = "°C"
+        room = {"comfort_heat": 21.0, "comfort_cool": 24.0, "eco_heat": 17.0, "eco_cool": 27.0}
+        with (
+            patch("custom_components.roommind.utils.presence_utils.is_presence_away", return_value=False),
+            patch("custom_components.roommind.utils.schedule_utils.get_active_schedule_entity", return_value=None),
+        ):
+            result = await _compute_target_forecast(
+                hass,
+                room,
+                {},
+                hours=0.0,
+                expected_occupancy=ExpectedOccupancy(probability=lambda _ts: 0.1, threshold=0.5),
+            )
+        assert result[0]["heat_target"] == 17.0
+
+    @pytest.mark.asyncio
     async def test_target_forecast_exception_returns_empty(self):
         """Exception in _compute_target_forecast -> empty forecast (lines 237-239)."""
         hass = MagicMock()

@@ -131,6 +131,7 @@ from .utils.device_utils import (
     get_valve_entities,
     room_contributes_to_group,
 )
+from .utils.expected_occupancy import ExpectedOccupancy
 from .utils.history_store import HistoryStore
 from .utils.presence_utils import is_room_vacant
 from .utils.price_utils import PriceSignal
@@ -410,6 +411,8 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         )
         # Per-entity cache of schedule blocks; fallback when schedule.get_schedule fails (#308)
         self._schedule_blocks_cache: dict[str, dict] = {}
+        # Expected occupancy each room resolved its targets with in the last cycle (rooms with a source)
+        self._expected_occupancy: dict[str, ExpectedOccupancy] = {}
         # Entity platform callbacks, set by platform async_setup_entry
         self.async_add_entities: Any = None
         self.async_add_switch_entities: Any = None
@@ -956,6 +959,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         room = self._without_pending_override_seed(room)
         area_id = room.get("area_id", "unknown")
         self._model_inputs.pop(area_id, None)
+        self._expected_occupancy.pop(area_id, None)
         if not room.get("is_outdoor", False):
             room = await self._async_adopt_device_setpoints(room, settings)
 
@@ -1057,8 +1061,17 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         # Determine dual heat/cool target temperatures
         # Returns TargetTemps(heat, cool). None values mean "force off".
         occupancy_vacant = is_room_vacant(self.hass, room, time.time())
+        # A room with an occupancy source takes its window from the expected occupancy instead of the schedule
+        expected_occupancy = await self._async_expected_occupancy(room)
+        if expected_occupancy is not None:
+            self._expected_occupancy[area_id] = expected_occupancy
         targets, target_reason = self._resolve_target_temps_and_reason(
-            room, settings, schedule_blocks, schedule_entity_id, room_vacant=occupancy_vacant
+            room,
+            settings,
+            schedule_blocks,
+            schedule_entity_id,
+            room_vacant=occupancy_vacant,
+            expected_occupancy=expected_occupancy,
         )
         # Rooms that opted in move their schedule target with the electricity price; the
         # mold boost below still comes on top
@@ -1104,6 +1117,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             mold_prevention_delta=mold_prevention_temp_delta,
             room_vacant=occupancy_vacant,
             price_signal=self._price_manager.signal,
+            expected_occupancy=expected_occupancy,
         )
         # The pre-heat deadline only pre-heats for a rise of the schedule, not for the
         # target moving with the price (feature-details "Electricity Price")
@@ -1116,6 +1130,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 presence_away=presence_away,
                 mold_prevention_delta=mold_prevention_temp_delta,
                 room_vacant=occupancy_vacant,
+                expected_occupancy=expected_occupancy,
             )
             if self._price_manager.signal is not None and float(room.get("price_shift") or 0.0) > 0
             else None
@@ -2578,6 +2593,26 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         registry = er.async_get(self.hass)
         return frozenset(entity_id for entity_id in stateless if registry.async_get(entity_id) is None)
 
+    async def _async_expected_occupancy(self, room: dict) -> ExpectedOccupancy | None:
+        """The room's expected occupancy from its occupancy source, None without one.
+
+        The single place where occupancy sources plug into the target logic: whatever
+        a source returns replaces the room's schedule window for the live target and
+        the horizon alike. None leaves the room on its schedule, unchanged.
+
+        Args:
+            room: Stored room config.
+        """
+        return None
+
+    def expected_occupancy(self, area_id: str) -> ExpectedOccupancy | None:
+        """Expected occupancy the room resolved its targets with in the last cycle, None without a source.
+
+        Args:
+            area_id: Room to look up.
+        """
+        return self._expected_occupancy.get(area_id)
+
     def _is_presence_away(self, room: dict, settings: dict) -> bool:
         """Return True if presence detection says all relevant persons are away."""
         from .utils.presence_utils import is_presence_away
@@ -2654,11 +2689,12 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         schedule_blocks: dict | None = None,
         schedule_entity_id: str | None = None,
         room_vacant: bool = False,
+        expected_occupancy: ExpectedOccupancy | None = None,
     ) -> TargetTemps:
         """Resolve dual heat/cool target temperatures (see _resolve_target_temps_and_reason)."""
-        return self._resolve_target_temps_and_reason(room, settings, schedule_blocks, schedule_entity_id, room_vacant)[
-            0
-        ]
+        return self._resolve_target_temps_and_reason(
+            room, settings, schedule_blocks, schedule_entity_id, room_vacant, expected_occupancy
+        )[0]
 
     def _resolve_target_temps_and_reason(
         self,
@@ -2667,6 +2703,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         schedule_blocks: dict | None = None,
         schedule_entity_id: str | None = None,
         room_vacant: bool = False,
+        expected_occupancy: ExpectedOccupancy | None = None,
     ) -> tuple[TargetTemps, str]:
         """Resolve dual heat/cool target temperatures and what set them.
 
@@ -2676,6 +2713,8 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         Priority: override > vacation > presence away > schedule block temp > comfort/eco.
         Returns TargetTemps(heat, cool). None values mean "force off".
         ``room_vacant`` caps the schedule result at eco (occupancy eco, #180).
+        ``expected_occupancy``, when given, replaces the schedule window; instants it does
+        not know fall back to the schedule (see schedule_utils.expected_targets_at_time).
 
         When ``presence_clears_override`` is enabled in settings and the room is
         currently presence-away (and not ``ignore_presence``), the override is
@@ -2737,8 +2776,26 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 TARGET_REASON_AWAY,
             )
 
-        # 3. Schedule / comfort / eco
-        targets = self._resolve_schedule_targets(room, settings, schedule_blocks, schedule_entity_id)
+        # 3. Schedule / comfort / eco, or the expected occupancy in place of the schedule window
+        if expected_occupancy is not None:
+            from .utils.schedule_utils import expected_targets_at_time
+
+            targets = expected_targets_at_time(
+                time.time(),
+                expected_occupancy,
+                TargetTemps(
+                    heat=room.get("comfort_heat", room.get("comfort_temp", DEFAULT_COMFORT_HEAT)),
+                    cool=room.get("comfort_cool", DEFAULT_COMFORT_COOL),
+                ),
+                TargetTemps(
+                    heat=room.get("eco_heat", room.get("eco_temp", DEFAULT_ECO_HEAT)),
+                    cool=room.get("eco_cool", DEFAULT_ECO_COOL),
+                ),
+                settings.get("schedule_off_action", "eco"),
+                lambda: self._resolve_schedule_targets(room, settings, schedule_blocks, schedule_entity_id),
+            )
+        else:
+            targets = self._resolve_schedule_targets(room, settings, schedule_blocks, schedule_entity_id)
         if room_vacant:
             capped = cap_to_eco(
                 targets,
@@ -3354,6 +3411,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         # Clean up in-memory state
         self._window_manager.remove_room(area_id)
         self._previous_modes.pop(area_id, None)
+        self._expected_occupancy.pop(area_id, None)
         self._override_seeded_at.pop(area_id, None)
         self._rooms_to_switch_off.discard(area_id)
         self._rooms_switched_off.discard(area_id)

@@ -11,6 +11,8 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
 
+    from .expected_occupancy import ExpectedOccupancy
+
 from homeassistant.util import dt as dt_util
 
 from ..const import (
@@ -284,11 +286,13 @@ def resolve_targets_at_time(
     schedule_off_action: str = "eco",
     presence_clears_override: bool = False,
     room_vacant: bool = False,
+    expected_occupancy: ExpectedOccupancy | None = None,
 ) -> TargetTemps:
     """Resolve dual heat/cool target temps at a specific timestamp.
 
     Returns TargetTemps(heat, cool). None values mean "force off".
     ``room_vacant`` caps the schedule result at eco (occupancy eco, #180).
+    ``expected_occupancy``, when given, replaces the schedule window (see expected_targets_at_time).
     """
     # 1. Override — split heat/cool dead-band (skipped when presence-away suppresses it)
     if (override_heat is not None or override_cool is not None) and (override_until is None or ts < override_until):
@@ -303,11 +307,65 @@ def resolve_targets_at_time(
         if presence_away_action == "off":
             return TargetTemps(heat=None, cool=None)
         return TargetTemps(heat=eco_heat, cool=eco_cool)
-    # 3. Schedule blocks
-    targets = _schedule_targets_at_time(
-        ts, schedule_blocks, comfort_heat, comfort_cool, eco_heat, eco_cool, block_temp_converter, schedule_off_action
-    )
+
+    # 3. Schedule blocks, or the expected occupancy in their place
+    def schedule_targets() -> TargetTemps:
+        return _schedule_targets_at_time(
+            ts,
+            schedule_blocks,
+            comfort_heat,
+            comfort_cool,
+            eco_heat,
+            eco_cool,
+            block_temp_converter,
+            schedule_off_action,
+        )
+
+    if expected_occupancy is not None:
+        targets = expected_targets_at_time(
+            ts,
+            expected_occupancy,
+            TargetTemps(heat=comfort_heat, cool=comfort_cool),
+            TargetTemps(heat=eco_heat, cool=eco_cool),
+            schedule_off_action,
+            schedule_targets,
+        )
+    else:
+        targets = schedule_targets()
     return cap_to_eco(targets, eco_heat, eco_cool) if room_vacant else targets
+
+
+def expected_targets_at_time(
+    ts: float,
+    expected_occupancy: ExpectedOccupancy,
+    comfort: TargetTemps,
+    eco: TargetTemps,
+    schedule_off_action: str,
+    schedule_targets: Callable[[], TargetTemps],
+) -> TargetTemps:
+    """Targets of the schedule step for a room whose window comes from an expected occupancy.
+
+    The expected window takes the place of the schedule window: comfort while the room is
+    expected in use, eco (or off) outside, as for the time between schedule blocks. An instant
+    the source knows nothing about is left to the room's schedule, so a source with gaps never
+    does worse than the schedule it replaces. Shared by the horizon and the live target.
+
+    Args:
+        ts: Instant to resolve, epoch seconds.
+        expected_occupancy: The room's expected occupancy.
+        comfort: The room's comfort band.
+        eco: The room's eco band.
+        schedule_off_action: "eco" or "off", what the room does outside its window.
+        schedule_targets: Targets of the schedule at ``ts``, called only where the source does not know.
+    """
+    expected = expected_occupancy.expected_at(ts)
+    if expected is None:
+        return schedule_targets()
+    if expected:
+        return comfort
+    if schedule_off_action == "off":
+        return TargetTemps(heat=None, cool=None)
+    return eco
 
 
 def cap_to_eco(targets: TargetTemps, eco_heat: float, eco_cool: float) -> TargetTemps:
@@ -557,11 +615,13 @@ def make_target_resolver(
     mold_prevention_delta: float = 0.0,
     room_vacant: bool = False,
     price_signal: PriceSignal | None = None,
+    expected_occupancy: ExpectedOccupancy | None = None,
 ) -> Callable[[float], TargetTemps]:
     """Create a sync target resolver function (schedule blocks pre-fetched).
 
     Returns TargetTemps with None values for timestamps where devices should
-    be turned off.
+    be turned off. ``expected_occupancy``, when given, replaces the schedule
+    window at every timestep, so the horizon pre-heats for the expected use.
     """
     comfort_heat = room.get("comfort_heat", room.get("comfort_temp", DEFAULT_COMFORT_HEAT))
     comfort_cool = room.get("comfort_cool", DEFAULT_COMFORT_COOL)
@@ -603,6 +663,7 @@ def make_target_resolver(
             schedule_off_action=schedule_off_action,
             presence_clears_override=presence_clears_override,
             room_vacant=room_vacant,
+            expected_occupancy=expected_occupancy,
         )
         if targets.heat is None and targets.cool is None:
             return targets
