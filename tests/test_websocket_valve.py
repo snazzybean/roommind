@@ -238,10 +238,11 @@ async def test_clearing_a_held_single_valve_closes_it(ws_hass, store, connection
 
 
 @pytest.mark.asyncio
-async def test_clearing_a_single_valve_roommind_does_not_hold_writes_nothing(ws_hass, store, connection):
+async def test_clearing_a_single_valve_checked_after_the_start_writes_nothing(ws_hass, store, connection):
     await store.async_load()
     await _save(ws_hass, connection, [_single()])
     _pi(ws_hass, "45")
+    direct_valve._checked["climate.trv"] = False
     ws_hass.services.async_call.reset_mock()
 
     await _save(ws_hass, connection, [_device()], msg_id=2)

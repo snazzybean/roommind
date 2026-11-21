@@ -12,7 +12,9 @@ TRVs like the Bosch BTH-RA have one entity, the valve position itself (``pi_heat
 #537), passed here with an empty closing entity. A written position holds only for a while
 (BTH-RA: 15 minutes) before the TRV's own controller moves the valve again, so RoomMind
 sends a held position again every ``VALVE_SINGLE_RESEND_SECONDS``. There is no device
-default to hand back: a release closes the valve and the TRV takes over by itself.
+default to hand back: a release closes the valve and the TRV takes over by itself. A written
+position survives a restart of Home Assistant and the TRV being switched off, so a valve
+found open after a start is closed once.
 """
 
 from __future__ import annotations
@@ -212,7 +214,8 @@ async def async_release_valve(
 
     With ``idle_opening`` (#482) the second entity goes to 0 instead: closed while idle.
     A TRV with a single valve position entity (no ``closing_eid``, #537) has no default to
-    go back to: its valve is closed, and its own controller moves it again by itself.
+    go back to: its valve is closed, and its own controller moves it again by itself. The
+    check once after the start closes a position left from before a restart.
 
     A valve RoomMind holds is always sent (its state may still show the old degrees or
     lag behind the last send) and stays on record until the entities answered. One it
@@ -228,10 +231,11 @@ async def async_release_valve(
         return
     force = held is not None
     if not closing_eid:
-        if held is None and climate_eid not in _single_written:
-            # Nothing to restore: a valve RoomMind did not write is the TRV's own
-            return
-        results = [await _async_set_number(hass, opening_eid, 0, area_id, force=True)]
+        # A valve RoomMind wrote is always closed. One it did not write is checked once after the
+        # start, like the degrees above: a position written before a restart stays on the device
+        # until the TRV's timeout, also while the TRV is off, and nothing else would close it.
+        written = held is not None or climate_eid in _single_written
+        results = [await _async_set_number(hass, opening_eid, 0, area_id, force=written)]
     else:
         results = [
             await _async_set_number(hass, opening_eid, 100, area_id, force=force),

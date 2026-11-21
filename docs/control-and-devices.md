@@ -131,7 +131,7 @@ Some TRVs have one `number` entity that is the valve position itself and no seco
 These TRVs differ from the ones above in two ways:
 
 - A written position holds only for a while: a BTH-RA moves the valve by its own controller again 15 minutes after the last write. RoomMind therefore sends the position it holds again every 10 minutes, also when it has not changed. That is one write per TRV every 10 minutes while the room heats; the motor does not move for it.
-- There is no device default to hand back. When the room stops heating or RoomMind lets go of the valve (switched off, room removed, climate control off, reload), it sets the position to 0 % (closed) and leaves the rest to the TRV: its own controller moves the valve again after its timeout, on a BTH-RA within 15 minutes. A valve RoomMind has not written is left alone.
+- There is no device default to hand back. When the room stops heating or RoomMind lets go of the valve (switched off, room removed, climate control off, reload), it sets the position to 0 % (closed) and leaves the rest to the TRV: its own controller moves the valve again after its timeout, on a BTH-RA within 15 minutes. A written position also survives the TRV being switched off and a restart of Home Assistant, so once after a start RoomMind closes a valve it finds open while the room is not heating. After that a valve RoomMind has not written is left alone.
 
 Use this mode only for TRVs that take the valve back by themselves. One that keeps a written position for good would stay closed after RoomMind lets go, until you set the position yourself.
 

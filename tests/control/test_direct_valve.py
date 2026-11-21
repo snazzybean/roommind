@@ -848,13 +848,41 @@ async def test_single_entity_release_closes_the_valve():
 
 
 @pytest.mark.asyncio
-async def test_single_entity_not_held_is_left_to_the_trv():
-    """After a restart the TRV may regulate by itself: nothing to restore, nothing sent."""
-    hass = _hass({PI: _number(45)})
+async def test_single_entity_left_open_before_a_restart_is_closed_once():
+    """A written position survives a restart and the TRV being off: the first release closes it."""
+    states = {PI: _number(30)}
+    hass = _hass(states)
+
+    await async_release_valve(hass, TRV, PI, "", area_id="a")
+    assert _number_calls(hass) == [(PI, 0.0)]
+
+    # Checked once: what the TRV does with its valve afterwards is its own
+    states[PI] = _number(45)
+    hass.services.async_call.reset_mock()
+    await async_release_valve(hass, TRV, PI, "", area_id="a")
+    assert _number_calls(hass) == []
+
+
+@pytest.mark.asyncio
+async def test_single_entity_found_closed_after_a_start_is_not_written():
+    hass = _hass({PI: _number(0)})
 
     await async_release_valve(hass, TRV, PI, "", area_id="a")
 
     assert _number_calls(hass) == []
+
+
+@pytest.mark.asyncio
+async def test_single_entity_check_after_a_start_waits_for_the_entity():
+    states = {PI: _number(state="unavailable")}
+    hass = _hass(states)
+
+    await async_release_valve(hass, TRV, PI, "", area_id="a")
+    assert _number_calls(hass) == []
+
+    states[PI] = _number(30)
+    await async_release_valve(hass, TRV, PI, "", area_id="a")
+    assert _number_calls(hass) == [(PI, 0.0)]
 
 
 @pytest.mark.asyncio
@@ -987,9 +1015,10 @@ async def test_single_entity_orphan_is_closed():
 
 
 @pytest.mark.asyncio
-async def test_unload_closes_a_held_single_entity_and_leaves_others_alone():
+async def test_unload_closes_a_held_single_entity_and_leaves_checked_ones_alone():
     hass = _hass({PI: _number(30), "number.other_pi": _number(45)})
     direct_valve._valve_sent[TRV] = direct_valve._Held(0.0, 30, None, PI, "")
+    direct_valve._checked["climate.other"] = False  # checked after the start, the TRV's own since
 
     await direct_valve.async_release_all_valves(
         hass, {TRV: ValveEntities(PI, ""), "climate.other": ValveEntities("number.other_pi", "")}
@@ -1010,13 +1039,18 @@ async def test_unload_releases_a_held_pair_through_its_own_entities():
 
 
 @pytest.mark.asyncio
-async def test_single_entity_trv_in_managed_mode_is_not_written():
-    """Without the room sensor the TRV regulates by itself: its valve position is its own."""
-    hass = _hass({TRV: _trv(), PI: _number(45)})
+async def test_single_entity_trv_in_managed_mode_is_checked_once():
+    """Without the room sensor the TRV regulates by itself; only the check after a start writes."""
+    states = {TRV: _trv(), PI: _number(45)}
+    hass = _hass(states)
     ctrl = _controller(hass, _single_room(), has_external_sensor=False)
 
     await ctrl.async_apply(MODE_HEATING, TargetTemps(heat=21.0, cool=24.0), power_fraction=1.0, current_temp=20.0)
+    assert _number_calls(hass) == [(PI, 0.0)]
 
+    states[PI] = _number(45)
+    hass.services.async_call.reset_mock()
+    await ctrl.async_apply(MODE_HEATING, TargetTemps(heat=21.0, cool=24.0), power_fraction=1.0, current_temp=20.0)
     assert _number_calls(hass) == []
 
 
