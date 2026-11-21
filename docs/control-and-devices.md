@@ -113,7 +113,7 @@ To use it, open the TRV in the room's device list and switch on `Direct valve co
 
 The SONOFF TRV-ZBT (gen2) names its two values differently in Zigbee2MQTT: `heating_valve_position` and `idle_valve_position`. Its second value is not a closing degree but the valve opening while the TRV does not heat. Pick `heating_valve_position` as the opening degree and `idle_valve_position` as the second value, then set `Second value is` to `Opening while idle`. Left at `Closing degree`, the valve stays open whenever the room needs no heat.
 
-How it behaves:
+How it behaves (TRVs with one valve position entity differ in how a position is held and handed back, see [below](#trvs-with-a-single-valve-position-entity)):
 
 - While heating, RoomMind sets the opening degree to the heating power and the closing degree to `100 - opening` (with `Opening while idle`: both to the heating power), so the valve stays at that position whatever the TRV's own controller decides. The TRV keeps getting its proportional setpoint as before. The setpoint mode does not apply to these TRVs.
 - In a room that heats only through TRVs with direct valve control (no heat-capable AC that heats along, no underfloor heating), a running room keeps heating at the target with the power that holds it there, instead of stopping and restarting below it. The opening is the share of full heating power the learned room model needs to hold the target (losses minus sun and occupancy), plus 100 % per 1 °C below the target; above the target it drops until the valve closes. A new run still starts only below the start hysteresis, and pre-heating ahead of a schedule block works as for other TRVs. The heating power shown in the room is the opening RoomMind computes; the valve follows it within the limits below.
@@ -130,8 +130,10 @@ Some TRVs have one `number` entity that is the valve position itself and no seco
 
 These TRVs differ from the ones above in two ways:
 
-- A written position holds only for a while: a BTH-RA moves the valve by its own controller again 15 minutes after the last write. RoomMind therefore sends the position it holds again every 10 minutes, also when it has not changed.
-- There is no device default to hand back. When the room stops heating or RoomMind lets go of the valve, it sets the position to 0 % (closed), and the TRV's own controller takes over by itself. A valve RoomMind does not hold is never written.
+- A written position holds only for a while: a BTH-RA moves the valve by its own controller again 15 minutes after the last write. RoomMind therefore sends the position it holds again every 10 minutes, also when it has not changed. That is one write per TRV every 10 minutes while the room heats; the motor does not move for it.
+- There is no device default to hand back. When the room stops heating or RoomMind lets go of the valve (switched off, room removed, climate control off, reload), it sets the position to 0 % (closed) and leaves the rest to the TRV: its own controller moves the valve again after its timeout, on a BTH-RA within 15 minutes. A valve RoomMind has not written is left alone.
+
+Use this mode only for TRVs that take the valve back by themselves. One that keeps a written position for good would stay closed after RoomMind lets go, until you set the position yourself.
 
 A valve does not deliver heat in proportion to its opening: many radiators give most of their output at a small opening. RoomMind learns the room's response at the openings it actually uses.
 

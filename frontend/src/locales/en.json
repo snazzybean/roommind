@@ -596,7 +596,7 @@
   "devices.valve_closing_info": "The number entity for the closing degree, e.g. valve_closing_degree. It holds the valve at the set opening, whatever the thermostat wants. Filled in when it is named like the opening.",
   "devices.valve_idle_opening_info": "The valve opening while the thermostat is not heating, e.g. idle_valve_position in Zigbee2MQTT.",
   "devices.valve_closing_mode_info": "Most thermostats have a closing degree, e.g. the SONOFF TRVZB. The SONOFF TRV-ZBT has an idle opening instead. Pick the wrong one and its valve stays open when the room needs no heat. Thermostats with one valve position entity have no second value, e.g. the Bosch Radiator Thermostat II: RoomMind then sends the position again every 10 minutes, because the thermostat takes the valve back after a while.",
-  "devices.valve_single_info": "The number entity that is the valve position itself, e.g. pi_heating_demand of the Bosch Radiator Thermostat II. Leave it empty to hand the valve back to the thermostat.",
+  "devices.valve_single_info": "The number entity that is the valve position itself, e.g. pi_heating_demand of the Bosch Radiator Thermostat II. Leave it empty to stop controlling the valve: RoomMind closes it once and the thermostat then moves it by itself again.",
   "devices.valve_protection_exclude": "Exclude from valve protection",
   "devices.valve_protection_exclude_info": "Valve protection then leaves this valve alone. Useful for entities without a real valve, e.g. a virtual boiler.",
   "devices.group_coil_dry": "Evaporator drying",

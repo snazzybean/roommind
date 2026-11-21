@@ -12,7 +12,12 @@ from custom_components.roommind.control.direct_valve import async_release_valve,
 from custom_components.roommind.control.mpc_controller import MODE_COOLING, MODE_HEATING, MODE_IDLE, MPCController
 from custom_components.roommind.control.thermal_model import RoomModelManager
 from custom_components.roommind.managers.heat_source_orchestrator import DeviceCommand, HeatSourcePlan
-from custom_components.roommind.utils.device_utils import ValveEntities, get_valve_entities
+from custom_components.roommind.utils.device_utils import (
+    ValveEntities,
+    get_direct_setpoint_eids,
+    get_valve_entities,
+    has_direct_valve,
+)
 
 from .conftest import build_hass, make_room
 
@@ -900,3 +905,127 @@ def test_single_mode_needs_the_opening_entity_only():
     assert get_valve_entities([{**trv, "valve_closing_entity": CLOSE}]) == {TRV: ValveEntities(PI, "")}
     assert get_valve_entities([{**trv, "valve_closing_mode": "closing_degree"}]) == {}
     assert get_valve_entities([{**trv, "type": "ac"}]) == {}
+
+
+@pytest.mark.asyncio
+async def test_single_entity_is_written_even_if_the_state_shows_the_value():
+    """After a restart the state may be the TRV's own position: only a write starts the hold."""
+    hass = _hass({PI: _number(30)})
+
+    await async_set_valve(hass, TRV, PI, "", 30, area_id="a")
+
+    assert _number_calls(hass) == [(PI, 30.0)]
+    assert direct_valve.held_opening(TRV) == 0.3
+
+
+@pytest.mark.asyncio
+async def test_single_entity_is_sent_again_after_a_failed_write():
+    """A failed write drops the hold; the next cycle writes although the state shows the value."""
+    states = {PI: _number(0)}
+    hass = _hass(states)
+    with patch.object(direct_valve, "_now", return_value=1000.0):
+        await async_set_valve(hass, TRV, PI, "", 30, area_id="a", target=21.0)
+    states[PI] = _number(state="unavailable")
+    with patch.object(direct_valve, "_now", return_value=1000.0 + VALVE_SINGLE_RESEND_SECONDS):
+        await async_set_valve(hass, TRV, PI, "", 30, area_id="a", target=21.0)
+    assert direct_valve.held_opening(TRV) is None
+    states[PI] = _number(30)
+    hass.services.async_call.reset_mock()
+
+    with patch.object(direct_valve, "_now", return_value=1000.0 + VALVE_SINGLE_RESEND_SECONDS + 30):
+        await async_set_valve(hass, TRV, PI, "", 30, area_id="a", target=21.0)
+
+    assert _number_calls(hass) == [(PI, 30.0)]
+
+
+@pytest.mark.asyncio
+async def test_single_entity_is_closed_after_a_failed_write():
+    """The hold is forgotten after a failed write, the valve still sits where it was put."""
+    states = {PI: _number(0)}
+    hass = _hass(states)
+    await async_set_valve(hass, TRV, PI, "", 30, area_id="a", target=21.0)
+    states[PI] = _number(state="unavailable")
+    await async_set_valve(hass, TRV, PI, "", 60, area_id="a", target=22.0)
+    assert direct_valve.held_opening(TRV) is None
+    states[PI] = _number(30)
+    hass.services.async_call.reset_mock()
+
+    await async_release_valve(hass, TRV, PI, "", area_id="a")
+    assert _number_calls(hass) == [(PI, 0.0)]
+
+    # Released once: the valve is the TRV's own again
+    states[PI] = _number(45)
+    hass.services.async_call.reset_mock()
+    await async_release_valve(hass, TRV, PI, "", area_id="a")
+    assert _number_calls(hass) == []
+
+
+@pytest.mark.asyncio
+async def test_single_entity_release_is_retried_while_the_entity_is_unavailable():
+    states = {PI: _number(state="unavailable")}
+    hass = _hass(states)
+    direct_valve._valve_sent[TRV] = direct_valve._Held(0.0, 30, None, PI, "")
+
+    await async_release_valve(hass, TRV, PI, "", area_id="a")
+    assert direct_valve.held_opening(TRV) == 0.3
+
+    states[PI] = _number(30)
+    await async_release_valve(hass, TRV, PI, "", area_id="a")
+    assert _number_calls(hass) == [(PI, 0.0)]
+    assert direct_valve.held_opening(TRV) is None
+
+
+@pytest.mark.asyncio
+async def test_single_entity_orphan_is_closed():
+    hass = _hass({PI: _number(30)})
+    direct_valve._valve_sent[TRV] = direct_valve._Held(0.0, 30, 21.0, PI, "")
+
+    await direct_valve.async_release_orphaned_valves(hass, {})
+
+    assert _number_calls(hass) == [(PI, 0.0)]
+    assert direct_valve.held_opening(TRV) is None
+
+
+@pytest.mark.asyncio
+async def test_unload_closes_a_held_single_entity_and_leaves_others_alone():
+    hass = _hass({PI: _number(30), "number.other_pi": _number(45)})
+    direct_valve._valve_sent[TRV] = direct_valve._Held(0.0, 30, None, PI, "")
+
+    await direct_valve.async_release_all_valves(
+        hass, {TRV: ValveEntities(PI, ""), "climate.other": ValveEntities("number.other_pi", "")}
+    )
+
+    assert _number_calls(hass) == [(PI, 0.0)]
+
+
+@pytest.mark.asyncio
+async def test_unload_releases_a_held_pair_through_its_own_entities():
+    """Config already says single on the same opening entity: the pair that was written goes back."""
+    hass = _hass({OPEN: _number(30), CLOSE: _number(70)})
+    direct_valve._valve_sent[TRV] = direct_valve._Held(0.0, 30, None, OPEN, CLOSE)
+
+    await direct_valve.async_release_all_valves(hass, {TRV: ValveEntities(OPEN, "")})
+
+    assert _number_calls(hass) == [(OPEN, 100.0), (CLOSE, 100.0)]
+
+
+@pytest.mark.asyncio
+async def test_single_entity_trv_in_managed_mode_is_not_written():
+    """Without the room sensor the TRV regulates by itself: its valve position is its own."""
+    hass = _hass({TRV: _trv(), PI: _number(45)})
+    ctrl = _controller(hass, _single_room(), has_external_sensor=False)
+
+    await ctrl.async_apply(MODE_HEATING, TargetTemps(heat=21.0, cool=24.0), power_fraction=1.0, current_temp=20.0)
+
+    assert _number_calls(hass) == []
+
+
+def test_single_valve_trv_ignores_the_direct_setpoint_mode():
+    trv = {"entity_id": TRV, "type": "trv", "setpoint_mode": "direct"}
+    single = {**trv, "valve_opening_entity": PI, "valve_closing_mode": "single"}
+
+    assert get_direct_setpoint_eids([trv]) == {TRV}
+    assert get_direct_setpoint_eids([single]) == set()
+    assert has_direct_valve(single)
+    assert not has_direct_valve(trv)
+    assert not has_direct_valve({**single, "valve_opening_entity": ""})

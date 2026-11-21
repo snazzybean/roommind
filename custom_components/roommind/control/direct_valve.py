@@ -48,6 +48,9 @@ class _Held(NamedTuple):
 _valve_sent: dict[str, _Held] = {}
 # climate entity -> closing mode its degrees were checked in since the start without RoomMind holding them
 _checked: dict[str, bool] = {}
+# climate entities with a single valve position entity (#537) that got a write no release has
+# followed yet. A failed write is not remembered as held, but may have reached the device.
+_single_written: set[str] = set()
 # set on unload: a cycle still running must not pin a valve again
 _stopped = False
 
@@ -67,6 +70,7 @@ def clear_valve_cache() -> None:
     global _stopped  # noqa: PLW0603
     _valve_sent.clear()
     _checked.clear()
+    _single_written.clear()
     _stopped = False
 
 
@@ -178,8 +182,10 @@ async def async_set_valve(
     # Whatever reaches the device from here on has to be released again
     _checked.pop(climate_eid, None)
     if single:
-        # ``resend`` forces: the state still shows the held value while the TRV is about to let go
-        results = [await _async_set_number(hass, opening_eid, pct, area_id, force=resend)]
+        # Always sent, also when the state already shows the value: only a write keeps the TRV's
+        # own controller off the valve, and the state may be the TRV's own position (restart)
+        _single_written.add(climate_eid)
+        results = [await _async_set_number(hass, opening_eid, pct, area_id, force=True)]
     else:
         results = [
             await _async_set_number(hass, opening_eid, pct, area_id),
@@ -221,11 +227,11 @@ async def async_release_valve(
     if held is None and _checked.get(climate_eid) == idle_opening:
         return
     force = held is not None
-    if not closing_eid and held is None:
-        # Nothing to restore: a valve RoomMind does not hold is the TRV's own
-        return
     if not closing_eid:
-        results = [await _async_set_number(hass, opening_eid, 0, area_id, force=force)]
+        if held is None and climate_eid not in _single_written:
+            # Nothing to restore: a valve RoomMind did not write is the TRV's own
+            return
+        results = [await _async_set_number(hass, opening_eid, 0, area_id, force=True)]
     else:
         results = [
             await _async_set_number(hass, opening_eid, 100, area_id, force=force),
@@ -234,6 +240,7 @@ async def async_release_valve(
     if None in results:
         return
     _valve_sent.pop(climate_eid, None)
+    _single_written.discard(climate_eid)
     _checked[climate_eid] = idle_opening
     if hand_back and held is not None and held.target is not None:
         try:
@@ -273,8 +280,18 @@ async def async_release_all_valves(hass: HomeAssistant, configured: dict[str, Va
     """Unload: stop pinning and hand every configured or still held valve back."""
     global _stopped  # noqa: PLW0603
     _stopped = True
-    valves = {eid: held.valve for eid, held in _valve_sent.items()} | configured
-    for climate_eid, valve in valves.items():
+    # A held valve goes back through the entities it was written to. The config wins only when
+    # it names the same entities (a changed closing mode alone, #482); other entities in the
+    # config are released as well.
+    valves: list[tuple[str, ValveEntities]] = []
+    for climate_eid, held in _valve_sent.items():
+        current = configured.get(climate_eid)
+        valves.append((climate_eid, current if current is not None and current[:2] == held.valve[:2] else held.valve))
+    for climate_eid, valve in configured.items():
+        sent = _valve_sent.get(climate_eid)
+        if sent is None or sent.valve[:2] != valve[:2]:
+            valves.append((climate_eid, valve))
+    for climate_eid, valve in valves:
         try:
             await async_release_valve(
                 hass,
