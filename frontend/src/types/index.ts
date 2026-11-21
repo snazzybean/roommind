@@ -52,6 +52,9 @@ export interface RoomLiveData {
   mpc_active: boolean;
   presence_away: boolean;
   occupancy_vacant?: boolean;
+  /** Rooms with an occupancy source: threshold (0..1) in force and comfort hours per week, else null. */
+  expected_occupancy_threshold?: number | null;
+  expected_comfort_hours?: number | null;
   /** Air quality readings (#267), null without sensor or reading. */
   co2?: number | null;
   voc?: number | null;
@@ -201,6 +204,12 @@ export interface RoomConfig {
   preheat_enabled?: boolean;
   /** K the schedule target may move with the electricity price, 0 = off. */
   price_shift?: number;
+  /** Area Occupancy Detection replaces the schedule window (opt-in, off by default). */
+  use_learned_schedule?: boolean;
+  /** Area Occupancy area the learned occupancy is read from. */
+  learned_occupancy_area_id?: string;
+  /** Comfort threshold (0..1); null = automatic, relative to how much the room is used. */
+  learned_occupancy_threshold?: number | null;
   follow_device_setpoint?: boolean;
   window_sensors: string[];
   window_open_delay: number;

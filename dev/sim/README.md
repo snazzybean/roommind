@@ -85,6 +85,12 @@ known_failure: "candidate: ..."    # failing expectations count as XFAIL
 `extends:` merges mappings recursively and replaces lists; `key+: [...]` appends to the
 inherited list, `key-: ~` removes an inherited key.
 
+`area_occupancy:` stands in for the Area Occupancy Detection integration: simhome registers
+`area_occupancy.get_time_priors` and answers with the learned priors the section declares
+(per area `global_prior`, a `default` prior, `windows` of habitual use by weekday and time,
+`unobserved` weekdays without data points; format in `roommind_sim/area_occupancy.py`).
+Rooms that opt into it take their comfort window from these priors.
+
 Actions: `window.open/close`, `person.leave/arrive`, `occupancy.set`, `cover.manual`,
 `device.manual`, `entity.unavailable/available/remove`, `weather.set`,
 `weather.forecast_unavailable`, `humidity.event`, `roommind.ws`, `ha.service`,

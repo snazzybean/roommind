@@ -67,6 +67,27 @@ DEFAULT_ECO_COOL = 27.0
 DEFAULT_OCCUPANCY_ECO_DELAY_MINUTES = 15
 # Shorter delays flip the target on every motion-sensor edge and flood battery TRVs with setpoints
 MIN_OCCUPANCY_ECO_DELAY_MINUTES = 5
+# Rooms with an expected occupancy: outside the expected window an occupancy sensor must stay on
+# this long before the room goes to comfort, so a short visit does not heat it for a whole slot
+EXPECTED_OCCUPANCY_CONFIRM_MINUTES = 5
+# Once there, the room keeps comfort until every sensor has been off this long: stepping out
+# for a moment does not drop it back to eco
+EXPECTED_OCCUPANCY_RELEASE_MINUTES = 5
+
+# Area Occupancy Detection as an occupancy source, opt-in per room: its learned per-slot
+# occupancy (get_time_priors) replaces the room's schedule window
+AREA_OCCUPANCY_DOMAIN = "area_occupancy"
+AREA_OCCUPANCY_PRIORS_SERVICE = "get_time_priors"
+# Priors change slowly; one service call serves every room for this many seconds
+AREA_OCCUPANCY_PRIORS_TTL_SECONDS = 900
+# Automatic threshold for a room that sets none. A slot prior is the share of that slot the room
+# is occupied, so a fixed 0.5 leaves rooms used for short visits (bathrooms) without any window.
+# A slot is a comfort slot at FACTOR times the room's overall share (global_prior), never below
+# the FLOOR (noise in a nearly unused room) and never above the CAP (a slot occupied for more
+# than half its length is a comfort slot even in a room busy all day).
+AREA_OCCUPANCY_THRESHOLD_FACTOR = 3.0
+AREA_OCCUPANCY_THRESHOLD_FLOOR = 0.1
+AREA_OCCUPANCY_THRESHOLD_CAP = 0.5
 
 # Air quality (#267). CO2: UBA rates < 1000 ppm harmless, 1000-2000 ppm ventilate more
 DEFAULT_CO2_THRESHOLD = 1000

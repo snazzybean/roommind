@@ -134,6 +134,9 @@ _ROOM_SAVE_FIELDS = (
     "occupancy_eco_delay",
     "preheat_enabled",
     "price_shift",
+    "use_learned_schedule",
+    "learned_occupancy_area_id",
+    "learned_occupancy_threshold",
     "follow_device_setpoint",
     "climate_mode",
     "schedules",
@@ -407,6 +410,9 @@ async def websocket_list_rooms(
             "mpc_active": live.get("mpc_active", False),
             "presence_away": live.get("presence_away", False),
             "occupancy_vacant": live.get("occupancy_vacant", False),
+            # Rooms with an occupancy source: threshold in force and comfort hours per week, else None
+            "expected_occupancy_threshold": live.get("expected_occupancy_threshold"),
+            "expected_comfort_hours": live.get("expected_comfort_hours"),
             "co2": live.get("co2"),
             "voc": live.get("voc"),
             "air_quality_bad": live.get("air_quality_bad", False),
@@ -553,6 +559,12 @@ async def websocket_list_rooms(
         ),
         vol.Optional("preheat_enabled"): bool,
         vol.Optional("price_shift"): vol.All(vol.Coerce(float), vol.Range(min=0, max=MAX_PRICE_SHIFT_K)),
+        vol.Optional("use_learned_schedule"): bool,
+        vol.Optional("learned_occupancy_area_id"): str,
+        # None = automatic, relative to how much the room is used
+        vol.Optional("learned_occupancy_threshold"): vol.Any(
+            None, vol.All(vol.Coerce(float), vol.Range(min=0.01, max=0.99))
+        ),
         vol.Optional("follow_device_setpoint"): bool,
         vol.Optional("climate_mode"): vol.In(CLIMATE_MODES),
         vol.Optional("schedules"): [{vol.Required("entity_id"): str}],
@@ -1352,3 +1364,27 @@ def async_register_websocket_commands(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, websocket_boost_learning)
     websocket_api.async_register_command(hass, websocket_get_diagnostics)
     websocket_api.async_register_command(hass, websocket_covers_clear_override)
+    websocket_api.async_register_command(hass, websocket_occupancy_areas)
+
+
+# ---------------------------------------------------------------------------
+# Occupancy source: Area Occupancy Detection areas
+# ---------------------------------------------------------------------------
+
+
+@websocket_api.websocket_command({vol.Required("type"): "roommind/occupancy/areas"})
+@websocket_api.async_response
+async def websocket_occupancy_areas(
+    hass: HomeAssistant,
+    connection: ActiveConnection,
+    msg: dict,
+) -> None:
+    """Whether Area Occupancy Detection is installed and the areas it learns, for the room's area picker."""
+    from .utils.area_occupancy import area_ids
+
+    coordinator = _get_coordinator(hass)
+    source = coordinator.area_occupancy if coordinator else None
+    if source is None or not source.available():
+        connection.send_result(msg["id"], {"available": False, "areas": []})
+        return
+    connection.send_result(msg["id"], {"available": True, "areas": area_ids(await source.async_response())})

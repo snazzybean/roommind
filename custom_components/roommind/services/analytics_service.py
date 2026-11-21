@@ -32,6 +32,7 @@ from ..control.mpc_controller import (
 from ..control.residual_heat import afterglow_rise_k, get_min_run_blocks, residual_tau
 from ..control.solar import compute_q_solar_norm
 from ..control.thermal_model import ThermalEKF
+from ..utils.expected_occupancy import ExpectedOccupancy
 from ..utils.history_store import MODEL_INPUT_FIELDS
 from ..utils.price_utils import PriceSignal
 from .analytics_stats import compute_period_stats, compute_rhythm, rhythm_window
@@ -169,11 +170,14 @@ async def _compute_target_forecast(
     schedule_blocks_cache: dict[str, dict] | None = None,
     room_vacant: bool = False,
     price_signal: PriceSignal | None = None,
+    expected_occupancy: ExpectedOccupancy | None = None,
 ) -> list[dict]:
     """Compute target temperature forecast for the next N hours.
 
     Each point contains ``target_temp`` (chart display, mode-aware),
     ``heat_target`` and ``cool_target`` (for MPC simulator).
+    ``expected_occupancy`` is the room's expected occupancy from the last cycle, None
+    without an occupancy source; it replaces the schedule window as in the control loop.
     """
     from ..utils.presence_utils import is_presence_away
     from ..utils.schedule_utils import (
@@ -182,6 +186,7 @@ async def _compute_target_forecast(
         price_shifted,
         read_schedule_blocks,
         resolve_targets_at_time,
+        vacant_at,
     )
     from ..utils.temp_utils import ha_temp_to_celsius
 
@@ -228,9 +233,16 @@ async def _compute_target_forecast(
             schedule_off_action=settings.get("schedule_off_action", "eco"),
             presence_clears_override=bool(settings.get("presence_clears_override", False)),
             room_vacant=room_vacant,
+            expected_occupancy=expected_occupancy,
         )
         targets, (shift_heat, shift_cool) = price_shifted(
-            targets, ts, room, settings, price_signal, presence_away=presence_away, room_vacant=room_vacant
+            targets,
+            ts,
+            room,
+            settings,
+            price_signal,
+            presence_away=presence_away,
+            room_vacant=vacant_at(ts, room_vacant, expected_occupancy),
         )
         heat_target = targets.heat
         cool_target = targets.cool
@@ -431,10 +443,14 @@ async def build_analytics_data(
     # Build merged forecast: same format as history points, on a shared 5-min grid
     mold_delta = 0.0
     room_vacant = False
+    expected_occupancy: ExpectedOccupancy | None = None
     if coordinator:
         live = coordinator.rooms.get(area_id, {})
         mold_delta = live.get("mold_prevention_delta", 0.0)
-        room_vacant = bool(live.get("occupancy_vacant", False))
+        expected = coordinator.expected_occupancy(area_id)
+        expected_occupancy = expected if isinstance(expected, ExpectedOccupancy) else None
+        # An expected occupancy carries its own vacancy, scoped to the current window
+        room_vacant = bool(live.get("occupancy_vacant", False)) and expected_occupancy is None
     try:
         target_forecast = await _compute_target_forecast(
             hass,
@@ -444,6 +460,7 @@ async def build_analytics_data(
             schedule_blocks_cache=getattr(coordinator, "_schedule_blocks_cache", None),
             room_vacant=room_vacant,
             price_signal=coordinator.price_signal if coordinator else None,
+            expected_occupancy=expected_occupancy,
         )
     except Exception:  # noqa: BLE001
         _LOGGER.debug("Target forecast computation failed for '%s'", area_id)
