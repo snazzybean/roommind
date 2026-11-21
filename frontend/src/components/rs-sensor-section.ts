@@ -4,13 +4,17 @@ import type { HomeAssistant, HassArea, RoomFanMode, RoomLiveData } from "../type
 import { getEntitiesForArea } from "../utils/room-state";
 import { localize, type TranslationKey } from "../utils/localize";
 import { openEntityInfo } from "../utils/events";
-import { tempUnit } from "../utils/temperature";
+import { tempUnit, toCelsiusDelta, toDisplayDelta } from "../utils/temperature";
 import { formatMinutes, formatNumber, formatPercent } from "../utils/format";
 import { tokens } from "../styles/tokens";
 import { inputStyles } from "../styles/input-styles";
 import { formStyles } from "../styles/form-styles";
 import {
   DEFAULT_CO2_THRESHOLD,
+  DEFAULT_EXTERNAL_HEAT_COOLDOWN,
+  DEFAULT_EXTERNAL_HEAT_DELTA_OFF,
+  DEFAULT_EXTERNAL_HEAT_DELTA_ON,
+  DEFAULT_EXTERNAL_HEAT_POWER_THRESHOLD,
   DEFAULT_HUMIDITY_MAX,
   DEFAULT_HUMIDITY_MIN,
   DEFAULT_OCCUPANCY_ECO_DELAY,
@@ -35,6 +39,7 @@ type SensorKind =
   | "humidity"
   | "occupancy"
   | "window"
+  | "external_heat"
   | "co2"
   | "voc"
   | "ventilation"
@@ -42,7 +47,7 @@ type SensorKind =
   | "humidifier"
   | "room_fan"
   | "sun";
-type SingleKind = Exclude<SensorKind, "occupancy" | "window">;
+type SingleKind = Exclude<SensorKind, "occupancy" | "window" | "external_heat">;
 
 const OCCUPANCY_CLASSES = ["occupancy", "motion", "presence"];
 const WINDOW_CLASSES = ["window", "door", "opening"];
@@ -61,6 +66,14 @@ function sunKind(attrs: Record<string, unknown>): SunKind | null {
   if (unit === "%" && !dc) return "percent";
   return null;
 }
+/** Units of a power reading: the backend compares them with the watt threshold (#9). */
+const POWER_UNITS = ["W", "kW"];
+/** Entities that tell whether a stove burns: a temperature or power sensor, or an on/off one (#9). */
+const EXTERNAL_HEAT_DOMAINS = ["sensor", "binary_sensor", "switch", "input_boolean"];
+/** binary_sensor classes suggested for a stove; any other on/off entity only through the picker. */
+const EXTERNAL_HEAT_CLASSES = ["heat", "power", "running"];
+/** Kinds that hold a list of entities; every other kind holds one. */
+const MULTI_KINDS: SensorKind[] = ["occupancy", "window", "external_heat"];
 const SINGLE_KEYS: Record<SingleKind, string> = {
   temp: "temperature_sensor",
   humidity: "humidity_sensor",
@@ -79,6 +92,7 @@ const EMPTY_KEYS: Partial<Record<SensorKind, TranslationKey>> = {
   dehumidifier: "sensors.no_dehumidifier",
   humidifier: "sensors.no_humidifier",
   room_fan: "sensors.no_room_fan",
+  external_heat: "sensors.no_external_heat",
 };
 
 const ROOM_FAN_MODES: { value: RoomFanMode; key: TranslationKey }[] = [
@@ -120,6 +134,17 @@ export class RsSensorSection extends LitElement {
   @property({ type: Boolean }) public acDryEnabled = true;
   /** The room has an AC that can dry (see rs-room-detail `_acDryChoice`): the switch is offered. */
   @property({ type: Boolean }) public acDryChoice = false;
+  /** Entities telling whether a stove or fireplace RoomMind does not control burns (#9). */
+  @property({ attribute: false }) public externalHeatSensors: Set<string> = new Set();
+  /** K a sensor next to the stove must exceed the room by to count as lit. */
+  @property({ type: Number }) public externalHeatDeltaOn = DEFAULT_EXTERNAL_HEAT_DELTA_ON;
+  /** K below which a lit stove counts as out again (hysteresis, below the on gap). */
+  @property({ type: Number }) public externalHeatDeltaOff = DEFAULT_EXTERNAL_HEAT_DELTA_OFF;
+  /** W above which a power sensor counts as lit. */
+  @property({ type: Number }) public externalHeatPowerThreshold =
+    DEFAULT_EXTERNAL_HEAT_POWER_THRESHOLD;
+  /** Minutes the room stays paused after the stove goes out. */
+  @property({ type: Number }) public externalHeatCooldown = DEFAULT_EXTERNAL_HEAT_COOLDOWN;
   /** Live state of the room: air quality judgement and whether RoomMind runs the ventilation. */
   @property({ attribute: false }) public live?: RoomLiveData;
   @property({ type: String }) public heatingSystemType = "";
@@ -278,6 +303,17 @@ export class RsSensorSection extends LitElement {
           on ? "var(--rs-ok)" : "",
         );
       })}
+      ${[...this.externalHeatSensors].map((id) =>
+        this._row(
+          id,
+          "mdi:fireplace",
+          [localize("detail.sensors.external_heat", l), this._externalHeatSummary(id, l)].join(
+            " · ",
+          ),
+          this._externalHeatValue(id),
+          this.live?.external_heat_active ? "var(--rs-warn)" : "",
+        ),
+      )}
     `;
   }
 
@@ -343,6 +379,52 @@ export class RsSensorSection extends LitElement {
           : nothing
       }
     `;
+  }
+
+  /**
+   * When a stove entity counts as lit and how long the pause lasts after, in one line: the
+   * temperature gaps for a temperature sensor, the watt threshold for a power sensor (#9).
+   *
+   * @param entityId The heat source entity of the row.
+   * @param l Language of the panel.
+   */
+  private _externalHeatSummary(entityId: string, l: string): string {
+    const cooldown = localize("sensors.external_heat_cooldown_view", l, {
+      time: formatMinutes(this.externalHeatCooldown, l),
+    });
+    if (!entityId.startsWith("sensor.")) return cooldown;
+    if (this._isPowerSensor(entityId)) {
+      const watts = `${formatNumber(this.externalHeatPowerThreshold, this.hass, 0)}\u00a0W`;
+      return `${localize("sensors.external_heat_power_view", l, { power: watts })}, ${cooldown}`;
+    }
+    const gap = (delta: number) =>
+      `+${formatNumber(toDisplayDelta(delta, this.hass), this.hass, 1)}\u00a0${tempUnit(this.hass)}`;
+    const lit = localize("sensors.external_heat_temp_view", l, {
+      on: gap(this.externalHeatDeltaOn),
+      off: gap(this.externalHeatDeltaOff),
+    });
+    return `${lit}, ${cooldown}`;
+  }
+
+  /**
+   * What RoomMind reads from a stove entity: on/off, power or temperature (#9).
+   *
+   * @param entityId The heat source entity.
+   */
+  private _externalHeatValue(entityId: string): string {
+    if (!entityId.startsWith("sensor.")) return this._onOffValue(entityId);
+    return this._isPowerSensor(entityId) ? this._numberValue(entityId) : this._tempValue(entityId);
+  }
+
+  /**
+   * Mirrors the backend: a sensor in W or kW is read as power, any other sensor as temperature.
+   *
+   * @param entityId A sensor entity.
+   */
+  private _isPowerSensor(entityId: string): boolean {
+    return POWER_UNITS.includes(
+      this.hass.states[entityId]?.attributes?.unit_of_measurement as string,
+    );
   }
 
   /** CO2, VOC and the ventilation entity (#267); a humidity limit runs it too (#526). */
@@ -537,6 +619,7 @@ export class RsSensorSection extends LitElement {
       "humiditySensor",
       "occupancySensors",
       "windowSensors",
+      "externalHeatSensors",
       "co2Sensor",
       "vocSensor",
       "ventilationEntity",
@@ -578,6 +661,13 @@ export class RsSensorSection extends LitElement {
         );
       case "window":
         return domain === "binary_sensor" && WINDOW_CLASSES.includes(dc ?? "");
+      case "external_heat":
+        // A sensor next to the stove, never the room's own sensor (the backend rejects that)
+        if (entityId === this.temperatureSensor) return false;
+        if (domain === "sensor") {
+          return dc === "temperature" || dc === "power" || this._isPowerSensor(entityId);
+        }
+        return EXTERNAL_HEAT_DOMAINS.includes(domain);
       case "co2":
         return domain === "sensor" && dc === "carbon_dioxide";
       case "voc":
@@ -612,9 +702,9 @@ export class RsSensorSection extends LitElement {
   }
 
   private _assigned(kind: SensorKind): string[] {
-    if (kind === "occupancy" || kind === "window") {
-      return [...(kind === "occupancy" ? this.occupancySensors : this.windowSensors)];
-    }
+    if (kind === "occupancy") return [...this.occupancySensors];
+    if (kind === "window") return [...this.windowSensors];
+    if (kind === "external_heat") return [...this.externalHeatSensors];
     const id = this._single(kind);
     return id ? [id] : [];
   }
@@ -636,6 +726,7 @@ export class RsSensorSection extends LitElement {
               ((kind !== "dehumidifier" && kind !== "humidifier") ||
                 id.startsWith("humidifier.")) &&
               (kind !== "sun" || sunKind(this.hass.states[id]?.attributes ?? {}) !== "percent") &&
+              (kind !== "external_heat" || this._suggestsExternalHeat(id)) &&
               this._accepts(kind, id),
           )
         : [];
@@ -650,6 +741,7 @@ export class RsSensorSection extends LitElement {
           : html`${this._renderHumidityControl(l, inArea)}
             ${this._renderKind("window", inArea("window"), this._renderWindowSettings(l))}
             ${this._renderKind("occupancy", inArea("occupancy"), this._renderOccupancySettings(l))}
+            ${this._renderKind("external_heat", inArea("external_heat"), this._renderExternalHeatSettings(l))}
             ${this._renderKind("co2", inArea("co2"), this._renderCo2Settings(l))}
             ${this._renderKind("voc", inArea("voc"), this._renderVocSettings(l))}
             ${
@@ -721,6 +813,12 @@ export class RsSensorSection extends LitElement {
           title: "detail.sensors.occupancy",
           info: "sensors.occupancy_info",
         } as const;
+      case "external_heat":
+        return {
+          icon: "mdi:fireplace",
+          title: "detail.sensors.external_heat",
+          info: "sensors.external_heat_info",
+        } as const;
       case "co2":
         return {
           icon: "mdi:molecule-co2",
@@ -775,7 +873,7 @@ export class RsSensorSection extends LitElement {
     const l = this.hass.language;
     const meta = this._kindMeta(kind);
     const assigned = this._assigned(kind);
-    const single = kind !== "occupancy" && kind !== "window";
+    const single = !MULTI_KINDS.includes(kind);
     const suggestions = areaCandidates.filter((id) => !assigned.includes(id));
     return html`<section class="group" data-kind=${kind}>
       <h4 class="group-title">
@@ -875,6 +973,7 @@ export class RsSensorSection extends LitElement {
       humidity: ["sensor", "input_number"],
       occupancy: ["binary_sensor", "input_boolean"],
       window: ["binary_sensor"],
+      external_heat: EXTERNAL_HEAT_DOMAINS,
       co2: ["sensor"],
       voc: ["sensor"],
       ventilation: VENTILATION_DOMAINS,
@@ -923,6 +1022,7 @@ export class RsSensorSection extends LitElement {
     ) {
       return this._onOffValue(entityId);
     }
+    if (kind === "external_heat") return this._externalHeatValue(entityId);
     return kind === "window"
       ? this._binaryValue(entityId, "detail.sensors.open", "detail.sensors.closed")
       : this._binaryValue(entityId, "detail.sensors.occupied", "detail.sensors.free");
@@ -1163,6 +1263,7 @@ export class RsSensorSection extends LitElement {
     this._focusKind = kind;
     if (kind === "occupancy") this._onOccupancyToggle(entityId, true);
     else if (kind === "window") this._onWindowToggle(entityId, true);
+    else if (kind === "external_heat") this._onExternalHeatToggle(entityId, true);
     else this._onSensorSelected(entityId, kind);
   }
 
@@ -1170,6 +1271,7 @@ export class RsSensorSection extends LitElement {
     this._focusKind = kind;
     if (kind === "occupancy") this._onOccupancyToggle(entityId, false);
     else if (kind === "window") this._onWindowToggle(entityId, false);
+    else if (kind === "external_heat") this._onExternalHeatToggle(entityId, false);
     else this._onSensorSelected("", kind);
   }
 
@@ -1208,6 +1310,138 @@ export class RsSensorSection extends LitElement {
         composed: true,
       }),
     );
+  }
+
+  /**
+   * Area entities offered for a stove without a search: temperature sensors other than the
+   * room's and binary sensors of the heat/power/running class. A plug's power sensor, a switch
+   * or a helper are too common in a room to suggest; the picker finds them.
+   *
+   * @param entityId An entity of the room's area.
+   */
+  private _suggestsExternalHeat(entityId: string): boolean {
+    const domain = entityId.split(".")[0];
+    const dc = this.hass.states[entityId]?.attributes?.device_class as string | undefined;
+    if (domain === "sensor") return dc === "temperature";
+    return domain === "binary_sensor" && EXTERNAL_HEAT_CLASSES.includes(dc ?? "");
+  }
+
+  /**
+   * Adds or removes a stove entity (#9).
+   *
+   * @param entityId The entity.
+   * @param checked True to add it, false to remove it.
+   */
+  private _onExternalHeatToggle(entityId: string, checked: boolean) {
+    const next = new Set(this.externalHeatSensors);
+    if (checked) next.add(entityId);
+    else next.delete(entityId);
+    this.dispatchEvent(
+      new CustomEvent("sensor-changed", {
+        detail: { key: "external_heat_sensors", value: [...next] },
+        bubbles: true,
+        composed: true,
+      }),
+    );
+  }
+
+  /**
+   * Thresholds and cooldown of the stove, once at least one entity is picked (#9). The
+   * temperature gaps only show with a temperature sensor, the watt threshold with a power one.
+   *
+   * @param l Language of the panel, for the labels.
+   */
+  private _renderExternalHeatSettings(l: string) {
+    if (this.externalHeatSensors.size === 0) return nothing;
+    const sensors = [...this.externalHeatSensors].filter((id) => id.startsWith("sensor."));
+    const hasPower = sensors.some((id) => this._isPowerSensor(id));
+    const hasTemperature = sensors.some((id) => !this._isPowerSensor(id));
+    const unit = tempUnit(this.hass);
+    return html`
+      ${
+        hasTemperature
+          ? html`<div class="pair">
+              <rs-number-field
+                .label=${localize("sensors.external_heat_delta_on", l)}
+                .info=${localize("sensors.external_heat_delta_info", l)}
+                .suffix=${unit}
+                .min=${0.5}
+                .max=${20}
+                .step=${0.5}
+                .value=${toDisplayDelta(this.externalHeatDeltaOn, this.hass)}
+                @value-changed=${(e: CustomEvent<{ value: number }>) => this._onDeltaOnChanged(e.detail.value)}
+              ></rs-number-field>
+              <rs-number-field
+                .label=${localize("sensors.external_heat_delta_off", l)}
+                .suffix=${unit}
+                .min=${0}
+                .max=${20}
+                .step=${0.5}
+                .value=${toDisplayDelta(this.externalHeatDeltaOff, this.hass)}
+                @value-changed=${(e: CustomEvent<{ value: number }>) => this._onDeltaOffChanged(e.detail.value)}
+              ></rs-number-field>
+            </div>`
+          : nothing
+      }
+      <div class="pair">
+        ${
+          hasPower
+            ? html`<rs-number-field
+                .label=${localize("sensors.external_heat_power_threshold", l)}
+                suffix="W"
+                .min=${0}
+                .max=${10000}
+                .value=${this.externalHeatPowerThreshold}
+                @value-changed=${(e: CustomEvent<{ value: number }>) =>
+                  this._fireSensorChanged("external_heat_power_threshold", e.detail.value)}
+              ></rs-number-field>`
+            : nothing
+        }
+        <rs-number-field
+          .label=${localize("sensors.external_heat_cooldown", l)}
+          .info=${localize("sensors.external_heat_cooldown_info", l)}
+          suffix="min"
+          .min=${0}
+          .max=${720}
+          .value=${this.externalHeatCooldown}
+          @value-changed=${(e: CustomEvent<{ value: number }>) =>
+            this._fireSensorChanged("external_heat_cooldown", e.detail.value)}
+        ></rs-number-field>
+      </div>
+    `;
+  }
+
+  /**
+   * The off gap must stay below the on gap (the backend rejects the save otherwise): moving one
+   * past the other drags the other along, 0.5 K apart.
+   *
+   * @param displayValue New "lit" gap in the user's unit.
+   */
+  private _onDeltaOnChanged(displayValue: number) {
+    const deltaOn = Math.round(toCelsiusDelta(displayValue, this.hass) * 10) / 10;
+    this._fireSensorChanged("external_heat_delta_on", deltaOn);
+    if (this.externalHeatDeltaOff >= deltaOn) {
+      this._fireSensorChanged(
+        "external_heat_delta_off",
+        Math.max(0, Math.round((deltaOn - 0.5) * 10) / 10),
+      );
+    }
+  }
+
+  /**
+   * The other side of _onDeltaOnChanged.
+   *
+   * @param displayValue New "out" gap in the user's unit.
+   */
+  private _onDeltaOffChanged(displayValue: number) {
+    const deltaOff = Math.round(toCelsiusDelta(displayValue, this.hass) * 10) / 10;
+    this._fireSensorChanged("external_heat_delta_off", deltaOff);
+    if (deltaOff >= this.externalHeatDeltaOn) {
+      this._fireSensorChanged(
+        "external_heat_delta_on",
+        Math.min(20, Math.round((deltaOff + 0.5) * 10) / 10),
+      );
+    }
   }
 
   private _renderCo2Settings(l: string) {

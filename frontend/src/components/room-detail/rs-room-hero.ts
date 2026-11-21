@@ -639,10 +639,12 @@ export class RsRoomHero extends LitElement {
               ? localize("hero.uniform_mode_info", l)
               : h.id === "setback"
                 ? localize("hero.setback_info", l)
-                : h.id === "learning_paused" &&
-                    live.learning_paused_reason === "outdoor_unavailable"
-                  ? localize("hero.mpc_learning_paused.outdoor_unavailable", l)
-                  : undefined,
+                : h.id === "external_heat"
+                  ? localize("hero.external_heat_info", l)
+                  : h.id === "learning_paused" &&
+                      live.learning_paused_reason === "outdoor_unavailable"
+                    ? localize("hero.mpc_learning_paused.outdoor_unavailable", l)
+                    : undefined,
       }));
     // Compressor protection without a known end has no card hint; the hero names it anyway.
     if (

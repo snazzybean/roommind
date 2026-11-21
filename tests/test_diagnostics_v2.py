@@ -84,6 +84,7 @@ def test_entity_states_cover_every_referenced_entity(hass):
         "binary_sensor.win": _state("off", device_class="window"),
         "schedule.plan": _state("on"),
         "binary_sensor.motion": _state("on", device_class="occupancy"),
+        "sensor.stove": _state("24.0", unit_of_measurement="°C", device_class="temperature"),
     }
     hass.states.get = MagicMock(side_effect=states.get)
     room = {
@@ -93,11 +94,13 @@ def test_entity_states_cover_every_referenced_entity(hass):
         "occupancy_sensors": ["binary_sensor.gone", "binary_sensor.motion"],
         "presence_persons": ["person.someone"],
         "schedules": [{"entity_id": "schedule.plan"}],
+        "external_heat_sensors": ["sensor.stove"],
     }
     with patch("custom_components.roommind.diagnostics.time.time", return_value=1060.0):
         result = _build_entity_states(hass, room)
     assert result["sensor.t"] == {"state": "21.3", "unit": "°C", "device_class": "temperature", "age_s": 60}
     assert result["binary_sensor.win"]["device_class"] == "window"
+    assert result["sensor.stove"]["state"] == "24.0"
     assert result["binary_sensor.gone"] == {"state": "not_found"}
     assert "schedule.plan" in result
     assert "" not in result

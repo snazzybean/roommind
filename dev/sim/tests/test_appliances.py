@@ -1,4 +1,4 @@
-"""Appliances (exhaust fan, dehumidifier, humidifier, room fan) and the per-room solar sensor."""
+"""Appliances (exhaust fan, dehumidifier, humidifier, room fan, stove) and the per-room solar sensor."""
 
 from __future__ import annotations
 
@@ -210,6 +210,54 @@ def test_loader_checks_appliance_domain_and_model():
         load_scenario_dict(scenario(_bath({"entity_id": "fan.bad_luefter", "profile": "nope"})))
     scn = load_scenario_dict(scenario(_bath({"entity_id": "fan.bad_luefter", "profile": "exhaust_fan"})))
     assert "fan.bad_luefter" in scn.entity_ids()
+
+
+def _stove_room(**sensor) -> dict:
+    return {
+        "wohnzimmer": {
+            "floor_area_m2": 25,
+            "initial": {"temperature": 20.0},
+            "appliances": [{"entity_id": "switch.wohnzimmer_ofen", "profile": "wood_stove"}],
+            "sensors": {
+                "temperature": {"entity_id": "sensor.wohnzimmer_temp"},
+                "stove": {"entity_id": "sensor.wohnzimmer_ofen_temp", "appliance": "switch.wohnzimmer_ofen", **sensor},
+            },
+        }
+    }
+
+
+def test_stove_heats_the_room_and_keeps_giving_heat_after_it_goes_out():
+    """Wood stove (#9): lit by hand, heats a body that warms the room and its sensor, also after the fire."""
+    a, b = world(_stove_room(time_constant_s=0, noise=0)), world(_stove_room())
+    stove = a.appliances["switch.wohnzimmer_ofen"]
+    stove.manual({"state": "on"})
+    run(a, 3 * 3600)
+    run(b, 3 * 3600)
+    assert a.zones["wohnzimmer"].t_air > b.zones["wohnzimmer"].t_air + 3
+    sensor = a.sensors["sensor.wohnzimmer_ofen_temp"].value
+    assert sensor - a.zones["wohnzimmer"].t_air > 5  # ~0.05 x 170 K at full fire
+    heat_at_out = stove.heat_w
+    stove.manual({"state": "off"})
+    run(a, 1800)
+    assert 0 < stove.heat_w < heat_at_out
+    run(a, 4 * 3600)
+    assert a.sensors["sensor.wohnzimmer_ofen_temp"].value - a.zones["wohnzimmer"].t_air < 0.5
+    assert stove.counters.starts == 1 and stove.counters.manual == 2
+    assert stove.counters.heat_j == pytest.approx(2500 * 3 * 3600, rel=0.05)  # what the fire gave reached the room
+
+
+def test_stove_sensor_needs_a_stove_of_its_room_and_roundtrips():
+    with pytest.raises(ScenarioError, match="stove sensor needs"):
+        load_scenario_dict(scenario(_stove_room(appliance="switch.nope")))
+    with pytest.raises(ScenarioError, match="must be a switch"):
+        load_scenario_dict(scenario({"r": {"appliances": [{"entity_id": "fan.r_ofen", "profile": "wood_stove"}]}}))
+    a = world(_stove_room())
+    a.appliances["switch.wohnzimmer_ofen"].manual({"state": "on"})
+    run(a, 1800)
+    assert a.sample()["appliances"]["switch.wohnzimmer_ofen"]["body_c"] > 50
+    b = world(_stove_room())
+    b.restore(a.snapshot())
+    assert b.appliances["switch.wohnzimmer_ofen"].snapshot() == a.appliances["switch.wohnzimmer_ofen"].snapshot()
 
 
 def test_world_without_new_config_keeps_its_sample_keys():

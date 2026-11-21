@@ -142,6 +142,19 @@ async def test_open_window_ends_dry(hass, mock_config_entry):
 
 
 @pytest.mark.asyncio
+async def test_burning_stove_ends_dry(hass, mock_config_entry):
+    """A stove RoomMind does not control pauses the room like an open window, dry included (#9)."""
+    stove = SimpleNamespace(state="off", attributes={})
+    room_cfg = {**AC_ROOM, "external_heat_sensors": ["switch.stove"]}
+    coordinator, _, devices, _, _ = _setup(hass, mock_config_entry, room_cfg, **{"switch.stove": stove})
+    assert (await _cycle(coordinator))["ac_dry_active"] is True
+    stove.state = "on"
+    room = await _cycle(coordinator)
+    assert room["external_heat_active"] is True and room["ac_dry_active"] is False
+    assert devices[AC].state == "off"
+
+
+@pytest.mark.asyncio
 async def test_open_window_switches_a_setback_unit_off_without_its_setback_first(hass, mock_config_entry):
     room_cfg = {
         **AC_ROOM,

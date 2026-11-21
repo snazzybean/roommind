@@ -48,7 +48,8 @@ def _deviations(points: list[dict], climate_mode: str) -> list[float | None]:
         high = None if climate_mode == CLIMATE_MODE_HEAT_ONLY else point.get("cool_target")
         low = low - shift if low is not None else None
         high = high + shift if high is not None else None
-        if temp is None or (low is None and high is None) or point.get("window_open"):
+        # Not judged while a window is open or a stove RoomMind does not control heats (#9)
+        if temp is None or (low is None and high is None) or point.get("window_open") or point.get("external_heat"):
             result.append(None)
         elif low is not None and temp < low:
             result.append(round(temp - low, 3))
@@ -163,7 +164,7 @@ def _run_overshoot(points: list[dict], mode: str, target_key: str, sign: int) ->
             if later["ts"] - point["ts"] > OVERSHOOT_WINDOW_S or (j > i and begins(j)):
                 break
             temp = _extreme(later, sign)
-            if temp is None or later.get("window_open"):
+            if temp is None or later.get("window_open") or later.get("external_heat"):
                 continue
             peak = temp if peak is None else strictest(peak, temp)
         if peak is not None:

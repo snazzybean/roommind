@@ -1,0 +1,7 @@
+description: >
+  Temperature sensor next to a stove or fireplace (#9), e.g. on the wall beside it or on a
+  shelf above. Reads the room air plus coupling x (stove body - air) of the room's stove
+  appliance named in `appliance`.
+extends: default_temperature
+coupling: 0.05        # share of the body's excess over the air the sensor sees (~8 K at full fire)
+time_constant_s: 300  # the housing lags behind the radiant heat

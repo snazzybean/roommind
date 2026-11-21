@@ -5,6 +5,7 @@ from __future__ import annotations
 from helpers import scenario
 
 from roommind_sim.analysis.invariants import (
+    external_heat_pauses,
     hold_shows_running_unit,
     max_commands_per_hour,
     min_run_commanded,
@@ -116,6 +117,27 @@ def test_window_open_pause_allows_resume_between_close_and_next_sample():
     assert window_open_pauses(run) == []
     run.observer = [{"t": end - 90, "rooms": {"r": {"mode": "heating"}}}]
     assert len(window_open_pauses(run)) == 1
+
+
+def test_external_heat_pause_mode_and_learning():
+    """A stove (#9): idle after the grace and no EKF updates while RoomMind reports it."""
+    run = _run([False] * 30)
+    t0 = run.start
+
+    def rec(minute: int, active: bool, mode: str = "idle", n: int | None = None) -> dict:
+        o = {"t": t0 + 60 * minute, "rooms": {"r": {"external_heat_active": active, "mode": mode}}}
+        if n is not None:
+            o["models"] = {"r": {"n": n}}
+        return o
+
+    run.observer = [rec(1, False, "heating", 10), rec(2, True, "heating", 11), rec(5, True, n=11), rec(9, True, n=11)]
+    assert external_heat_pauses(run) == []  # heating only in the cycle that saw the stove first
+    run.observer.append(rec(12, True, "heating"))
+    assert "heating with a stove" in external_heat_pauses(run)[0].detail
+    run.observer[-1] = rec(12, True, n=14)
+    assert "learned 3 update(s)" in external_heat_pauses(run)[0].detail
+    run.observer[-1] = rec(12, False, "heating", 14)  # the pause is over: learning again is fine
+    assert external_heat_pauses(run) == []
 
 
 def test_command_rate():

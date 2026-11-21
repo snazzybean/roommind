@@ -1002,3 +1002,15 @@ class TestBuildAnalyticsOccupancy:
             await build_analytics_data(hass, "room1", "12h", store, coordinator)
             mock_sim.assert_called_once()
             assert mock_sim.call_args.kwargs["q_occupancy"] == 0.0
+
+
+def test_csv_to_points_reads_external_heat():
+    """The stove flag (#9) becomes a boolean; rows from before the column read False."""
+    from custom_components.roommind.services.analytics_service import _csv_to_points
+
+    rows = [
+        {"timestamp": "1000", "mode": "idle", "external_heat": "True"},
+        {"timestamp": "1300", "mode": "idle", "external_heat": "False"},
+        {"timestamp": "1600", "mode": "idle"},
+    ]
+    assert [p["external_heat"] for p in _csv_to_points(rows)] == [True, False, False]

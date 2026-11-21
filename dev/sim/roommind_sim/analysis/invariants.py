@@ -347,6 +347,46 @@ def window_open_pauses(run: RunData, grace_s: float = 120.0) -> list[Violation]:
     return out
 
 
+def external_heat_pauses(run: RunData, grace_s: float = COORDINATOR_CYCLE_S) -> list[Violation]:
+    """While RoomMind reports a stove or fireplace burning or cooling down (#9), the room is
+    idle and its model does not learn.
+
+    The pauses are the stretches of observer records with ``external_heat_active``. Mode:
+    every record from ``grace_s`` after the start. Learning: the EKF update count of the
+    model traces inside a pause must not grow.
+    """
+    out: list[Violation] = []
+    pauses: dict[str, list[list[dict[str, Any]]]] = {}
+    running: dict[str, bool] = {}
+    for o in run.observer:
+        for area, room in (o.get("rooms") or {}).items():
+            active = bool(room.get("external_heat_active"))
+            if active and not running.get(area):
+                pauses.setdefault(area, []).append([])
+            if active:
+                pauses[area][-1].append(o)
+            running[area] = active
+    for area, stretches in pauses.items():
+        for records in stretches:
+            start = records[0]["t"]
+            for o in records:
+                mode = (o["rooms"].get(area) or {}).get("mode")
+                if o["t"] >= start + grace_s and mode not in ("idle", None):
+                    out.append(
+                        Violation(o["t"], f"{area} {mode} with a stove burning since {(o['t'] - start) / 60:.0f} min")
+                    )
+                    break
+            counts = [(o["t"], o["models"][area]["n"]) for o in records if area in (o.get("models") or {})]
+            if counts and counts[-1][1] > counts[0][1]:
+                out.append(
+                    Violation(
+                        counts[-1][0],
+                        f"{area} model learned {counts[-1][1] - counts[0][1]} update(s) while a stove burned",
+                    )
+                )
+    return out
+
+
 def no_cover_lowered_over_open_window(run: RunData, grace_s: float = COORDINATOR_CYCLE_S) -> list[Violation]:
     """No cover of a room goes down while one of its window sensors is open (#268).
 
@@ -502,6 +542,7 @@ INVARIANTS: dict[str, Callable[..., list[Violation]]] = {
         no_full_cooling_at_target,
         no_rejected_commands,
         window_open_pauses,
+        external_heat_pauses,
         no_cover_lowered_over_open_window,
         no_heat_and_cool_same_group,
         uniform_group_one_mode,

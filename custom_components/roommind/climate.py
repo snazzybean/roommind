@@ -527,6 +527,7 @@ class RoomMindRoomClimate(CoordinatorEntity, ClimateEntity):
             "vacation": vacation_until is not None and time.time() < vacation_until,
             # cheap / normal / expensive, None without a price source
             "price_level": live.get("price_level"),
+            "external_heat": bool(live.get("external_heat_active", False)),
         }
 
     async def _async_set_override(self, heat: float | None, cool: float | None, override_type: str) -> None:

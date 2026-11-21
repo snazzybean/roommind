@@ -95,11 +95,13 @@ Invariants: `min_run_respected` (physical compressor), `min_run_commanded`,
 `min_off_respected`, `target_never_empty`, `no_cooling_below_outdoor_min`,
 `setpoints_within_device_range`, `no_full_cooling_at_target` (#450: no lowest AC
 setpoint once the room is at its cool target), `no_rejected_commands`, `window_open_pauses`,
+`external_heat_pauses` (#9: idle and no EKF update while RoomMind reports a stove burning or
+cooling down),
 `no_heat_and_cool_same_group`, `uniform_group_one_mode` (#533: no unit or master in heat while
 another is in cool, dry or fan in a group with "All in the same mode"), `no_commands_when_climate_off`, `max_commands_per_hour`.
 Check expressions see `room.<area>.<live field>`, `dev('<entity_id>')`,
 `cover('<entity_id>')`, `appliance('<entity_id>')` (ground truth: `on`, `running`, `pct`,
-`target_rh`, `electric_w`, `heat_w`, `moisture_g_h`), `sensor('<entity_id>')` (reported value
+`target_rh`, `electric_w`, `heat_w`, `moisture_g_h`, `body_c` of a stove), `sensor('<entity_id>')` (reported value
 of a solar sensor), `state('<entity_id>')` (HA state of helpers, fans and the sim appliances),
 `true_temp('<area>')`, `rh('<area>')` (true RH) and `outdoor`.
 
@@ -109,7 +111,7 @@ Metric groups for `metric:` expectations: `room.*` / `comfort.*` (with `room:`),
 
 ### Appliances and solar sensors
 
-Fans, dehumidifiers and humidifiers are `appliances:` of a room, not climate devices. The
+Fans, dehumidifiers, humidifiers and stoves are `appliances:` of a room, not climate devices. The
 HA domain comes from the entity id, the behaviour from the profile in `profiles/appliances/`;
 keys besides `entity_id`, `profile` and `name` override profile params.
 
@@ -126,7 +128,10 @@ house:
         - {entity_id: humidifier.bad_befeuchter, profile: humidifier, target_humidity: 45}
         # ceiling/standing fan as fan.* (speed_count speeds) or switch.*
         - {entity_id: fan.bad_decke, profile: ceiling_fan, radiator_boost: 1.3, initial_on: true}
+        # wood stove RoomMind does not control, lit and put out with device.manual (#9)
+        - {entity_id: switch.bad_ofen, profile: wood_stove}
       sensors:
+        stove: {entity_id: sensor.bad_ofen_temp, appliance: switch.bad_ofen}  # next to the stove
         solar: {entity_id: sensor.bad_sonne}                       # W/m², behind glass and cover
         solar_lux: {entity_id: sensor.bad_lux, unit: lx, windows: [0], max_value: 2000}
         solar_aussen: {entity_id: sensor.bad_sonne_pct, unit: "%", position: outside}
@@ -140,6 +145,7 @@ timeline:
 | `dehumidifier` | `humidifier.*` (dehumidifier), `switch.*` | Removes `rated_kg_h` at `rated_temp_c`/`rated_rh` (20 °C / 60 %), proportional to the humidity ratio above saturation at `coil_temp_c` (5 °C), capped at `max_factor`. Electric power and the condensation heat (~270 W at 0.4 kg/h) go into the room. Restart delay `min_off_s`. | `rated_kg_h` 0.4, `power_w` 300, `target_humidity`, `hysteresis_pct` 2, `min_off_s` 180 |
 | `humidifier` | `humidifier.*` (humidifier), `switch.*` | Adds `rated_kg_h`, tapering to 0 between 90 and 100 % RH; the water evaporates in the room air and takes its latent heat (heat = `power_w` - rate x latent heat). | `rated_kg_h` 0.3, `power_w` 30, `target_humidity`, `hysteresis_pct` 2 |
 | `room_fan` (`ceiling_fan`) | `fan.*` (percentage), `switch.*` | Motor heat `power_w` x share. While it runs the room's radiators deliver `radiator_boost` x their output (the extra all convective, so the radiator also cools down faster after a run) and the air-to-mass coupling grows by `mixing_boost`. No cooling of the air: the zone has no stratification or perceived temperature. | `speed_count` 3, `power_w` 40, `radiator_boost` 1.3, `mixing_boost` 0.1 |
+| `stove` (`wood_stove`) | `switch.*` (on = lit) | The fire puts `fire_w` into a body of `body_heat_capacity_kj_k`; the body gives `body_ua_w_k` x (body - air) to the room (`conv_share` convective, the rest radiant), also after the fire is out (time constant capacity / UA, ~33 min). A `stove` sensor of the room (`appliance:` names the stove) reads the air plus `coupling` (0.05) x (body - air), behind a `time_constant_s` of 300 s. Ground truth `body_c` in the samples. | `fire_w` 2500, `body_heat_capacity_kj_k` 30, `body_ua_w_k` 15, `conv_share` 0.6 |
 
 Share = percentage / 100 on `fan.*` entities with speeds, else 1. `target_humidity` is the
 device's own hygrostat (null = runs whenever it is on); it reads the true room RH plus

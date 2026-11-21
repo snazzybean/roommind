@@ -2405,6 +2405,7 @@ def test_save_room_cover_deploy_threshold_rejects_negative():
         ("humidity_sensor", "sensor.roommind_living_room_mode"),
         ("window_sensors", ["binary_sensor.roommind_test"]),
         ("covers", ["cover.roommind_living_room_auto"]),
+        ("external_heat_sensors", ["sensor.roommind_living_room_target_temp"]),
     ],
 )
 async def test_save_room_rejects_own_entities(ws_hass, store, connection, field, value):
@@ -4172,3 +4173,122 @@ async def test_save_room_room_fan_rejects_own_entity(ws_hass, store, connection)
     msg = {"id": 2, "type": "roommind/rooms/save", "area_id": "living"}
     await _save_room(ws_hass, connection, {**msg, "room_fan_entity": "switch.roommind_living_climate_control"})
     connection.send_error.assert_called_once()
+
+
+# -- Unmanaged heat sources: stove, fireplace (#9) -----------------------------
+
+
+@pytest.mark.asyncio
+async def test_save_room_external_heat_fields(ws_hass, store, connection):
+    """New rooms get the feature off with the defaults; the fields pass the schema and reach the store."""
+    await store.async_load()
+    msg = {"type": "roommind/rooms/save", "area_id": "living_room"}
+    await _save_room(ws_hass, connection, {**msg, "id": 2, "temperature_sensor": "sensor.room_temp"})
+    room = store.get_room("living_room")
+    assert room["external_heat_sensors"] == []
+    assert room["external_heat_delta_on"] == 3.0
+    assert room["external_heat_delta_off"] == 1.5
+    assert room["external_heat_power_threshold"] == 50.0
+    assert room["external_heat_cooldown"] == 120
+    await _save_room(
+        ws_hass,
+        connection,
+        {
+            **msg,
+            "id": 3,
+            "external_heat_sensors": ["sensor.stove_temp", "switch.stove_plug"],
+            "external_heat_delta_on": 4.0,
+            "external_heat_delta_off": 2.0,
+            "external_heat_power_threshold": 80.0,
+            "external_heat_cooldown": 90,
+        },
+    )
+    connection.send_error.assert_not_called()
+    room = store.get_room("living_room")
+    assert room["external_heat_sensors"] == ["sensor.stove_temp", "switch.stove_plug"]
+    assert room["external_heat_delta_on"] == 4.0
+    assert room["external_heat_delta_off"] == 2.0
+    assert room["external_heat_power_threshold"] == 80.0
+    assert room["external_heat_cooldown"] == 90
+    assert room["temperature_sensor"] == "sensor.room_temp"
+
+
+def test_external_heat_schema():
+    """Heat source entities: sensors, binary sensors, switches and helpers; thresholds within their bounds."""
+    import voluptuous as vol
+
+    schema = websocket_save_room._ws_schema
+    base = {"type": "roommind/rooms/save", "id": 1, "area_id": "living"}
+    eids = ["sensor.stove_temp", "binary_sensor.stove", "switch.stove_plug", "input_boolean.stove_lit"]
+    assert schema({**base, "external_heat_sensors": eids})["external_heat_sensors"] == eids
+    assert schema({**base, "external_heat_cooldown": "30"})["external_heat_cooldown"] == 30
+    for bad in (
+        {"external_heat_sensors": ["climate.stove"]},
+        {"external_heat_sensors": ["light.fireplace"]},
+        {"external_heat_delta_on": 0.2},
+        {"external_heat_delta_off": -1},
+        {"external_heat_power_threshold": -5},
+        {"external_heat_cooldown": 721},
+    ):
+        with pytest.raises(vol.Invalid):
+            schema({**base, **bad})
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {"external_heat_delta_on": 2.0, "external_heat_delta_off": 2.0},
+        {"external_heat_delta_on": 2.0, "external_heat_delta_off": 3.0},
+        # delta_off alone, checked against the stored delta_on (3.0 by default)
+        {"external_heat_delta_off": 3.5},
+        # delta_on alone, checked against the stored delta_off (1.5 by default)
+        {"external_heat_delta_on": 1.0},
+    ],
+)
+async def test_save_room_rejects_delta_off_not_below_delta_on(ws_hass, store, connection, fields):
+    """delta_off must stay below delta_on, also when the auto-save sends one of them."""
+    await store.async_load()
+    await store.async_save_room("living_room", {})
+    msg = {"id": 2, "type": "roommind/rooms/save", "area_id": "living_room", **fields}
+    await _save_room(ws_hass, connection, msg)
+    connection.send_error.assert_called_once()
+    assert connection.send_error.call_args[0][1] == "invalid_format"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "msg_fields",
+    [
+        {"external_heat_sensors": ["sensor.room_temp"]},
+        # The other way round: the room sensor picked after the heat source sensor
+        {"temperature_sensor": "sensor.stove_temp"},
+    ],
+)
+async def test_save_room_rejects_room_sensor_as_heat_source(ws_hass, store, connection, msg_fields):
+    """The room temperature sensor cannot also be the sensor next to the stove."""
+    await store.async_load()
+    await store.async_save_room(
+        "living_room", {"temperature_sensor": "sensor.room_temp", "external_heat_sensors": ["sensor.stove_temp"]}
+    )
+    msg = {"id": 2, "type": "roommind/rooms/save", "area_id": "living_room", **msg_fields}
+    await _save_room(ws_hass, connection, msg)
+    connection.send_error.assert_called_once()
+    assert connection.send_error.call_args[0][1] == "invalid_entity"
+
+
+@pytest.mark.asyncio
+async def test_list_rooms_forwards_external_heat(ws_hass, store, connection):
+    """The room page banner and the card icon read the heat source state from rooms/list."""
+    await store.async_load()
+    await _save_room(ws_hass, connection, {"id": 2, "type": "roommind/rooms/save", "area_id": "living"})
+    mock_coordinator = MagicMock()
+    mock_coordinator.rooms = {"living": {"external_heat_active": True, "external_heat_until": 1234.0}}
+    mock_coordinator.async_request_refresh = AsyncMock()
+    ws_hass.data[DOMAIN]["coordinator"] = mock_coordinator
+
+    await _list_rooms(ws_hass, connection, {"id": 3, "type": "roommind/rooms/list"})
+
+    live = connection.send_result.call_args[0][1]["rooms"]["living"]["live"]
+    assert live["external_heat_active"] is True
+    assert live["external_heat_until"] == 1234.0

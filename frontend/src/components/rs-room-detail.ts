@@ -44,7 +44,14 @@ import { errorText } from "../utils/errors";
 import { showToast } from "../utils/toast";
 import { fireSaveStatus } from "../utils/events";
 import { deviceAbilities, modeFits, resolveHeatingSystemType } from "../utils/device-utils";
-import { DEFAULT_CO2_THRESHOLD, DEFAULT_OCCUPANCY_ECO_DELAY } from "../utils/constants";
+import {
+  DEFAULT_CO2_THRESHOLD,
+  DEFAULT_EXTERNAL_HEAT_COOLDOWN,
+  DEFAULT_EXTERNAL_HEAT_DELTA_OFF,
+  DEFAULT_EXTERNAL_HEAT_DELTA_ON,
+  DEFAULT_EXTERNAL_HEAT_POWER_THRESHOLD,
+  DEFAULT_OCCUPANCY_ECO_DELAY,
+} from "../utils/constants";
 import { NO_OVERRIDE, type EffectiveOverride } from "../utils/override";
 import { tokens } from "../styles/tokens";
 
@@ -129,6 +136,35 @@ const ROOM_FIELDS: [string, RoomFieldSync][] = [
   ["window_sensors", asSet("_selectedWindowSensors", (c) => c?.window_sensors ?? [])],
   ["window_open_delay", plain("_windowOpenDelay", (c) => c?.window_open_delay ?? 0)],
   ["window_close_delay", plain("_windowCloseDelay", (c) => c?.window_close_delay ?? 0)],
+  ["external_heat_sensors", asSet("_externalHeatSensors", (c) => c?.external_heat_sensors ?? [])],
+  [
+    "external_heat_delta_on",
+    plain(
+      "_externalHeatDeltaOn",
+      (c) => c?.external_heat_delta_on ?? DEFAULT_EXTERNAL_HEAT_DELTA_ON,
+    ),
+  ],
+  [
+    "external_heat_delta_off",
+    plain(
+      "_externalHeatDeltaOff",
+      (c) => c?.external_heat_delta_off ?? DEFAULT_EXTERNAL_HEAT_DELTA_OFF,
+    ),
+  ],
+  [
+    "external_heat_power_threshold",
+    plain(
+      "_externalHeatPowerThreshold",
+      (c) => c?.external_heat_power_threshold ?? DEFAULT_EXTERNAL_HEAT_POWER_THRESHOLD,
+    ),
+  ],
+  [
+    "external_heat_cooldown",
+    plain(
+      "_externalHeatCooldown",
+      (c) => c?.external_heat_cooldown ?? DEFAULT_EXTERNAL_HEAT_COOLDOWN,
+    ),
+  ],
   ["climate_mode", plain("_climateMode", (c) => c?.climate_mode ?? "auto")],
   ["schedules", plain("_schedules", (c) => c?.schedules ?? [])],
   [
@@ -281,6 +317,12 @@ export class RsRoomDetail extends LitElement {
   @state() private _comfortCool = 24.0;
   @state() private _ecoHeat = 17.0;
   @state() private _ecoCool = 27.0;
+  /** Stove or fireplace RoomMind does not control (#9), see ROOM_FIELDS. */
+  @state() private _externalHeatSensors: Set<string> = new Set();
+  @state() private _externalHeatDeltaOn = DEFAULT_EXTERNAL_HEAT_DELTA_ON;
+  @state() private _externalHeatDeltaOff = DEFAULT_EXTERNAL_HEAT_DELTA_OFF;
+  @state() private _externalHeatPowerThreshold = DEFAULT_EXTERNAL_HEAT_POWER_THRESHOLD;
+  @state() private _externalHeatCooldown = DEFAULT_EXTERNAL_HEAT_COOLDOWN;
   @state() private _error = "";
   @state() private _dirty = false;
   @state() private _editing: EditableSection | null = null;
@@ -820,6 +862,11 @@ export class RsRoomDetail extends LitElement {
         .windowSensors=${this._selectedWindowSensors}
         .windowOpenDelay=${this._windowOpenDelay}
         .windowCloseDelay=${this._windowCloseDelay}
+        .externalHeatSensors=${this._externalHeatSensors}
+        .externalHeatDeltaOn=${this._externalHeatDeltaOn}
+        .externalHeatDeltaOff=${this._externalHeatDeltaOff}
+        .externalHeatPowerThreshold=${this._externalHeatPowerThreshold}
+        .externalHeatCooldown=${this._externalHeatCooldown}
         .heatingSystemType=${resolveHeatingSystemType(this._devices)}
         .language=${l}
       ></rs-sensor-section>
@@ -1025,6 +1072,11 @@ export class RsRoomDetail extends LitElement {
             .windowSensors=${this._selectedWindowSensors}
             .windowOpenDelay=${this._windowOpenDelay}
             .windowCloseDelay=${this._windowCloseDelay}
+            .externalHeatSensors=${this._externalHeatSensors}
+            .externalHeatDeltaOn=${this._externalHeatDeltaOn}
+            .externalHeatDeltaOff=${this._externalHeatDeltaOff}
+            .externalHeatPowerThreshold=${this._externalHeatPowerThreshold}
+            .externalHeatCooldown=${this._externalHeatCooldown}
             .heatingSystemType=${resolveHeatingSystemType(this._devices)}
             .language=${this.hass.language}
             @sensor-changed=${this._onSensorChanged}
@@ -1327,6 +1379,12 @@ export class RsRoomDetail extends LitElement {
     const { key, value } = e.detail;
     if (key === "temperature_sensor") {
       this._selectedTempSensor = value as string;
+      // The room sensor cannot also be the one next to the stove: the backend rejects that save
+      if (this._externalHeatSensors.has(value as string)) {
+        const nextHeat = new Set(this._externalHeatSensors);
+        nextHeat.delete(value as string);
+        this._externalHeatSensors = nextHeat;
+      }
     } else if (key === "humidity_sensor") {
       this._selectedHumiditySensor = value as string;
     } else if (key === "occupancy_sensors") {
@@ -1367,6 +1425,16 @@ export class RsRoomDetail extends LitElement {
       this._windowOpenDelay = value as number;
     } else if (key === "window_close_delay") {
       this._windowCloseDelay = value as number;
+    } else if (key === "external_heat_sensors") {
+      this._externalHeatSensors = new Set(value as string[]);
+    } else if (key === "external_heat_delta_on") {
+      this._externalHeatDeltaOn = value as number;
+    } else if (key === "external_heat_delta_off") {
+      this._externalHeatDeltaOff = value as number;
+    } else if (key === "external_heat_power_threshold") {
+      this._externalHeatPowerThreshold = value as number;
+    } else if (key === "external_heat_cooldown") {
+      this._externalHeatCooldown = value as number;
     }
     this._autoSave();
   }

@@ -315,6 +315,11 @@ class World:
             true = self.zones[sensor.spec.room].rh
         elif kind == "solar":
             true = self._solar_sensor_value(sensor)
+        elif kind == "stove":
+            stove = self.appliances[sensor.spec.params["appliance"]]
+            true = stove.stove_sensor_c(
+                self.zones[sensor.spec.room].t_air, float(sensor.spec.params.get("coupling", 0.05))
+            )
         else:
             return False
         return sensor.update(true, now, self.boot_time)

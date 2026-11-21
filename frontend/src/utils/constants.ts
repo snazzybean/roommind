@@ -11,6 +11,12 @@ export const DEFAULT_CO2_THRESHOLD = 1000;
 export const MIN_CO2_THRESHOLD = 800;
 export const MAX_CO2_THRESHOLD = 5000;
 
+/** Stove or fireplace (#9); mirror DEFAULT_EXTERNAL_HEAT_* (K above the room, W, minutes). */
+export const DEFAULT_EXTERNAL_HEAT_DELTA_ON = 3;
+export const DEFAULT_EXTERNAL_HEAT_DELTA_OFF = 1.5;
+export const DEFAULT_EXTERNAL_HEAT_POWER_THRESHOLD = 50;
+export const DEFAULT_EXTERNAL_HEAT_COOLDOWN = 120;
+
 /** Humidity limits in % RH; mirror DEFAULT/MIN/MAX_HUMIDITY_* and HUMIDITY_LIMIT_GAP (#518, #526). */
 export const DEFAULT_HUMIDITY_MAX = 60;
 export const DEFAULT_HUMIDITY_MIN = 40;

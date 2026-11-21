@@ -63,7 +63,13 @@ class BacktestResult:
 
 
 def _inputs_known(p: dict) -> bool:
-    return p.get("room_temp") is not None and p.get("outdoor_temp") is not None and p.get("model_power") is not None
+    # The model has no input for a stove RoomMind does not control (#9): those rows break the chain
+    return (
+        p.get("room_temp") is not None
+        and p.get("outdoor_temp") is not None
+        and p.get("model_power") is not None
+        and not p.get("external_heat")
+    )
 
 
 def backtest(points: list[dict], model: RCModel, k_window: float) -> BacktestResult:

@@ -11,6 +11,7 @@ const COLUMNS = [
   "mode",
   "predicted_temp",
   "window_open",
+  "external_heat",
   "heating_power",
   "solar_irradiance",
   "blind_position",

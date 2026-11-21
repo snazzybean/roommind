@@ -93,6 +93,7 @@ from .managers.compressor_group_manager import (
 from .managers.cover_orchestrator import CoverOrchestrator, CoverResult
 from .managers.device_setpoint_tracker import DeviceSetpointTracker
 from .managers.ekf_training_manager import EkfTrainingManager
+from .managers.external_heat_manager import ExternalHeatManager, ExternalHeatThresholds
 from .managers.head_offset_tracker import HeadOffsetTracker
 from .managers.heat_source_orchestrator import HeatSourcePlan, evaluate_heat_sources
 from .managers.humidity_manager import (
@@ -306,6 +307,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         self._outdoor_unavailable_cycles: int = 0
         self._outdoor_warning_sent: bool = False
         self._window_manager = WindowManager()
+        self._external_heat_manager = ExternalHeatManager()
         self._previous_modes: dict[str, str] = {}
         self._model_manager: RoomModelManager = RoomModelManager()
         self._model_loaded = False
@@ -567,6 +569,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                             "mode": mode,
                             "predicted_temp": predicted,
                             "window_open": rs.get("window_open", False),
+                            "external_heat": rs.get("external_heat_active", False),
                             "heating_power": rs.get("heating_power", 0),
                             "solar_irradiance": round(self._current_q_solar, 3),
                             "blind_position": rs.get("blind_position"),
@@ -985,6 +988,8 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 "heating_power": 0,
                 "device_setpoint": None,
                 "window_open": False,
+                "external_heat_active": False,
+                "external_heat_until": None,
                 "override_active": False,
                 "override_type": None,
                 "override_heat": None,
@@ -1298,6 +1303,20 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             mode = MODE_IDLE
             power_fraction = 0.0
 
+        # Pause climate control while a stove or fireplace RoomMind does not control burns
+        # or cools down (#9): it heats the room on its own, and in auto mode its overshoot
+        # would start the AC. Like an open window it wins over overrides and every mode.
+        external_heat_eids: list[str] = room.get("external_heat_sensors", [])
+        external_heat_active = bool(external_heat_eids) and self._external_heat_manager.update(
+            area_id,
+            {eid: self.hass.states.get(eid) for eid in external_heat_eids},
+            current_temp,
+            ExternalHeatThresholds.from_room(room),
+        )
+        if external_heat_active:
+            mode = MODE_IDLE
+            power_fraction = 0.0
+
         climate_active = settings.get("climate_control_active", True) and room.get("climate_control_enabled", True)
         # Startup guard: Full Control room without any temperature reading yet —
         # leave devices in their current state instead of idling them.
@@ -1427,7 +1446,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         # The mode a room wanted before its uniform-mode group held it back; it still counts for the group (#533)
         group_wanted_mode: str | None = None
         uniform_held = False
-        if all_device_eids and climate_active and not window_open and not force_off:
+        if all_device_eids and climate_active and not window_open and not external_heat_active and not force_off:
             group_action = {MODE_HEATING: "heat", MODE_COOLING: "cool"}.get(mode)
             for eid in all_device_eids:
                 if self._compressor_manager.get_group_for_entity(eid) is None:
@@ -1511,6 +1530,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             disturbed=(
                 window_open
                 or raw_open
+                or external_heat_active
                 or not climate_active
                 or not has_external_sensor
                 or room.get("is_outdoor", False)
@@ -1581,7 +1601,8 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             has_external_sensor=has_external_sensor,
             climate_active=climate_active,
             waiting_for_data=waiting_for_data,
-            window_open=window_open,
+            # A burning stove pauses the room like an open window: no dry run either
+            window_open=window_open or external_heat_active,
             force_off=force_off,
             current_temp=current_temp,
             compressor_forced_on=compressor_forced_on,
@@ -1740,6 +1761,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             power_fraction=power_fraction,
             window_open=window_open,
             raw_open=raw_open,
+            external_heat=external_heat_active,
             q_residual=q_residual,
             shading_factor=shading_factor,
             room_solar=room_solar,
@@ -1775,6 +1797,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             device_min_temp=device_min_temp,
             has_external_sensor=has_external_sensor,
             window_open=window_open,
+            external_heat_active=external_heat_active,
             presence_away=presence_away,
             occupancy_vacant=occupancy_vacant,
             force_off=force_off,
@@ -1879,6 +1902,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         power_fraction: float,
         window_open: bool,
         raw_open: bool,
+        external_heat: bool,
         q_residual: float,
         shading_factor: float | None,
         q_occupancy: float,
@@ -2032,6 +2056,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 ekf_pf=ekf_pf,
                 window_open=window_open,
                 raw_open=raw_open,
+                external_heat=external_heat,
                 q_residual=q_residual_training,
                 # A sun sensor's input already sits behind the covers where it should
                 shading_factor=(shading_factor if shading_factor is not None else 0.0) if room_solar is None else 1.0,
@@ -2140,6 +2165,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         presence_away: bool,
         occupancy_vacant: bool,
         force_off: bool,
+        external_heat_active: bool,
         mode: str,
         power_fraction: float,
         mold_risk_level: str | None,
@@ -2241,6 +2267,9 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 boost_caps=boost_caps,
             ),
             "window_open": window_open,
+            "external_heat_active": external_heat_active,
+            # End of the cooldown once the source is out, None while it burns
+            "external_heat_until": self._external_heat_manager.active_until(area_id) if external_heat_active else None,
             **build_override_live(
                 room,
                 suppressed=is_override_suppressed(room, settings, presence_away),
@@ -3369,6 +3398,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
 
         # Clean up in-memory state
         self._window_manager.remove_room(area_id)
+        self._external_heat_manager.remove_room(area_id)
         self._previous_modes.pop(area_id, None)
         self._override_seeded_at.pop(area_id, None)
         self._rooms_to_switch_off.discard(area_id)

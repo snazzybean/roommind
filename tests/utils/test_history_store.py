@@ -166,6 +166,17 @@ def test_downsample_preserves_window_open(history_dir):
     assert result[1]["window_open"] == "False"
 
 
+def test_external_heat_in_csv_and_downsample(history_dir):
+    """The stove flag (#9) is written, read and kept per bucket like window_open."""
+    store = HistoryStore(history_dir)
+    store.record("room_a", {"room_temp": 20.0, "mode": "idle", "external_heat": True}, timestamp=1000.0)
+    store.record("room_a", {"room_temp": 20.0, "mode": "idle", "external_heat": False}, timestamp=1500.0)
+    rows = store.read_detail("room_a", max_age=None)
+    assert [r["external_heat"] for r in rows] == ["True", "False"]
+    result = store._downsample(rows, bucket_seconds=300)
+    assert [r["external_heat"] for r in result] == ["True", "False"]
+
+
 def test_rotate_moves_old_to_history(history_dir):
     """Rotation moves old detail rows to history file."""
     store = HistoryStore(history_dir)

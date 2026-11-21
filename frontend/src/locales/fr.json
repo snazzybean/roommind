@@ -1132,5 +1132,22 @@
   "covers.schedule_default_name": "{room} volets",
   "schedules.also_in": "Aussi dans {rooms}",
   "schedules.covers_in": "Volets : {rooms}",
-  "schedules.temperature_in": "Température : {rooms}"
+  "schedules.temperature_in": "Température : {rooms}",
+  "detail.sensors.external_heat": "Poêle ou cheminée",
+  "sensors.external_heat_info": "Un poêle ou une cheminée que RoomMind ne pilote pas. Tant qu'il brûle, et pendant un temps réglable après extinction, RoomMind met le chauffage et le refroidissement de cette pièce en pause et le modèle n'apprend pas. Choisissez un capteur de température placé juste à côté (ni au soleil ni près d'un radiateur), une prise qui mesure la puissance, ou une entité ou un helper marche/arrêt. Un seul allumé suffit.",
+  "sensors.no_external_heat": "Aucun.",
+  "sensors.external_heat_delta_on": "Allumé au-dessus de la pièce de",
+  "sensors.external_heat_delta_off": "Éteint sous la pièce plus",
+  "sensors.external_heat_delta_info": "Le capteur près du poêle compte comme allumé dès qu'il dépasse la pièce de cette valeur, et de nouveau comme éteint quand l'écart passe sous la seconde valeur.",
+  "sensors.external_heat_power_threshold": "Allumé au-dessus de",
+  "sensors.external_heat_cooldown": "Pause après extinction",
+  "sensors.external_heat_cooldown_info": "Le poêle continue de chauffer après extinction. La pièce reste en pause pendant ce temps, puis RoomMind reprend la main. 0 termine la pause tout de suite.",
+  "sensors.external_heat_temp_view": "allumé à {on}, éteint à {off}",
+  "sensors.external_heat_power_view": "allumé au-dessus de {power}",
+  "sensors.external_heat_cooldown_view": "pause de {time} après",
+  "hero.external_heat": "Poêle ou cheminée allumé - en pause",
+  "hero.external_heat_until": "Poêle ou cheminée en refroidissement - en pause jusqu'à {time}",
+  "hero.external_heat_info": "Tant que le poêle ou la cheminée brûle, et pendant le temps réglé après, RoomMind ne chauffe ni ne refroidit cette pièce, même avec une dérogation manuelle, et le modèle n'apprend pas.",
+  "card.external_heat": "Poêle ou cheminée allumé",
+  "analytics.external_heat_period": "Poêle ou cheminée"
 }

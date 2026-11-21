@@ -1132,5 +1132,22 @@
   "covers.schedule_default_name": "{room} covers",
   "schedules.also_in": "Also in {rooms}",
   "schedules.covers_in": "Covers: {rooms}",
-  "schedules.temperature_in": "Temperature: {rooms}"
+  "schedules.temperature_in": "Temperature: {rooms}",
+  "detail.sensors.external_heat": "Stove or fireplace",
+  "sensors.external_heat_info": "A stove or fireplace RoomMind does not control. While it burns, and for a set time after it goes out, RoomMind pauses heating and cooling in this room and the model does not learn. Pick a temperature sensor placed next to it (not in the sun or by a radiator), a plug that measures power, or an on/off entity or helper. One of them on is enough.",
+  "sensors.no_external_heat": "None.",
+  "sensors.external_heat_delta_on": "Lit above the room by",
+  "sensors.external_heat_delta_off": "Out below the room plus",
+  "sensors.external_heat_delta_info": "The sensor next to the stove counts as lit once it is this much warmer than the room, and as out again once the gap drops below the second value.",
+  "sensors.external_heat_power_threshold": "Lit above",
+  "sensors.external_heat_cooldown": "Pause after it goes out",
+  "sensors.external_heat_cooldown_info": "The stove keeps giving off heat after it goes out. The room stays paused this long, then RoomMind takes over again. 0 ends the pause at once.",
+  "sensors.external_heat_temp_view": "lit at {on}, out at {off}",
+  "sensors.external_heat_power_view": "lit above {power}",
+  "sensors.external_heat_cooldown_view": "pause {time} after",
+  "hero.external_heat": "Stove or fireplace lit, paused",
+  "hero.external_heat_until": "Stove or fireplace cooling down, paused until {time}",
+  "hero.external_heat_info": "While the stove or fireplace burns and for the set time after, RoomMind neither heats nor cools this room, also over a manual override, and the model does not learn.",
+  "card.external_heat": "Stove or fireplace lit",
+  "analytics.external_heat_period": "Stove or fireplace"
 }

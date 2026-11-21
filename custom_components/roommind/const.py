@@ -132,6 +132,14 @@ ROOM_FAN_MIN_OFF_MINUTES = 5
 ROOM_FAN_POST_RUN_MINUTES = 10
 ROOM_FAN_POST_HEAT_MAX_MINUTES = 30
 
+# Unmanaged heat sources (stove, fireplace): the room pauses while one burns
+DEFAULT_EXTERNAL_HEAT_DELTA_ON = 3.0  # degC a sensor next to the source must exceed the room by
+DEFAULT_EXTERNAL_HEAT_DELTA_OFF = 1.5  # degC below which an active source counts as off
+DEFAULT_EXTERNAL_HEAT_POWER_THRESHOLD = 50.0  # W above which a power sensor counts as on
+DEFAULT_EXTERNAL_HEAT_COOLDOWN = 120  # minutes the room stays paused after the source goes off
+# A temperature or power sensor next to the source, or an entity that is on while it burns
+EXTERNAL_HEAT_DOMAINS = ("sensor", "binary_sensor", "switch", "input_boolean")
+
 # Context identifier for RoomMind-initiated service calls.
 # Automations can check: trigger.context.parent_id == "roommind"
 ROOMMIND_CONTEXT_ID = "roommind"

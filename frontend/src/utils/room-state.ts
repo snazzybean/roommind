@@ -135,13 +135,13 @@ export interface RoomStateInfo {
   power: number | null;
 }
 
-/** Header state of a controlled room: heats/cools (with output), paused (window), off, standby. */
+/** Header state of a controlled room: heats/cools (with output), paused (window, stove), off, standby. */
 export function roomStateInfo(config: RoomConfig, climateControlActive: boolean): RoomStateInfo {
   const live = config.live;
   if (!isRoomControlled(config, climateControlActive)) {
     return { key: "card.state.off", icon: "mdi:power-off", tone: "off", power: null };
   }
-  if (live?.window_open) {
+  if (live?.window_open || live?.external_heat_active) {
     return {
       key: "card.state.paused",
       icon: "mdi:pause-circle-outline",
@@ -164,6 +164,7 @@ export type RoomHintId =
   | "air_quality"
   | "humidity"
   | "window_open"
+  | "external_heat"
   | "not_controlled"
   | "override"
   | "compressor"
@@ -217,7 +218,7 @@ export function formatClock(unixS: number, language: string, now = Date.now()): 
 
 /**
  * Everything worth a hint for a room, most important first: mold risk, air quality, window
- * open, not controlled, override (with end), compressor protection, away / room empty, mold
+ * open, stove or fireplace lit, not controlled, override (with end), compressor protection, away / room empty, mold
  * prevention, price shift, setback, pre-heat, learning, room fan on. Rooms without control only get the
  * measured ones (mold risk, air quality).
  */
@@ -250,6 +251,20 @@ export function roomHints(
       icon: "mdi:window-open-variant",
       severity: "info",
       key: "hero.window_open",
+    });
+  }
+  // A stove or fireplace RoomMind does not control burns or cools down (#9): paused like for a window
+  if (live.external_heat_active) {
+    hints.push({
+      id: "external_heat",
+      icon: "mdi:fireplace",
+      severity: "info",
+      ...(live.external_heat_until
+        ? {
+            key: "hero.external_heat_until",
+            params: { time: formatClock(live.external_heat_until, ctx.language, ctx.now) },
+          }
+        : { key: "hero.external_heat" }),
     });
   }
   if (!isRoomControlled(config, ctx.climateControlActive)) {

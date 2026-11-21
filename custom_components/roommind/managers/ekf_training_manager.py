@@ -87,25 +87,34 @@ class EkfTrainingManager:
         dt_minutes: float,
         q_occupancy: float = 0.0,
         q_rebound: float | None = None,
+        external_heat: bool = False,
     ) -> None:
         """Process an EKF training step for a room.
 
         Contains the full training decision tree: window open, raw open
-        (within delay), unobservable mode, or normal accumulation.
+        (within delay), unmanaged heat source active, unobservable mode, or
+        normal accumulation.
+
+        ``external_heat`` is True while a stove or fireplace RoomMind does not
+        control burns or cools down (#9): the temperature state is tracked like
+        for an open window, but nothing is learned, not even k_window. The batch
+        gathered before is dropped, not flushed: the source was already heating
+        while its sensor warmed up past the threshold.
         """
-        if window_open or raw_open:
+        if window_open or raw_open or external_heat:
             was_current = area_id in self._current
-            self.flush(
-                area_id,
-                current_temp,
-                T_outdoor,
-                can_heat,
-                can_cool,
-                q_solar,
-                q_residual=q_residual,
-                shading_factor=shading_factor,
-                q_occupancy=q_occupancy,
-            )
+            if not external_heat:
+                self.flush(
+                    area_id,
+                    current_temp,
+                    T_outdoor,
+                    can_heat,
+                    can_cool,
+                    q_solar,
+                    q_residual=q_residual,
+                    shading_factor=shading_factor,
+                    q_occupancy=q_occupancy,
+                )
             self.clear(area_id)
             # Always track temperature state to prevent stale _x[0]
             # when normal learning resumes.  Only learn k_window when
@@ -115,7 +124,7 @@ class EkfTrainingManager:
                 current_temp,
                 T_outdoor,
                 dt_minutes,
-                learn_k_window=(window_open and q_residual == 0.0 and was_current),
+                learn_k_window=(window_open and q_residual == 0.0 and was_current and not external_heat),
             )
             self._synced.add(area_id)
             self._current.add(area_id)

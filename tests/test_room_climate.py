@@ -254,7 +254,7 @@ def test_extra_attributes(setup):
     store.get_settings.return_value = {"vacation_until": time.time() + 3600}
     entity = make(
         _room(override_heat=21.0, override_cool=24.0, override_type="eco", override_until=NEXT_EVENT.timestamp()),
-        live=_live(window_open=True, presence_away=True, current_humidity=55.0),
+        live=_live(window_open=True, presence_away=True, external_heat_active=True, current_humidity=55.0),
     )
     assert entity.extra_state_attributes == {
         "override_until": NEXT_EVENT.isoformat(),
@@ -263,6 +263,7 @@ def test_extra_attributes(setup):
         "occupancy_vacant": False,
         "vacation": True,
         "price_level": None,
+        "external_heat": True,
     }
     assert entity.current_humidity == 55.0
 

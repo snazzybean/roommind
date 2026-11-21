@@ -1,0 +1,11 @@
+description: >
+  Wood stove or fireplace RoomMind does not control, lit and put out by hand. The fire heats
+  ~50 kg of steel and firebrick, which keeps giving off heat for about an hour after the fire
+  is out (time constant capacity / UA, here ~33 min). fire_w is what reaches the room: a 6-7 kW stove in an
+  open living area gives a single room much less.
+model: stove
+params:
+  fire_w: 2500                  # heat of the fire into the body (and on to the room) while lit
+  body_heat_capacity_kj_k: 30   # steel and firebrick; a masonry stove holds 10-50x more
+  body_ua_w_k: 15               # body to room; ~170 K surface excess at full fire
+  conv_share: 0.6               # convective share of the heat, the rest radiant
