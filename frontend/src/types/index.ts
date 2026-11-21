@@ -141,7 +141,7 @@ export interface DeviceConfig {
   coil_dry_fan_mode?: string; // "" = inherit global, "__keep__" = keep current
   valve_opening_entity?: string; // number entity for direct valve opening degree (0-100%)
   valve_closing_entity?: string; // number entity for direct valve closing degree (0-100%)
-  valve_closing_mode?: "closing_degree" | "idle_opening"; // idle_opening: the second entity is the opening while idle (SONOFF TRV-ZBT)
+  valve_closing_mode?: "closing_degree" | "idle_opening" | "single"; // idle_opening: the second entity is the opening while idle (SONOFF TRV-ZBT); single: no second entity (Bosch BTH-RA)
 }
 
 export type ConflictResolution =
