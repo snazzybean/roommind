@@ -202,11 +202,21 @@ def load_scenario_dict(data: dict[str, Any]) -> Scenario:
         external_entities=list(data.get("external_entities") or []),
         assumptions=list(data.get("assumptions") or []),
         replay=data.get("replay") or {},
+        area_occupancy=_area_occupancy(data.get("area_occupancy")),
         source_path=Path(source) if source else None,
         raw=data,
     )
     _validate(scn)
     return scn
+
+
+def _area_occupancy(spec: Any) -> dict[str, Any]:
+    """The mocked get_time_priors response of an ``area_occupancy:`` section, empty without one."""
+    if not spec:
+        return {}
+    from ..area_occupancy import build_time_priors
+
+    return build_time_priors(spec)
 
 
 def _room(area_id: str, rdata: dict[str, Any], building: str, floors: dict[str, str]) -> RoomSpec:

@@ -146,6 +146,8 @@ class Scenario:
     external_entities: list[str] = field(default_factory=list)
     assumptions: list[str] = field(default_factory=list)
     replay: dict[str, Any] = field(default_factory=dict)
+    # Mocked area_occupancy.get_time_priors response (see roommind_sim/area_occupancy.py), empty = no service
+    area_occupancy: dict[str, Any] = field(default_factory=dict)
     source_path: Path | None = None
     raw: dict[str, Any] = field(default_factory=dict)
 

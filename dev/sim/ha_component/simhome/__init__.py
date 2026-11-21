@@ -12,7 +12,7 @@ import voluptuous as vol
 from homeassistant.components import websocket_api
 from homeassistant.config_entries import SOURCE_IMPORT, ConfigEntry
 from homeassistant.const import EVENT_HOMEASSISTANT_STARTED, EVENT_HOMEASSISTANT_STOP
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, SupportsResponse, callback
 from homeassistant.helpers.typing import ConfigType
 
 from roommind_sim import clock as clockmod
@@ -34,6 +34,8 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     hass.data[DOMAIN] = runtime
     for cmd in (ws_status, ws_clock, ws_action, ws_world):
         websocket_api.async_register_command(hass, cmd)
+    if runtime.scn.area_occupancy:
+        _register_area_occupancy(hass, runtime.scn.area_occupancy)
 
     async def _started(_event: Any) -> None:
         await runtime.async_ensure_user()
@@ -67,6 +69,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return await hass.config_entries.async_unload_platforms(entry, _platforms(hass.data[DOMAIN]))
+
+
+def _register_area_occupancy(hass: HomeAssistant, response: dict[str, Any]) -> None:
+    """Stand in for Area Occupancy Detection: answer get_time_priors with the scenario's priors."""
+
+    async def _get_time_priors(_call: ServiceCall) -> ServiceResponse:
+        return response
+
+    hass.services.async_register(
+        "area_occupancy", "get_time_priors", _get_time_priors, supports_response=SupportsResponse.ONLY
+    )
 
 
 def _platforms(rt: SimRuntime) -> list[str]:
