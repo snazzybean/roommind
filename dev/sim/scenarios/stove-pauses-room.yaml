@@ -1,0 +1,78 @@
+name: stove-pauses-room
+description: >
+  Living room with radiators and a wood stove RoomMind does not control. A temperature
+  sensor next to the stove tells RoomMind when it burns. Two evenings with a fire of 4 h,
+  lit and put out by hand. While the stove sensor is 3 K or more above the room, and for
+  the 2 h cooldown after it is back within 1.5 K, the room must stay idle (the radiators
+  closed, also over a boost) and the thermal model must not learn; afterwards RoomMind
+  heats the room again.
+refs: [9]
+tags: [trv, mpc, radiator, model, external-heat]
+start: 2026-01-12T00:00
+duration: 5d
+location: {latitude: 52.5, longitude: 13.4, time_zone: Europe/Berlin}
+weather: {profile: temperate}
+house:
+  building: bestand_teilsaniert
+  outdoor: {sensors: {temperature: sensor.aussen_temp}}
+  rooms:
+    wohnzimmer:
+      name: Wohnzimmer
+      floor_area_m2: 25
+      exterior_wall_m2: 14
+      initial: {temperature: 19.5}
+      windows: [{orientation: S, area_m2: 3.0}]
+      devices:
+        - {entity_id: climate.wohnzimmer_trv, profile: generic_trv}
+        - {entity_id: climate.heizung_kessel, profile: generic_boiler}
+      appliances:
+        - {entity_id: switch.wohnzimmer_ofen, profile: wood_stove}
+      sensors:
+        temperature: {entity_id: sensor.wohnzimmer_temp}
+        stove: {entity_id: sensor.wohnzimmer_ofen_temp, appliance: switch.wohnzimmer_ofen}
+helpers:
+  schedule:
+    plan: {weekdays: ["06:00-08:00", "16:00-22:30"], weekend: ["07:30-23:00"]}
+roommind:
+  settings:
+    outdoor_temp_sensor: sensor.aussen_temp
+    weather_entity: weather.simhome
+    control_mode: mpc
+    compressor_groups:
+      - id: kessel
+        name: Kessel
+        members: [climate.wohnzimmer_trv]
+        master_entity: climate.heizung_kessel
+        min_run_minutes: 5
+        min_off_minutes: 5
+  rooms:
+    wohnzimmer:
+      devices: [{entity_id: climate.wohnzimmer_trv, type: trv, heating_system_type: radiator}]
+      temperature_sensor: sensor.wohnzimmer_temp
+      climate_mode: heat_only
+      schedules: [{entity_id: schedule.plan}]
+      comfort_temp: 21.0
+      eco_temp: 17.5
+      external_heat_sensors: [sensor.wohnzimmer_ofen_temp]
+      external_heat_delta_on: 3.0
+      external_heat_delta_off: 1.5
+      external_heat_cooldown: 120
+timeline:
+  - {at: "+1d17h00m", do: device.manual, entity_id: switch.wohnzimmer_ofen, state: "on"}
+  - {at: "+1d21h00m", do: device.manual, entity_id: switch.wohnzimmer_ofen, state: "off"}
+  - {at: "+3d17h00m", do: device.manual, entity_id: switch.wohnzimmer_ofen, state: "on"}
+  # a boost while the stove burns: an open window wins over it, so does the stove
+  - {at: "+3d18h00m", do: roommind.ws, type: roommind/override/set, area_id: wohnzimmer, override_type: boost, duration: 1}
+  - {at: "+3d20h00m", do: device.manual, entity_id: switch.wohnzimmer_ofen, state: "off"}
+expect:
+  - {invariant: external_heat_pauses, label: idle and not learning while the stove burns or cools down}
+  - {invariant: no_rejected_commands}
+  - {check: "room.wohnzimmer.external_heat_active and room.wohnzimmer.mode == 'idle'", at: "+1d17h30m", label: paused while the fire burns}
+  - {check: "not dev('climate.wohnzimmer_trv').active", at: "+1d17h45m", label: radiator closed while the fire burns}
+  - {check: "room.wohnzimmer.external_heat_active and room.wohnzimmer.override_active and room.wohnzimmer.mode == 'idle'", at: "+3d18h10m", label: the stove wins over a boost}
+  # put out at 21:00: the sensor needs about an hour to fall within 1.5 K, then the 2 h cooldown runs
+  - {check: "room.wohnzimmer.external_heat_active and room.wohnzimmer.external_heat_until is None", at: "+1d21h30m", label: still paused while the stove cools}
+  - {check: "room.wohnzimmer.external_heat_active and room.wohnzimmer.external_heat_until is not None", at: "+1d23h00m", label: cooldown with its end}
+  - {check: "not room.wohnzimmer.external_heat_active", at: "+2d00h30m", label: released after the cooldown}
+  # the evening after, the room has cooled back to its target and RoomMind heats it again
+  - {check: "room.wohnzimmer.mode == 'heating' and dev('climate.wohnzimmer_trv').active", at: "+2d21h00m", label: heats again once the room cooled}
