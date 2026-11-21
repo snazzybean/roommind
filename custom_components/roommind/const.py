@@ -28,7 +28,7 @@ OVERRIDE_TYPES = [OVERRIDE_BOOST, OVERRIDE_ECO, OVERRIDE_CUSTOM]
 OVERRIDE_TURN_ON_REFRESH_DELAY_S = 3.0
 # A hold "until the schedule changes" while the schedule cannot be read ends after this
 # (h, same as the dashboard card's fallback without a schedule) instead of never
-SCHEDULE_UNREADABLE_HOLD_HOURS = 4
+SCHEDULE_UNREADABLE_HOLD_HOURS = 6
 
 # Room modes
 MODE_IDLE = "idle"
