@@ -1989,14 +1989,14 @@ async def test_analytics_model_has_occupancy_sensors_false(ws_hass, store, conne
 
 
 def test_register_websocket_commands(hass):
-    """async_register_websocket_commands registers all 13 commands."""
+    """async_register_websocket_commands registers all 14 commands."""
     from unittest.mock import patch
 
     from custom_components.roommind.websocket_api import async_register_websocket_commands
 
     with patch("custom_components.roommind.websocket_api.websocket_api.async_register_command") as mock_reg:
         async_register_websocket_commands(hass)
-        assert mock_reg.call_count == 13
+        assert mock_reg.call_count == 14
 
 
 # ---------------------------------------------------------------------------
@@ -4169,3 +4169,102 @@ async def test_save_room_room_fan_rejects_own_entity(ws_hass, store, connection)
     msg = {"id": 2, "type": "roommind/rooms/save", "area_id": "living"}
     await _save_room(ws_hass, connection, {**msg, "room_fan_entity": "switch.roommind_living_climate_control"})
     connection.send_error.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Occupancy source (Area Occupancy Detection)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_learned_schedule_is_off_by_default(ws_hass, store, connection):
+    await store.async_load()
+    await _save_room(ws_hass, connection, {"id": 2, "type": "roommind/rooms/save", "area_id": "office"})
+    room = store.get_room("office")
+    assert room["use_learned_schedule"] is False
+    assert room["learned_occupancy_area_id"] == ""
+    assert room["learned_occupancy_threshold"] is None
+
+
+@pytest.mark.asyncio
+async def test_save_room_learned_schedule_roundtrip(ws_hass, store, connection):
+    await store.async_load()
+    await _save_room(
+        ws_hass,
+        connection,
+        {
+            "id": 2,
+            "type": "roommind/rooms/save",
+            "area_id": "office",
+            "use_learned_schedule": True,
+            "learned_occupancy_area_id": "office",
+            "learned_occupancy_threshold": 0.3,
+        },
+    )
+    room = store.get_room("office")
+    assert room["use_learned_schedule"] is True
+    assert room["learned_occupancy_area_id"] == "office"
+    assert room["learned_occupancy_threshold"] == 0.3
+    # null goes back to the automatic threshold
+    await _save_room(
+        ws_hass,
+        connection,
+        {"id": 3, "type": "roommind/rooms/save", "area_id": "office", "learned_occupancy_threshold": None},
+    )
+    assert store.get_room("office")["learned_occupancy_threshold"] is None
+
+
+def test_save_room_schema_bounds_the_learned_threshold():
+    import voluptuous as vol
+
+    schema = websocket_save_room._ws_schema
+    base = {"type": "roommind/rooms/save", "id": 1, "area_id": "office"}
+    with pytest.raises(vol.Invalid):
+        schema({**base, "learned_occupancy_threshold": 1.5})
+    assert schema({**base, "learned_occupancy_threshold": None})["learned_occupancy_threshold"] is None
+
+
+@pytest.mark.asyncio
+async def test_list_rooms_forwards_the_expected_occupancy_figures(ws_hass, store, connection):
+    """The schedule card shows the threshold in force and its comfort hours from rooms/list."""
+    await store.async_load()
+    await _save_room(ws_hass, connection, {"id": 2, "type": "roommind/rooms/save", "area_id": "office"})
+    mock_coordinator = MagicMock()
+    mock_coordinator.rooms = {"office": {"expected_occupancy_threshold": 0.18, "expected_comfort_hours": 11.0}}
+    mock_coordinator.async_request_refresh = AsyncMock()
+    ws_hass.data[DOMAIN]["coordinator"] = mock_coordinator
+
+    await _list_rooms(ws_hass, connection, {"id": 3, "type": "roommind/rooms/list"})
+
+    live = connection.send_result.call_args[0][1]["rooms"]["office"]["live"]
+    assert live["expected_occupancy_threshold"] == 0.18
+    assert live["expected_comfort_hours"] == 11.0
+
+
+@pytest.mark.asyncio
+async def test_occupancy_areas_without_the_integration(ws_hass, connection):
+    from custom_components.roommind.websocket_api import websocket_occupancy_areas
+
+    mock_coordinator = MagicMock()
+    mock_coordinator.area_occupancy.available.return_value = False
+    ws_hass.data[DOMAIN]["coordinator"] = mock_coordinator
+
+    await websocket_occupancy_areas.__wrapped__(ws_hass, connection, {"id": 4, "type": "roommind/occupancy/areas"})
+
+    connection.send_result.assert_called_once_with(4, {"available": False, "areas": []})
+
+
+@pytest.mark.asyncio
+async def test_occupancy_areas_lists_the_learned_areas(ws_hass, connection):
+    from custom_components.roommind.websocket_api import websocket_occupancy_areas
+
+    mock_coordinator = MagicMock()
+    mock_coordinator.area_occupancy.available.return_value = True
+    mock_coordinator.area_occupancy.async_response = AsyncMock(
+        return_value={"areas": {"a": {"area_id": "kitchen"}, "b": {"area_id": "bath"}}}
+    )
+    ws_hass.data[DOMAIN]["coordinator"] = mock_coordinator
+
+    await websocket_occupancy_areas.__wrapped__(ws_hass, connection, {"id": 5, "type": "roommind/occupancy/areas"})
+
+    connection.send_result.assert_called_once_with(5, {"available": True, "areas": ["bath", "kitchen"]})

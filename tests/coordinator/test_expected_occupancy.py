@@ -138,3 +138,60 @@ async def test_use_outside_the_window_lifts_to_comfort_and_holds(hass, mock_conf
     assert room["target_temp"] == 21.0  # stepped out for a moment
     room = await _cycle(hass, coordinator, never, "off", 6 * 60)
     assert room["target_temp"] == 17.0
+
+
+def _priors_now(prior: float) -> dict:
+    """A get_time_priors response whose 'living' area has ``prior`` in the current hour and 0.0 elsewhere."""
+    local = dt_util.now()
+    slots = {f"{day},{hour}": 0.0 for day in range(7) for hour in range(24)}
+    slots[f"{local.weekday()},{local.hour}"] = prior
+    return {"areas": {"entry": {"area_id": "living", "global_prior": 0.05, "slot_minutes": 60, "slots_raw": slots}}}
+
+
+async def _run_with_area_occupancy(hass, mock_config_entry, room, response, schedule_state="on"):
+    """One update cycle with Area Occupancy's service answering ``response``."""
+    store = _make_store_mock({AREA: room})
+    hass.data = {"roommind": {"store": store}}
+    hass.states.get = make_mock_states_get(schedule_state=schedule_state)
+    hass.services.has_service = lambda domain, service: domain == "area_occupancy"
+
+    async def _call(domain, service, data=None, **kwargs):
+        return response if domain == "area_occupancy" else None
+
+    hass.services.async_call = AsyncMock(side_effect=_call)
+    coordinator = _create_coordinator(hass, mock_config_entry)
+    data = await coordinator._async_update_data()
+    return data["rooms"][AREA]
+
+
+LEARNED_ROOM = {**SAMPLE_ROOM, "use_learned_schedule": True, "learned_occupancy_area_id": "living"}
+
+
+@pytest.mark.asyncio
+async def test_area_occupancy_replaces_the_schedule_window(hass, mock_config_entry):
+    room = await _run_with_area_occupancy(hass, mock_config_entry, LEARNED_ROOM, _priors_now(0.0))
+    assert room["target_temp"] == 17.0
+    # automatic threshold: 3 x 0.05 = 0.15
+    assert room["expected_occupancy_threshold"] == 0.15
+    assert room["expected_comfort_hours"] == 0.0
+
+
+@pytest.mark.asyncio
+async def test_area_occupancy_gives_comfort_in_a_habitual_hour(hass, mock_config_entry):
+    room = await _run_with_area_occupancy(hass, mock_config_entry, LEARNED_ROOM, _priors_now(0.3), schedule_state="off")
+    assert room["target_temp"] == 21.0
+    assert room["expected_comfort_hours"] == 1.0
+
+
+@pytest.mark.asyncio
+async def test_area_occupancy_is_opt_in(hass, mock_config_entry):
+    room = await _run_with_area_occupancy(hass, mock_config_entry, SAMPLE_ROOM, _priors_now(0.0))
+    assert room["target_temp"] == 21.0
+    assert room["expected_occupancy_threshold"] is None
+
+
+@pytest.mark.asyncio
+async def test_missing_area_falls_back_to_the_schedule(hass, mock_config_entry):
+    room = await _run_with_area_occupancy(hass, mock_config_entry, LEARNED_ROOM, {"areas": {}})
+    assert room["target_temp"] == 21.0
+    assert room["expected_occupancy_threshold"] is None

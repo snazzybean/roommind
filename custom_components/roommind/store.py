@@ -256,6 +256,10 @@ class RoomMindStore:
             "occupancy_eco_delay": config.get("occupancy_eco_delay", DEFAULT_OCCUPANCY_ECO_DELAY_MINUTES),
             "preheat_enabled": config.get("preheat_enabled", True),
             "price_shift": config.get("price_shift", 0.0),
+            # Area Occupancy Detection as occupancy source, opt-in; threshold None = automatic
+            "use_learned_schedule": config.get("use_learned_schedule", False),
+            "learned_occupancy_area_id": config.get("learned_occupancy_area_id", ""),
+            "learned_occupancy_threshold": config.get("learned_occupancy_threshold"),
             "follow_device_setpoint": config.get("follow_device_setpoint", False),
             "climate_mode": config.get("climate_mode", "auto"),
             "schedules": config.get("schedules", []),

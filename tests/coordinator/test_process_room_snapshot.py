@@ -58,6 +58,8 @@ NORMAL_ROOM_KEYS = {
     "setback",
     "presence_away",
     "occupancy_vacant",
+    "expected_occupancy_threshold",
+    "expected_comfort_hours",
     "force_off",
     "mold_risk_level",
     "mold_surface_rh",

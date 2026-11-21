@@ -125,6 +125,21 @@ class ExpectedOccupancy:
             end += slot_seconds
         return start, end
 
+    def comfort_hours_per_week(self, now: float) -> float:
+        """Hours of the coming week the room is expected in use, shown next to the threshold.
+
+        Counts whole slots from the one containing ``now``; unknown slots do not count.
+
+        Args:
+            now: Start of the week to count, epoch seconds.
+        """
+        slot_minutes = self.slot_minutes or 60
+        slot_seconds = slot_minutes * 60
+        start, _ = self.slot_bounds(now)
+        slots = 7 * 24 * 60 // slot_minutes
+        expected = sum(1 for i in range(slots) if self.expected_at(start + (i + 0.5) * slot_seconds))
+        return expected * slot_minutes / 60
+
 
 def check_expected_occupancy(
     hass: HomeAssistant,

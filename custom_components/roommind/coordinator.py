@@ -117,6 +117,7 @@ from .managers.solar_sensor_manager import RoomSolar, SolarSensorManager
 from .managers.valve_manager import ValveManager
 from .managers.weather_manager import WeatherManager
 from .managers.window_manager import WindowManager
+from .utils.area_occupancy import AreaOccupancySource
 from .utils.area_utils import REST_SWITCHED_OFF, rooms_with_area
 from .utils.device_utils import (
     build_rooms_devices_map,
@@ -415,6 +416,8 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         self._expected_occupancy: dict[str, ExpectedOccupancy] = {}
         # Rooms lifted to comfort by their sensors outside the expected window, held until release
         self._occupancy_lifted: set[str] = set()
+        # Area Occupancy Detection as an opt-in occupancy source (learned priors, cached)
+        self.area_occupancy = AreaOccupancySource(hass)
         # Entity platform callbacks, set by platform async_setup_entry
         self.async_add_entities: Any = None
         self.async_add_switch_entities: Any = None
@@ -1830,6 +1833,13 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             compressor_protection_until=compressor_protection_until,
             coil_dry=coil_dry,
         )
+        # Threshold the expected window uses and the comfort hours it gives per week, None without a source
+        room_state["expected_occupancy_threshold"] = (
+            round(expected_occupancy.threshold, 3) if expected_occupancy is not None else None
+        )
+        room_state["expected_comfort_hours"] = (
+            round(expected_occupancy.comfort_hours_per_week(time.time()), 1) if expected_occupancy is not None else None
+        )
         # Sun sensor (#303), only in rooms with one: what the room gets behind its covers, and the status
         solar_status = self._solar_sensors.status(area_id)
         if solar_status is not None:
@@ -2617,7 +2627,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         Args:
             room: Stored room config.
         """
-        return None
+        return await self.area_occupancy.async_expected_occupancy(room)
 
     def expected_occupancy(self, area_id: str) -> ExpectedOccupancy | None:
         """Expected occupancy the room resolved its targets with in the last cycle, None without a source.

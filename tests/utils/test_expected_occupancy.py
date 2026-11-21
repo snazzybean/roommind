@@ -282,3 +282,8 @@ class TestScopedVacancyAndLift:
     def test_presence_away_beats_the_lift(self):
         expected = replace(EVENING, occupied_until=_monday(13))
         assert _resolve(_monday(12), expected=expected, presence_away=True) == ECO
+
+
+def test_comfort_hours_per_week_count_the_expected_slots():
+    # 18:00-22:00 every day, unknown before 06:00: 4 hours a day
+    assert EVENING.comfort_hours_per_week(_monday(12)) == 28.0
