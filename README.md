@@ -63,7 +63,7 @@ RoomMind turns the thermostats, radiator valves and air conditioners you already
   </tr>
   <tr>
     <td>🏠 <b>Around the room</b></td>
-    <td>Pause while a window is open · cover shading, night close and cover schedules · mold risk with notifications and prevention · CO₂/VOC with ventilation control · electricity price shifts the target · valve protection</td>
+    <td>Pause while a window is open or a stove or fireplace burns · cover shading, night close and cover schedules · mold risk with notifications and prevention · CO₂/VOC with ventilation control · electricity price shifts the target · valve protection</td>
   </tr>
   <tr>
     <td>📊 <b>Insight</b></td>
@@ -193,7 +193,7 @@ An Extended Kalman Filter watches the room temperature and learns each room's he
 | `hvac_action` | What RoomMind is doing: `heating`, `cooling`, `idle` or `off` |
 | Current temperature and humidity | The room's readings |
 
-Attributes: `override_until`, `window_open`, `presence_away`, `occupancy_vacant`, `vacation`. An open window shows as `idle` with `window_open: true`.
+Attributes: `override_until`, `window_open`, `presence_away`, `occupancy_vacant`, `vacation`, `external_heat`. An open window shows as `idle` with `window_open: true`, a burning stove or fireplace as `idle` with `external_heat: true`.
 
 The entity is placed in the room's area once when it is created, so it shows up on area cards and Assist finds it by the area ("set the temperature in the living room to 22"). An area you change or remove later is kept. For voice control, hide the room's own thermostats and ACs from Assist (Settings → Voice assistants → Expose), otherwise Assist finds several climate entities in the room and cannot pick one.
 

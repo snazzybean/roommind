@@ -104,6 +104,18 @@ def test_open_windows_are_drawn_but_not_counted():
     assert counted < len(result.predicted)
 
 
+def test_a_burning_stove_breaks_the_chain():
+    """The model has no input for a stove RoomMind does not control (#9): no hour runs across it."""
+    points = _history()
+    for p in points[30:40]:
+        p["external_heat"] = True
+    result = backtest(points, TRUTH, 3.0)
+    for ts in result.predicted:
+        assert not any(ts - 3600 <= p["ts"] < ts and p.get("external_heat") for p in points)
+    assert points[35]["ts"] not in result.predicted
+    assert points[40 + 12]["ts"] in result.predicted
+
+
 def test_too_few_hours_show_no_figure():
     points = _history(hours=1.0 + (MIN_BACKTEST_WINDOWS - 2) * 300 / 3600)
     figures = backtest(points, TRUTH, 3.0).figures()

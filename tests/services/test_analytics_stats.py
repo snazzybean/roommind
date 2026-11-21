@@ -108,6 +108,13 @@ def test_open_window_is_not_judged_but_counted():
     assert stats["comfort"]["within_pct"] == 100
 
 
+def test_burning_stove_is_not_judged():
+    """A room a stove heats past its target is not RoomMind's miss (#9)."""
+    points = [_point(0, room_temp=26.0, external_heat=True), _point(1)]
+    stats = compute_period_stats(points, "auto")
+    assert stats["comfort"]["within_pct"] == 100
+
+
 def test_rows_from_before_the_targets_were_recorded_are_not_judged():
     stats = compute_period_stats([_point(0, heat_target=None, cool_target=None)] * 1, "auto")
     assert stats["comfort"] is None
@@ -295,6 +302,11 @@ def test_overshoot_ignores_open_windows_and_counts_cooling_downwards():
     assert compute_period_stats(points, "auto")["heat_overshoot"]["max"] == 0
     cooling = _run([(24.5, "cooling"), (24.0, "idle"), (23.6, "idle")])
     assert compute_period_stats(cooling, "auto")["cool_overshoot"]["max"] == pytest.approx(0.4)
+
+
+def test_overshoot_ignores_a_burning_stove():
+    points = _run([(21.0, "heating"), (21.0, "idle")]) + [_point(2, room_temp=25.0, mode="idle", external_heat=True)]
+    assert compute_period_stats(points, "auto")["heat_overshoot"]["max"] == 0
 
 
 def _bucket(i: int, mode: str, temp: float, low: float, high: float, **kw) -> dict:

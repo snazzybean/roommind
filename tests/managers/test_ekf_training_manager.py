@@ -158,6 +158,66 @@ class TestProcess:
         )
         model_manager.update_window_open.assert_called_once()
 
+    def test_external_heat_drops_batch_and_only_tracks_temperature(self, mgr, model_manager):
+        """A stove that just got detected was already heating: the batch is dropped, not learned (#9)."""
+        mgr._accumulated_dt["r1"] = 3.0
+        mgr._accumulated_mode["r1"] = "idle"
+        mgr._accumulated_pf["r1"] = 0.0
+        mgr._current.add("r1")
+        mgr.process(
+            "r1",
+            **self.COMMON,
+            ekf_mode="idle",
+            ekf_pf=0.0,
+            window_open=False,
+            raw_open=False,
+            external_heat=True,
+        )
+        model_manager.update.assert_not_called()
+        model_manager.update_window_open.assert_called_once()
+        _, kwargs = model_manager.update_window_open.call_args
+        assert kwargs["learn_k_window"] is False
+        assert "r1" not in mgr._accumulated_dt
+
+    def test_learning_resumes_after_external_heat(self, mgr, model_manager):
+        """Once the pause ends the room accumulates and learns again."""
+        mgr.process(
+            "r1", **self.COMMON, ekf_mode="idle", ekf_pf=0.0, window_open=False, raw_open=False, external_heat=True
+        )
+        # 0.5 min steps: the sixth one completes a 3 min batch
+        for _ in range(6):
+            mgr.process("r1", **self.COMMON, ekf_mode="idle", ekf_pf=0.0, window_open=False, raw_open=False)
+        model_manager.update.assert_called_once()
+
+    def test_external_heat_with_window_open_does_not_learn_k_window(self, mgr, model_manager):
+        """A window open next to a burning stove is no clean window-loss observation."""
+        mgr.process(
+            "r1",
+            **self.COMMON,
+            ekf_mode="idle",
+            ekf_pf=0.0,
+            window_open=True,
+            raw_open=True,
+            external_heat=True,
+        )
+        _, kwargs = model_manager.update_window_open.call_args
+        assert kwargs["learn_k_window"] is False
+
+    def test_external_heat_steps_never_accumulate(self, mgr, model_manager):
+        """Repeated steps with the source active never reach a parameter update."""
+        for _ in range(20):
+            mgr.process(
+                "r1",
+                **self.COMMON,
+                ekf_mode="idle",
+                ekf_pf=0.0,
+                window_open=False,
+                raw_open=False,
+                external_heat=True,
+            )
+        model_manager.update.assert_not_called()
+        assert model_manager.update_window_open.call_count == 20
+
     def test_none_mode_flushes_only(self, mgr, model_manager):
         """ekf_mode=None should flush but NOT call update_window_open."""
         mgr._accumulated_dt["r1"] = 3.0

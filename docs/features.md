@@ -94,6 +94,12 @@ Pauses climate control when windows or doors are open, with configurable open/cl
 
 After a restart, RoomMind waits until the window sensors report a state (at most 5 minutes; a sensor that is still unavailable then counts as closed). A sensor that no longer exists at all (deleted or renamed) counts as closed right away once Home Assistant has finished starting, with a warning in the log. A sensor that drops out briefly keeps its last state.
 
+### Stoves and fireplaces
+
+A wood stove or fireplace that RoomMind does not control heats the room on its own. Pick one or more entities that tell when it burns: a temperature sensor next to it (lit once it is 3 °C above the room, out again below 1.5 °C; both adjustable), a power sensor of a plug (lit above 50 W) or any on/off entity or helper. While it burns, and for a cooldown after it goes out (2 hours by default, 0 to 12 hours), the room pauses like for an open window: its devices idle in every climate mode, also over a manual override, and the room model does not learn, so the stove's heat is not blamed on the sun, on occupancy or on a lower heat loss. The room page shows the pause with its end, the dashboard card a stove icon, the analytics chart the stove periods (left out of the time on target and the model backtest), and the room climate entity the attribute `external_heat`.
+
+A sensor that drops out keeps its last reading for 5 minutes and then counts as out; a sensor never read counts as out. The pause is not kept over a restart: a stove still burning is found again on the first reading. A temperature sensor needs a few minutes to warm up past the threshold, a plug or an on/off entity is immediate.
+
 ### Covers and blinds
 
 Smart cover deployment based on predicted solar overheating. Includes night close, manual override detection, cover schedules, and an optional per-room hold that keeps covers up while a window is open (checked every 30 s, a cover already moving is not stopped).

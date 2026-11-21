@@ -127,6 +127,7 @@ async def test_compressor_hold_with_running_unit_skips_training_and_keeps_chargi
         power_fraction=0.0,
         window_open=False,
         raw_open=False,
+        external_heat=False,
         q_residual=0.0,
         shading_factor=None,
         q_occupancy=0.0,

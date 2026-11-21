@@ -19,7 +19,10 @@ from .const import (
     DEFAULT_COMPRESSOR_MIN_RUN_MINUTES,
     DEFAULT_CONFLICT_RESOLUTION,
     DEFAULT_CONTROL_MODE,
+    DEFAULT_EXTERNAL_HEAT_DELTA_OFF,
+    DEFAULT_EXTERNAL_HEAT_DELTA_ON,
     DOMAIN,
+    EXTERNAL_HEAT_DOMAINS,
     HUMIDITY_DEVICE_DOMAINS,
     HUMIDITY_LIMIT_GAP,
     MAX_CO2_THRESHOLD,
@@ -167,6 +170,11 @@ _ROOM_SAVE_FIELDS = (
     "covers_window_hold",
     "cover_min_positions",
     "ignore_presence",
+    "external_heat_sensors",
+    "external_heat_delta_on",
+    "external_heat_delta_off",
+    "external_heat_power_threshold",
+    "external_heat_cooldown",
     "is_outdoor",
     "heat_source_orchestration",
     "heat_source_primary_delta",
@@ -268,7 +276,7 @@ def _compute_anyone_home(hass: HomeAssistant, settings: dict) -> bool:
 
 def _validate_no_own_entities(config: dict, own_prefix: str) -> str | None:
     """Check that no RoomMind-owned entities are assigned. Returns error message or None."""
-    for field in ("thermostats", "acs", "window_sensors", "covers", "occupancy_sensors"):
+    for field in ("thermostats", "acs", "window_sensors", "covers", "occupancy_sensors", "external_heat_sensors"):
         for eid in config.get(field, []):
             if eid.split(".", 1)[-1].startswith(own_prefix):
                 return f"Cannot assign RoomMind's own entity '{eid}' to a room"
@@ -336,6 +344,31 @@ def _validate_humidity_control(
     return None
 
 
+def _validate_external_heat(room: dict) -> tuple[str, str] | None:
+    """Check the merged room: a lit source must switch off below where it switched on.
+
+    Checked after the merge like the humidity limits, because the auto-save sends one field at a
+    time and a single delta must still be compared with the stored other one. The room's own
+    temperature sensor cannot also be the sensor next to the stove: it would compare with itself.
+
+    Args:
+        room: the stored room with the fields of this save merged in.
+
+    Returns ``(error code, message)`` or None.
+    """
+    delta_on = room.get("external_heat_delta_on", DEFAULT_EXTERNAL_HEAT_DELTA_ON)
+    delta_off = room.get("external_heat_delta_off", DEFAULT_EXTERNAL_HEAT_DELTA_OFF)
+    if delta_off >= delta_on:
+        return (
+            websocket_api.ERR_INVALID_FORMAT,
+            "The off gap of a heat source sensor must be below its on gap",
+        )
+    room_sensor = room.get("temperature_sensor", "")
+    if room_sensor and room_sensor in room.get("external_heat_sensors", []):
+        return "invalid_entity", f"'{room_sensor}' is the room temperature sensor, not a heat source sensor"
+    return None
+
+
 def _validate_no_duplicate_devices(config: dict) -> str | None:
     """Check for duplicate entity_ids in devices[]. Returns error message or None."""
     device_eids = [d["entity_id"] for d in config.get("devices", [])]
@@ -398,6 +431,8 @@ async def websocket_list_rooms(
             "heating_power": live.get("heating_power", 0),
             "device_setpoint": live.get("device_setpoint"),
             "window_open": live.get("window_open", False),
+            "external_heat_active": live.get("external_heat_active", False),
+            "external_heat_until": live.get("external_heat_until"),
             **build_override_live(
                 room_config,
                 suppressed=is_override_suppressed(room_config, settings, live.get("presence_away", False)),
@@ -557,6 +592,13 @@ async def websocket_list_rooms(
         vol.Optional("climate_mode"): vol.In(CLIMATE_MODES),
         vol.Optional("schedules"): [{vol.Required("entity_id"): str}],
         vol.Optional("schedule_selector_entity"): str,
+        vol.Optional("external_heat_sensors"): [
+            vol.All(str, vol.Match(rf"^({'|'.join(EXTERNAL_HEAT_DOMAINS)})\.[a-z0-9_]+$"))
+        ],
+        vol.Optional("external_heat_delta_on"): vol.All(vol.Coerce(float), vol.Range(min=0.5, max=20)),
+        vol.Optional("external_heat_delta_off"): vol.All(vol.Coerce(float), vol.Range(min=0, max=20)),
+        vol.Optional("external_heat_power_threshold"): vol.All(vol.Coerce(float), vol.Range(min=0, max=10000)),
+        vol.Optional("external_heat_cooldown"): vol.All(vol.Coerce(int), vol.Range(min=0, max=720)),
         vol.Optional("window_sensors"): [str],
         vol.Optional("window_open_delay"): vol.Coerce(int),
         vol.Optional("window_close_delay"): vol.Coerce(int),
@@ -662,11 +704,14 @@ async def websocket_save_room(
     if err:
         connection.send_error(msg["id"], "duplicate_entity", err)
         return
-    humidity_err = _validate_humidity_control(
-        hass, area_id, {**(store.get_room(area_id) or {}), **config}, config, store.get_rooms()
-    )
+    merged_room = {**(store.get_room(area_id) or {}), **config}
+    humidity_err = _validate_humidity_control(hass, area_id, merged_room, config, store.get_rooms())
     if humidity_err:
         connection.send_error(msg["id"], *humidity_err)
+        return
+    external_heat_err = _validate_external_heat(merged_room)
+    if external_heat_err:
+        connection.send_error(msg["id"], *external_heat_err)
         return
 
     if ("thermostats" in config or "acs" in config) and "devices" not in config:

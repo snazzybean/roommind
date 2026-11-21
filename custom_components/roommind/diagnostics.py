@@ -26,7 +26,7 @@ _ROOM_ENTITY_KEYS = (
     "cover_schedule_selector_entity",
 )
 # Exports end up in public issues: no person entities, no timing of occupancy.
-_ROOM_ENTITY_LIST_KEYS = ("window_sensors", "occupancy_sensors", "covers")
+_ROOM_ENTITY_LIST_KEYS = ("window_sensors", "occupancy_sensors", "covers", "external_heat_sensors")
 _PRIVATE_DEVICE_CLASSES = ("occupancy", "presence", "motion")
 HISTORY_48H_FIELDS = [f for f in DETAIL_FIELDS if f != "occupancy"]
 

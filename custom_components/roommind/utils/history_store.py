@@ -44,6 +44,8 @@ DETAIL_FIELDS = [
     "room_temp_min",
     # Room air CO2 in ppm (#267)
     "co2",
+    # A stove or fireplace RoomMind does not control burns or cools down (#9)
+    "external_heat",
     # What the model learned from (analytics backtest): signed delivered power share
     # (+ heating, - cooling), sun behind the covers, residual heat share, occupancy
     *MODEL_INPUT_FIELDS,
@@ -139,6 +141,7 @@ class HistoryStore:
                     "price_level": data.get("price_level", ""),
                     "price_shift": data.get("price_shift", ""),
                     "co2": data.get("co2", ""),
+                    "external_heat": data.get("external_heat", ""),
                     **{field: data.get(field, "") for field in MODEL_INPUT_FIELDS},
                     **{key: int(mode == run and previous != run) for run, key in START_FIELDS.items()},
                 }
@@ -264,6 +267,7 @@ class HistoryStore:
                 "timestamp": bucket_key * bucket_seconds,
                 "mode": bucket[0]["mode"],
                 "window_open": bucket[0].get("window_open", ""),
+                "external_heat": bucket[0].get("external_heat", ""),
                 "device_setpoint": bucket[0].get("device_setpoint", ""),
                 "target_reason": bucket[0].get("target_reason", ""),
                 "price_level": bucket[0].get("price_level", ""),

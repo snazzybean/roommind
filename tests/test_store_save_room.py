@@ -112,6 +112,11 @@ async def test_create_defaults(store):
     assert room["heat_source_outdoor_threshold"] == 5.0
     assert room["heat_source_ac_min_outdoor"] == -15.0
     assert room["climate_control_enabled"] is True
+    assert room["external_heat_sensors"] == []
+    assert room["external_heat_delta_on"] == 3.0
+    assert room["external_heat_delta_off"] == 1.5
+    assert room["external_heat_power_threshold"] == 50.0
+    assert room["external_heat_cooldown"] == 120
 
 
 # ---------------------------------------------------------------------------
@@ -465,3 +470,24 @@ async def test_coil_dry_device_fields_survive_save(store):
     assert dev["coil_dry_fan_mode"] == "high"
     # Legacy sync must still produce the acs list
     assert store.get_room("living_room")["acs"] == ["climate.living_ac"]
+
+
+# ---------------------------------------------------------------------------
+# Unmanaged heat sources (stove, fireplace)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_update_external_heat_fields_merges(store):
+    """Saving only the external heat fields keeps the rest of the room."""
+    await store.async_load()
+    await store.async_save_room("stove_room", {"temperature_sensor": "sensor.room_temp"})
+    room = await store.async_save_room(
+        "stove_room",
+        {"external_heat_sensors": ["sensor.stove_temp"], "external_heat_delta_on": 4.0},
+    )
+
+    assert room["external_heat_sensors"] == ["sensor.stove_temp"]
+    assert room["external_heat_delta_on"] == 4.0
+    assert room["external_heat_delta_off"] == 1.5
+    assert room["temperature_sensor"] == "sensor.room_temp"
