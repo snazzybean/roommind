@@ -131,7 +131,7 @@ from .utils.device_utils import (
     get_valve_entities,
     room_contributes_to_group,
 )
-from .utils.expected_occupancy import ExpectedOccupancy
+from .utils.expected_occupancy import ExpectedOccupancy, check_expected_occupancy
 from .utils.history_store import HistoryStore
 from .utils.presence_utils import is_room_vacant
 from .utils.price_utils import PriceSignal
@@ -413,6 +413,8 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         self._schedule_blocks_cache: dict[str, dict] = {}
         # Expected occupancy each room resolved its targets with in the last cycle (rooms with a source)
         self._expected_occupancy: dict[str, ExpectedOccupancy] = {}
+        # Rooms lifted to comfort by their sensors outside the expected window, held until release
+        self._occupancy_lifted: set[str] = set()
         # Entity platform callbacks, set by platform async_setup_entry
         self.async_add_entities: Any = None
         self.async_add_switch_entities: Any = None
@@ -1064,7 +1066,19 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         # A room with an occupancy source takes its window from the expected occupancy instead of the schedule
         expected_occupancy = await self._async_expected_occupancy(room)
         if expected_occupancy is not None:
+            expected_occupancy, lifted = check_expected_occupancy(
+                self.hass, room, expected_occupancy, time.time(), area_id in self._occupancy_lifted
+            )
+            if lifted:
+                self._occupancy_lifted.add(area_id)
+            else:
+                self._occupancy_lifted.discard(area_id)
+            # Empty in its expected window: eco until that window ends, not over the whole horizon
+            occupancy_vacant = expected_occupancy.vacant_at(time.time())
             self._expected_occupancy[area_id] = expected_occupancy
+        else:
+            self._occupancy_lifted.discard(area_id)
+        horizon_vacant = occupancy_vacant and expected_occupancy is None
         targets, target_reason = self._resolve_target_temps_and_reason(
             room,
             settings,
@@ -1115,7 +1129,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             hass=self.hass,
             presence_away=presence_away,
             mold_prevention_delta=mold_prevention_temp_delta,
-            room_vacant=occupancy_vacant,
+            room_vacant=horizon_vacant,
             price_signal=self._price_manager.signal,
             expected_occupancy=expected_occupancy,
         )
@@ -1129,7 +1143,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 hass=self.hass,
                 presence_away=presence_away,
                 mold_prevention_delta=mold_prevention_temp_delta,
-                room_vacant=occupancy_vacant,
+                room_vacant=horizon_vacant,
                 expected_occupancy=expected_occupancy,
             )
             if self._price_manager.signal is not None and float(room.get("price_shift") or 0.0) > 0
@@ -3412,6 +3426,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         self._window_manager.remove_room(area_id)
         self._previous_modes.pop(area_id, None)
         self._expected_occupancy.pop(area_id, None)
+        self._occupancy_lifted.discard(area_id)
         self._override_seeded_at.pop(area_id, None)
         self._rooms_to_switch_off.discard(area_id)
         self._rooms_switched_off.discard(area_id)

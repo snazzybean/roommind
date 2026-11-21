@@ -8,7 +8,12 @@ from unittest.mock import MagicMock
 from homeassistant.core import State
 from homeassistant.util import dt as dt_util
 
-from custom_components.roommind.utils.presence_utils import is_room_vacant
+from custom_components.roommind.utils.presence_utils import (
+    is_occupancy_held,
+    is_room_occupied,
+    is_room_vacant,
+    occupancy_quiet_since,
+)
 
 ROOM = {
     "occupancy_sensors": ["binary_sensor.motion", "binary_sensor.desk"],
@@ -67,3 +72,42 @@ def test_missing_delay_uses_the_default():
     assert is_room_vacant(hass, room, now) is False
     hass, now = _hass({"binary_sensor.motion": ("off", 16)})
     assert is_room_vacant(hass, room, now) is True
+
+
+def test_quiet_since_is_the_latest_change_while_all_are_off():
+    hass, now = _hass({"binary_sensor.motion": ("off", 20), "binary_sensor.desk": ("off", 5)})
+    assert occupancy_quiet_since(hass, ROOM) == now - 5 * 60
+
+
+def test_not_quiet_while_a_sensor_is_on_or_unavailable():
+    hass, _ = _hass({"binary_sensor.motion": ("on", 20), "binary_sensor.desk": ("off", 5)})
+    assert occupancy_quiet_since(hass, ROOM) is None
+    hass, _ = _hass({"binary_sensor.motion": ("unavailable", 20), "binary_sensor.desk": ("off", 5)})
+    assert occupancy_quiet_since(hass, ROOM) is None
+
+
+def test_occupied_after_the_confirmation_time():
+    hass, now = _hass({"binary_sensor.motion": ("on", 5), "binary_sensor.desk": ("off", 60)})
+    assert is_room_occupied(hass, ROOM, now, 5) is True
+    assert is_room_occupied(hass, ROOM, now, 6) is False
+
+
+def test_unavailable_sensor_is_not_occupied():
+    hass, now = _hass({"binary_sensor.motion": ("unavailable", 60), "binary_sensor.desk": None})
+    assert is_room_occupied(hass, ROOM, now, 0) is False
+
+
+def test_held_while_a_sensor_is_on_or_off_for_less_than_the_release_time():
+    hass, now = _hass({"binary_sensor.motion": ("on", 0), "binary_sensor.desk": ("off", 60)})
+    assert is_occupancy_held(hass, ROOM, now, 5) is True
+    hass, now = _hass({"binary_sensor.motion": ("off", 4), "binary_sensor.desk": ("off", 60)})
+    assert is_occupancy_held(hass, ROOM, now, 5) is True
+    hass, now = _hass({"binary_sensor.motion": ("off", 5), "binary_sensor.desk": ("off", 60)})
+    assert is_occupancy_held(hass, ROOM, now, 5) is False
+
+
+def test_unavailable_or_missing_sensor_releases_the_hold():
+    hass, now = _hass({"binary_sensor.motion": ("unavailable", 0), "binary_sensor.desk": ("off", 1)})
+    assert is_occupancy_held(hass, ROOM, now, 5) is False
+    hass, now = _hass({"binary_sensor.motion": None, "binary_sensor.desk": ("off", 1)})
+    assert is_occupancy_held(hass, ROOM, now, 5) is False

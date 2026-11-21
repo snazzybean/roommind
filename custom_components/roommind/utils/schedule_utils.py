@@ -332,7 +332,22 @@ def resolve_targets_at_time(
         )
     else:
         targets = schedule_targets()
-    return cap_to_eco(targets, eco_heat, eco_cool) if room_vacant else targets
+    return cap_to_eco(targets, eco_heat, eco_cool) if vacant_at(ts, room_vacant, expected_occupancy) else targets
+
+
+def vacant_at(ts: float, room_vacant: bool, expected_occupancy: ExpectedOccupancy | None) -> bool:
+    """Whether the room counts as empty at ``ts``: eco at most, no price shift.
+
+    ``room_vacant`` (occupancy eco without an expected occupancy) holds over the whole horizon.
+    An expected occupancy scopes the vacancy to its current window instead, so the room is
+    still pre-heated for the next one.
+
+    Args:
+        ts: Instant to look at, epoch seconds.
+        room_vacant: Occupancy eco found the room empty now.
+        expected_occupancy: The room's expected occupancy, None without a source.
+    """
+    return room_vacant or (expected_occupancy is not None and expected_occupancy.vacant_at(ts))
 
 
 def expected_targets_at_time(
@@ -348,7 +363,8 @@ def expected_targets_at_time(
     The expected window takes the place of the schedule window: comfort while the room is
     expected in use, eco (or off) outside, as for the time between schedule blocks. An instant
     the source knows nothing about is left to the room's schedule, so a source with gaps never
-    does worse than the schedule it replaces. Shared by the horizon and the live target.
+    does worse than the schedule it replaces. A room its sensors confirm in use gets comfort
+    whatever the forecast says. Shared by the horizon and the live target.
 
     Args:
         ts: Instant to resolve, epoch seconds.
@@ -358,6 +374,8 @@ def expected_targets_at_time(
         schedule_off_action: "eco" or "off", what the room does outside its window.
         schedule_targets: Targets of the schedule at ``ts``, called only where the source does not know.
     """
+    if expected_occupancy.occupied_at(ts):
+        return comfort
     expected = expected_occupancy.expected_at(ts)
     if expected is None:
         return schedule_targets()
@@ -668,7 +686,13 @@ def make_target_resolver(
         if targets.heat is None and targets.cool is None:
             return targets
         targets, _ = price_shifted(
-            targets, ts, room, settings, price_signal, presence_away=presence_away, room_vacant=room_vacant
+            targets,
+            ts,
+            room,
+            settings,
+            price_signal,
+            presence_away=presence_away,
+            room_vacant=vacant_at(ts, room_vacant, expected_occupancy),
         )
         return TargetTemps(
             *cap_cool_only_heat(

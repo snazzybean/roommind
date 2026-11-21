@@ -186,6 +186,7 @@ async def _compute_target_forecast(
         price_shifted,
         read_schedule_blocks,
         resolve_targets_at_time,
+        vacant_at,
     )
     from ..utils.temp_utils import ha_temp_to_celsius
 
@@ -235,7 +236,13 @@ async def _compute_target_forecast(
             expected_occupancy=expected_occupancy,
         )
         targets, (shift_heat, shift_cool) = price_shifted(
-            targets, ts, room, settings, price_signal, presence_away=presence_away, room_vacant=room_vacant
+            targets,
+            ts,
+            room,
+            settings,
+            price_signal,
+            presence_away=presence_away,
+            room_vacant=vacant_at(ts, room_vacant, expected_occupancy),
         )
         heat_target = targets.heat
         cool_target = targets.cool
@@ -440,9 +447,10 @@ async def build_analytics_data(
     if coordinator:
         live = coordinator.rooms.get(area_id, {})
         mold_delta = live.get("mold_prevention_delta", 0.0)
-        room_vacant = bool(live.get("occupancy_vacant", False))
         expected = coordinator.expected_occupancy(area_id)
         expected_occupancy = expected if isinstance(expected, ExpectedOccupancy) else None
+        # An expected occupancy carries its own vacancy, scoped to the current window
+        room_vacant = bool(live.get("occupancy_vacant", False)) and expected_occupancy is None
     try:
         target_forecast = await _compute_target_forecast(
             hass,
