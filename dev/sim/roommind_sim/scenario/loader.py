@@ -32,7 +32,7 @@ _ENTITY_RE = re.compile(r"^[a-z_]+\.[a-z0-9_]+$")
 _DEVICE_KEYS = {"entity_id", "profile", "name"}
 _HELPER_DOMAINS = {"schedule", "input_boolean", "input_number", "input_select", "template"}
 DEVICE_MODELS = {"trv", "ac", "heat_pump", "heater", "boiler", "ufh"}
-SENSOR_KINDS = {"temperature", "humidity", "occupancy", "solar"}
+SENSOR_KINDS = {"temperature", "humidity", "occupancy", "solar", "stove"}
 # Solar sensor units: scenario spelling -> profile suffix
 SOLAR_UNITS = {"w_m2": "w_m2", "W/m²": "w_m2", "W/m2": "w_m2", "lx": "lx", "pct": "pct", "%": "pct"}
 
@@ -331,7 +331,7 @@ def _sensor(kind: str, sdata: dict[str, Any] | str, room: str | None, where: str
     base_kind = kind.removeprefix("outdoor_")
     if base_kind.startswith("solar_") and room is not None:
         base_kind = kind = "solar"
-    if base_kind not in SENSOR_KINDS or (base_kind == "solar" and room is None):
+    if base_kind not in SENSOR_KINDS or (base_kind in ("solar", "stove") and room is None):
         raise ScenarioError(f"unknown sensor kind {kind!r} (allowed: {sorted(SENSOR_KINDS)})", where)
     _check_entity_id(eid, "binary_sensor" if base_kind == "occupancy" else "sensor", where)
     default_profile = f"default_{base_kind}"
@@ -464,6 +464,13 @@ def _validate(scn: Scenario) -> None:
             if source is not None and (source not in scn.rooms or source == room.area_id):
                 raise ScenarioError(
                     f"makeup_room {source!r} is not another room", f"house.rooms.{room.area_id}.appliances"
+                )
+        stoves = {a.entity_id for a in room.appliances if a.model == "stove"}
+        for s in room.sensors:
+            if s.kind == "stove" and s.params.get("appliance") not in stoves:
+                raise ScenarioError(
+                    f"stove sensor needs `appliance:` naming a stove of this room (have: {sorted(stoves)})",
+                    f"house.rooms.{room.area_id}.sensors.stove",
                 )
         for other in room.neighbors:
             if other not in scn.rooms:

@@ -54,7 +54,7 @@ class ApplianceSpec:
 
     entity_id: str
     room: str
-    model: str  # exhaust_fan | dehumidifier | humidifier | room_fan
+    model: str  # exhaust_fan | dehumidifier | humidifier | room_fan | stove
     name: str
     profile: str
     params: dict[str, Any] = field(default_factory=dict)
@@ -63,7 +63,7 @@ class ApplianceSpec:
 @dataclass
 class SensorSpec:
     entity_id: str
-    kind: str  # temperature | humidity | occupancy | solar | outdoor_temperature | outdoor_humidity
+    kind: str  # temperature | humidity | occupancy | solar | stove | outdoor_temperature | outdoor_humidity
     room: str | None
     name: str
     params: dict[str, Any] = field(default_factory=dict)

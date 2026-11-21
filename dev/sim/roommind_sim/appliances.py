@@ -1,4 +1,4 @@
-"""Room appliances beside the climate devices: exhaust fan, dehumidifier, humidifier, room fan.
+"""Room appliances beside the climate devices: exhaust fan, dehumidifier, humidifier, room fan, stove.
 
 Each is a ``fan.*``, ``switch.*`` or ``humidifier.*`` entity in HA; the domain comes from
 the entity id, the behaviour from ``model``. ``on`` is the power state HA shows,
@@ -18,10 +18,16 @@ Physics conventions (see README "Appliances"):
 - Room fan (ceiling/standing): motor heat only; while running it raises the convective
   output of the room's radiators (``radiator_boost``) and the air-to-mass coupling
   (``mixing_boost``). The zone has no stratification, so there is no further effect.
+- Stove (wood stove, fireplace, #9): a heat source RoomMind does not control, lit and put
+  out by hand (``device.manual``). The fire heats a body (``body_heat_capacity_kj_k``) at
+  ``fire_w``; the body gives ``body_ua_w_k`` x (body - air) to the room (``conv_share``
+  convective, the rest radiant), also after the fire is out. A ``stove`` sensor next to it
+  reads the air plus ``coupling`` x (body - air).
 """
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -36,6 +42,7 @@ APPLIANCE_MODELS: dict[str, tuple[str, ...]] = {
     "dehumidifier": ("humidifier", "switch"),
     "humidifier": ("humidifier", "switch"),
     "room_fan": ("fan", "switch"),
+    "stove": ("switch",),
 }
 HYGROSTAT_MODELS = ("dehumidifier", "humidifier")
 
@@ -66,6 +73,7 @@ class SimAppliance:
     electric_w: float = 0.0
     heat_w: float = 0.0
     moisture_kg_s: float = 0.0
+    body_c: float | None = None  # stove body temperature, None until the first step
     counters: ApplianceCounters = field(default_factory=ApplianceCounters)
 
     def __post_init__(self) -> None:
@@ -256,9 +264,14 @@ class SimAppliance:
                 heat = electric - rate * LATENT_HEAT
                 gains.moisture_kg_s = moisture
                 gains.conv_w = heat
-            else:  # room_fan
+            elif self.model == "room_fan":
                 heat = electric
                 gains.conv_w = heat
+        if self.model == "stove":
+            heat = self._stove_step(dt, zone.t_air)
+            conv_share = float(p.get("conv_share", 0.6))
+            gains.conv_w = heat * conv_share
+            gains.rad_w = heat * (1.0 - conv_share)
         self.electric_w, self.heat_w, self.moisture_kg_s = electric, heat, moisture
         c = self.counters
         if self.running:
@@ -269,6 +282,26 @@ class SimAppliance:
         c.heat_j += heat * dt
         c.moisture_kg += moisture * dt
         return out
+
+    def _stove_step(self, dt: float, t_air: float) -> float:
+        """Advance the stove body by ``dt`` (exact for a constant room temperature) and return
+        the mean heat it gave the room over the step in W."""
+        p = self.spec.params
+        ua = float(p.get("body_ua_w_k", 15.0))
+        capacity = float(p.get("body_heat_capacity_kj_k", 30.0)) * 1000.0
+        fire = float(p.get("fire_w", 2500.0)) if self.running else 0.0
+        if self.body_c is None:
+            self.body_c = t_air
+        equilibrium = t_air + fire / ua
+        before = self.body_c
+        self.body_c = equilibrium + (before - equilibrium) * math.exp(-ua * dt / capacity)
+        # what the fire put in minus what the body kept is what reached the room
+        return fire - capacity * (self.body_c - before) / dt if dt > 0 else 0.0
+
+    def stove_sensor_c(self, t_air: float, coupling: float) -> float:
+        """What a temperature sensor next to the stove reads: the air plus a share of the body's excess."""
+        body = t_air if self.body_c is None else self.body_c
+        return t_air + coupling * (body - t_air)
 
     # --- observation / persistence ---------------------------------------------------------
 
@@ -285,6 +318,8 @@ class SimAppliance:
             rec["pct"] = self.percentage
         if self.model in HYGROSTAT_MODELS:
             rec["target_rh"] = self.target_humidity
+        if self.model == "stove" and self.body_c is not None:
+            rec["body_c"] = round(self.body_c, 1)
         return rec
 
     def snapshot(self) -> dict[str, Any]:
@@ -295,11 +330,12 @@ class SimAppliance:
             "running": self.running,
             "available": self.available,
             "off_since": self.off_since,
+            "body_c": self.body_c,
             "counters": self.counters.__dict__.copy(),
         }
 
     def restore(self, data: dict[str, Any]) -> None:
-        for key in ("on", "percentage", "target_humidity", "running", "available", "off_since"):
+        for key in ("on", "percentage", "target_humidity", "running", "available", "off_since", "body_c"):
             if key in data:
                 setattr(self, key, data[key])
         self.counters = ApplianceCounters(**data.get("counters", {}))
