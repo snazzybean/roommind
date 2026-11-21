@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { RoomConfig, RoomLiveData } from "../types";
-import { hintText, roomHints, type RoomHintContext } from "./room-state";
+import { hintText, roomHints, roomStateInfo, type RoomHintContext } from "./room-state";
 
 const ctx: RoomHintContext = {
   climateControlActive: true,
@@ -261,5 +261,33 @@ describe("roomHints room fan (#266)", () => {
   test("no hint while RoomMind does not run it", () => {
     expect(ids(room({ mode: "heating", room_fan_active: false }))).not.toContain("room_fan");
     expect(ids(room({ mode: "heating" }))).not.toContain("room_fan");
+  });
+});
+
+describe("stove or fireplace (#9)", () => {
+  const ids = (r: RoomConfig) => roomHints(r, "controlled", ctx).map((h) => h.id);
+
+  test("burning: a hint after the window, the room shows paused", () => {
+    const r = room({ window_open: true, external_heat_active: true, external_heat_until: null });
+    expect(ids(r)).toEqual(["window_open", "external_heat"]);
+    const hint = roomHints(r, "controlled", ctx).find((h) => h.id === "external_heat")!;
+    expect(hint.icon).toBe("mdi:fireplace");
+    expect(hintText(hint, "en")).toBe("Stove or fireplace lit, paused");
+    expect(roomStateInfo(room({ mode: "idle", external_heat_active: true }), true).tone).toBe(
+      "paused",
+    );
+  });
+
+  test("cooling down: names the end of the pause", () => {
+    const r = room({ external_heat_active: true, external_heat_until: sixAm });
+    const hint = roomHints(r, "controlled", ctx).find((h) => h.id === "external_heat")!;
+    expect(hintText(hint, "it")).toBe("Stufa o camino in raffreddamento, in pausa fino alle 06:00");
+  });
+
+  test("no hint while out or for a room without control", () => {
+    expect(ids(room({ external_heat_active: false }))).not.toContain("external_heat");
+    expect(
+      roomHints(room({ external_heat_active: true }), "outdoor", ctx).map((h) => h.id),
+    ).not.toContain("external_heat");
   });
 });

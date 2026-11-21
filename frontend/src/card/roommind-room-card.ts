@@ -429,6 +429,16 @@ export class RoomMindRoomCard extends LitElement {
                 : nothing
             }
             ${
+              live.external_heat_active
+                ? html`<ha-icon
+                    icon="mdi:fireplace"
+                    role="img"
+                    title=${localize("card.external_heat", l)}
+                    aria-label=${localize("card.external_heat", l)}
+                  ></ha-icon>`
+                : nothing
+            }
+            ${
               live.presence_away
                 ? html`<ha-icon
                     icon="mdi:home-off-outline"

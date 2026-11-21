@@ -1132,5 +1132,22 @@
   "covers.schedule_default_name": "{room} Rollläden",
   "schedules.also_in": "Auch in {rooms}",
   "schedules.covers_in": "Rollläden: {rooms}",
-  "schedules.temperature_in": "Temperatur: {rooms}"
+  "schedules.temperature_in": "Temperatur: {rooms}",
+  "detail.sensors.external_heat": "Ofen oder Kamin",
+  "sensors.external_heat_info": "Ein Ofen oder Kamin, den RoomMind nicht steuert. Solange er brennt und eine einstellbare Zeit danach pausiert RoomMind Heizen und Kühlen in diesem Raum, und das Modell lernt nicht. Wähle einen Temperatursensor direkt daneben (nicht in der Sonne oder am Heizkörper), eine Steckdose mit Leistungsmessung oder eine Ein/Aus-Entität oder einen Helfer. Einer davon an genügt.",
+  "sensors.no_external_heat": "Keiner.",
+  "sensors.external_heat_delta_on": "An über Raum um",
+  "sensors.external_heat_delta_off": "Aus unter Raum plus",
+  "sensors.external_heat_delta_info": "Der Sensor am Ofen gilt als an, sobald er so viel wärmer als der Raum ist, und wieder als aus, sobald der Abstand unter den zweiten Wert fällt.",
+  "sensors.external_heat_power_threshold": "An über",
+  "sensors.external_heat_cooldown": "Pause nach dem Ausgehen",
+  "sensors.external_heat_cooldown_info": "Der Ofen gibt nach dem Ausgehen noch Wärme ab. So lange bleibt der Raum pausiert, dann übernimmt RoomMind wieder. 0 beendet die Pause sofort.",
+  "sensors.external_heat_temp_view": "an bei {on}, aus bei {off}",
+  "sensors.external_heat_power_view": "an über {power}",
+  "sensors.external_heat_cooldown_view": "danach {time} Pause",
+  "hero.external_heat": "Ofen oder Kamin an, pausiert",
+  "hero.external_heat_until": "Ofen oder Kamin kühlt ab, pausiert bis {time}",
+  "hero.external_heat_info": "Solange der Ofen oder Kamin brennt und die eingestellte Zeit danach, heizt und kühlt RoomMind diesen Raum nicht, auch nicht bei einer manuellen Übersteuerung, und das Modell lernt nicht.",
+  "card.external_heat": "Ofen oder Kamin an",
+  "analytics.external_heat_period": "Ofen oder Kamin"
 }

@@ -1132,5 +1132,22 @@
   "covers.schedule_default_name": "{room} tapparelle",
   "schedules.also_in": "Anche in {rooms}",
   "schedules.covers_in": "Tapparelle: {rooms}",
-  "schedules.temperature_in": "Temperatura: {rooms}"
+  "schedules.temperature_in": "Temperatura: {rooms}",
+  "detail.sensors.external_heat": "Stufa o camino",
+  "sensors.external_heat_info": "Una stufa o un camino che RoomMind non comanda. Finché è acceso, e per un tempo impostabile dopo lo spegnimento, RoomMind mette in pausa riscaldamento e raffrescamento in questa stanza e il modello non impara. Scegli un sensore di temperatura messo accanto (non al sole né vicino a un radiatore), una presa che misura la potenza, oppure un'entità o un helper on/off. Ne basta uno acceso.",
+  "sensors.no_external_heat": "Nessuno.",
+  "sensors.external_heat_delta_on": "Acceso sopra la stanza di",
+  "sensors.external_heat_delta_off": "Spento sotto la stanza più",
+  "sensors.external_heat_delta_info": "Il sensore accanto alla stufa conta come acceso quando supera la stanza di questo valore, e di nuovo come spento quando la differenza scende sotto il secondo valore.",
+  "sensors.external_heat_power_threshold": "Acceso sopra",
+  "sensors.external_heat_cooldown": "Pausa dopo lo spegnimento",
+  "sensors.external_heat_cooldown_info": "Dopo lo spegnimento la stufa cede ancora calore. La stanza resta in pausa per questo tempo, poi RoomMind riprende. 0 chiude la pausa subito.",
+  "sensors.external_heat_temp_view": "acceso a {on}, spento a {off}",
+  "sensors.external_heat_power_view": "acceso sopra {power}",
+  "sensors.external_heat_cooldown_view": "pausa di {time} dopo",
+  "hero.external_heat": "Stufa o camino acceso, in pausa",
+  "hero.external_heat_until": "Stufa o camino in raffreddamento, in pausa fino alle {time}",
+  "hero.external_heat_info": "Finché la stufa o il camino è acceso, e per il tempo impostato dopo, RoomMind non riscalda né raffresca questa stanza, neanche con una regolazione manuale, e il modello non impara.",
+  "card.external_heat": "Stufa o camino acceso",
+  "analytics.external_heat_period": "Stufa o camino"
 }

@@ -504,9 +504,11 @@ export function buildChartSeries(
   const heatingBandData = band((p) => p.mode === "heating");
   const coolingBandData = band((p) => p.mode === "cooling");
   const windowBandData = band((p) => p.window_open);
+  const stoveBandData = band((p) => !!p.external_heat);
   const hasHeating = hasValue(heatingBandData);
   const hasCooling = hasValue(coolingBandData);
   const hasWindow = hasValue(windowBandData);
+  const hasStove = hasValue(stoveBandData);
 
   if (hasHeating) {
     series.push({
@@ -552,6 +554,24 @@ export function buildChartSeries(
       showSymbol: false,
       lineStyle: { width: 0 },
       areaStyle: { color: colors.neutral, opacity: 0.12, origin: "start" },
+      tooltip: { show: false },
+      yAxisIndex: 0,
+      z: -1,
+      connectNulls: false,
+    });
+  }
+
+  // A stove or fireplace RoomMind does not control (#9): explains a rise the model did not expect
+  if (hasStove) {
+    series.push({
+      id: "external_heat_events",
+      type: "line",
+      name: localize("analytics.external_heat_period", l),
+      color: colors.heat,
+      data: stoveBandData,
+      showSymbol: false,
+      lineStyle: { width: 0 },
+      areaStyle: { color: colors.heat, opacity: 0.12, origin: "start" },
       tooltip: { show: false },
       yAxisIndex: 0,
       z: -1,
@@ -883,6 +903,7 @@ export function buildChartOptions(
             parts.push(localize("analytics.cooling_period", l));
           }
           if (closest.window_open) parts.push(localize("analytics.window_open_period", l));
+          if (closest.external_heat) parts.push(localize("analytics.external_heat_period", l));
           if (parts.length > 0) {
             markup += `<div style="border-top:1px solid rgba(128,128,128,0.3);margin-top:4px;padding-top:4px;opacity:0.75">${parts.join(" \u00B7 ")}</div>`;
           }

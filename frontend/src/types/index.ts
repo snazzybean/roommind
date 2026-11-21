@@ -48,6 +48,10 @@ export interface RoomLiveData {
   override_suppressed: boolean;
   active_schedule_index: number;
   window_open: boolean;
+  /** A stove or fireplace RoomMind does not control burns or cools down: the room is paused (#9). */
+  external_heat_active?: boolean;
+  /** Unix seconds the cooldown ends once the source is out; null while it burns. */
+  external_heat_until?: number | null;
   confidence: number | null;
   mpc_active: boolean;
   presence_away: boolean;
@@ -205,6 +209,12 @@ export interface RoomConfig {
   window_sensors: string[];
   window_open_delay: number;
   window_close_delay: number;
+  /** Stove or fireplace RoomMind does not control (#9): entities telling it burns, thresholds in K, W, minutes. */
+  external_heat_sensors?: string[];
+  external_heat_delta_on?: number;
+  external_heat_delta_off?: number;
+  external_heat_power_threshold?: number;
+  external_heat_cooldown?: number;
   climate_mode: ClimateMode;
   schedules: ScheduleEntry[];
   schedule_selector_entity: string;
@@ -377,6 +387,8 @@ export interface AnalyticsDataPoint {
   mode: string;
   predicted_temp: number | null;
   window_open: boolean;
+  /** A stove or fireplace RoomMind does not control burned (#9); missing in rows from before. */
+  external_heat?: boolean;
   heating_power: number | null;
   solar_irradiance: number | null;
   blind_position?: number | null;
