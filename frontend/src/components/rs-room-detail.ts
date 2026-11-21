@@ -17,6 +17,7 @@ import "./rs-schedule-settings";
 import type { ScheduleCardPart } from "./rs-schedule-settings";
 import "./room-detail/rs-target-temps";
 import "./room-detail/rs-price-shift";
+import "./room-detail/rs-learned-occupancy";
 import "./rs-device-section";
 import "./rs-sensor-section";
 import "./rs-override-section";
@@ -126,6 +127,15 @@ const ROOM_FIELDS: [string, RoomFieldSync][] = [
     plain("_followDeviceSetpoint", (c) => c?.follow_device_setpoint ?? false),
   ],
   ["price_shift", plain("_priceShift", (c) => c?.price_shift ?? 0)],
+  ["use_learned_schedule", plain("_useLearnedSchedule", (c) => c?.use_learned_schedule ?? false)],
+  [
+    "learned_occupancy_area_id",
+    plain("_learnedOccupancyAreaId", (c) => c?.learned_occupancy_area_id ?? ""),
+  ],
+  [
+    "learned_occupancy_threshold",
+    plain("_learnedOccupancyThreshold", (c) => c?.learned_occupancy_threshold ?? null),
+  ],
   ["window_sensors", asSet("_selectedWindowSensors", (c) => c?.window_sensors ?? [])],
   ["window_open_delay", plain("_windowOpenDelay", (c) => c?.window_open_delay ?? 0)],
   ["window_close_delay", plain("_windowCloseDelay", (c) => c?.window_close_delay ?? 0)],
@@ -256,6 +266,14 @@ export class RsRoomDetail extends LitElement {
   @state() private _preheatEnabled = true;
   @state() private _followDeviceSetpoint = false;
   @state() private _priceShift = 0;
+  /** Area Occupancy Detection as the room's occupancy source (see ROOM_FIELDS). */
+  @state() private _useLearnedSchedule = false;
+  @state() private _learnedOccupancyAreaId = "";
+  @state() private _learnedOccupancyThreshold: number | null = null;
+  /** Area Occupancy is installed, and the areas it learns (roommind/occupancy/areas). */
+  @state() private _learnedAvailable = false;
+  @state() private _learnedAreas: string[] = [];
+  private _learnedAreasLoaded = false;
   @state() private _heatSourcePriceAware = false;
   @state() private _occupancyEcoDelay = DEFAULT_OCCUPANCY_ECO_DELAY;
   @state() private _co2Sensor = "";
@@ -412,6 +430,10 @@ export class RsRoomDetail extends LitElement {
   updated(changedProps: Map<string, unknown>) {
     const currentAreaId = this.config?.area_id ?? this.area?.area_id ?? null;
     const areaChanged = currentAreaId !== this._prevAreaId;
+    if (this.hass && !this._learnedAreasLoaded) {
+      this._learnedAreasLoaded = true;
+      void this._loadLearnedAreas();
+    }
 
     if (areaChanged) {
       this._initFromConfig();
@@ -690,6 +712,10 @@ export class RsRoomDetail extends LitElement {
           .presenceAwayAction=${this.presenceAwayAction}
           .presenceActive=${this._presenceActive()}
           .occupancyEco=${this._occupancyEcoEnabled && this._selectedOccupancySensors.size > 0}
+          .learnedAvailable=${this._learnedAvailable}
+          .learnedSchedule=${this._useLearnedSchedule}
+          .learnedThreshold=${live?.expected_occupancy_threshold ?? null}
+          .learnedComfortHours=${live?.expected_comfort_hours ?? null}
           .editing=${false}
           @preheat-changed=${this._onPreheatChanged}
           @follow-device-setpoint-changed=${this._onFollowDeviceSetpointChanged}
@@ -958,6 +984,29 @@ export class RsRoomDetail extends LitElement {
             .shiftCool=${this.config?.live?.price_shift_cool ?? 0}
             @price-shift-changed=${this._onPriceShiftChanged}
           ></rs-price-shift>
+        </rs-edit-dialog>`;
+      case "occupancy":
+        return html`<rs-edit-dialog
+          open
+          icon="mdi:account-clock"
+          .heading=${localize("schedule.learned_label", lang)}
+          .error=${this._error}
+          @rs-dialog-closed=${this._closeEdit}
+        >
+          <rs-learned-occupancy
+            .hass=${this.hass}
+            .enabled=${this._useLearnedSchedule}
+            .areaId=${this._learnedOccupancyAreaId}
+            .threshold=${this._learnedOccupancyThreshold}
+            .available=${this._learnedAvailable}
+            .areas=${this._learnedAreas}
+            .liveThreshold=${this.config?.live?.expected_occupancy_threshold ?? null}
+            .comfortHours=${this.config?.live?.expected_comfort_hours ?? null}
+            .occupancyEco=${this._occupancyEcoEnabled && this._selectedOccupancySensors.size > 0}
+            @learned-schedule-changed=${this._onLearnedScheduleChanged}
+            @learned-area-changed=${this._onLearnedAreaChanged}
+            @learned-threshold-changed=${this._onLearnedThresholdChanged}
+          ></rs-learned-occupancy>
         </rs-edit-dialog>`;
       case "devices":
         return html`<rs-edit-dialog
@@ -1241,7 +1290,7 @@ export class RsRoomDetail extends LitElement {
    */
   private _preheatSides(): "" | "heat" | "cool" | "both" {
     if (
-      (!this._schedules.length && !(this._priceShift > 0)) ||
+      (!this._schedules.length && !(this._priceShift > 0) && !this._useLearnedSchedule) ||
       this.controlMode !== "mpc" ||
       !this._selectedTempSensor
     ) {
@@ -1263,6 +1312,42 @@ export class RsRoomDetail extends LitElement {
 
   private _onPriceShiftChanged(e: CustomEvent<{ value: number }>) {
     this._priceShift = e.detail.value;
+    this._autoSave();
+  }
+
+  /** Whether Area Occupancy Detection is installed and which areas it learns, for the occupancy dialog. */
+  private async _loadLearnedAreas() {
+    try {
+      const result = await this.hass.callWS<{ available: boolean; areas: string[] }>({
+        type: "roommind/occupancy/areas",
+      });
+      this._learnedAvailable = result.available;
+      this._learnedAreas = result.areas;
+    } catch {
+      this._learnedAvailable = false;
+      this._learnedAreas = [];
+    }
+  }
+
+  /** Switching the source on picks the room's own area when Area Occupancy learns one by that id. */
+  private _onLearnedScheduleChanged(e: CustomEvent<{ value: boolean }>) {
+    this._useLearnedSchedule = e.detail.value;
+    if (this._useLearnedSchedule && !this._learnedOccupancyAreaId) {
+      const own = this.area.area_id;
+      this._learnedOccupancyAreaId = this._learnedAreas.includes(own)
+        ? own
+        : (this._learnedAreas[0] ?? "");
+    }
+    this._autoSave();
+  }
+
+  private _onLearnedAreaChanged(e: CustomEvent<{ value: string }>) {
+    this._learnedOccupancyAreaId = e.detail.value;
+    this._autoSave();
+  }
+
+  private _onLearnedThresholdChanged(e: CustomEvent<{ value: number | null }>) {
+    this._learnedOccupancyThreshold = e.detail.value;
     this._autoSave();
   }
 

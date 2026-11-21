@@ -14,6 +14,7 @@ import { formatNumber } from "../utils/format";
 import { RsScheduleBase } from "./shared/rs-schedule-base";
 import { inputStyles } from "../styles/input-styles";
 import { priceShiftLabel } from "./room-detail/rs-price-shift";
+import { comfortHoursLabel, thresholdLabel } from "./room-detail/rs-learned-occupancy";
 import { isAdmin, isEditableSchedule, readWeek } from "../utils/schedule-api";
 import { dayTimes, nowInZone, type Week } from "../utils/schedule-week";
 import "./shared/rs-list-row";
@@ -44,7 +45,7 @@ const PREHEAT_KEYS = {
 } as const;
 
 /** Which dialog a row of the card opens (`edit-click` detail `{ part }`). */
-export type ScheduleCardPart = "schedule" | "temperatures" | "price";
+export type ScheduleCardPart = "schedule" | "temperatures" | "price" | "occupancy";
 
 /**
  * The room's "Schedule & temperatures" card. View mode: one row per schedule, comfort, eco,
@@ -92,6 +93,13 @@ export class RsScheduleSettings extends RsScheduleBase {
   @property({ type: Boolean }) public occupancyEco = false;
   /** Default name of a schedule created from the dialog. */
   @property({ type: String }) public roomName = "";
+  /** Area Occupancy Detection is installed; without it the learned occupancy row is hidden. */
+  @property({ type: Boolean }) public learnedAvailable = false;
+  /** The room takes its comfort window from Area Occupancy instead of the schedule. */
+  @property({ type: Boolean }) public learnedSchedule = false;
+  /** Threshold in force and comfort hours per week (live), null while the schedule applies. */
+  @property({ attribute: false }) public learnedThreshold: number | null = null;
+  @property({ attribute: false }) public learnedComfortHours: number | null = null;
 
   @state() private _creating = false;
   /** Week of the active schedule for today's timeline; `_weekKey` = what it was read for. */
@@ -308,6 +316,25 @@ export class RsScheduleSettings extends RsScheduleBase {
         ></rs-info-icon>
       </rs-list-row>
       ${
+        this.learnedAvailable || this.learnedSchedule
+          ? html`<rs-list-row
+              clickable
+              chevron
+              icon="mdi:account-clock"
+              .iconColor=${this.learnedThreshold !== null ? "var(--primary-color)" : ""}
+              .heading=${localize("schedule.learned_label", l)}
+              .secondary=${localize(
+                this.learnedSchedule
+                  ? "detail.schedule.learned_sub_on"
+                  : "detail.schedule.learned_sub_off",
+                l,
+              )}
+              .value=${this._learnedValue()}
+              @row-click=${open("occupancy")}
+            ></rs-list-row>`
+          : nothing
+      }
+      ${
         this.priceConfigured
           ? html`<rs-list-row
               clickable
@@ -344,9 +371,20 @@ export class RsScheduleSettings extends RsScheduleBase {
     ></rs-day-timeline>`;
   }
 
+  /** Learned occupancy row value: threshold and comfort hours in force, or why it does not act. */
+  private _learnedValue(): string {
+    const l = this.hass.language;
+    if (!this.learnedSchedule) return localize("schedule.learned_off", l);
+    if (this.learnedThreshold === null) return localize("schedule.learned_waiting", l);
+    const threshold = thresholdLabel(this.learnedThreshold, l);
+    if (this.learnedComfortHours === null) return threshold;
+    return `${threshold} · ${comfortHoursLabel(this.learnedComfortHours, l)}`;
+  }
+
   /** When comfort applies in this room. */
   private _comfortSub(): string {
     const l = this.hass.language;
+    if (this.learnedSchedule) return localize("detail.schedule.comfort_sub_learned", l);
     if (this.schedules.length) return localize("detail.schedule.comfort_sub", l);
     return localize(
       this.presenceActive
@@ -360,7 +398,9 @@ export class RsScheduleSettings extends RsScheduleBase {
   private _ecoSub(): string {
     const l = this.hass.language;
     const when: string[] = [];
-    if (this.schedules.length && this.scheduleOffAction === "eco") {
+    if (this.learnedSchedule && this.scheduleOffAction === "eco") {
+      when.push(localize("detail.schedule.when_not_expected", l));
+    } else if (this.schedules.length && this.scheduleOffAction === "eco") {
       when.push(localize("detail.schedule.when_schedule_off", l));
     }
     if (this.presenceActive && this.presenceAwayAction === "eco") {
