@@ -502,7 +502,7 @@
   "compressor.delays_hint": "Ritardo di avvio: per quanto tempo abbastanza stanze devono chiedere calore prima che il dispositivo principale si accenda; una richiesta che sparisce prima non accende nulla. Post-funzionamento: per quanto tempo continua dopo che troppo poche stanze chiedono calore; una richiesta che torna prima lo tiene acceso.",
   "compressor.on_temperature": "Temperatura di accensione",
   "compressor.off_temperature": "Temperatura di spegnimento",
-  "compressor.temperatures_hint": "Setpoint che il termostato riceve in riscaldamento e allo spegnimento, nella sua unità (ad es. la temperatura di mandata di una caldaia). Vuoto: viene cambiata solo la modalità.",
+  "compressor.temperatures_hint": "Setpoint che il termostato riceve in riscaldamento e allo spegnimento, ad es. la temperatura di mandata di una caldaia. Vuoto: viene cambiata solo la modalità.",
   "compressor.off_mode": "Allo spegnimento",
   "compressor.off_mode_off": "Spegnere il termostato",
   "compressor.off_mode_temperature": "Mantenere il riscaldamento alla temperatura di spegnimento",

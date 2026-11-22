@@ -502,7 +502,7 @@
   "compressor.delays_hint": "Start delay: how long enough rooms must want heat before the main device switches on; demand that drops again within it switches nothing. Run-on: how long it keeps running after too few rooms want heat; demand that returns within it keeps it running.",
   "compressor.on_temperature": "On temperature",
   "compressor.off_temperature": "Off temperature",
-  "compressor.temperatures_hint": "Setpoint the thermostat gets when heating and when switched off, in its own unit (e.g. a boiler's flow temperature). Empty: only the mode is switched.",
+  "compressor.temperatures_hint": "Setpoint the thermostat gets when heating and when switched off, e.g. a boiler's flow temperature. Empty: only the mode is switched.",
   "compressor.off_mode": "When switching off",
   "compressor.off_mode_off": "Switch the thermostat off",
   "compressor.off_mode_temperature": "Keep heat mode at the off temperature",

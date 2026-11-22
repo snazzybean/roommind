@@ -502,7 +502,7 @@
   "compressor.delays_hint": "Startverzögerung: so lange müssen genug Räume Wärme wollen, bevor das Hauptgerät einschaltet; fällt der Bedarf vorher weg, wird nichts geschaltet. Nachlauf: so lange läuft es weiter, nachdem zu wenige Räume Wärme wollen; kommt der Bedarf vorher zurück, läuft es einfach weiter.",
   "compressor.on_temperature": "Ein-Temperatur",
   "compressor.off_temperature": "Aus-Temperatur",
-  "compressor.temperatures_hint": "Sollwert, den der Thermostat beim Heizen und beim Ausschalten bekommt, in seiner eigenen Einheit (z. B. die Vorlauftemperatur eines Kessels). Leer: nur der Modus wird geschaltet.",
+  "compressor.temperatures_hint": "Sollwert, den der Thermostat beim Heizen und beim Ausschalten bekommt, z. B. die Vorlauftemperatur eines Kessels. Leer: nur der Modus wird geschaltet.",
   "compressor.off_mode": "Beim Ausschalten",
   "compressor.off_mode_off": "Thermostat ausschalten",
   "compressor.off_mode_temperature": "Heizmodus mit Aus-Temperatur behalten",
