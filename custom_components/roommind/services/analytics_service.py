@@ -154,7 +154,7 @@ def _csv_to_points(rows: list[dict]) -> list[dict]:
                 "room_temp_min": _safe_float(row.get("room_temp_min", "")),
                 "co2": _safe_float(row.get("co2", "")),
                 # Metered device power (kW): a model input of the backtest only
-                "power_kw": _safe_float(row.get("power_kw", "")),
+                "device_heat": _safe_float(row.get("device_heat", "")),
                 **{f: _safe_float(row.get(f, "")) for f in MODEL_INPUT_FIELDS},
             }
         )
@@ -332,7 +332,7 @@ async def build_analytics_data(
     # Only the figures need the run starts, bucket extremes and model inputs; 90 days of points would carry them
     for point in history + detail:
         del point["heat_starts"], point["cool_starts"], point["room_temp_max"], point["room_temp_min"]
-        del point["power_kw"]
+        del point["device_heat"]
         for f in MODEL_INPUT_FIELDS:
             del point[f]
 

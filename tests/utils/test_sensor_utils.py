@@ -225,3 +225,33 @@ def test_power_skips_sensors_of_the_rooms_heaters(caplog):
         total = read_power_kw(hass, ["sensor.heater_power", "sensor.pc"], "bath", exclude_device_ids=ids)
     assert total == pytest.approx(0.3)
     assert "already learned as heating power" in caplog.text
+
+
+def test_power_readings_per_sensor():
+    from custom_components.roommind.utils.sensor_utils import read_power_readings
+
+    hass = _power_hass(
+        {
+            "sensor.pc": ("250", "W"),
+            "sensor.server": ("0.04", "kW"),
+            "sensor.meter": ("-30", "W"),
+            "sensor.x": ("on", "W"),
+        }
+    )
+    readings = read_power_readings(hass, ["sensor.pc", "sensor.server", "sensor.meter", "sensor.x", "sensor.gone"], "o")
+    assert readings == pytest.approx({"sensor.pc": 0.25, "sensor.server": 0.04, "sensor.meter": 0.0})
+    assert read_power_readings(hass, [], "o") == {}
+
+
+def test_usable_power_sensors_leave_out_the_rooms_heaters():
+    from custom_components.roommind.utils.sensor_utils import usable_power_sensors
+
+    hass = MagicMock()
+    registry = MagicMock()
+    registry.async_get.side_effect = {"sensor.heater_power": MagicMock(device_id="dev-heater")}.get
+    with patch("homeassistant.helpers.entity_registry.async_get", return_value=registry):
+        usable = usable_power_sensors(
+            hass, ["sensor.heater_power", "sensor.pc"], "bath", exclude_device_ids={"dev-heater"}
+        )
+    assert usable == ["sensor.pc"]
+    assert usable_power_sensors(hass, ["sensor.a", "sensor.b"], "bath") == ["sensor.a", "sensor.b"]
