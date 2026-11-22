@@ -133,7 +133,7 @@
   "schedule.row_cool": "Cool",
   "schedule.comfort_hint": "Applies while the schedule is on and its block has no temperature of its own. Without a schedule comfort always applies.",
   "schedule.eco_hint": "Applies when the schedule is off, nobody is home or the room is empty, depending on your settings, and when you pick Eco.",
-  "schedule.away_hint": "Applies when nobody is home and presence uses the away temperature. Until you set it, it follows eco.",
+  "schedule.away_hint": "Applies when nobody is home and presence uses the away temperature. Never more heating or cooling than the schedule asks for at that time. Until you set it, it follows eco.",
   "schedule.from_schedule": "{temp} from the schedule",
   "schedule.fallback": "Comfort · {temp}",
   "schedule.block_temp_rejected": "Values outside the valid range {min}–{max} {unit}: {values}. The comfort target applies instead. Typo in the schedule?",

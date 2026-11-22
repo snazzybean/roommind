@@ -133,7 +133,7 @@
   "schedule.row_cool": "Kühlen",
   "schedule.comfort_hint": "Gilt, solange der Zeitplan an ist und der Block keine eigene Temperatur hat. Ohne Zeitplan gilt Komfort immer.",
   "schedule.eco_hint": "Gilt, wenn der Zeitplan aus ist, niemand zu Hause ist oder der Raum leer ist, je nach Einstellung, und wenn du Eco wählst.",
-  "schedule.away_hint": "Gilt, wenn niemand zu Hause ist und die Anwesenheit die Abwesenheitstemperatur verwendet. Solange du sie nicht einstellst, folgt sie Eco.",
+  "schedule.away_hint": "Gilt, wenn niemand zu Hause ist und die Anwesenheit die Abwesenheitstemperatur verwendet. Nie mehr Heizen oder Kühlen, als der Zeitplan gerade vorgibt. Solange du sie nicht einstellst, folgt sie Eco.",
   "schedule.from_schedule": "{temp} vom Zeitplan",
   "schedule.fallback": "Komfort · {temp}",
   "schedule.block_temp_rejected": "Werte außerhalb des gültigen Bereichs {min}–{max} {unit}: {values}. Stattdessen gilt die Komforttemperatur. Tippfehler im Zeitplan?",

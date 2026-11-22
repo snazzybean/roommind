@@ -133,7 +133,7 @@
   "schedule.row_cool": "Freddo",
   "schedule.comfort_hint": "Vale finché la programmazione è attiva e il blocco non ha una temperatura propria. Senza programmazione vale sempre il comfort.",
   "schedule.eco_hint": "Vale quando la programmazione è spenta, non c'è nessuno o la stanza è vuota, secondo le impostazioni, e quando scegli Eco.",
-  "schedule.away_hint": "Vale quando non c'è nessuno in casa e la presenza usa la temperatura di assenza. Finché non la imposti, segue eco.",
+  "schedule.away_hint": "Vale quando non c'è nessuno in casa e la presenza usa la temperatura di assenza. Mai più riscaldamento o raffreddamento di quanto chiede il programma in quel momento. Finché non la imposti, segue eco.",
   "schedule.from_schedule": "{temp} dal programma",
   "schedule.fallback": "Comfort · {temp}",
   "schedule.block_temp_rejected": "Valori fuori dall'intervallo valido {min}–{max} {unit}: {values}. Al loro posto viene usato l'obiettivo comfort. Errore di battitura nella programmazione?",

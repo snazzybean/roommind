@@ -133,7 +133,7 @@
   "schedule.row_cool": "Refroidissement",
   "schedule.comfort_hint": "S'applique tant que le planning est actif et que le bloc n'a pas sa propre température. Sans planning, le confort s'applique toujours.",
   "schedule.eco_hint": "S'applique quand le planning est inactif, que personne n'est à la maison ou que la pièce est vide, selon vos réglages, et quand vous choisissez Éco.",
-  "schedule.away_hint": "S'applique quand personne n'est à la maison et que la présence utilise la température d'absence. Tant que vous ne la réglez pas, elle suit éco.",
+  "schedule.away_hint": "S'applique quand personne n'est à la maison et que la présence utilise la température d'absence. Jamais plus de chauffage ou de refroidissement que ce que demande le planning à ce moment. Tant que vous ne la réglez pas, elle suit éco.",
   "schedule.from_schedule": "{temp} selon le planning",
   "schedule.fallback": "Confort · {temp}",
   "schedule.block_temp_rejected": "Valeurs hors de la plage valide {min}–{max} {unit} : {values}. La température de confort est utilisée à la place. Faute de frappe dans le planning ?",
