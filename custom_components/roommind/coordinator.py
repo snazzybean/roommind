@@ -9,6 +9,7 @@ from datetime import timedelta
 from functools import partial
 from typing import Any
 
+from homeassistant.components.climate import ClimateEntityFeature
 from homeassistant.components.persistent_notification import async_create as async_create_notification
 from homeassistant.components.persistent_notification import async_dismiss as async_dismiss_notification
 from homeassistant.config_entries import ConfigEntry
@@ -277,6 +278,14 @@ _NO_HUMIDITY_CONTROL: dict[str, Any] = {
     "ac_dry_active": False,
     "ac_dry_entities": [],
 }
+
+
+def _takes_setpoint(state: Any) -> bool:
+    """Whether a climate entity takes a target temperature."""
+    try:
+        return bool(int(state.attributes.get("supported_features") or 0) & ClimateEntityFeature.TARGET_TEMPERATURE)
+    except (TypeError, ValueError):
+        return False
 
 
 def _orchestrated_training_power(heat_source_plan: HeatSourcePlan) -> float:
@@ -3637,7 +3646,9 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 continue
             # A master kept in heat at its off temperature tells nothing about the way the group ran
             master_reads = group.master_entity and not (
-                group.off_mode == MASTER_OFF_MODE_TEMPERATURE and group.off_temperature is not None
+                group.off_mode == MASTER_OFF_MODE_TEMPERATURE
+                and group.on_temperature is not None
+                and group.off_temperature is not None
             )
             units = ([group.master_entity] if master_reads else []) + list(group.members)
             modes = [_uniform_mode(self.hass.states.get(e)) for e in units]
@@ -4071,16 +4082,30 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         if action == "idle":
             # Without an on temperature the off one would stay on the thermostat when heating starts
             off_temperature = group.off_temperature if group.on_temperature is not None else None
-            state = self._compressor_manager.get_state(group.id)
-            keep_heat = (
-                group.off_mode == MASTER_OFF_MODE_TEMPERATURE
-                and off_temperature is not None
-                and (state is None or state.last_mode_action != "cool")
+            mode = self._resolve_master_hvac_mode(
+                group.master_entity, "heat" if self._master_keeps_heat(group, off_temperature) else "idle"
             )
-            mode = self._resolve_master_hvac_mode(group.master_entity, "heat" if keep_heat else "idle")
             return (mode, off_temperature) if mode else None
         mode = self._resolve_master_hvac_mode(group.master_entity, action)
         return (mode, None) if mode else None
+
+    def _master_keeps_heat(self, group: CompressorGroupConfig, off_temperature: float | None) -> bool:
+        """Off mode "temperature": idle keeps the heat mode at the off temperature.
+
+        Only for a thermostat that takes a setpoint, and only after it last heated, or, before
+        RoomMind sent it heat or cool (startup), when it cannot cool at all: a heat pump that
+        cooled is switched off.
+        """
+        if group.off_mode != MASTER_OFF_MODE_TEMPERATURE or off_temperature is None:
+            return False
+        state = self.hass.states.get(group.master_entity)
+        if state is None or not _takes_setpoint(state):
+            return False
+        group_state = self._compressor_manager.get_state(group.id)
+        last = group_state.master_last_active if group_state is not None else None
+        if last is not None:
+            return last == "heat"
+        return "cool" not in state.attributes.get("hvac_modes", [])
 
     def _master_setpoint(self, state: Any, temperature: float) -> float:
         """*temperature* (stored in °C) in HA's unit, within the master thermostat's min_temp/max_temp."""
@@ -4100,8 +4125,8 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         mode, temperature = target
         if state.state != mode:
             return False
-        # Without a setpoint attribute the thermostat takes none: sending one every cycle changes nothing
-        if temperature is None or mode == "off" or state.attributes.get("temperature") is None:
+        # A thermostat without a setpoint: sending one every cycle changes nothing
+        if temperature is None or mode == "off" or not _takes_setpoint(state):
             return True
         try:
             step = float(
