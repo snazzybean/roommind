@@ -74,6 +74,7 @@ NORMAL_ROOM_KEYS = {
     "q_residual",
     "power_kw",
     "device_heat",
+    "power_sensor_status",
     "n_observations",
     "blind_position",
     "cover_auto_paused",

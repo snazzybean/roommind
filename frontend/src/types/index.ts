@@ -31,10 +31,32 @@ export interface SolarSensorLive {
   position: "inside" | "outside" | null;
 }
 
+/** learning: not enough windows yet; active: improves the prediction, used; no_effect: ignored */
+export type PowerSensorStatus = "learning" | "active" | "no_effect";
+
+/** What RoomMind learned about one power sensor of a room (analytics). */
+export interface PowerSensorInfo {
+  entity_id: string;
+  name: string;
+  status: PowerSensorStatus;
+  /** °C/h per kW above the sensor's usual load */
+  gain: number;
+  gain_std: number;
+  /** Share of the prediction error the sensor removes (0-1) */
+  improvement: number;
+  windows: number;
+  windows_needed: number;
+  baseline_kw: number | null;
+  power_kw: number | null;
+  heat_now: number;
+}
+
 export interface RoomLiveData {
   current_temp: number | null;
   current_humidity: number | null;
   target_temp: number | null;
+  /** Per power sensor of the room; absent without power sensors */
+  power_sensor_status?: Record<string, PowerSensorStatus> | null;
   heat_target: number | null;
   cool_target: number | null;
   mode: RoomMode;
@@ -497,7 +519,6 @@ export interface AnalyticsData {
       Q_solar: number;
       Q_occupancy: number;
       Q_fast?: number;
-      Q_power?: number;
     };
     n_samples: number;
     n_observations: number;
@@ -516,7 +537,9 @@ export interface AnalyticsData {
     occupancy_learned?: boolean;
     has_power_sensors?: boolean;
     power_now_kw?: number | null;
+    /** Heat the active power sensors add now (°C/h) */
     power_gain_now?: number;
+    power_sensors?: PowerSensorInfo[];
     solar_gain_now?: number;
     solar_gain_today_max?: number;
     /** Radiator rooms: rise a regular run's stored heat gives after the stop (°C), its decay time */

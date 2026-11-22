@@ -468,18 +468,41 @@ export class RsAnalyticsModel extends LitElement {
       });
     }
     if (model && m?.has_power_sensors) {
+      const sensors = m.power_sensors ?? [];
+      const used = sensors.some((s) => s.status === "active");
+      const power =
+        m.power_now_kw != null
+          ? `${formatNumber(Math.round(m.power_now_kw * 1000), this.hass)} W`
+          : null;
       tiles.push({
         id: "power_gain",
         icon: "mdi:flash",
-        value: `${delta(model.Q_power ?? 0, 1)} ${unit}/h·kW`,
-        // What the devices running now add, visible like before 2.0
+        // What the used sensors add now; pending while all still learn
+        value: used
+          ? rate(m.power_gain_now ?? 0)
+          : sensors.some((s) => s.status === "learning")
+            ? null
+            : localize("analytics.power_none_used", l),
         sub:
-          m.power_now_kw != null && m.power_gain_now != null
-            ? localize("analytics.power_gain_sub", l, {
-                power: `${formatNumber(Math.round(m.power_now_kw * 1000), this.hass)} W`,
-                gain: rate(m.power_gain_now),
-              })
-            : undefined,
+          power == null
+            ? undefined
+            : used
+              ? localize("analytics.power_gain_sub", l, {
+                  power,
+                  gain: rate(m.power_gain_now ?? 0),
+                })
+              : localize("analytics.power_now", l, { power }),
+        detail: sensors
+          .map((s) =>
+            localize(`analytics.power_sensor_${s.status}`, l, {
+              name: s.name,
+              gain: `${delta(s.gain, 1)} ${unit}/h·kW`,
+              improvement: formatNumber(Math.round(s.improvement * 100), this.hass),
+              windows: s.windows,
+              needed: s.windows_needed,
+            }),
+          )
+          .join(" · "),
       });
     }
     const bt = m?.backtest;

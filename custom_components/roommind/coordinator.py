@@ -2367,6 +2367,12 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             "q_residual": q_residual,
             "power_kw": round(power_kw, 3) if power_kw is not None else None,
             "device_heat": round(device_heat, 3) if device_heat is not None else None,
+            # Per power sensor: learning / active / no_effect (None without power sensors)
+            "power_sensor_status": (
+                {i["entity_id"]: i["status"] for i in self._power_gains.info(area_id)}
+                if device_heat is not None
+                else None
+            ),
             "n_observations": self._model_manager.get_n_observations(area_id),
             "blind_position": (self._cover_orchestrator.get_current_position(area_id) if cover_eids else None),
             "cover_auto_paused": (self._cover_orchestrator.is_user_override_active(area_id) if cover_eids else False),

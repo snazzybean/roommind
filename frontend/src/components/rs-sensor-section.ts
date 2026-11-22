@@ -283,7 +283,12 @@ export class RsSensorSection extends LitElement {
         );
       })}
       ${[...this.powerSensors].map((id) =>
-        this._row(id, "mdi:flash", localize("detail.sensors.power", l), this._powerValue(id)),
+        this._row(
+          id,
+          "mdi:flash",
+          [localize("detail.sensors.power", l), this._powerStatus(id)].filter(Boolean).join(" · "),
+          this._powerValue(id),
+        ),
       )}
     `;
   }
@@ -506,6 +511,12 @@ export class RsSensorSection extends LitElement {
     return [formatNumber(num, this.hass, 0, Math.abs(num) < 10 ? 2 : 0), unit]
       .filter(Boolean)
       .join("\u00a0");
+  }
+
+  /** Whether RoomMind uses the sensor: still learning, used, or of no effect (ignored). */
+  private _powerStatus(entityId: string): string {
+    const status = this.live?.power_sensor_status?.[entityId];
+    return status ? localize(`sensors.power_status_${status}`, this.hass.language) : "";
   }
 
   /** "350 W" / "1.2 kW", "" without a reading. */

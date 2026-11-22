@@ -306,6 +306,9 @@ class PowerGainLearner:
                     "windows": st.n,
                     "windows_needed": POWER_ACTIVE_MIN_WINDOWS,
                     "baseline_kw": round(st.baseline_kw, 3) if st.baseline_kw is not None else None,
+                    "power_kw": (
+                        round(st.baseline_kw + x, 3) if st.baseline_kw is not None and x is not None else None
+                    ),
                     "heat_now": round(room.gain[i] * x, 3) if active and x is not None else 0.0,
                 }
             )

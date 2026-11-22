@@ -426,6 +426,11 @@ async def build_analytics_data(
                 "occupancy_learned": _observed(est, _OCCUPANCY_STATE),
                 "has_power_sensors": bool(room_config.get("power_sensors")),
                 "power_now_kw": power_now_kw,
+                # Per sensor: learned gain, whether it is used (active), still learning or of no effect
+                "power_sensors": [
+                    {**info, "name": _entity_name(hass, info["entity_id"])}
+                    for info in coordinator._power_gains.info(area_id)
+                ],
                 # What the metered devices add now, as learned outside the model [degC/h]
                 "power_gain_now": round(coordinator.rooms.get(area_id, {}).get("device_heat") or 0.0, 3),
                 # Q_solar is the gain at full sun (1000 W/m²); these are what it means now and today
@@ -606,3 +611,10 @@ def _price_unit(hass: HomeAssistant, settings: dict) -> str:
     entity_id = settings.get("price_entity") or ""
     state = hass.states.get(entity_id) if entity_id else None
     return str(state.attributes.get("unit_of_measurement") or "") if state else ""
+
+
+def _entity_name(hass: HomeAssistant, entity_id: str) -> str:
+    """Friendly name of an entity, its id without one."""
+    state = hass.states.get(entity_id)
+    name = state.attributes.get("friendly_name") if state is not None else None
+    return str(name) if name else entity_id
