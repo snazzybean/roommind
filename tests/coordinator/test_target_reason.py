@@ -131,4 +131,7 @@ def test_presence_away_level_is_capped_by_the_schedule(hass, mock_config_entry):
     assert targets.heat == 18.0
     coordinator._resolve_schedule_targets = lambda *a: _targets(None, None)
     targets, _ = coordinator._resolve_target_temps_and_reason(room, settings)
-    assert (targets.heat, targets.cool) == (None, 27.0)
+    assert (targets.heat, targets.cool) == (None, None)
+    coordinator._resolve_schedule_targets = lambda *a: _targets(21.0, 24.0)
+    targets, _ = coordinator._resolve_target_temps_and_reason(room, settings, room_vacant=True)
+    assert targets.heat == 17.0

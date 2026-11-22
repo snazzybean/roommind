@@ -51,9 +51,28 @@ def test_away_never_asks_for_more_than_the_schedule():
 
 
 def test_away_keeps_a_side_off_that_the_schedule_has_off():
+    heat_off = lambda: TargetTemps(heat=None, cool=28.0)  # noqa: E731
+    assert away_target_temps(16.0, 26.0, 17.0, 27.0, heat_off) == TargetTemps(heat=None, cool=28.0)
+
+
+def test_away_stays_off_while_the_schedule_is_off():
+    """Schedule off with schedule_off_action off: devices stay off, also for an unset side."""
     off = lambda: TargetTemps(heat=None, cool=None)  # noqa: E731
-    assert away_target_temps(16.0, None, 17.0, 27.0, off) == TargetTemps(heat=None, cool=27.0)
-    assert away_target_temps(None, 29.0, 17.0, 27.0, off) == TargetTemps(heat=17.0, cool=None)
+    assert away_target_temps(16.0, None, 17.0, 27.0, off) == TargetTemps(heat=None, cool=None)
+    assert away_target_temps(None, 29.0, 17.0, 27.0, off) == TargetTemps(heat=None, cool=None)
+
+
+def test_away_in_an_empty_room_never_beats_occupancy_eco():
+    """Occupancy eco holds an empty room at eco 17; the last person leaving must not lift it to 19."""
+    days = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
+    block = [{"from": "00:00:00", "to": "23:59:59", "data": {"heat_temperature": 21.0}}]
+    base = {**_BASE, "eco_heat": 17.0, "schedule_blocks": {day: block for day in days}}
+    home = resolve_targets_at_time(time.time(), **base, room_vacant=True)
+    away = resolve_targets_at_time(
+        time.time(), **base, room_vacant=True, presence_away=True, presence_away_action="away", away_heat=19.0
+    )
+    assert home.heat == 17.0
+    assert away.heat == 17.0
 
 
 def test_resolve_targets_uses_away_levels():
@@ -112,4 +131,4 @@ def test_resolve_targets_caps_away_at_the_schedule_block():
     result = resolve_targets_at_time(
         time.time(), **off, presence_away=True, presence_away_action="away", schedule_off_action="off", away_heat=16.0
     )
-    assert result == TargetTemps(heat=None, cool=27.0)
+    assert result == TargetTemps(heat=None, cool=None)
