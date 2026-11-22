@@ -39,7 +39,6 @@ def _build_model_info(estimator: Any) -> dict[str, Any]:
         "beta_h": round(estimator._x[2], 4),
         "beta_c": round(estimator._x[3], 4),
         "beta_f": round(estimator._x[6], 4),
-        "beta_p": round(estimator._x[7], 4),
         "n_updates": estimator._n_updates,
         "n_idle": estimator._n_idle,
         "n_heating": estimator._n_heating,

@@ -199,7 +199,7 @@ class ResidualHeatLearner:
         q_occupancy: float,
         disturbed: bool,
         tau_minutes: float | None = None,
-        q_power: float = 0.0,
+        u_device: float = 0.0,
     ) -> float | None:
         """Advance one cycle. Returns a residual scale sample when an observation completes."""
         obs = self._obs.get(area_id)
@@ -232,7 +232,7 @@ class ResidualHeatLearner:
 
         mid = max(0.0, minutes_since_stop - dt_minutes / 2)
         # The metered devices' heat (power sensors) is no afterglow either
-        inputs = {"q_solar": q_solar, "q_occupancy": q_occupancy, "q_power": q_power}
+        inputs = {"q_solar": q_solar, "q_occupancy": q_occupancy, "u_device": u_device}
         base = model.predict(obs.T_prev, T_outdoor, 0.0, dt_minutes, **inputs)
         with_unit = model.predict(obs.T_prev, T_outdoor, 0.0, dt_minutes, q_residual=1.0, **inputs)
         excess = current_temp - base

@@ -53,7 +53,7 @@ class TestFlush:
             q_residual=0.0,
             q_occupancy=0.0,
             q_rebound=None,
-            q_power=0.0,
+            u_device=0.0,
         )
         assert "room1" not in mgr._accumulated_dt
         assert "room1" not in mgr._accumulated_mode
@@ -502,18 +502,18 @@ def _power_common(**overrides):
     return common
 
 
-def test_power_is_averaged_over_the_batch(mgr, model_manager):
+def test_device_heat_is_averaged_over_the_batch(mgr, model_manager):
     """A device switching within a batch counts with its share of the time."""
-    mgr.process("room1", current_temp=20.0, q_power=0.4, **_power_common())
+    mgr.process("room1", current_temp=20.0, u_device=0.4, **_power_common())
     model_manager.update.assert_not_called()
-    mgr.process("room1", current_temp=20.1, q_power=0.0, **_power_common())
-    assert model_manager.update.call_args.kwargs["q_power"] == pytest.approx(0.2)
+    mgr.process("room1", current_temp=20.1, u_device=0.0, **_power_common())
+    assert model_manager.update.call_args.kwargs["u_device"] == pytest.approx(0.2)
 
 
-def test_power_batch_mean_goes_with_a_mode_change_flush(mgr, model_manager):
-    mgr.process("room1", current_temp=20.0, q_power=0.3, **_power_common())
-    mgr.process("room1", current_temp=20.1, q_power=0.9, **_power_common(ekf_mode="heating", ekf_pf=1.0))
+def test_device_heat_batch_mean_goes_with_a_mode_change_flush(mgr, model_manager):
+    mgr.process("room1", current_temp=20.0, u_device=0.3, **_power_common())
+    mgr.process("room1", current_temp=20.1, u_device=0.9, **_power_common(ekf_mode="heating", ekf_pf=1.0))
     # the idle batch is flushed with its own mean, not the new reading
-    assert model_manager.update.call_args.kwargs["q_power"] == pytest.approx(0.3)
+    assert model_manager.update.call_args.kwargs["u_device"] == pytest.approx(0.3)
     mgr.clear("room1")
-    assert "room1" not in mgr._accumulated_power
+    assert "room1" not in mgr._accumulated_device

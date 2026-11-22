@@ -425,9 +425,9 @@ async def build_analytics_data(
                 "solar_learned": _observed(est, _SOLAR_STATE),
                 "occupancy_learned": _observed(est, _OCCUPANCY_STATE),
                 "has_power_sensors": bool(room_config.get("power_sensors")),
-                # Q_power is the gain per kW; this is what the devices running now add
                 "power_now_kw": power_now_kw,
-                "power_gain_now": round(rc.Q_power * (power_now_kw or 0.0), 3),
+                # What the metered devices add now, as learned outside the model [degC/h]
+                "power_gain_now": round(coordinator.rooms.get(area_id, {}).get("device_heat") or 0.0, 3),
                 # Q_solar is the gain at full sun (1000 W/m²); these are what it means now and today
                 "solar_gain_now": round(_solar_gain_now(coordinator, area_id, rc.Q_solar), 3),
                 "solar_gain_today_max": round(
@@ -557,7 +557,7 @@ async def build_analytics_data(
                         residual_scale=sim_scale,
                         residual_tau=sim_tau,
                         q_occupancy=sim_q_occupancy,
-                        q_power=coordinator.rooms.get(area_id, {}).get("power_kw") or 0.0,
+                        u_device=coordinator.rooms.get(area_id, {}).get("device_heat") or 0.0,
                         q_rebound=coordinator._rebound_tracker.get_charge(area_id),
                         previous_mode=sim_prev_mode,
                         mode_elapsed_minutes=sim_mode_elapsed,

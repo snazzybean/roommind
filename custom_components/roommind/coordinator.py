@@ -646,7 +646,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                                     if rs.get("solar_input") is None
                                     else rs["solar_input"]
                                 ),
-                                q_power=rs.get("power_kw") or 0.0,
+                                u_device=rs.get("device_heat") or 0.0,
                                 q_rebound=mean_rebound(
                                     self._rebound_tracker.get_charge(area_id), model.cooling_drive(Q), 3.0
                                 ),
@@ -1241,7 +1241,8 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             if power_sensors
             else None
         )
-        q_power = power_kw or 0.0
+        # Their learned heat [degC/h] is a known input to the model, not part of it
+        u_device = 0.0
 
         # Determine and apply mode with MPC controller
         controller = MPCController(
@@ -1269,7 +1270,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             heat_run=heat_run,
             shading_factor=shading_factor,
             q_occupancy=q_occupancy,
-            q_power=q_power,
+            u_device=u_device,
             q_rebound=q_rebound,
             previous_heat_sources=self._heat_source_states.get(area_id, "none"),
             head_offsets=self._head_offsets,
@@ -1560,7 +1561,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             run_power=self._residual_tracker.last_run_power(area_id),
             q_solar=self._current_q_solar * shading_factor if room_solar is None else room_solar.q_effective,
             q_occupancy=q_occupancy,
-            q_power=q_power,
+            u_device=u_device,
             # Only an undisturbed afterglow of RoomMind's own run, measured by the room sensor
             disturbed=(
                 window_open
@@ -1803,7 +1804,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             shading_factor=shading_factor,
             room_solar=room_solar,
             q_occupancy=q_occupancy,
-            q_power=q_power,
+            u_device=u_device,
             q_rebound=q_rebound,
             has_external_sensor=has_external_sensor,
             heat_source_plan=heat_source_plan,
@@ -1948,7 +1949,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         heat_source_plan: Any | None,
         room_solar: RoomSolar | None = None,
         q_rebound: float | None = None,
-        q_power: float = 0.0,
+        u_device: float = 0.0,
         climate_active: bool,
         coil_dry_skip_training: bool = False,
         supply_withheld: bool = False,
@@ -2111,7 +2112,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 dt_minutes=UPDATE_INTERVAL / 60.0,
                 q_occupancy=q_occupancy,
                 q_rebound=q_rebound,
-                q_power=q_power,
+                u_device=u_device,
             )
             self._note_model_inputs(
                 area_id, ekf_mode, ekf_pf, shading_factor, q_residual_training, q_occupancy, room_solar

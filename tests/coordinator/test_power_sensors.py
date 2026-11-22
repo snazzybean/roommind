@@ -39,8 +39,9 @@ async def test_power_sensors_reach_live_state_controller_and_training(hass, mock
         data = await coordinator._async_update_data()
     device_ids.assert_called_once_with(hass, room["devices"])
     assert data["rooms"][AREA]["power_kw"] == pytest.approx(0.3)
-    assert controller_cls.call_args.kwargs["q_power"] == pytest.approx(0.3)
-    assert process.call_args.kwargs["q_power"] == pytest.approx(0.3)
+    # The reading itself is no model input: only a learned effect is (none yet)
+    assert controller_cls.call_args.kwargs["u_device"] == 0.0
+    assert process.call_args.kwargs["u_device"] == 0.0
 
 
 @pytest.mark.asyncio

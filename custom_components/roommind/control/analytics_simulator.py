@@ -36,7 +36,7 @@ from .mpc_controller import (
     outdoor_gate_limits,
     valve_demand,
 )
-from .mpc_optimizer import MPCOptimizer, power_decay_series, preheat_max_blocks, slow_start_penalty
+from .mpc_optimizer import MPCOptimizer, device_heat_series, preheat_max_blocks, slow_start_penalty
 from .residual_heat import (
     advance_rebound,
     build_residual_series,
@@ -183,7 +183,7 @@ def simulate_prediction(
     q_rebound: float | None = None,
     run_system: str | None = None,
     outdoor_known: bool = True,
-    q_power: float = 0.0,
+    u_device: float = 0.0,
 ) -> list[float]:
     """Simulate temperature prediction for the analytics chart.
 
@@ -219,7 +219,7 @@ def simulate_prediction(
             q_rebound=q_rebound,
             run_system=rules,
             outdoor_known=outdoor_known,
-            q_power=q_power,
+            u_device=u_device,
         )
 
     return _simulate_bangbang(
@@ -242,7 +242,7 @@ def simulate_prediction(
         mode_elapsed_minutes=mode_elapsed_minutes,
         q_rebound=q_rebound,
         run_system=rules,
-        q_power=q_power,
+        u_device=u_device,
         capped=is_mpc_enabled(settings) and not is_slow_heat(get_min_run_blocks(rules, PLAN_DT_MINUTES)),
     )
 
@@ -273,7 +273,7 @@ def _idle_drift(
     q_residual: float,
     q_occupancy: float,
     charge: float | None,
-    q_power: float,
+    u_device: float,
     minutes: float,
 ) -> float:
     return model.predict(
@@ -284,7 +284,7 @@ def _idle_drift(
         q_solar=q_solar,
         q_residual=q_residual,
         q_occupancy=q_occupancy,
-        q_power=q_power,
+        u_device=u_device,
         q_rebound=None if charge is None else mean_rebound(charge, 0.0, minutes),
     )
 
@@ -297,7 +297,7 @@ def _continuation_power(
     q_residual: float,
     q_occupancy: float,
     charge: float | None,
-    q_power: float,
+    u_device: float,
     mode: str,
     target: float,
 ) -> float:
@@ -311,7 +311,7 @@ def _continuation_power(
         q_residual=q_residual,
         q_occupancy=q_occupancy,
         rebound_charge=charge,
-        q_power=q_power,
+        u_device=u_device,
     )
 
 
@@ -360,7 +360,7 @@ def _simulate_mpc(
     q_rebound: float | None = None,
     run_system: str | None = None,
     outdoor_known: bool = True,
-    q_power: float = 0.0,
+    u_device: float = 0.0,
 ) -> list[float]:
     """Rolling-horizon MPC simulation matching the real controller.
 
@@ -417,7 +417,7 @@ def _simulate_mpc(
     current_q_residual = q_residual
     charge = q_rebound
     # Metered devices fade over the forecast as the controller assumes (they may switch off)
-    power_all = power_decay_series(q_power, len(target_forecast), PLAN_DT_MINUTES)
+    device_all = device_heat_series(u_device, len(target_forecast), PLAN_DT_MINUTES)
     pred_temps: list[float] = []
 
     for i in range(len(target_forecast)):
@@ -425,7 +425,7 @@ def _simulate_mpc(
         h_tgt = target_forecast[i].get("heat_target", tgt)
         c_tgt = target_forecast[i].get("cool_target", tgt)
         qs = solar_series[i] if solar_series and i < len(solar_series) else 0.0
-        qp = power_all[i] if i < len(power_all) else 0.0
+        ud = device_all[i] if i < len(device_all) else 0.0
         T_out = outdoor_series[i]
 
         # Force idle when both targets are None (devices turned off)
@@ -494,7 +494,7 @@ def _simulate_mpc(
                 solar_series=remaining_solar,
                 residual_series=remaining_residual,
                 occupancy_series=[q_occupancy] * len(remaining_outdoor),
-                power_series=power_all[i : i + len(window)],
+                device_series=device_all[i : i + len(window)],
                 rebound_charge=charge,
                 initial_mode=prev_action,
                 heat_run=(
@@ -524,12 +524,12 @@ def _simulate_mpc(
                 can_heat=can_heat,
                 can_cool=can_cool,
                 heat_hysteresis=heat_hysteresis,
-                idle_drift=partial(_idle_drift, model, T, T_out, qs, current_q_residual, q_occupancy, charge, qp),
+                idle_drift=partial(_idle_drift, model, T, T_out, qs, current_q_residual, q_occupancy, charge, ud),
                 continuation_power=partial(
-                    _continuation_power, optimizer, T, T_out, qs, current_q_residual, q_occupancy, charge, qp
+                    _continuation_power, optimizer, T, T_out, qs, current_q_residual, q_occupancy, charge, ud
                 ),
                 valve_demand=(
-                    partial(valve_demand, model, T, T_out, q_solar=qs, q_occupancy=q_occupancy, q_power=qp)
+                    partial(valve_demand, model, T, T_out, q_solar=qs, q_occupancy=q_occupancy, u_device=ud)
                     if valve_modulating
                     else None
                 ),
@@ -548,7 +548,7 @@ def _simulate_mpc(
             q_solar=qs,
             q_residual=current_q_residual if Q == 0.0 else 0.0,
             q_occupancy=q_occupancy,
-            q_power=qp,
+            u_device=ud,
             q_rebound=None if charge is None or Q != 0.0 else mean_rebound(charge, 0.0, PLAN_DT_MINUTES),
         )
         if charge is not None:
@@ -615,7 +615,7 @@ def _simulate_bangbang(
     mode_elapsed_minutes: float | None = None,
     q_rebound: float | None = None,
     run_system: str | None = None,
-    q_power: float = 0.0,
+    u_device: float = 0.0,
     capped: bool = True,
 ) -> list[float]:
     """Bang-bang fallback simulation with mode stickiness + idle rate cap.
@@ -642,7 +642,7 @@ def _simulate_bangbang(
     sim_was_heating = False
     current_q_residual = q_residual
     charge = q_rebound
-    power_all = power_decay_series(q_power, len(target_forecast), 5.0)
+    device_all = device_heat_series(u_device, len(target_forecast), 5.0)
     pred_temps: list[float] = []
 
     for i, tf in enumerate(target_forecast):
@@ -691,7 +691,7 @@ def _simulate_bangbang(
             q_solar=qs,
             q_residual=current_q_residual if Q == 0.0 else 0.0,
             q_occupancy=q_occupancy,
-            q_power=power_all[i] if i < len(power_all) else 0.0,
+            u_device=device_all[i] if i < len(device_all) else 0.0,
             q_rebound=None if charge is None or Q != 0.0 else mean_rebound(charge, 0.0, 5.0),
         )
         if charge is not None:

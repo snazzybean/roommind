@@ -123,13 +123,13 @@ def test_missing_readings_are_skipped():
     assert points[50]["ts"] not in result.predicted
 
 
-def test_metered_device_power_is_a_model_input():
-    """Device heat (power sensors) is replayed from the recorded power_kw like the other inputs."""
-    model = RCModel(U=0.05, Q_heat=1.5, Q_cool=1.0, Q_solar=0.8, Q_occupancy=0.2, Q_power=2.0)
+def test_metered_device_heat_is_a_model_input():
+    """Device heat (power sensors) is replayed from the recorded device_heat like the other inputs."""
+    model = RCModel(U=0.05, Q_heat=1.5, Q_cool=1.0, Q_solar=0.8, Q_occupancy=0.2)
     points = []
     T = 20.0
     for k in range(73):
-        kw = 0.5 if (k // 12) % 2 == 0 else 0.0
+        heat = 1.0 if (k // 12) % 2 == 0 else 0.0
         points.append(
             {
                 "ts": 1_000_000.0 + k * 300.0,
@@ -140,10 +140,10 @@ def test_metered_device_power_is_a_model_input():
                 "model_solar": 0.0,
                 "model_residual": 0.0,
                 "model_occupancy": 0.0,
-                "power_kw": kw,
+                "device_heat": heat,
             }
         )
-        T = model.predict(T, 5.0, 0.0, 5.0, q_power=kw, q_rebound=0.0)
+        T = model.predict(T, 5.0, 0.0, 5.0, u_device=heat, q_rebound=0.0)
     assert backtest(points, model, 3.0).figures()["idle"]["mae"] < 0.01
-    without = [{**p, "power_kw": None} for p in points]
+    without = [{**p, "device_heat": None} for p in points]
     assert backtest(without, model, 3.0).figures()["idle"]["mae"] > 0.05
