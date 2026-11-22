@@ -4085,9 +4085,11 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         if action == "idle":
             # Without an on temperature the off one would stay on the thermostat when heating starts
             off_temperature = group.off_temperature if group.on_temperature is not None else None
-            mode = self._resolve_master_hvac_mode(
-                group.master_entity, "heat" if self._master_keeps_heat(group, off_temperature) else "idle"
-            )
+            keep_heat = self._master_keeps_heat(group, off_temperature)
+            mode = self._resolve_master_hvac_mode(group.master_entity, "heat" if keep_heat else "idle")
+            # The off temperature is a heating setpoint: a unit that cooled is only switched off
+            if not keep_heat and self._master_cooled(group):
+                off_temperature = None
             return (mode, off_temperature) if mode else None
         mode = self._resolve_master_hvac_mode(group.master_entity, action)
         return (mode, None) if mode else None
@@ -4109,6 +4111,14 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         if last is not None:
             return last == "heat"
         return "cool" not in state.attributes.get("hvac_modes", [])
+
+    def _master_cooled(self, group: CompressorGroupConfig) -> bool:
+        """Whether the master last ran cooling: sent cool last, or sits in a cooling mode."""
+        group_state = self._compressor_manager.get_state(group.id)
+        if group_state is not None and group_state.master_last_active == "cool":
+            return True
+        state = self.hass.states.get(group.master_entity)
+        return state is not None and state.state in ("cool", "dry", "fan_only")
 
     def _master_setpoint(self, state: Any, temperature: float) -> float:
         """*temperature* (stored in °C) in HA's unit, within the master thermostat's min_temp/max_temp."""
