@@ -3692,7 +3692,7 @@ class TestMasterOptionsFollowUp:
         assert coordinator._master_target(coordinator._compressor_manager.get_groups()["g1"], "idle")[0] == "heat"
         coordinator._compressor_manager.set_master_action("g1", "cool")
         coordinator._compressor_manager.set_master_action("g1", "idle")
-        assert coordinator._master_target(coordinator._compressor_manager.get_groups()["g1"], "idle") == ("off", 10)
+        assert coordinator._master_target(coordinator._compressor_manager.get_groups()["g1"], "idle") == ("off", None)
 
     @pytest.mark.asyncio
     async def test_a_master_without_setpoint_gets_none_and_is_switched_off(self, hass, mock_config_entry):
@@ -3723,7 +3723,15 @@ class TestMasterOptionsFollowUp:
         assert coordinator._master_target(cfg, "idle") == ("heat", 20)
         manager.set_master_action("g1", "cool")
         manager.set_master_action("g1", "idle")
-        assert coordinator._master_target(cfg, "idle") == ("off", 20)
+        assert coordinator._master_target(cfg, "idle") == ("off", None)
+
+    @pytest.mark.asyncio
+    async def test_a_master_that_cooled_gets_no_heating_off_temperature(self, hass, mock_config_entry):
+        group = _group("climate.hp", on_temperature=45, off_temperature=20)
+        state = _make_master_state("cool", ["off", "heat", "cool"])
+        state.attributes.update({"supported_features": 1, "temperature": 24})
+        await _run_group(hass, mock_config_entry, group, state, "22.0")
+        assert _master_calls(hass, "climate.hp") == [("climate", "set_hvac_mode", {"hvac_mode": "off"})]
 
     @pytest.mark.asyncio
     async def test_climate_control_off_forgets_a_running_start_delay(self, hass, mock_config_entry, monkeypatch):
