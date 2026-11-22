@@ -333,8 +333,7 @@ class CompressorGroupManager:
         if not readable:
             state.desired_action = None
             # A start delay or run-on counts only while the master can follow it
-            state.delay_wanted = None
-            state.delay_wanted_since = None
+            self.clear_delay(group_id)
         state.master_unreadable = not readable and group.enforce_uniform_mode
 
     def seed_last_mode(self, group_id: str, action: str) -> None:
@@ -371,22 +370,30 @@ class CompressorGroupManager:
         return applied, left
 
     def supply_withheld(self, entity_ids: Iterable[str], action: str) -> bool:
-        """Whether a group's rooms needed or start delay keeps its master from *action* for these units.
+        """Whether rooms needed or a start delay keeps the master from *action* for all these units.
 
-        Only groups using those options count: a unit of such a group asks for heat or cooling
-        its master does not supply yet, so the room gets none of it.
+        Only groups using those options count: when every unit that should bring the room heat or
+        cooling waits for such a master, the room gets none of it.
         """
-        for eid in entity_ids:
+        eids = list(entity_ids)
+        for eid in eids:
             gid = self._entity_to_group.get(eid)
             group = self._groups.get(gid) if gid is not None else None
             state = self._states.get(gid) if gid is not None else None
             if group is None or state is None or not (group.master_entity or group.action_script):
-                continue
+                return False
             if group.min_rooms <= 1 and group.start_delay_seconds <= 0:
-                continue
-            if state.master_action != action:
-                return True
-        return False
+                return False
+            if state.master_action == action:
+                return False
+        return bool(eids)
+
+    def clear_delay(self, group_id: str) -> None:
+        """Forget a pending start delay or run-on: a wish after a pause waits afresh."""
+        state = self._states.get(group_id)
+        if state is not None:
+            state.delay_wanted = None
+            state.delay_wanted_since = None
 
     def delay_pending(self, group_id: str) -> tuple[str, float] | None:
         """The switch a start delay or run-on holds back and its seconds left, else None."""
