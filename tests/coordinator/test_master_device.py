@@ -3443,12 +3443,12 @@ def _master_calls(hass, entity_id):
     ]
 
 
-async def _run_group(hass, mock_config_entry, group, master_state, temp, rooms=None, coordinator=None):
+async def _run_group(hass, mock_config_entry, group, master_state, temp, rooms=None, coordinator=None, extra=None):
     """One cycle with a heating (temp 18) or idle (temp 22) living room and the group's master."""
     rooms = rooms or {"living_room_abc12345": _room_with_device("living_room_abc12345", "climate.living_trv")}
     store = _make_store_mock(rooms)
     store.get_settings.return_value = {"climate_control_active": True, "compressor_groups": [group]}
-    base_get = make_mock_states_get(temp=temp)
+    base_get = make_mock_states_get(temp=temp, extra=extra)
     master = group["master_entity"]
     hass.states.get = MagicMock(side_effect=lambda eid: master_state if eid == master else base_get(eid))
     hass.services.async_call = AsyncMock()
@@ -3535,16 +3535,27 @@ class TestMasterOptions:
 
     @pytest.mark.asyncio
     async def test_rooms_needed_keeps_the_master_off_for_one_room(self, hass, mock_config_entry):
-        office = {**_room_with_device("office_abc12345", "climate.office_trv"), "climate_control_enabled": False}
+        # The office is warm enough: one room heats, two are needed
+        office = {**_room_with_device("office_abc12345", "climate.office_trv"), "temperature_sensor": "sensor.office"}
         rooms = {"living_room_abc12345": _room_with_device("living_room_abc12345", "climate.living_trv")}
         rooms["office_abc12345"] = office
         group = {**_group("switch.boiler", min_rooms=2), "members": ["climate.living_trv", "climate.office_trv"]}
-        await _run_group(hass, mock_config_entry, group, _switch_state("on"), "18.0", rooms=rooms)
+        extra = {"sensor.office": ("24.0", {"unit_of_measurement": "°C"})}
+        await _run_group(hass, mock_config_entry, group, _switch_state("on"), "18.0", rooms=rooms, extra=extra)
         assert _master_calls(hass, "switch.boiler") == [("switch", "turn_off", {})]
 
     @pytest.mark.asyncio
     async def test_rooms_needed_never_asks_for_more_rooms_than_the_group_has(self, hass, mock_config_entry):
         await _run_group(hass, mock_config_entry, _group("switch.boiler", min_rooms=3), _switch_state("off"), "18.0")
+        assert _master_calls(hass, "switch.boiler") == [("switch", "turn_on", {})]
+
+    @pytest.mark.asyncio
+    async def test_a_room_with_climate_control_off_is_not_needed(self, hass, mock_config_entry):
+        office = {**_room_with_device("office_abc12345", "climate.office_trv"), "climate_control_enabled": False}
+        rooms = {"living_room_abc12345": _room_with_device("living_room_abc12345", "climate.living_trv")}
+        rooms["office_abc12345"] = office
+        group = {**_group("switch.boiler", min_rooms=2), "members": ["climate.living_trv", "climate.office_trv"]}
+        await _run_group(hass, mock_config_entry, group, _switch_state("off"), "18.0", rooms=rooms)
         assert _master_calls(hass, "switch.boiler") == [("switch", "turn_on", {})]
 
     @pytest.mark.asyncio
@@ -3660,3 +3671,63 @@ class TestMasterOptionsFollowUp:
         coordinator._compressor_manager.load_groups([{**group, "off_mode": "off"}])
         coordinator._seed_uniform_modes()
         assert coordinator._compressor_manager.get_state("g1").last_mode_action == "heat"
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("off_mode", ["off", "temperature"])
+    async def test_an_off_temperature_without_an_on_temperature_is_ignored(self, hass, mock_config_entry, off_mode):
+        group = _group("climate.boiler", off_temperature=10, off_mode=off_mode)
+        await _run_group(hass, mock_config_entry, group, _climate_state("heat", 60), "22.0")
+        assert _master_calls(hass, "climate.boiler") == [("climate", "set_hvac_mode", {"hvac_mode": "off"})]
+
+    @pytest.mark.asyncio
+    async def test_after_cooling_the_master_is_switched_off_not_kept_in_heat(self, hass, mock_config_entry):
+        group = _group("climate.boiler", on_temperature=60, off_temperature=10, off_mode="temperature")
+        hass.data = {"roommind": {"store": _make_store_mock({})}}
+        hass.states.get = MagicMock(return_value=_climate_state("heat", 60))
+        coordinator = _create_coordinator(hass, mock_config_entry)
+        coordinator._compressor_manager.load_groups([group])
+        assert coordinator._master_target(coordinator._compressor_manager.get_groups()["g1"], "idle")[0] == "heat"
+        coordinator._compressor_manager.set_master_action("g1", "cool")
+        coordinator._compressor_manager.set_master_action("g1", "idle")
+        assert coordinator._master_target(coordinator._compressor_manager.get_groups()["g1"], "idle") == ("off", 10)
+
+    @pytest.mark.asyncio
+    async def test_a_master_without_setpoint_gets_none(self, hass, mock_config_entry):
+        await _run_group(
+            hass, mock_config_entry, _group("climate.boiler", on_temperature=60), _climate_state("heat"), "18.0"
+        )
+        assert _master_calls(hass, "climate.boiler") == []
+
+    @pytest.mark.asyncio
+    async def test_climate_control_off_forgets_a_running_start_delay(self, hass, mock_config_entry, monkeypatch):
+        monkeypatch.setattr("custom_components.roommind.coordinator.async_call_later", lambda *_a: lambda: None)
+        group = _group("switch.boiler", start_delay_seconds=120)
+        coordinator = await _run_group(hass, mock_config_entry, group, _switch_state("off"), "22.0")
+        await _run_group(hass, mock_config_entry, group, _switch_state("off"), "18.0", coordinator=coordinator)
+        assert coordinator._compressor_manager.delay_pending("g1") is not None
+        await coordinator._async_control_master_devices({}, {}, {"climate_control_active": False})
+        assert coordinator._compressor_manager.delay_pending("g1") is None
+
+    @pytest.mark.asyncio
+    async def test_waiting_counts_only_the_devices_that_heat(self, hass, mock_config_entry):
+        from custom_components.roommind.managers.heat_source_orchestrator import DeviceCommand, HeatSourcePlan
+
+        room = {
+            "devices": [
+                {"entity_id": "climate.trv", "type": "trv"},
+                {"entity_id": "climate.ac", "type": "ac"},
+            ]
+        }
+        hass.data = {"roommind": {"store": _make_store_mock({})}}
+        coordinator = _create_coordinator(hass, mock_config_entry)
+        ac_only = HeatSourcePlan(
+            commands=[
+                DeviceCommand("climate.trv", "primary", "thermostat", False, 0.0, ""),
+                DeviceCommand("climate.ac", "secondary", "ac", True, 1.0, ""),
+            ],
+            active_sources="secondary",
+            reason="",
+        )
+        assert coordinator._delivering_eids(room, "heating", ac_only) == ["climate.ac"]
+        assert coordinator._delivering_eids(room, "heating", None) == ["climate.trv", "climate.ac"]
+        assert coordinator._delivering_eids(room, "cooling", None) == ["climate.ac"]

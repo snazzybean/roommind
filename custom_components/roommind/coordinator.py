@@ -2025,7 +2025,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         learning_active = area_id not in learning_disabled
         # Valves open while the group's boiler waits for more rooms or its start delay: no heat comes
         supply_withheld = ekf_mode in (MODE_HEATING, MODE_COOLING) and self._compressor_manager.supply_withheld(
-            get_all_entity_ids(room.get("devices", [])), "heat" if ekf_mode == MODE_HEATING else "cool"
+            self._delivering_eids(room, ekf_mode, heat_source_plan), "heat" if ekf_mode == MODE_HEATING else "cool"
         )
         if (
             learning_active
@@ -3585,13 +3585,24 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         return modes
 
     @staticmethod
+    def _delivering_eids(room: dict, mode: str, heat_source_plan: HeatSourcePlan | None) -> list[str]:
+        """Devices that bring the room its heating or cooling this cycle."""
+        devices = room.get("devices", [])
+        if mode == MODE_COOLING:
+            return get_ac_eids(devices)
+        if heat_source_plan is not None and heat_source_plan.commands:
+            return [c.entity_id for c in heat_source_plan.commands if c.active]
+        return get_trv_eids(devices) if ac_heating_excluded(room) else get_all_entity_ids(devices)
+
+    @staticmethod
     def _member_room_count(members: list[str], rooms_config: dict[str, dict]) -> int:
-        """Rooms holding a device of the group: rooms needed never asks for more (at least 1)."""
+        """Controlled rooms holding a device of the group: rooms needed never asks for more (at least 1)."""
         member_set = set(members)
         count = sum(
             1
             for room in rooms_config.values()
             if not room.get("is_outdoor", False)
+            and room.get("climate_control_enabled", True)
             and member_set & {d.get("entity_id", "") for d in room.get("devices", [])}
         )
         return max(1, count)
@@ -3903,6 +3914,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         if not settings.get("climate_control_active", True):
             for gid in self._compressor_manager.get_groups():
                 self._compressor_manager.set_desired_action(gid, None)
+                self._compressor_manager.clear_delay(gid)
             return
         for gid, group in self._compressor_manager.get_groups().items():
             if not group.master_entity and not group.action_script and not group.enforce_uniform_mode:
@@ -4047,7 +4059,8 @@ class RoomMindCoordinator(DataUpdateCoordinator):
 
         A switch or input_boolean is on for heat and cool. A climate master gets the
         mode, heating with its on temperature; off sets its off temperature first, or,
-        with off mode "temperature", keeps the heat mode at the off temperature.
+        with off mode "temperature", keeps the heat mode at the off temperature (not after
+        cooling). The off temperature counts only together with an on temperature.
         None when the climate master supports no fitting mode.
         """
         if group.master_domain != "climate":
@@ -4056,11 +4069,16 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             mode = self._resolve_master_hvac_mode(group.master_entity, "heat")
             return (mode, group.on_temperature) if mode else None
         if action == "idle":
-            if group.off_mode == MASTER_OFF_MODE_TEMPERATURE and group.off_temperature is not None:
-                mode = self._resolve_master_hvac_mode(group.master_entity, "heat")
-            else:
-                mode = self._resolve_master_hvac_mode(group.master_entity, "idle")
-            return (mode, group.off_temperature) if mode else None
+            # Without an on temperature the off one would stay on the thermostat when heating starts
+            off_temperature = group.off_temperature if group.on_temperature is not None else None
+            state = self._compressor_manager.get_state(group.id)
+            keep_heat = (
+                group.off_mode == MASTER_OFF_MODE_TEMPERATURE
+                and off_temperature is not None
+                and (state is None or state.last_mode_action != "cool")
+            )
+            mode = self._resolve_master_hvac_mode(group.master_entity, "heat" if keep_heat else "idle")
+            return (mode, off_temperature) if mode else None
         mode = self._resolve_master_hvac_mode(group.master_entity, action)
         return (mode, None) if mode else None
 
@@ -4082,7 +4100,8 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         mode, temperature = target
         if state.state != mode:
             return False
-        if temperature is None or mode == "off":
+        # Without a setpoint attribute the thermostat takes none: sending one every cycle changes nothing
+        if temperature is None or mode == "off" or state.attributes.get("temperature") is None:
             return True
         try:
             step = float(

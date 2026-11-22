@@ -325,13 +325,14 @@ export class RsSettingsCompressor extends RsSettingsBase {
                   .label=${localize("compressor.off_temperature", l)}
                   .min=${5}
                   .max=${90}
+                  .disabled=${group.on_temperature == null}
                   .value=${group.off_temperature ?? null}
                   @value-changed=${optional("off_temperature")}
                 ></rs-number-field>
               </div>
               <span class="field-hint">${localize("compressor.temperatures_hint", l)}</span>
               ${
-                group.off_temperature != null
+                group.on_temperature != null && group.off_temperature != null
                   ? html`<rs-field .label=${localize("compressor.off_mode", l)}>
                       <rs-segmented
                         wrap

@@ -4275,3 +4275,15 @@ async def test_save_settings_compressor_master_option_defaults_are_not_stored(ws
     saved = store.get_settings()["compressor_groups"][0]
     for key in ("min_rooms", "start_delay_seconds", "run_on_seconds", "on_temperature", "off_temperature", "off_mode"):
         assert key not in saved
+
+
+@pytest.mark.asyncio
+async def test_save_settings_compressor_master_not_roommind_itself(ws_hass, store, connection):
+    """RoomMind's own switches cannot be a main device: idle would switch RoomMind off."""
+    await store.async_load()
+    group = {"id": "g1", "name": "G", "members": ["climate.trv1"], "master_entity": "switch.roommind_climate_control"}
+    validated = websocket_save_settings._ws_schema(
+        {"id": 33, "type": "roommind/settings/save", "compressor_groups": [group]}
+    )
+    await _save_settings(ws_hass, connection, validated)
+    assert connection.send_error.call_args[0][1] == "invalid_master_entity"

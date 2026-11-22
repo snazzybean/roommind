@@ -1104,7 +1104,9 @@ async def websocket_save_settings(
         for g in groups:
             master = g.get("master_entity", "")
             if master:
-                if master.split(".", 1)[0] not in MASTER_ENTITY_DOMAINS:
+                domain, _, object_id = master.partition(".")
+                # RoomMind's own entities (e.g. its climate control switch) would switch RoomMind itself
+                if domain not in MASTER_ENTITY_DOMAINS or object_id.startswith("roommind_"):
                     connection.send_error(
                         msg["id"],
                         "invalid_master_entity",
