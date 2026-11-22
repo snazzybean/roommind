@@ -3630,9 +3630,9 @@ class TestMasterOptions:
 
 class TestMasterOptionsFollowUp:
     @pytest.mark.asyncio
-    @pytest.mark.parametrize(("options", "trained"), [({"start_delay_seconds": 120}, False), ({}, True)])
-    async def test_a_room_waiting_for_the_boiler_does_not_train(
-        self, hass, mock_config_entry, monkeypatch, options, trained
+    @pytest.mark.parametrize(("options", "learned"), [({"start_delay_seconds": 120}, "idle"), ({}, "heating")])
+    async def test_a_room_waiting_for_the_boiler_learns_no_heat(
+        self, hass, mock_config_entry, monkeypatch, options, learned
     ):
         monkeypatch.setattr("custom_components.roommind.coordinator.async_call_later", lambda *_a: lambda: None)
         group = _group("switch.boiler", **options)
@@ -3640,7 +3640,7 @@ class TestMasterOptionsFollowUp:
         coordinator._ekf_training.process = MagicMock()
         coordinator._resolve_outdoor_temp = MagicMock(return_value=(5.0, "sensor"))
         await _run_group(hass, mock_config_entry, group, _switch_state("off"), "18.0", coordinator=coordinator)
-        assert coordinator._ekf_training.process.called is trained
+        assert coordinator._ekf_training.process.call_args.kwargs["ekf_mode"] == learned
 
     @pytest.mark.asyncio
     async def test_setpoints_are_sent_in_fahrenheit(self, hass, mock_config_entry):
@@ -3760,9 +3760,7 @@ class TestMasterOptionsFollowUp:
         assert coordinator._delivering_eids(room, "cooling", None) == ["climate.ac"]
 
     @pytest.mark.asyncio
-    async def test_an_ac_sitting_heating_out_does_not_keep_the_room_training(
-        self, hass, mock_config_entry, monkeypatch
-    ):
+    async def test_an_ac_sitting_heating_out_does_not_count_as_heat(self, hass, mock_config_entry, monkeypatch):
         monkeypatch.setattr("custom_components.roommind.coordinator.async_call_later", lambda *_a: lambda: None)
         room = _room_with_device("living_room_abc12345", "climate.living_trv")
         room["devices"] = [*room["devices"], {"entity_id": "climate.living_ac", "type": "ac", "role": "auto"}]
@@ -3775,4 +3773,4 @@ class TestMasterOptionsFollowUp:
         await _run_group(
             hass, mock_config_entry, group, _switch_state("off"), "18.0", rooms=rooms, coordinator=coordinator
         )
-        assert not coordinator._ekf_training.process.called
+        assert coordinator._ekf_training.process.call_args.kwargs["ekf_mode"] == "idle"

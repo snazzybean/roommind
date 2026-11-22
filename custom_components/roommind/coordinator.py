@@ -1997,6 +1997,14 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 ekf_pf = 0.0
                 q_residual_training = 0.0
 
+        # Valves open while the group's boiler waits for more rooms or its start delay: no heat comes
+        if ekf_mode in (MODE_HEATING, MODE_COOLING) and self._compressor_manager.supply_withheld(
+            self._delivering_eids(room, ekf_mode, heat_source_plan), "heat" if ekf_mode == MODE_HEATING else "cool"
+        ):
+            ekf_mode = MODE_IDLE
+            ekf_pf = 0.0
+            q_residual_training = 0.0
+
         # Delivered power as the training label (not the commanded one): a TRV's own
         # P band or an AC's control loop runs at (nearly) full output from pf ~0.1 on,
         # so commanded-pf labels inflated beta_h 3-30x in the simulation.
@@ -2032,13 +2040,8 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         # cooling, so training that window as idle would drift alpha (spec 9.3).
         learning_disabled = settings.get("learning_disabled_rooms", [])
         learning_active = area_id not in learning_disabled
-        # Valves open while the group's boiler waits for more rooms or its start delay: no heat comes
-        supply_withheld = ekf_mode in (MODE_HEATING, MODE_COOLING) and self._compressor_manager.supply_withheld(
-            self._delivering_eids(room, ekf_mode, heat_source_plan), "heat" if ekf_mode == MODE_HEATING else "cool"
-        )
         if (
             learning_active
-            and not supply_withheld
             and not coil_dry_skip_training
             and not ac_drying
             and hold_running is None
