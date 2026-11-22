@@ -1,0 +1,14 @@
+description: Compressor dehumidifier, ~0.4 kg/h at 20 °C / 60 % RH, less as the air gets drier or colder; optional own hygrostat.
+model: dehumidifier
+params:
+  rated_kg_h: 0.4      # at rated_temp_c / rated_rh
+  rated_temp_c: 20
+  rated_rh: 60
+  coil_temp_c: 5       # no extraction once the humidity ratio is below saturation at the coil
+  max_factor: 1.5      # cap in very humid, warm air
+  power_w: 300         # all of it plus the condensation heat ends up in the room
+  min_off_s: 180       # compressor restart delay
+  target_humidity: null  # device hygrostat in % (null = runs while on)
+  hysteresis_pct: 2
+  min_humidity: 30
+  max_humidity: 80

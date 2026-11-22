@@ -1,0 +1,7 @@
+description: Ceiling or standing fan with three speeds; motor heat, faster radiator output, slightly better air-to-wall mixing.
+model: room_fan
+params:
+  speed_count: 3       # fan.* only; percentage steps of 33/67/100
+  power_w: 40          # at full speed, scales with the percentage
+  radiator_boost: 1.3  # radiator output factor at full speed (forced convection, 1.2-1.4)
+  mixing_boost: 0.1    # +10 % air-to-mass coupling at full speed

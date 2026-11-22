@@ -56,6 +56,12 @@ def write_report(run: RunData, summary: dict[str, Any]) -> Path:
         parts.append(
             f"<h3>Wärme-/Kälteleistung der Geräte (W, negativ = Kühlen)</h3><div class='chart' id='power-{area}'></div>"
         )
+        if run.scenario.rooms[area].appliances:
+            parts.append(
+                f"<h3>Luftfeuchte (%) und laufende Geräte (100 = läuft)</h3><div class='chart' id='rh-{area}'></div>"
+            )
+        if any(s.kind == "solar" for s in run.scenario.rooms[area].sensors):
+            parts.append(f"<h3>Sonnensensoren (gemeldeter Wert)</h3><div class='chart' id='solar-{area}'></div>")
     parts.append(_events_table(run, tz))
     uplot_js = (ASSETS / "uPlot.iife.min.js").read_text()
     uplot_css = (ASSETS / "uPlot.min.css").read_text()
@@ -116,6 +122,8 @@ def _metrics_tables(metrics: dict[str, Any]) -> str:
         + table("Räume", metrics["rooms"])
         + table("Geräte", metrics["devices"])
         + table("Behänge", metrics.get("covers", {}))
+        + table("Lüfter, Ent- und Befeuchter", metrics.get("appliances", {}))
+        + table("Sonnensensoren", metrics.get("sensors", {}))
         + table("Thermisches Modell (RoomMind EKF vs. Simulation)", metrics["model"])
     )
 
@@ -158,6 +166,18 @@ def _series(run: RunData) -> dict[str, Any]:
             "devices": {
                 d.entity_id: [s["devices"].get(d.entity_id, {}).get("heat_w") for s in picked] for d in room.devices
             },
+            "rh": [s["rooms"][area].get("rh") for s in picked],
+            "appliances": {
+                a.entity_id: [
+                    100 if (s.get("appliances") or {}).get(a.entity_id, {}).get("running") else 0 for s in picked
+                ]
+                for a in room.appliances
+            },
+            "solar": {
+                x.entity_id: [(s.get("solar_sensors") or {}).get(x.entity_id) for s in picked]
+                for x in room.sensors
+                if x.kind == "solar"
+            },
         }
     for e in run.events:
         if e["type"] in ("mark", "action") or (e["type"] == "ha" and e.get("what") != "provisioned"):
@@ -191,5 +211,10 @@ for(const [area,r] of Object.entries(DATA.rooms)){
   [r.t_air,r.heat,r.cool,r.pred,DATA.outdoor]);
  const devs=Object.entries(r.devices);
  mk('power-'+area,devs.map(([e],i)=>({label:e,stroke:v(pal[i%4]),width:2})),devs.map(([,s])=>s));
+ const apps=Object.entries(r.appliances);
+ mk('rh-'+area,[{label:'rF (wahr)',stroke:v('--s1'),width:2},...apps.map(([e],i)=>({label:e,stroke:v(pal[(i+1)%4]),width:1.5}))],
+  [r.rh,...apps.map(([,s])=>s)]);
+ const sol=Object.entries(r.solar);
+ mk('solar-'+area,sol.map(([e],i)=>({label:e,stroke:v(pal[i%4]),width:2})),sol.map(([,s])=>s));
 }
 """

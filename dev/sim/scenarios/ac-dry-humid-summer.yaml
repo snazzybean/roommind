@@ -1,0 +1,53 @@
+name: ac-dry-humid-summer
+description: >
+  A split AC with a dry mode dries a muggy room while its temperature sits inside the band
+  (#440): living room 20 m², north window, comfort 21-24 °C, upper humidity limit 60 %, no
+  dehumidifier. Day 0 a warm wet day (23 °C, 90 %): the room stays in its band without cooling,
+  RoomMind runs the AC in dry. Day 1 cooler and still wet (19 °C, 95 %): dry pulls the room down
+  to 21.5 °C and ends there; the AC must not swing between dry and heating. Limit at 00:01
+  through rooms/save (v2.0.1 rejects it and never dries).
+refs: [440]
+tags: [humidity, ac]
+start: 2026-07-14T00:00
+duration: 2d
+location: {latitude: 52.5, longitude: 13.4, time_zone: Europe/Berlin}
+weather: {profile: temperate}
+house:
+  building: bestand_teilsaniert
+  outdoor:
+    sensors: {temperature: sensor.aussen_temp}
+  rooms:
+    wohnzimmer:
+      name: Wohnzimmer
+      floor_area_m2: 20
+      initial: {temperature: 22.5, humidity: 70}
+      windows: [{orientation: N, area_m2: 2}]
+      devices: [{entity_id: climate.wz_split, profile: generic_split_ac, cool_capacity_w: 2500}]
+      sensors:
+        temperature: {entity_id: sensor.wz_temp}
+        humidity: {entity_id: sensor.wz_feuchte}
+roommind:
+  settings:
+    outdoor_temp_sensor: sensor.aussen_temp
+  rooms:
+    wohnzimmer:
+      devices: [{entity_id: climate.wz_split, type: ac}]
+      temperature_sensor: sensor.wz_temp
+      humidity_sensor: sensor.wz_feuchte
+      climate_mode: auto
+      comfort_heat: 21.0
+      comfort_cool: 24.0
+timeline:
+  - {at: "+0d00h00m", do: weather.set, temperature: 23, humidity: 90, for: 24h}
+  - {at: "+0d00h01m", do: roommind.ws, type: roommind/rooms/save, area_id: wohnzimmer, humidity_max: 60}
+  - {at: "+1d00h00m", do: weather.set, temperature: 19, humidity: 95, for: 24h}
+expect:
+  - {invariant: no_rejected_commands}
+  # 2026-11-19 seed 1: RH >= 70 % 48.0 h (v2.0.1, no dry) -> 11.2 h, mean 81.8 -> 63.6 %; dry pulls
+  # the room to 21.55 °C at the lowest (stop 21.5); 12.5 starts/day, shortest run 24 min, 4.1 kWh.
+  # Without the pause after the stop point the air was back at 22 °C within 4 min: 15 restarts
+  - {metric: room.rh_over_70_h, room: wohnzimmer, max: 20, label: dry brings the room under 70 %}
+  - {metric: room.temp_min, room: wohnzimmer, min: 21.3, label: dry ends above the heat target}
+  - {metric: comfort.undershoot_kh, room: wohnzimmer, max: 0.1, label: no heating needed after drying}
+  - {metric: device.starts_per_day, entity_id: climate.wz_split, max: 20}
+  - {metric: device.shortest_run_min, entity_id: climate.wz_split, min: 10}

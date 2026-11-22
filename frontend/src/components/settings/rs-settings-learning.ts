@@ -18,6 +18,7 @@ import {
 } from "../../utils/learning";
 import "../shared/rs-icon-button";
 import "../shared/rs-confirm-dialog";
+import "../shared/rs-info-icon";
 
 const STATE_KEYS: Record<LearningState, TranslationKey> = {
   outdoor: "settings.learning_state.outdoor",
@@ -63,11 +64,12 @@ export class RsSettingsLearning extends RsSettingsBase {
           switch
           wrap
           .heading=${localize("settings.learning_switch", l)}
-          .secondary=${localize("settings.learning_hint", l)}
           .checked=${learningActive}
           @toggle-changed=${(e: CustomEvent<boolean>) =>
             this._fire("learningDisabledRooms", e.detail ? [] : learnIds)}
-        ></rs-list-row>
+        >
+          <rs-info-icon slot="end" .text=${localize("settings.learning_hint", l)}></rs-info-icon>
+        </rs-list-row>
       </div>
 
       <div class="settings-section">

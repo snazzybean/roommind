@@ -51,6 +51,14 @@ def clear_sky_peak_today(latitude: float, longitude: float, now: float) -> float
     )
 
 
+def _solar_gain_now(coordinator: Any, area_id: str, q_solar_gain: float) -> float:
+    """Solar gain now: the room's sun sensor input, else the weather model behind the covers."""
+    live = coordinator.rooms.get(area_id, {})
+    if live.get("solar_input") is not None:
+        return float(q_solar_gain * live["solar_input"])
+    return float(q_solar_gain * coordinator._current_q_solar * live.get("shading_factor", 1.0))
+
+
 def _afterglow_figures(room_config: dict, est: Any, q_heat: float, acs_can_heat: bool) -> dict:
     """What the radiators' stored heat does after a regular run (radiator rooms only).
 
@@ -222,6 +230,8 @@ async def _compute_target_forecast(
             schedule_off_action=settings.get("schedule_off_action", "eco"),
             presence_clears_override=bool(settings.get("presence_clears_override", False)),
             room_vacant=room_vacant,
+            away_heat=room.get("away_heat"),
+            away_cool=room.get("away_cool"),
         )
         targets, (shift_heat, shift_cool) = price_shifted(
             targets, ts, room, settings, price_signal, presence_away=presence_away, room_vacant=room_vacant
@@ -419,12 +429,7 @@ async def build_analytics_data(
                 "power_now_kw": power_now_kw,
                 "power_gain_now": round(rc.Q_power * (power_now_kw or 0.0), 3),
                 # Q_solar is the gain at full sun (1000 W/m²); these are what it means now and today
-                "solar_gain_now": round(
-                    rc.Q_solar
-                    * coordinator._current_q_solar
-                    * coordinator.rooms.get(area_id, {}).get("shading_factor", 1.0),
-                    3,
-                ),
+                "solar_gain_now": round(_solar_gain_now(coordinator, area_id, rc.Q_solar), 3),
                 "solar_gain_today_max": round(
                     rc.Q_solar * clear_sky_peak_today(hass.config.latitude, hass.config.longitude, time.time()),
                     3,
@@ -493,6 +498,7 @@ async def build_analytics_data(
                     coordinator._weather_manager._outdoor_forecast,
                     len(target_forecast),
                     shading_factor=_shading,
+                    room_solar=coordinator.room_solar(area_id),
                 )
                 # Residual heat state for analytics simulation
                 system_type = room_config.get("heating_system_type", "")

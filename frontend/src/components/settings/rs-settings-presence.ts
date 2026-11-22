@@ -4,17 +4,18 @@
 import { html, css, nothing } from "lit";
 import { RsSettingsBase } from "./rs-settings-base";
 import { customElement, property } from "lit/decorators.js";
-import type { HomeAssistant } from "../../types";
+import type { HomeAssistant, PresenceAwayAction } from "../../types";
 import { localize } from "../../utils/localize";
 import "../shared/rs-segmented";
 import "../shared/rs-icon-button";
+import "../shared/rs-info-icon";
 
 @customElement("rs-settings-presence")
 export class RsSettingsPresence extends RsSettingsBase {
   @property({ attribute: false }) public hass!: HomeAssistant;
   @property({ type: Boolean }) public presenceEnabled = false;
   @property({ type: Array }) public presencePersons: string[] = [];
-  @property({ type: String }) public presenceAwayAction: "eco" | "off" = "eco";
+  @property({ type: String }) public presenceAwayAction: PresenceAwayAction = "eco";
   @property({ type: Boolean }) public presenceClearsOverride = false;
 
   render() {
@@ -93,6 +94,11 @@ export class RsSettingsPresence extends RsSettingsBase {
                       icon: "mdi:leaf",
                     },
                     {
+                      value: "away",
+                      label: localize("presence.away_action_away", l),
+                      icon: "mdi:home-export-outline",
+                    },
+                    {
                       value: "off",
                       label: localize("presence.away_action_off", l),
                       icon: "mdi:power",
@@ -100,7 +106,7 @@ export class RsSettingsPresence extends RsSettingsBase {
                   ]}
                   .value=${this.presenceAwayAction}
                   @value-changed=${(e: CustomEvent<{ value: string }>) => {
-                    const val = e.detail.value as "eco" | "off";
+                    const val = e.detail.value as PresenceAwayAction;
                     if (val && val !== this.presenceAwayAction)
                       this._fire("presenceAwayAction", val);
                   }}
@@ -111,11 +117,15 @@ export class RsSettingsPresence extends RsSettingsBase {
                   switch
                   wrap
                   .heading=${localize("presence.clears_override_label", l)}
-                  .secondary=${localize("presence.clears_override_hint", l)}
                   .checked=${this.presenceClearsOverride}
                   @toggle-changed=${(e: CustomEvent<boolean>) =>
                     this._fire("presenceClearsOverride", e.detail)}
-                ></rs-list-row>
+                >
+                  <rs-info-icon
+                    slot="end"
+                    .text=${localize("presence.clears_override_hint", l)}
+                  ></rs-info-icon>
+                </rs-list-row>
               </div>
             `
           : nothing

@@ -1,0 +1,22 @@
+name: ac-dry-cooling-day
+extends: ac-dry-humid-summer
+description: >
+  The muggy room on hot days (31 °C, 60 %, south window): it needs cooling every afternoon
+  (#440). Cooling comes first and dries on its own; dry only fills the idle stretches in
+  between and at night, it must not cut the cooling runs short or add short runs.
+refs: [440]
+house:
+  rooms:
+    wohnzimmer:
+      windows: [{orientation: S, area_m2: 4}]
+timeline:
+  - {at: "+0d00h00m", do: weather.set, temperature: 31, humidity: 60, for: 48h}
+  - {at: "+0d00h01m", do: roommind.ws, type: roommind/rooms/save, area_id: wohnzimmer, humidity_max: 60}
+expect:
+  - {invariant: no_rejected_commands}
+  # 2026-11-19 seed 1 vs v2.0.1: RH >= 70 % 19.0 -> 0.2 h, starts 66 -> 60/day, commands 8.9 -> 8.2/h,
+  # electricity +14 %, overshoot 0.91 -> 0.74 Kh. Model over 6 days unchanged (beta_c ratio 0.92 vs 0.82,
+  # alpha 0.0146 vs 0.0143); training through the 30 min after dry gave beta_c ratio 4.7, beta_s 3.1 vs 1.2
+  - {metric: room.rh_over_70_h, room: wohnzimmer, max: 3}
+  - {metric: comfort.overshoot_kh, room: wohnzimmer, max: 1.5, label: cooling still holds the cool target}
+  - {metric: device.starts_per_day, entity_id: climate.wz_split, max: 70, label: no more starts than cooling alone}

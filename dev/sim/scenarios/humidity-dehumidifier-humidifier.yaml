@@ -1,0 +1,92 @@
+name: humidity-dehumidifier-humidifier
+description: >
+  Sim physics only, no RoomMind logic for these devices yet. Winter, three rooms:
+  a basement kept at 16 °C with laundry drying (background moisture) and a dehumidifier as
+  humidifier.* (device class dehumidifier, own hygrostat at 55 %); a utility room with a plain
+  dehumidifier on a smart plug (switch.*, no hygrostat) that an automation stand-in runs
+  10:00-16:00; a heated bedroom with a humidifier as humidifier.* (own hygrostat at 45 %).
+  Day 2 the basement unit is switched off by hand at 12:00 (device.manual) and the bedroom
+  target goes to 50 % through humidifier.set_humidity.
+tags: [humidity, appliances, demo]
+refs: [518, 526]
+start: 2026-01-12T00:00
+duration: 3d
+location: {latitude: 52.5, longitude: 13.4, time_zone: Europe/Berlin}
+weather: {profile: temperate}
+house:
+  building: bestand_teilsaniert
+  outdoor:
+    sensors: {temperature: sensor.aussen_temp, humidity: sensor.aussen_feuchte}
+  rooms:
+    keller:
+      name: Keller
+      floor_area_m2: 14
+      exterior_wall_m2: 6
+      initial: {temperature: 16.0, humidity: 70}
+      thermal: {base_moisture_g_h_per_m2: 6}  # laundry drying, ~85 g/h
+      # kept at 16 °C by its own TRV, not managed by RoomMind
+      devices: [{entity_id: climate.keller_trv, profile: generic_trv, initial_mode: heat, initial_target_c: 16}]
+      appliances:
+        - {entity_id: humidifier.keller_entfeuchter, profile: dehumidifier, target_humidity: 55, initial_on: true}
+      sensors:
+        humidity: {entity_id: sensor.keller_feuchte}
+    hwr:
+      name: Hauswirtschaftsraum
+      floor_area_m2: 8
+      exterior_wall_m2: 5
+      initial: {temperature: 16.0, humidity: 70}
+      thermal: {base_moisture_g_h_per_m2: 6}
+      devices: [{entity_id: climate.hwr_trv, profile: generic_trv, initial_mode: heat, initial_target_c: 16}]
+      appliances:
+        - {entity_id: switch.hwr_entfeuchter, profile: dehumidifier}
+      sensors:
+        humidity: {entity_id: sensor.hwr_feuchte}
+    schlafzimmer:
+      name: Schlafzimmer
+      floor_area_m2: 16
+      exterior_wall_m2: 11
+      initial: {temperature: 20.0, humidity: 35}
+      thermal: {ach_infiltration: 0.7}
+      windows: [{orientation: N, area_m2: 1.8}]
+      devices: [{entity_id: climate.schlafzimmer_trv, profile: generic_trv}]
+      appliances:
+        - {entity_id: humidifier.sz_befeuchter, profile: humidifier, target_humidity: 45, initial_on: true}
+      sensors:
+        temperature: {entity_id: sensor.schlafzimmer_temp}
+        humidity: {entity_id: sensor.schlafzimmer_feuchte}
+roommind:
+  settings:
+    outdoor_temp_sensor: sensor.aussen_temp
+    outdoor_humidity_sensor: sensor.aussen_feuchte
+  rooms:
+    schlafzimmer:
+      devices: [{entity_id: climate.schlafzimmer_trv, type: trv, heating_system_type: radiator}]
+      temperature_sensor: sensor.schlafzimmer_temp
+      humidity_sensor: sensor.schlafzimmer_feuchte
+      climate_mode: heat_only
+      comfort_temp: 20.0
+      eco_temp: 18.0
+timeline:
+  - {at: "+0d10h", do: ha.service, service: switch.turn_on, data: {entity_id: switch.hwr_entfeuchter}}
+  - {at: "+0d16h", do: ha.service, service: switch.turn_off, data: {entity_id: switch.hwr_entfeuchter}}
+  - {at: "+1d10h", do: ha.service, service: switch.turn_on, data: {entity_id: switch.hwr_entfeuchter}}
+  - {at: "+1d16h", do: ha.service, service: switch.turn_off, data: {entity_id: switch.hwr_entfeuchter}}
+  - {at: "+2d10h", do: ha.service, service: switch.turn_on, data: {entity_id: switch.hwr_entfeuchter}}
+  - {at: "+2d16h", do: ha.service, service: switch.turn_off, data: {entity_id: switch.hwr_entfeuchter}}
+  - {at: "+1d12h", do: device.manual, entity_id: humidifier.keller_entfeuchter, state: "off"}
+  - {at: "+1d00h", do: ha.service, service: humidifier.set_humidity, data: {entity_id: humidifier.sz_befeuchter, humidity: 50}}
+expect:
+  - {metric: appliance.rejected_commands, entity_id: humidifier.keller_entfeuchter, max: 0}
+  - {metric: appliance.rejected_commands, entity_id: switch.hwr_entfeuchter, max: 0}
+  - {metric: appliance.rejected_commands, entity_id: humidifier.sz_befeuchter, max: 0}
+  - {metric: appliance.manual_switches, entity_id: humidifier.keller_entfeuchter, min: 1, max: 1}
+  - {metric: appliance.commands, entity_id: switch.hwr_entfeuchter, min: 6, max: 6}
+  - {check: "state('humidifier.keller_entfeuchter') == 'off'", at: "+1d13h", label: hand-off shows in HA}
+  - {check: "appliance('humidifier.sz_befeuchter').target_rh == 50", at: "+1d01h", label: set_humidity reached the device}
+  # physics, 2026-11-18 seed 1: basement 53-57 % while the hygrostat runs, 71 % two days after the hand-off;
+  # bedroom 44-46 % at target 45, 48-50 % at target 50; plug unit ~0.05 kg/h at 16 °C (cold coil)
+  - {check: "50 < rh('keller') < 58", at: "+1d11h", label: device hygrostat holds the basement near 55 %}
+  - {check: "rh('keller') > 65", at: "+2d18h", label: switched off by hand the basement gets damp again}
+  - {check: "42 < rh('schlafzimmer') < 48", at: "+0d18h", label: humidifier holds 45 %}
+  - {check: "47 < rh('schlafzimmer') < 53", at: "+1d18h", label: humidifier holds the new 50 %}
+  - {metric: appliance.moisture_added_kg, entity_id: humidifier.sz_befeuchter, min: 3, max: 8}

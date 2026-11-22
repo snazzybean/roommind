@@ -1,0 +1,9 @@
+description: Ultrasonic room humidifier, ~0.3 kg/h; the mist evaporates in the room air and cools it; optional own hygrostat.
+model: humidifier
+params:
+  rated_kg_h: 0.3
+  power_w: 30
+  target_humidity: null  # device hygrostat in % (null = runs while on)
+  hysteresis_pct: 2
+  min_humidity: 30
+  max_humidity: 80

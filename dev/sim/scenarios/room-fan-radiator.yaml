@@ -1,0 +1,87 @@
+name: room-fan-radiator
+description: >
+  Sim physics only, no RoomMind logic for room fans yet. Three identical radiator rooms
+  with the same comfort target: Raum A has a ceiling fan as fan.* (3 speeds), Raum B a standing
+  fan on a smart plug (switch.*), Raum C none (reference). An automation stand-in runs both
+  fans every day 06:00-22:00 (fan.* at 67 %); on day 2 a hand switches the ceiling fan off at
+  12:00 (device.manual). A running fan raises the radiator's convective output (factor 1.3 at
+  full speed), so the radiator cools down faster after a heating run; its motor adds 40 W.
+tags: [trv, appliances, demo]
+refs: [266]
+start: 2026-01-12T00:00
+duration: 2d
+location: {latitude: 52.5, longitude: 13.4, time_zone: Europe/Berlin}
+weather: {profile: temperate}
+house:
+  building: bestand_teilsaniert
+  outdoor: {sensors: {temperature: sensor.aussen_temp}}
+  rooms:
+    raum_a:
+      name: Raum A
+      floor_area_m2: 18
+      exterior_wall_m2: 10
+      initial: {temperature: 19.0}
+      windows: [{orientation: N, area_m2: 1.8}]
+      devices: [{entity_id: climate.raum_a_trv, profile: generic_trv}]
+      appliances: [{entity_id: fan.raum_a_decke, profile: ceiling_fan}]
+      sensors: {temperature: {entity_id: sensor.raum_a_temp}}
+    raum_b:
+      name: Raum B
+      floor_area_m2: 18
+      exterior_wall_m2: 10
+      initial: {temperature: 19.0}
+      windows: [{orientation: N, area_m2: 1.8}]
+      devices: [{entity_id: climate.raum_b_trv, profile: generic_trv}]
+      appliances: [{entity_id: switch.raum_b_ventilator, profile: ceiling_fan, power_w: 50}]
+      sensors: {temperature: {entity_id: sensor.raum_b_temp}}
+    raum_c:
+      name: Raum C
+      floor_area_m2: 18
+      exterior_wall_m2: 10
+      initial: {temperature: 19.0}
+      windows: [{orientation: N, area_m2: 1.8}]
+      devices: [{entity_id: climate.raum_c_trv, profile: generic_trv}]
+      sensors: {temperature: {entity_id: sensor.raum_c_temp}}
+helpers:
+  schedule:
+    plan: {weekdays: ["06:00-08:00", "17:00-22:00"], weekend: ["08:00-22:00"]}
+roommind:
+  settings:
+    outdoor_temp_sensor: sensor.aussen_temp
+  rooms:
+    raum_a: &room
+      devices: [{entity_id: climate.raum_a_trv, type: trv, heating_system_type: radiator}]
+      temperature_sensor: sensor.raum_a_temp
+      climate_mode: heat_only
+      schedules: [{entity_id: schedule.plan}]
+      comfort_temp: 21.0
+      eco_temp: 18.0
+    raum_b:
+      <<: *room
+      devices: [{entity_id: climate.raum_b_trv, type: trv, heating_system_type: radiator}]
+      temperature_sensor: sensor.raum_b_temp
+    raum_c:
+      <<: *room
+      devices: [{entity_id: climate.raum_c_trv, type: trv, heating_system_type: radiator}]
+      temperature_sensor: sensor.raum_c_temp
+timeline:
+  # never two items at the same instant: their order (and the event log) would vary between runs
+  - {at: "+0d06h", do: ha.service, service: fan.turn_on, data: {entity_id: fan.raum_a_decke, percentage: 67}}
+  - {at: "+0d06h01m", do: ha.service, service: switch.turn_on, data: {entity_id: switch.raum_b_ventilator}}
+  - {at: "+0d22h", do: ha.service, service: fan.turn_off, data: {entity_id: fan.raum_a_decke}}
+  - {at: "+0d22h01m", do: ha.service, service: switch.turn_off, data: {entity_id: switch.raum_b_ventilator}}
+  - {at: "+1d06h", do: ha.service, service: fan.turn_on, data: {entity_id: fan.raum_a_decke, percentage: 67}}
+  - {at: "+1d06h01m", do: ha.service, service: switch.turn_on, data: {entity_id: switch.raum_b_ventilator}}
+  - {at: "+1d12h", do: device.manual, entity_id: fan.raum_a_decke, state: "off"}
+  - {at: "+1d22h", do: ha.service, service: switch.turn_off, data: {entity_id: switch.raum_b_ventilator}}
+# physics, 2026-11-18 seed 1, day 1 07:30 with all valves open: radiator A 34.8 °C / 536 W,
+# B 34.4 °C / 554 W, C 35.9 °C / 491 W; after the stop at 08:00 radiator A is at 23.3 °C after
+# 40 min. RoomMind runs the three rooms differently (C heats on until 09:00), so the per-room
+# totals are not a clean comparison; tests/test_appliances.py isolates the effect.
+expect:
+  - {metric: appliance.rejected_commands, entity_id: fan.raum_a_decke, max: 0}
+  - {metric: appliance.rejected_commands, entity_id: switch.raum_b_ventilator, max: 0}
+  - {metric: appliance.starts, entity_id: fan.raum_a_decke, min: 2, max: 2}
+  - {metric: appliance.manual_switches, entity_id: fan.raum_a_decke, min: 1, max: 1}
+  - {check: "appliance('fan.raum_a_decke').pct == 67 and state('fan.raum_a_decke') == 'on'", at: "+0d07h", label: fan runs at 67 %}
+  - {check: "state('fan.raum_a_decke') == 'off'", at: "+1d13h", label: hand-off shows in HA}

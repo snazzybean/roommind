@@ -43,6 +43,12 @@ def dew_point(temp: float, rh: float) -> float:
     return (_B * gamma) / (_A - gamma)
 
 
+def absolute_humidity(temp: float, rh: float) -> float:
+    """Water vapour in the air in g/m³ (Magnus saturation pressure, ideal gas)."""
+    e_sat = 6.112 * math.exp((_A * temp) / (_B + temp))
+    return 216.7 * (max(0.0, min(rh, 100.0)) / 100.0) * e_sat / (273.15 + temp)
+
+
 def surface_rh(t_dew: float, t_surface: float) -> float:
     """Calculate relative humidity at a surface.
 

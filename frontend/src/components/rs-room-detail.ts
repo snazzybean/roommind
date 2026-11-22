@@ -10,6 +10,8 @@ import type {
   DeviceConfig,
   DeviceType,
   DeviceRole,
+  RoomFanMode,
+  PresenceAwayAction,
 } from "../types";
 import "./room-detail/rs-room-hero";
 import "./rs-schedule-settings";
@@ -112,6 +114,14 @@ const ROOM_FIELDS: [string, RoomFieldSync][] = [
   ["voc_sensor", plain("_vocSensor", (c) => c?.voc_sensor ?? "")],
   ["voc_threshold", plain("_vocThreshold", (c) => c?.voc_threshold ?? null)],
   ["ventilation_entity", plain("_ventilationEntity", (c) => c?.ventilation_entity ?? "")],
+  ["humidity_max", plain("_humidityMax", (c) => c?.humidity_max ?? null)],
+  ["humidity_min", plain("_humidityMin", (c) => c?.humidity_min ?? null)],
+  ["dehumidifier_entity", plain("_dehumidifierEntity", (c) => c?.dehumidifier_entity ?? "")],
+  ["humidifier_entity", plain("_humidifierEntity", (c) => c?.humidifier_entity ?? "")],
+  ["solar_sensor", plain("_solarSensor", (c) => c?.solar_sensor ?? "")],
+  ["room_fan_entity", plain("_roomFanEntity", (c) => c?.room_fan_entity ?? "")],
+  ["room_fan_mode", plain("_roomFanMode", (c) => c?.room_fan_mode ?? "both")],
+  ["ac_dry_enabled", plain("_acDryEnabled", (c) => c?.ac_dry_enabled ?? true)],
   ["preheat_enabled", plain("_preheatEnabled", (c) => c?.preheat_enabled ?? true)],
   [
     "follow_device_setpoint",
@@ -131,6 +141,8 @@ const ROOM_FIELDS: [string, RoomFieldSync][] = [
   ["comfort_cool", plain("_comfortCool", (c) => c?.comfort_cool ?? 24.0)],
   ["eco_heat", plain("_ecoHeat", (c) => c?.eco_heat ?? c?.eco_temp ?? 17.0)],
   ["eco_cool", plain("_ecoCool", (c) => c?.eco_cool ?? 27.0)],
+  ["away_heat", plain("_awayHeat", (c) => c?.away_heat ?? null)],
+  ["away_cool", plain("_awayCool", (c) => c?.away_cool ?? null)],
   [
     "presence_persons",
     {
@@ -228,7 +240,7 @@ export class RsRoomDetail extends LitElement {
   @property({ type: Boolean }) public climateControlActive = true;
   /** Global: what rooms do while their schedule is off / everybody is away. */
   @property({ type: String }) public scheduleOffAction: "eco" | "off" = "eco";
-  @property({ type: String }) public presenceAwayAction: "eco" | "off" = "eco";
+  @property({ type: String }) public presenceAwayAction: PresenceAwayAction = "eco";
 
   @property({ type: Boolean }) public valveProtectionEnabled = false;
   @property({ type: String }) public controlMode: "mpc" | "bangbang" = "mpc";
@@ -256,6 +268,14 @@ export class RsRoomDetail extends LitElement {
   @state() private _vocSensor = "";
   @state() private _vocThreshold: number | null = null;
   @state() private _ventilationEntity = "";
+  @state() private _humidityMax: number | null = null;
+  @state() private _humidityMin: number | null = null;
+  @state() private _dehumidifierEntity = "";
+  @state() private _humidifierEntity = "";
+  @state() private _solarSensor = "";
+  @state() private _roomFanEntity = "";
+  @state() private _roomFanMode: RoomFanMode = "both";
+  @state() private _acDryEnabled = true;
   @state() private _selectedWindowSensors: Set<string> = new Set();
   @state() private _windowOpenDelay = 0;
   @state() private _windowCloseDelay = 0;
@@ -265,6 +285,8 @@ export class RsRoomDetail extends LitElement {
   @state() private _comfortHeat = 21.0;
   @state() private _comfortCool = 24.0;
   @state() private _ecoHeat = 17.0;
+  @state() private _awayHeat: number | null = null;
+  @state() private _awayCool: number | null = null;
   @state() private _ecoCool = 27.0;
   @state() private _error = "";
   @state() private _dirty = false;
@@ -542,6 +564,7 @@ export class RsRoomDetail extends LitElement {
             .outdoorTemp=${this.outdoorTemp}
             .vacationActive=${this.vacationActive}
             .vacationUntil=${this.vacationUntil}
+            .presenceAwayAction=${this.presenceAwayAction}
             @display-name-changed=${this._onDisplayNameChanged}
           >
             ${
@@ -664,6 +687,8 @@ export class RsRoomDetail extends LitElement {
           .comfortCool=${this._comfortCool}
           .ecoHeat=${this._ecoHeat}
           .ecoCool=${this._ecoCool}
+          .awayHeat=${this._awayHeat}
+          .awayCool=${this._awayCool}
           .climateMode=${this._climateMode}
           .scheduleTempWarnings=${live?.schedule_temp_warnings ?? []}
           .preheatEnabled=${this._preheatEnabled}
@@ -792,6 +817,16 @@ export class RsRoomDetail extends LitElement {
         .vocSensor=${this._vocSensor}
         .vocThreshold=${this._vocThreshold}
         .ventilationEntity=${this._ventilationEntity}
+        .humidityMax=${this._humidityMax}
+        .humidityMin=${this._humidityMin}
+        .dehumidifierEntity=${this._dehumidifierEntity}
+        .humidifierEntity=${this._humidifierEntity}
+        .solarSensor=${this._solarSensor}
+        .roomFanEntity=${this._roomFanEntity}
+        .roomFanMode=${this._roomFanMode}
+        .roomFanChoice=${this._roomFanChoice()}
+        .acDryEnabled=${this._acDryEnabled}
+        .acDryChoice=${this._acDryChoice()}
         .live=${this.config?.live}
         .windowSensors=${this._selectedWindowSensors}
         .windowOpenDelay=${this._windowOpenDelay}
@@ -896,7 +931,12 @@ export class RsRoomDetail extends LitElement {
         return html`<rs-edit-dialog
           open
           icon="mdi:thermometer"
-          .heading=${localize("detail.schedule.dialog_temps", lang)}
+          .heading=${localize(
+            this.presenceAwayAction === "away"
+              ? "detail.schedule.dialog_temps_away"
+              : "detail.schedule.dialog_temps",
+            lang,
+          )}
           hasInfo
           .error=${this._error}
           @rs-dialog-closed=${this._closeEdit}
@@ -908,7 +948,12 @@ export class RsRoomDetail extends LitElement {
             .comfortCool=${this._comfortCool}
             .ecoHeat=${this._ecoHeat}
             .ecoCool=${this._ecoCool}
+            .showAway=${this.presenceAwayAction === "away"}
+            .awayHeat=${this._awayHeat}
+            .awayCool=${this._awayCool}
             .climateMode=${this._climateMode}
+            @away-heat-changed=${this._onAwayHeatChanged}
+            @away-cool-changed=${this._onAwayCoolChanged}
             @comfort-heat-changed=${this._onComfortHeatChanged}
             @comfort-cool-changed=${this._onComfortCoolChanged}
             @eco-heat-changed=${this._onEcoHeatChanged}
@@ -988,6 +1033,16 @@ export class RsRoomDetail extends LitElement {
             .vocSensor=${this._vocSensor}
             .vocThreshold=${this._vocThreshold}
             .ventilationEntity=${this._ventilationEntity}
+            .humidityMax=${this._humidityMax}
+            .humidityMin=${this._humidityMin}
+            .dehumidifierEntity=${this._dehumidifierEntity}
+            .humidifierEntity=${this._humidifierEntity}
+            .solarSensor=${this._solarSensor}
+            .roomFanEntity=${this._roomFanEntity}
+            .roomFanMode=${this._roomFanMode}
+            .roomFanChoice=${this._roomFanChoice()}
+            .acDryEnabled=${this._acDryEnabled}
+            .acDryChoice=${this._acDryChoice()}
             .live=${this.config?.live}
             .windowSensors=${this._selectedWindowSensors}
             .windowOpenDelay=${this._windowOpenDelay}
@@ -1244,6 +1299,21 @@ export class RsRoomDetail extends LitElement {
     this._autoSave();
   }
 
+  /** The away level starts from eco: the first change on one side fixes both. */
+  private _onAwayHeatChanged(e: CustomEvent<{ value: number }>) {
+    this._awayHeat = e.detail.value;
+    this._awayCool ??= this._ecoCool;
+    if (this._awayCool < this._awayHeat) this._awayCool = this._awayHeat;
+    this._autoSave();
+  }
+
+  private _onAwayCoolChanged(e: CustomEvent<{ value: number }>) {
+    this._awayCool = e.detail.value;
+    this._awayHeat ??= this._ecoHeat;
+    if (this._awayHeat > this._awayCool) this._awayHeat = this._awayCool;
+    this._autoSave();
+  }
+
   private _onDeviceChanged(e: CustomEvent<{ devices: DeviceConfig[] }>) {
     const oldDeviceIds = new Set(this._devices.map((d) => d.entity_id));
     this._devices = e.detail.devices;
@@ -1268,6 +1338,24 @@ export class RsRoomDetail extends LitElement {
     }
 
     this._autoSave();
+  }
+
+  /** Heating or cooling only, or both: a choice only where the room can do both (#266). */
+  private _roomFanChoice(): boolean {
+    return this._climateMode === "auto" && this._devices.some((d) => d.type === "ac");
+  }
+
+  /**
+   * AC dry is offered where it can run: room sensor, not heat only, an AC listing `dry` (#440).
+   * Once switched off it stays visible while the room has an AC, so it can be switched back on.
+   */
+  private _acDryChoice(): boolean {
+    if (!this._selectedTempSensor || this._climateMode === "heat_only") return false;
+    return this._devices.some((d) => {
+      if (d.type !== "ac") return false;
+      const modes = this.hass.states[d.entity_id]?.attributes?.hvac_modes;
+      return !this._acDryEnabled || (Array.isArray(modes) && modes.includes("dry"));
+    });
   }
 
   private _onSensorChanged(
@@ -1296,6 +1384,22 @@ export class RsRoomDetail extends LitElement {
       this._vocThreshold = value as number | null;
     } else if (key === "ventilation_entity") {
       this._ventilationEntity = value as string;
+    } else if (key === "humidity_max") {
+      this._humidityMax = value as number | null;
+    } else if (key === "humidity_min") {
+      this._humidityMin = value as number | null;
+    } else if (key === "dehumidifier_entity") {
+      this._dehumidifierEntity = value as string;
+    } else if (key === "humidifier_entity") {
+      this._humidifierEntity = value as string;
+    } else if (key === "solar_sensor") {
+      this._solarSensor = value as string;
+    } else if (key === "room_fan_entity") {
+      this._roomFanEntity = value as string;
+    } else if (key === "room_fan_mode") {
+      this._roomFanMode = value as RoomFanMode;
+    } else if (key === "ac_dry_enabled") {
+      this._acDryEnabled = value as boolean;
     } else if (key === "window_sensors") {
       this._selectedWindowSensors = new Set(value as string[]);
     } else if (key === "window_open_delay") {

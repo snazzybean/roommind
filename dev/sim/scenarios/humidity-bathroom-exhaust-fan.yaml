@@ -1,0 +1,104 @@
+name: humidity-bathroom-exhaust-fan
+description: >
+  Sim physics only, no RoomMind logic for the fans yet. Two identical north-facing bathrooms,
+  a shower (450 g in 15 min) at 07:00 in both every day. Bad 1 has an exhaust fan as fan.*
+  (80 m³/h) that draws its make-up air from the heated hall (makeup_room), Bad 2 the same fan
+  on a smart plug as switch.* with outdoor make-up air (the default). An automation stand-in
+  (ha.service) runs the fan.* 07:15-07:45 on day 1; on day 2 a hand at the device switches it
+  off after 10 min (device.manual, no command); on day 3 it stays off. The switch.* fan in
+  Bad 2 runs 07:15-08:15 every day. Shows the air exchange: moisture out to the outdoor air
+  and the extra heat loss the TRV has to cover.
+tags: [humidity, appliances, demo]
+refs: [518, 526]
+start: 2026-01-12T00:00
+duration: 3d
+location: {latitude: 52.5, longitude: 13.4, time_zone: Europe/Berlin}
+weather: {profile: winter-cold}
+house:
+  building: altbau_unsaniert
+  outdoor:
+    sensors: {temperature: sensor.aussen_temp, humidity: sensor.aussen_feuchte}
+  rooms:
+    bad:
+      name: Bad
+      floor_area_m2: 6
+      exterior_wall_m2: 7
+      initial: {temperature: 21.0, humidity: 60}
+      windows: [{orientation: N, area_m2: 0.6}]
+      devices: [{entity_id: climate.bad_trv, profile: generic_trv}]
+      appliances:
+        - {entity_id: fan.bad_luefter, profile: exhaust_fan, airflow_m3_h: 80, makeup_room: flur}
+      sensors:
+        temperature: {entity_id: sensor.bad_temp}
+        humidity: {entity_id: sensor.bad_feuchte}
+    bad2:
+      name: Bad 2
+      floor_area_m2: 6
+      exterior_wall_m2: 7
+      initial: {temperature: 21.0, humidity: 60}
+      windows: [{orientation: N, area_m2: 0.6}]
+      devices: [{entity_id: climate.bad2_trv, profile: generic_trv}]
+      appliances:
+        - {entity_id: switch.bad2_luefter, profile: exhaust_fan, airflow_m3_h: 80}
+      sensors:
+        temperature: {entity_id: sensor.bad2_temp}
+        humidity: {entity_id: sensor.bad2_feuchte}
+    flur:
+      name: Flur
+      floor_area_m2: 8
+      exterior_wall_m2: 2
+      initial: {temperature: 20.0, humidity: 30}
+      neighbors: {bad: closed_door}
+      # heats on its own TRV, not managed by RoomMind
+      devices: [{entity_id: climate.flur_trv, profile: generic_trv, initial_mode: heat, initial_target_c: 20}]
+roommind:
+  settings:
+    outdoor_temp_sensor: sensor.aussen_temp
+    outdoor_humidity_sensor: sensor.aussen_feuchte
+  rooms:
+    bad:
+      devices: [{entity_id: climate.bad_trv, type: trv, heating_system_type: radiator}]
+      temperature_sensor: sensor.bad_temp
+      humidity_sensor: sensor.bad_feuchte
+      climate_mode: heat_only
+      comfort_temp: 22.0
+      eco_temp: 19.0
+    bad2:
+      devices: [{entity_id: climate.bad2_trv, type: trv, heating_system_type: radiator}]
+      temperature_sensor: sensor.bad2_temp
+      humidity_sensor: sensor.bad2_feuchte
+      climate_mode: heat_only
+      comfort_temp: 22.0
+      eco_temp: 19.0
+timeline:
+  # never two items at the same instant: their order (and the event log) would vary between runs
+  - {at: "+0d07h", do: humidity.event, room: bad, grams: 450, for: 15m}
+  - {at: "+0d07h01m", do: humidity.event, room: bad2, grams: 450, for: 15m}
+  - {at: "+1d07h", do: humidity.event, room: bad, grams: 450, for: 15m}
+  - {at: "+1d07h01m", do: humidity.event, room: bad2, grams: 450, for: 15m}
+  - {at: "+2d07h", do: humidity.event, room: bad, grams: 450, for: 15m}
+  - {at: "+2d07h01m", do: humidity.event, room: bad2, grams: 450, for: 15m}
+  # Bad: automation day 1, hand-off day 2, nothing day 3
+  - {at: "+0d07h15m", do: ha.service, service: fan.turn_on, data: {entity_id: fan.bad_luefter}}
+  - {at: "+0d07h45m", do: ha.service, service: fan.turn_off, data: {entity_id: fan.bad_luefter}}
+  - {at: "+1d07h15m", do: ha.service, service: fan.turn_on, data: {entity_id: fan.bad_luefter}}
+  - {at: "+1d07h25m", do: device.manual, entity_id: fan.bad_luefter, state: "off"}
+  # Bad 2: plug on for an hour every day
+  - {at: "+0d07h16m", do: ha.service, service: switch.turn_on, data: {entity_id: switch.bad2_luefter}}
+  - {at: "+0d08h16m", do: ha.service, service: switch.turn_off, data: {entity_id: switch.bad2_luefter}}
+  - {at: "+1d07h16m", do: ha.service, service: switch.turn_on, data: {entity_id: switch.bad2_luefter}}
+  - {at: "+1d08h16m", do: ha.service, service: switch.turn_off, data: {entity_id: switch.bad2_luefter}}
+  - {at: "+2d07h16m", do: ha.service, service: switch.turn_on, data: {entity_id: switch.bad2_luefter}}
+  - {at: "+2d08h16m", do: ha.service, service: switch.turn_off, data: {entity_id: switch.bad2_luefter}}
+expect:
+  - {metric: appliance.rejected_commands, entity_id: fan.bad_luefter, max: 0}
+  - {metric: appliance.rejected_commands, entity_id: switch.bad2_luefter, max: 0}
+  - {metric: appliance.commands, entity_id: fan.bad_luefter, min: 3, max: 3}
+  - {metric: appliance.manual_switches, entity_id: fan.bad_luefter, min: 1, max: 1}
+  - {metric: appliance.starts, entity_id: fan.bad_luefter, min: 2, max: 2}
+  - {metric: appliance.starts, entity_id: switch.bad2_luefter, min: 3, max: 3}
+  - {check: "appliance('fan.bad_luefter').on == false and state('fan.bad_luefter') == 'off'", at: "+1d07h30m", label: the hand switched it off}
+  - {check: "appliance('switch.bad2_luefter').running == true and state('switch.bad2_luefter') == 'on'", at: "+1d07h30m", label: plug fan runs}
+  # physics, 2026-11-18 seed 1: day 1 07:45 Bad 39 % / 21.0 °C, Bad 2 45 % / 17.3 °C; day 3 08:15 Bad 48 %, Bad 2 30 %
+  - {check: "rh('bad') < rh('bad2') - 3 and true_temp('bad2') < true_temp('bad') - 2", at: "+0d07h45m", label: make-up air from the hall dries more and cools less than outdoor air}
+  - {check: "rh('bad') > rh('bad2') + 10", at: "+2d08h15m", label: without the fan the shower moisture stays}

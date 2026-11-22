@@ -3,13 +3,15 @@
  */
 import { html, css, nothing } from "lit";
 import { RsSettingsBase } from "./rs-settings-base";
-import "../shared/rs-number-field";
+import { numberRow } from "../shared/number-row";
 import { customElement, property } from "lit/decorators.js";
 import type { HomeAssistant } from "../../types";
 import { localize, type TranslationKey } from "../../utils/localize";
 import { getSelectValue } from "../../utils/events";
 import { fanModeLabel, type FanModeOption } from "../../utils/device-utils";
 import "../shared/rs-segmented";
+import "../shared/rs-info-icon";
+import "../shared/rs-field";
 
 const KEEP = "__keep__";
 
@@ -35,17 +37,16 @@ export class RsSettingsCoilDry extends RsSettingsBase {
     max: number,
   ) {
     const l = this.hass.language;
-    return html`
-      <rs-number-field
-        .label=${localize(labelKey, l)}
-        .suffix=${localize(suffixKey, l)}
-        .hint=${localize(hintKey, l)}
-        .min=${min}
-        .max=${max}
-        .value=${value}
-        @value-changed=${(e: CustomEvent<{ value: number }>) => this._fire(key, e.detail.value)}
-      ></rs-number-field>
-    `;
+    return numberRow({
+      hass: this.hass,
+      label: localize(labelKey, l),
+      info: localize(hintKey, l),
+      unit: localize(suffixKey, l),
+      min,
+      max,
+      value,
+      onChange: (v) => this._fire(key, v),
+    });
   }
 
   render() {
@@ -64,76 +65,78 @@ export class RsSettingsCoilDry extends RsSettingsBase {
           switch
           wrap
           .heading=${localize("coil_dry.switch", l)}
-          .secondary=${localize("coil_dry.hint", l)}
           .checked=${this.coilDryEnabled}
           @toggle-changed=${(e: CustomEvent<boolean>) => this._fire("coilDryEnabled", e.detail)}
-        ></rs-list-row>
+        >
+          <rs-info-icon slot="end" .text=${localize("coil_dry.hint", l)}></rs-info-icon>
+        </rs-list-row>
       </div>
 
       ${
         this.coilDryEnabled
           ? html`
               <div class="settings-section">
-                <div class="threshold-grid">
-                  ${this._numberField(
-                    "coilDryMinutes",
-                    this.coilDryMinutes,
-                    "coil_dry.duration_label",
-                    "coil_dry.duration_suffix",
-                    "coil_dry.duration_hint",
-                    1,
-                    60,
-                  )}
-                  ${this._numberField(
-                    "coilDryMinCoolingMinutes",
-                    this.coilDryMinCoolingMinutes,
-                    "coil_dry.min_cooling_label",
-                    "coil_dry.min_cooling_suffix",
-                    "coil_dry.min_cooling_hint",
-                    1,
-                    240,
-                  )}
-                  ${this._numberField(
-                    "coilDryDrainMinutes",
-                    this.coilDryDrainMinutes,
-                    "coil_dry.drain_label",
-                    "coil_dry.drain_suffix",
-                    "coil_dry.drain_hint",
-                    0,
-                    15,
-                  )}
-                </div>
+                ${this._numberField(
+                  "coilDryMinutes",
+                  this.coilDryMinutes,
+                  "coil_dry.duration_label",
+                  "coil_dry.duration_suffix",
+                  "coil_dry.duration_hint",
+                  1,
+                  60,
+                )}
+                ${this._numberField(
+                  "coilDryMinCoolingMinutes",
+                  this.coilDryMinCoolingMinutes,
+                  "coil_dry.min_cooling_label",
+                  "coil_dry.min_cooling_suffix",
+                  "coil_dry.min_cooling_hint",
+                  1,
+                  240,
+                )}
+                ${this._numberField(
+                  "coilDryDrainMinutes",
+                  this.coilDryDrainMinutes,
+                  "coil_dry.drain_label",
+                  "coil_dry.drain_suffix",
+                  "coil_dry.drain_hint",
+                  0,
+                  15,
+                )}
               </div>
 
               <div class="settings-section stack">
                 <div class="threshold-field">
-                  <ha-select
-                    .label=${localize("coil_dry.fan_mode_label", l)}
-                    .value=${this.coilDryFanMode === "" ? KEEP : this.coilDryFanMode}
-                    .options=${[
-                      { value: KEEP, label: localize("coil_dry.fan_mode_keep", l) },
-                      ...fanModes,
-                    ]}
-                    @selected=${(e: Event) => {
-                      const v = getSelectValue(e);
-                      const current = this.coilDryFanMode === "" ? KEEP : this.coilDryFanMode;
-                      if (v && v !== current) this._fire("coilDryFanMode", v === KEEP ? "" : v);
-                    }}
-                    @closed=${(e: Event) => e.stopPropagation()}
-                    fixedMenuPosition
-                  >
-                    <ha-list-item value="${KEEP}"
-                      >${localize("coil_dry.fan_mode_keep", l)}</ha-list-item
+                  <rs-field .info=${localize("coil_dry.fan_mode_hint", l)}>
+                    <ha-select
+                      .label=${localize("coil_dry.fan_mode_label", l)}
+                      .value=${this.coilDryFanMode === "" ? KEEP : this.coilDryFanMode}
+                      .options=${[
+                        { value: KEEP, label: localize("coil_dry.fan_mode_keep", l) },
+                        ...fanModes,
+                      ]}
+                      @selected=${(e: Event) => {
+                        const v = getSelectValue(e);
+                        const current = this.coilDryFanMode === "" ? KEEP : this.coilDryFanMode;
+                        if (v && v !== current) this._fire("coilDryFanMode", v === KEEP ? "" : v);
+                      }}
+                      @closed=${(e: Event) => e.stopPropagation()}
+                      fixedMenuPosition
                     >
-                    ${fanModes.map(
-                      (fm) => html`<ha-list-item value=${fm.value}>${fm.label}</ha-list-item>`,
-                    )}
-                  </ha-select>
-                  <span class="field-hint">${localize("coil_dry.fan_mode_hint", l)}</span>
+                      <ha-list-item value="${KEEP}"
+                        >${localize("coil_dry.fan_mode_keep", l)}</ha-list-item
+                      >
+                      ${fanModes.map(
+                        (fm) => html`<ha-list-item value=${fm.value}>${fm.label}</ha-list-item>`,
+                      )}
+                    </ha-select>
+                  </rs-field>
                 </div>
 
-                <div>
-                  <span class="field-label">${localize("coil_dry.mode_label", l)}</span>
+                <rs-field
+                  .label=${localize("coil_dry.mode_label", l)}
+                  .info=${localize("coil_dry.mode_hint", l)}
+                >
                   <rs-segmented
                     wrap
                     .label=${localize("coil_dry.mode_label", l)}
@@ -154,7 +157,7 @@ export class RsSettingsCoilDry extends RsSettingsBase {
                         >`
                       : nothing
                   }
-                </div>
+                </rs-field>
               </div>
             `
           : nothing

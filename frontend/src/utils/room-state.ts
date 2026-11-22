@@ -9,6 +9,7 @@ import type {
   RoomConfig,
   RoomLiveData,
   RoomMode,
+  PresenceAwayAction,
 } from "../types";
 import { localize, type TranslationKey } from "./localize";
 import type { EffectiveOverride } from "./override";
@@ -162,6 +163,7 @@ export function roomStateInfo(config: RoomConfig, climateControlActive: boolean)
 export type RoomHintId =
   | "mold_risk"
   | "air_quality"
+  | "humidity"
   | "window_open"
   | "not_controlled"
   | "override"
@@ -174,7 +176,8 @@ export type RoomHintId =
   | "price_shift"
   | "preheat"
   | "learning_paused"
-  | "mpc_learning";
+  | "mpc_learning"
+  | "room_fan";
 
 export interface RoomHint {
   id: RoomHintId;
@@ -216,7 +219,7 @@ export function formatClock(unixS: number, language: string, now = Date.now()): 
 /**
  * Everything worth a hint for a room, most important first: mold risk, air quality, window
  * open, not controlled, override (with end), compressor protection, away / room empty, mold
- * prevention, price shift, setback, pre-heat, learning. Rooms without control only get the
+ * prevention, price shift, setback, pre-heat, learning, room fan on. Rooms without control only get the
  * measured ones (mold risk, air quality).
  */
 export function roomHints(
@@ -238,6 +241,8 @@ export function roomHints(
   }
   const air = airQualityHint(live, ctx.language);
   if (air) hints.push(air);
+  const humidity = humidityHint(live, ctx.language);
+  if (humidity) hints.push(humidity);
   if (kind !== "controlled") return hints;
 
   if (live.window_open) {
@@ -377,6 +382,14 @@ export function roomHints(
       key: "card.mpc_learning",
     });
   }
+  if (live.room_fan_active) {
+    hints.push({
+      id: "room_fan",
+      icon: "mdi:ceiling-fan",
+      severity: "info",
+      key: "card.hint.room_fan",
+    });
+  }
   return hints;
 }
 
@@ -418,6 +431,44 @@ function airQualityHint(live: NonNullable<RoomConfig["live"]>, language: string)
     icon: "mdi:air-filter",
     severity: "warn",
     key: venting ? "card.hint.air_venting" : "card.hint.air_bad",
+  };
+}
+
+/**
+ * Past a humidity limit (#518, #526): the reading and what RoomMind runs against it. Without a
+ * running device "outdoor air wetter" tells why the ventilation stays off.
+ */
+function humidityHint(live: NonNullable<RoomConfig["live"]>, language: string): RoomHint | null {
+  if (!live.humidity_high && !live.humidity_low) return null;
+  const value =
+    live.current_humidity != null
+      ? formatNumber(Math.round(live.current_humidity), { language })
+      : "–";
+  let key: TranslationKey;
+  if (live.humidity_high) {
+    key = live.dehumidifier_active
+      ? "card.hint.humidity_dehumidifying"
+      : live.ac_dry_active
+        ? "card.hint.humidity_ac_drying"
+        : live.ventilation_active && live.humidity_ventilate
+          ? "card.hint.humidity_venting"
+          : live.humidity_vent_blocked
+            ? "card.hint.humidity_outdoor_wetter"
+            : "card.hint.humidity_high";
+  } else {
+    key = live.humidifier_active ? "card.hint.humidity_humidifying" : "card.hint.humidity_low";
+  }
+  const running =
+    key === "card.hint.humidity_dehumidifying" ||
+    key === "card.hint.humidity_ac_drying" ||
+    key === "card.hint.humidity_venting" ||
+    key === "card.hint.humidity_humidifying";
+  return {
+    id: "humidity",
+    icon: "mdi:water-percent-alert",
+    severity: running ? "info" : "warn",
+    key,
+    params: { value },
   };
 }
 
@@ -490,6 +541,8 @@ export interface TargetReasonContext {
   states: Record<string, HassEntity> | undefined;
   vacationActive: boolean;
   vacationUntil: number | null;
+  /** Global presence_away_action, to name what applies when nobody is home. */
+  presenceAwayAction?: PresenceAwayAction;
   now?: number;
 }
 
@@ -554,7 +607,14 @@ export function targetReason(
         ? localize("card.hint.override_paused", l, {
             type: localize(OVERRIDE_TYPE_KEYS[live.override_type ?? "custom"], l),
           })
-        : localize(devicesOff ? "detail.reason.nobody_home_off" : "detail.reason.nobody_home", l),
+        : localize(
+            devicesOff
+              ? "detail.reason.nobody_home_off"
+              : ctx.presenceAwayAction === "away"
+                ? "detail.reason.nobody_home_away"
+                : "detail.reason.nobody_home",
+            l,
+          ),
     };
   }
   const eid = activeScheduleEntity(config);

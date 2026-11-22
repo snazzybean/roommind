@@ -1,0 +1,12 @@
+description: >
+  Solar irradiance at the room's windows in W/m² (device class irradiance). position inside
+  (default) = behind glass and cover, transmittance x plane irradiance x (1 - shading);
+  outside = on the window plane, in front of the cover. windows = indices into the room's
+  windows (default all), area-weighted.
+unit: w_m2
+position: inside
+transmittance: 0.75   # glass, for the inside position
+noise_rel: 0.02       # relative standard deviation
+resolution: 1
+min_value: 0
+report: {min_delta: 5, heartbeat_s: 600, min_interval_s: 30}

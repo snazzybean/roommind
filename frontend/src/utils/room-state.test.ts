@@ -153,6 +153,71 @@ describe("roomHints air quality (#267)", () => {
   });
 });
 
+describe("roomHints humidity (#518, #526)", () => {
+  test("too humid comes after the air quality and names what runs", () => {
+    const hints = roomHints(
+      room({
+        current_humidity: 72.4,
+        humidity_high: true,
+        co2: 1100,
+        air_quality_bad: true,
+        air_quality_reason: "co2",
+      }),
+      "controlled",
+      ctx,
+    );
+    expect(hints.map((h) => h.id).slice(0, 2)).toEqual(["air_quality", "humidity"]);
+    expect(hintText(hints[1], "de")).toBe("Luftfeuchte 72 %, zu feucht");
+    expect(hints[1].severity).toBe("warn");
+    const dehum = roomHints(
+      room({ current_humidity: 65, humidity_high: true, dehumidifier_active: true }),
+      "sensor",
+      ctx,
+    );
+    expect(hintText(dehum[0], "de")).toBe("Luftfeuchte 65 %, Entfeuchter läuft");
+    expect(dehum[0].severity).toBe("info");
+    const vent = roomHints(
+      room({
+        current_humidity: 80,
+        humidity_high: true,
+        humidity_ventilate: true,
+        ventilation_active: true,
+      }),
+      "controlled",
+      ctx,
+    );
+    expect(hintText(vent[0], "de")).toBe("Luftfeuchte 80 %, Lüftung läuft");
+  });
+
+  test("an air conditioner drying the room (#440)", () => {
+    const hints = roomHints(
+      room({ current_humidity: 68, humidity_high: true, ac_dry_active: true }),
+      "controlled",
+      ctx,
+    );
+    expect(hintText(hints[0], "de")).toBe("Luftfeuchte 68 %, Klimaanlage entfeuchtet");
+    expect(hints[0].severity).toBe("info");
+  });
+
+  test("outdoor air wetter, too dry and fine", () => {
+    const wetter = roomHints(
+      room({ current_humidity: 66, humidity_high: true, humidity_vent_blocked: true }),
+      "controlled",
+      ctx,
+    );
+    expect(hintText(wetter[0], "de")).toBe("Luftfeuchte 66 %, draußen feuchter");
+    const dry = roomHints(
+      room({ current_humidity: null, humidity_low: true, humidifier_active: true }),
+      "controlled",
+      ctx,
+    );
+    expect(hintText(dry[0], "de")).toBe("Luftfeuchte – %, Befeuchter läuft");
+    const low = roomHints(room({ current_humidity: 35, humidity_low: true }), "controlled", ctx);
+    expect(hintText(low[0], "de")).toBe("Luftfeuchte 35 %, zu trocken");
+    expect(roomHints(room({ current_humidity: 50 }), "controlled", ctx)).toEqual([]);
+  });
+});
+
 describe("roomHints all in the same mode (#533)", () => {
   test("a room its group holds names the way the outdoor unit runs, not a compressor timer", () => {
     const held = room({
@@ -179,5 +244,22 @@ describe("roomHints all in the same mode (#533)", () => {
     });
     const hint = roomHints(switching, "controlled", ctx).find((h) => h.id === "uniform_mode");
     expect(hintText(hint!, "en")).toBe("Outdoor unit switching");
+  });
+});
+
+describe("roomHints room fan (#266)", () => {
+  const ids = (r: RoomConfig) => roomHints(r, "controlled", ctx).map((h) => h.id);
+
+  test("comes last, after every other hint", () => {
+    const r = room({ mode: "heating", room_fan_active: true, window_open: true });
+    expect(ids(r)).toEqual(["window_open", "room_fan"]);
+    const hint = roomHints(r, "controlled", ctx).find((h) => h.id === "room_fan")!;
+    expect(hint.severity).toBe("info");
+    expect(hintText(hint, "de")).toBe("Raumlüfter läuft");
+  });
+
+  test("no hint while RoomMind does not run it", () => {
+    expect(ids(room({ mode: "heating", room_fan_active: false }))).not.toContain("room_fan");
+    expect(ids(room({ mode: "heating" }))).not.toContain("room_fan");
   });
 });

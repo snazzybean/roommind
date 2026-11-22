@@ -46,6 +46,13 @@ class SimSensor:
             return False
         noise = float(p.get("noise", 0.0))
         measured = true_value + float(p.get("offset", 0.0)) + (self._rng.gauss(0, noise) if noise else 0.0)
+        noise_rel = float(p.get("noise_rel", 0.0))
+        if noise_rel:
+            measured += self._rng.gauss(0, noise_rel * abs(true_value))
+        if p.get("min_value") is not None:
+            measured = max(float(p["min_value"]), measured)
+        if p.get("max_value") is not None:
+            measured = min(float(p["max_value"]), measured)
         res = float(p.get("resolution", 0.1))
         measured = round(round(measured / res) * res, 4)
         rep: dict[str, Any] = p.get("report") or {}

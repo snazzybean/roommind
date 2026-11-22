@@ -100,10 +100,14 @@ class Zone:
         self.t_mass = temp_c if mass_temp_c is None else mass_temp_c
         self.x = abs_humidity(temp_c, rh)
 
-    def step(self, dt: float, t_out: float, x_out: float, gains: Gains, neighbor_w: float = 0.0) -> None:
-        """Advance by ``dt`` seconds. ``neighbor_w`` is the net heat flow from adjacent rooms."""
+    def step(
+        self, dt: float, t_out: float, x_out: float, gains: Gains, neighbor_w: float = 0.0, mixing: float = 1.0
+    ) -> None:
+        """Advance by ``dt`` seconds. ``neighbor_w`` is the net heat flow from adjacent rooms,
+        ``mixing`` a factor on the air-to-mass coupling (a running room fan)."""
         p = self.params
         self.last_gains = gains
+        h_am = p.h_air_mass * mixing
         n = max(1, int(dt / MAX_SUBSTEP_S + 0.999))
         h = dt / n
         vent_kg_s = gains.vent_w_k / CP_AIR
@@ -113,16 +117,13 @@ class Zone:
         for _ in range(n):
             q_air = (
                 (p.h_air_out + gains.vent_w_k) * (t_out - self.t_air)
-                + p.h_air_mass * (self.t_mass - self.t_air)
+                + h_am * (self.t_mass - self.t_air)
                 + gains.conv_w
                 + internal_conv
                 + neighbor_w
             )
             q_mass = (
-                p.h_mass_out * (t_out - self.t_mass)
-                + p.h_air_mass * (self.t_air - self.t_mass)
-                + gains.rad_w
-                + internal_rad
+                p.h_mass_out * (t_out - self.t_mass) + h_am * (self.t_air - self.t_mass) + gains.rad_w + internal_rad
             )
             self.t_air += h * q_air / p.c_air
             self.t_mass += h * q_mass / p.c_mass

@@ -1,0 +1,109 @@
+name: humidity-devices-control
+description: >
+  RoomMind runs a dehumidifier and a humidifier by the room's humidity limits (#518). Winter,
+  three rooms heated by RoomMind: a utility room with laundry drying (about 50 g/h) and a plain
+  dehumidifier on a smart plug (switch.*, no hygrostat), upper limit 60 %; a cellar room with a
+  dehumidifier as humidifier.* (device class dehumidifier, its own hygrostat off) and the same
+  limit; a bedroom with dry winter air, a humidifier as humidifier.* (own hygrostat off) and a
+  plug dehumidifier, limits 40-60 %. The limits come at 00:01 through rooms/save (v2.0.1
+  rejects them and switches nothing). Day 1 10:00-10:40 the utility room window is open (its
+  dehumidifier goes off at once and back on after); day 2 12:00 a hand switches the cellar
+  unit off after a wash put 600 g into the cellar air (it stays off while the room is still
+  humid).
+tags: [humidity, appliances]
+refs: [518]
+start: 2026-01-12T00:00
+duration: 3d
+location: {latitude: 52.5, longitude: 13.4, time_zone: Europe/Berlin}
+weather: {profile: temperate}
+house:
+  building: bestand_teilsaniert
+  outdoor:
+    sensors: {temperature: sensor.aussen_temp, humidity: sensor.aussen_feuchte}
+  rooms:
+    hwr:
+      name: Hauswirtschaftsraum
+      floor_area_m2: 8
+      exterior_wall_m2: 5
+      initial: {temperature: 17.0, humidity: 70}
+      thermal: {base_moisture_g_h_per_m2: 6}
+      windows: [{orientation: N, area_m2: 0.8, sensor: binary_sensor.hwr_fenster}]
+      devices: [{entity_id: climate.hwr_trv, profile: generic_trv}]
+      appliances:
+        - {entity_id: switch.hwr_entfeuchter, profile: dehumidifier}
+      sensors:
+        temperature: {entity_id: sensor.hwr_temp}
+        humidity: {entity_id: sensor.hwr_feuchte}
+    keller:
+      name: Keller
+      floor_area_m2: 14
+      exterior_wall_m2: 6
+      initial: {temperature: 16.0, humidity: 72}
+      thermal: {base_moisture_g_h_per_m2: 4}
+      devices: [{entity_id: climate.keller_trv, profile: generic_trv}]
+      appliances:
+        - {entity_id: humidifier.keller_entfeuchter, profile: dehumidifier}
+      sensors:
+        temperature: {entity_id: sensor.keller_temp}
+        humidity: {entity_id: sensor.keller_feuchte}
+    schlafzimmer:
+      name: Schlafzimmer
+      floor_area_m2: 16
+      exterior_wall_m2: 11
+      initial: {temperature: 20.0, humidity: 35}
+      thermal: {ach_infiltration: 0.7}
+      windows: [{orientation: N, area_m2: 1.8}]
+      devices: [{entity_id: climate.schlafzimmer_trv, profile: generic_trv}]
+      appliances:
+        - {entity_id: humidifier.sz_befeuchter, profile: humidifier}
+        - {entity_id: switch.sz_entfeuchter, profile: dehumidifier}
+      sensors:
+        temperature: {entity_id: sensor.schlafzimmer_temp}
+        humidity: {entity_id: sensor.schlafzimmer_feuchte}
+roommind:
+  settings:
+    outdoor_temp_sensor: sensor.aussen_temp
+    outdoor_humidity_sensor: sensor.aussen_feuchte
+  rooms:
+    hwr:
+      devices: [{entity_id: climate.hwr_trv, type: trv, heating_system_type: radiator}]
+      temperature_sensor: sensor.hwr_temp
+      humidity_sensor: sensor.hwr_feuchte
+      window_sensors: [binary_sensor.hwr_fenster]
+      climate_mode: heat_only
+      comfort_temp: 17.0
+      eco_temp: 17.0
+    keller:
+      devices: [{entity_id: climate.keller_trv, type: trv, heating_system_type: radiator}]
+      temperature_sensor: sensor.keller_temp
+      humidity_sensor: sensor.keller_feuchte
+      climate_mode: heat_only
+      comfort_temp: 16.0
+      eco_temp: 16.0
+    schlafzimmer:
+      devices: [{entity_id: climate.schlafzimmer_trv, type: trv, heating_system_type: radiator}]
+      temperature_sensor: sensor.schlafzimmer_temp
+      humidity_sensor: sensor.schlafzimmer_feuchte
+      climate_mode: heat_only
+      comfort_temp: 20.0
+      eco_temp: 18.0
+timeline:
+  - {at: "+0d00h01m", do: roommind.ws, type: roommind/rooms/save, area_id: hwr, humidity_max: 60, dehumidifier_entity: switch.hwr_entfeuchter}
+  - {at: "+0d00h01m20s", do: roommind.ws, type: roommind/rooms/save, area_id: keller, humidity_max: 60, dehumidifier_entity: humidifier.keller_entfeuchter}
+  - {at: "+0d00h01m40s", do: roommind.ws, type: roommind/rooms/save, area_id: schlafzimmer, humidity_max: 60, humidity_min: 40, humidifier_entity: humidifier.sz_befeuchter, dehumidifier_entity: switch.sz_entfeuchter}
+  - {at: "+1d10h", do: window.open, entity_id: binary_sensor.hwr_fenster, for: 40m}
+  - {at: "+2d11h30m", do: humidity.event, room: keller, grams: 600, for: 30m}
+  - {at: "+2d12h10m", do: device.manual, entity_id: humidifier.keller_entfeuchter, state: "off"}
+expect:
+  - {invariant: no_rejected_commands}
+  - {check: "state('switch.hwr_entfeuchter') == 'off' and room.hwr.window_open == true", at: "+1d10h05m", label: window open switches the dehumidifier off at once}
+  - {check: "room.keller.humidity_high == true and state('humidifier.keller_entfeuchter') == 'on'", at: "+2d12h05m", label: the wet cellar starts its dehumidifier}
+  - {check: "room.keller.humidity_high == true and state('humidifier.keller_entfeuchter') == 'off'", at: "+2d12h30m", label: switched off by hand stays off while the cellar is still humid}
+  - {metric: appliance.starts, entity_id: switch.sz_entfeuchter, max: 0}
+  # 2026-11-19 seed 1, min run 30 min / rest 15 min: utility room 7 starts (15-min runs: 10),
+  # humidifier 25 (42); utility room RH >= 60 % 0.15 h, bedroom RH mean 43.4 %; v2.0.1 27.5 h / 33.3 %
+  - {metric: appliance.shortest_run_min, entity_id: switch.hwr_entfeuchter, min: 30}
+  - {metric: appliance.shortest_run_min, entity_id: humidifier.sz_befeuchter, min: 30}
+  - {metric: appliance.starts, entity_id: humidifier.sz_befeuchter, max: 30}
+  - {metric: room.rh_over_60_h, room: hwr, max: 1}
+  - {metric: room.rh_mean, room: schlafzimmer, min: 40}

@@ -11,6 +11,7 @@ import yaml
 
 from .errors import ScenarioError
 from .model import (
+    ApplianceSpec,
     CoverSpec,
     DeviceSpec,
     Location,
@@ -31,7 +32,9 @@ _ENTITY_RE = re.compile(r"^[a-z_]+\.[a-z0-9_]+$")
 _DEVICE_KEYS = {"entity_id", "profile", "name"}
 _HELPER_DOMAINS = {"schedule", "input_boolean", "input_number", "input_select", "template"}
 DEVICE_MODELS = {"trv", "ac", "heat_pump", "heater", "boiler", "ufh"}
-SENSOR_KINDS = {"temperature", "humidity", "occupancy", "power"}
+SENSOR_KINDS = {"temperature", "humidity", "occupancy", "power", "solar"}
+# Solar sensor units: scenario spelling -> profile suffix
+SOLAR_UNITS = {"w_m2": "w_m2", "W/m²": "w_m2", "W/m2": "w_m2", "lx": "lx", "pct": "pct", "%": "pct"}
 
 # Timeline actions and their required arguments; implementations live in simhome.actions.
 ACTIONS: dict[str, set[str]] = {
@@ -224,8 +227,13 @@ def _room(area_id: str, rdata: dict[str, Any], building: str, floors: dict[str, 
     devices = []
     for i, ddata in enumerate(rdata.get("devices") or []):
         devices.append(_device(area_id, ddata, f"{where}.devices[{i}]"))
+    n_windows = len(rdata.get("windows") or [])
     sensors = [
-        _sensor(kind, sdata, area_id, f"{where}.sensors.{kind}") for kind, sdata in (rdata.get("sensors") or {}).items()
+        _sensor(kind, sdata, area_id, f"{where}.sensors.{kind}", n_windows)
+        for kind, sdata in (rdata.get("sensors") or {}).items()
+    ]
+    appliances = [
+        _appliance(area_id, adata, f"{where}.appliances[{i}]") for i, adata in enumerate(rdata.get("appliances") or [])
     ]
     windows = []
     for i, wraw in enumerate(rdata.get("windows") or []):
@@ -254,6 +262,36 @@ def _room(area_id: str, rdata: dict[str, Any], building: str, floors: dict[str, 
         covers=covers,
         neighbors=dict(rdata.get("neighbors") or {}),
         initial=dict(rdata.get("initial") or {}),
+        appliances=appliances,
+    )
+
+
+def _appliance(room: str, adata: dict[str, Any], where: str) -> ApplianceSpec:
+    from ..appliances import APPLIANCE_MODELS
+
+    if not isinstance(adata, dict):
+        raise ScenarioError("appliance must be a mapping", where)
+    eid = adata.get("entity_id")
+    if "profile" not in adata:
+        raise ScenarioError("appliance needs a profile", where)
+    profile = load_profile("appliances", adata["profile"], where)
+    model = profile.get("model")
+    if model not in APPLIANCE_MODELS:
+        raise ScenarioError(f"profile model {model!r} unknown (allowed: {sorted(APPLIANCE_MODELS)})", where)
+    domains = APPLIANCE_MODELS[model]
+    domain = str(eid).split(".", 1)[0]
+    if domain not in domains:
+        raise ScenarioError(f"a {model} must be a {' or '.join(domains)} entity, not {eid!r}", where)
+    _check_entity_id(eid, domain, where)
+    params = deep_merge(profile.get("params") or {}, adata.get("params") or {})
+    params = deep_merge(params, {k: v for k, v in adata.items() if k not in (*_DEVICE_KEYS, "params")})
+    return ApplianceSpec(
+        entity_id=eid,
+        room=room,
+        model=model,
+        name=adata.get("name", _name_from(eid)),
+        profile=adata["profile"],
+        params=params,
     )
 
 
@@ -285,16 +323,31 @@ def _device(room: str, ddata: dict[str, Any], where: str) -> DeviceSpec:
     )
 
 
-def _sensor(kind: str, sdata: dict[str, Any] | str, room: str | None, where: str) -> SensorSpec:
+def _sensor(kind: str, sdata: dict[str, Any] | str, room: str | None, where: str, n_windows: int = 0) -> SensorSpec:
+    """``kind`` is the key in ``sensors:``; ``solar_<suffix>`` allows several solar sensors per room."""
     if isinstance(sdata, str):
         sdata = {"entity_id": sdata}
     sdata = dict(sdata or {})
     eid = sdata.pop("entity_id", None)
     base_kind = kind.removeprefix("outdoor_")
-    if base_kind not in SENSOR_KINDS:
+    if base_kind.startswith("solar_") and room is not None:
+        base_kind = kind = "solar"
+    if base_kind not in SENSOR_KINDS or (base_kind == "solar" and room is None):
         raise ScenarioError(f"unknown sensor kind {kind!r} (allowed: {sorted(SENSOR_KINDS)})", where)
     _check_entity_id(eid, "binary_sensor" if base_kind == "occupancy" else "sensor", where)
-    profile_name = sdata.pop("profile", f"default_{base_kind}")
+    default_profile = f"default_{base_kind}"
+    if base_kind == "solar":
+        unit = SOLAR_UNITS.get(str(sdata.get("unit", "w_m2")))
+        if unit is None:
+            raise ScenarioError(f"solar sensor unit {sdata.get('unit')!r} unknown (allowed: W/m², lx, %)", where)
+        sdata["unit"] = unit
+        if sdata.get("position", "inside") not in ("inside", "outside"):
+            raise ScenarioError(f"solar sensor position {sdata['position']!r} unknown (inside, outside)", where)
+        default_profile = f"solar_{unit}"
+        for idx in sdata.get("windows") or []:
+            if not isinstance(idx, int) or not 0 <= idx < n_windows:
+                raise ScenarioError(f"window index {idx!r} not in this room's windows (0..{n_windows - 1})", where)
+    profile_name = sdata.pop("profile", default_profile)
     params = deep_merge(load_profile("sensors", profile_name, where), sdata)
     name = params.pop("name", _name_from(eid))
     return SensorSpec(entity_id=eid, kind=kind, room=room, name=name, params=params)
@@ -363,6 +416,7 @@ def _validate(scn: Scenario) -> None:
     duplicates = _duplicates(
         [d.entity_id for d in scn.all_devices()]
         + [s.entity_id for s in scn.all_sensors()]
+        + [a.entity_id for a in scn.all_appliances()]
         + [w.sensor for r in scn.rooms.values() for w in r.windows if w.sensor]
     )
     if duplicates:
@@ -413,6 +467,12 @@ def _validate(scn: Scenario) -> None:
             if area not in scn.rooms:
                 raise ScenarioError(f"role {role!r} maps to unknown room {area!r}", f"people.{person.id}.rooms")
     for room in scn.rooms.values():
+        for a in room.appliances:
+            source = a.params.get("makeup_room")
+            if source is not None and (source not in scn.rooms or source == room.area_id):
+                raise ScenarioError(
+                    f"makeup_room {source!r} is not another room", f"house.rooms.{room.area_id}.appliances"
+                )
         for other in room.neighbors:
             if other not in scn.rooms:
                 raise ScenarioError(f"unknown neighbor room {other!r}", f"house.rooms.{room.area_id}.neighbors")

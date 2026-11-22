@@ -1,0 +1,72 @@
+name: solar-sensor-rooms
+description: >
+  March, two radiator rooms with large windows, one facing east, one west, MPC with the
+  weather forecast (cloud forecast with its usual error). Each room has a sun sensor behind
+  the glass (W/m²; --set house.rooms.<room>.sensors.solar.unit=lx or "%" for the other kinds).
+  RoomMind learns the sensor's scale over the first two days with sun and runs on the weather
+  model until then, afterwards the reading is the room's solar input and the learned profile shapes
+  the forecast: the east room gets its sun in the morning, the west room in the afternoon (#303).
+tags: [solar, sensors, mpc, trv]
+refs: [303, 455]
+start: 2026-03-16T00:00
+duration: 8d
+location: {latitude: 52.5, longitude: 13.4, time_zone: Europe/Berlin}
+weather: {profile: temperate}
+house:
+  building: bestand_teilsaniert
+  outdoor: {sensors: {temperature: sensor.aussen_temp}}
+  rooms:
+    ost:
+      name: Ost
+      floor_area_m2: 20
+      exterior_wall_m2: 12
+      initial: {temperature: 20.5}
+      windows: [{orientation: E, area_m2: 4.5}]
+      devices:
+        - {entity_id: climate.ost_trv, profile: generic_trv}
+        - {entity_id: climate.heizung_kessel, profile: generic_boiler}
+      sensors:
+        temperature: {entity_id: sensor.ost_temp, profile: aqara_th}
+        solar: {entity_id: sensor.ost_sonne}
+    west:
+      name: West
+      floor_area_m2: 20
+      exterior_wall_m2: 12
+      initial: {temperature: 20.5}
+      windows: [{orientation: W, area_m2: 4.5}]
+      devices:
+        - {entity_id: climate.west_trv, profile: generic_trv}
+      sensors:
+        temperature: {entity_id: sensor.west_temp, profile: aqara_th}
+        solar: {entity_id: sensor.west_sonne}
+roommind:
+  settings:
+    outdoor_temp_sensor: sensor.aussen_temp
+    weather_entity: weather.simhome
+    control_mode: mpc
+    compressor_groups:
+      - id: kessel
+        name: Kessel
+        members: [climate.ost_trv, climate.west_trv]
+        master_entity: climate.heizung_kessel
+        min_run_minutes: 5
+        min_off_minutes: 5
+  rooms:
+    ost:
+      devices: [{entity_id: climate.ost_trv, type: trv, heating_system_type: radiator}]
+      temperature_sensor: sensor.ost_temp
+      climate_mode: heat_only
+      comfort_temp: 21.0
+      eco_temp: 21.0
+      solar_sensor: sensor.ost_sonne
+    west:
+      devices: [{entity_id: climate.west_trv, type: trv, heating_system_type: radiator}]
+      temperature_sensor: sensor.west_temp
+      climate_mode: heat_only
+      comfort_temp: 21.0
+      eco_temp: 21.0
+      solar_sensor: sensor.west_sonne
+expect:
+  - {invariant: no_rejected_commands}
+  # Scale learned at the end of the first sunny day (v2.0.1 ignores the field: no status)
+  - {check: "room.ost.solar_sensor.state == 'active' and room.west.solar_sensor.state == 'active'", at: "+3d01h", label: sensors calibrated after the first sunny days}

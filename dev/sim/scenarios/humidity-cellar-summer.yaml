@@ -1,0 +1,62 @@
+name: humidity-cellar-summer
+description: >
+  Airing a cool cellar in muggy summer air brings water in (#526): a cellar room at 17-19 °C
+  (heavy, barely coupled to the outside) with an exhaust fan as ventilation entity and a
+  dehumidifier (humidifier.*, own hygrostat off), upper limit 65 %, outdoor humidity sensor.
+  Day 0 the outdoor air is 26 °C / 80 % (19.5 g/m³, wetter than the cellar air): RoomMind
+  leaves the fan off and runs the dehumidifier. Day 1 a cool dry change (12 °C / 70 %,
+  7.5 g/m³): the fan dries the cellar too. Limits at 00:01 through rooms/save (v2.0.1 rejects
+  them and switches nothing).
+tags: [humidity, appliances]
+refs: [526, 518]
+start: 2026-07-15T00:00
+duration: 2d
+location: {latitude: 52.5, longitude: 13.4, time_zone: Europe/Berlin}
+weather: {profile: temperate}
+house:
+  building: bestand_teilsaniert
+  outdoor:
+    sensors: {temperature: sensor.aussen_temp, humidity: sensor.aussen_feuchte}
+  rooms:
+    keller:
+      name: Keller
+      floor_area_m2: 14
+      exterior_wall_m2: 4
+      initial: {temperature: 17.0, humidity: 70}
+      # earth-bound cellar: heavy and barely coupled to the outside, so it stays cool in summer
+      thermal: {mass_kj_per_m2: 1500, u_wall: 0.15, ach_infiltration: 0.3, base_moisture_g_h_per_m2: 3}
+      devices: [{entity_id: climate.keller_trv, profile: generic_trv}]
+      appliances:
+        - {entity_id: fan.keller_luefter, profile: exhaust_fan, airflow_m3_h: 60}
+        - {entity_id: humidifier.keller_entfeuchter, profile: dehumidifier}
+      sensors:
+        temperature: {entity_id: sensor.keller_temp}
+        humidity: {entity_id: sensor.keller_feuchte}
+roommind:
+  settings:
+    outdoor_temp_sensor: sensor.aussen_temp
+    outdoor_humidity_sensor: sensor.aussen_feuchte
+  rooms:
+    keller:
+      devices: [{entity_id: climate.keller_trv, type: trv, heating_system_type: radiator}]
+      temperature_sensor: sensor.keller_temp
+      humidity_sensor: sensor.keller_feuchte
+      climate_mode: heat_only
+      comfort_temp: 10.0
+      eco_temp: 10.0
+timeline:
+  - {at: "+0d00h00m", do: weather.set, temperature: 26, humidity: 80, for: 24h}
+  - {at: "+0d00h01m", do: roommind.ws, type: roommind/rooms/save, area_id: keller, humidity_max: 65, ventilation_entity: fan.keller_luefter, dehumidifier_entity: humidifier.keller_entfeuchter}
+  - {at: "+1d00h00m", do: weather.set, temperature: 12, humidity: 70, for: 24h}
+expect:
+  - {invariant: no_rejected_commands}
+  # 2026-11-19 seed 1: fan off all of day 0 (outdoor air wetter), 2 runs on day 1; dehumidifier
+  # 28 starts of 30 min (15-min runs without rest: 50), 14 h, 4.2 kWh, RH >= 60 % 24.3 h.
+  # 2026-11-18, without the outdoor humidity sensor (--set roommind.settings.outdoor_humidity_sensor='""'):
+  # the fan ran 24 h and carried 11.3 kg of water in, the dehumidifier ran 24 h (7.2 kWh), RH >= 60 % 47.7 h
+  - {metric: appliance.moisture_added_kg, entity_id: fan.keller_luefter, max: 0.5}
+  - {metric: appliance.starts, entity_id: fan.keller_luefter, min: 1}
+  - {metric: appliance.on_h, entity_id: fan.keller_luefter, max: 2}
+  - {metric: appliance.electric_kwh, entity_id: humidifier.keller_entfeuchter, max: 5}
+  - {metric: appliance.shortest_run_min, entity_id: humidifier.keller_entfeuchter, min: 30}
+  - {metric: appliance.starts, entity_id: humidifier.keller_entfeuchter, max: 32}

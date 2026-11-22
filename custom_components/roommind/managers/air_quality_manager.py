@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import math
+from collections.abc import Set
 from typing import TYPE_CHECKING
 
 from homeassistant.core import CoreState
@@ -92,11 +93,26 @@ class VentilationController:
     """Switches ventilation entities on for bad air and off once nobody needs them.
 
     Ownership (entity -> time RoomMind switched it on) is persisted, so a restart still
-    switches off what RoomMind switched on before it.
+    switches off what RoomMind switched on before it. The humidity devices (#518) run on their
+    own instance with their own persisted state; ``label`` names the kind in the log,
+    ``min_run_s`` is the shortest run RoomMind ends and ``min_off_s`` makes a unit RoomMind
+    switched off rest that long before its next start.
     """
 
-    def __init__(self, hass: HomeAssistant) -> None:
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        label: str = "Ventilation",
+        min_run_s: float = VENTILATION_MIN_RUN_S,
+        min_off_s: float = 0,
+    ) -> None:
         self.hass = hass
+        self._label = label
+        self._min_run_s = min_run_s
+        self._min_off_s = min_off_s
+        # When RoomMind last switched an entity off (in memory): the start of its rest
+        self._off_at: dict[str, float] = {}
+        self._now = 0.0
         self._owned: dict[str, float] = {}
         # Switched off by someone during a bad spell: not switched on again until the air was good
         self._declined: set[str] = set()
@@ -114,27 +130,40 @@ class VentilationController:
     def is_running(self, entity_id: str) -> bool:
         return entity_id in self._owned
 
-    async def async_reconcile(self, wanted: dict[str, bool], now: float) -> None:
+    async def async_reconcile(self, wanted: dict[str, bool], now: float, blocked: Set[str] = frozenset()) -> None:
         """Bring every ventilation entity in line with what the rooms want.
 
         ``wanted`` has an entry for every entity a room under control uses (True: some room
         needs fresh air). An owned entity missing there (room deleted, entity removed from the
         room, climate control off) goes off at once; while it is unavailable RoomMind keeps it
-        and switches it off once it is back.
+        and switches it off once it is back. ``blocked`` entities (window open) go off at once
+        too, but a hand on the switch is still remembered for when they are back in ``wanted``.
         """
+        self._now = now
         for entity_id, want in wanted.items():
             await self._async_reconcile_one(entity_id, want, now)
-        for entity_id in [e for e in self._owned if e not in wanted]:
+        for entity_id in blocked:
             state = self.hass.states.get(entity_id)
-            if state is None:
-                if self._gone(entity_id):
-                    self._release(entity_id)
-            elif state.state == "off":
+            self._last_state[entity_id] = state.state if state is not None else None
+            if entity_id in self._owned:
+                await self._async_switch_off_owned(entity_id)
+        for entity_id in [e for e in self._owned if e not in wanted and e not in blocked]:
+            await self._async_switch_off_owned(entity_id)
+        kept = set(wanted) | set(blocked)
+        self._declined &= kept
+        self._last_state = {e: v for e, v in self._last_state.items() if e in kept}
+        # By time only: a room dropping out of control for a cycle must not cut its device's rest short
+        self._off_at = {e: t for e, t in self._off_at.items() if now - t < self._min_off_s}
+
+    async def _async_switch_off_owned(self, entity_id: str) -> None:
+        state = self.hass.states.get(entity_id)
+        if state is None:
+            if self._gone(entity_id):
                 self._release(entity_id)
-            elif state.state == "on" and await self._async_switch(entity_id, False):
-                self._release(entity_id)
-        self._declined &= set(wanted)
-        self._last_state = {e: v for e, v in self._last_state.items() if e in wanted}
+        elif state.state == "off":
+            self._release(entity_id)
+        elif state.state == "on" and await self._async_switch(entity_id, False):
+            self._release(entity_id)
 
     async def _async_reconcile_one(self, entity_id: str, want: bool, now: float) -> None:
         if not want:
@@ -178,7 +207,7 @@ class VentilationController:
                     if want:
                         self._declined.add(entity_id)
                 return
-            if not want and now - since >= VENTILATION_MIN_RUN_S and await switch(False):
+            if not want and now - since >= self._min_run_s and await switch(False):
                 self._release(entity_id)
             return
         if not want or current != "off":
@@ -186,6 +215,8 @@ class VentilationController:
         if previous == "on":
             # Ran by someone's hand into the bad spell and was switched off by hand in it
             self._declined.add(entity_id)
+        if now - self._off_at.get(entity_id, -math.inf) < self._min_off_s:
+            return
         if entity_id not in self._declined and await switch(True):
             self._owned[entity_id] = now
             self.dirty = True
@@ -211,8 +242,12 @@ class VentilationController:
                 context=make_roommind_context(),
             )
         except Exception:  # noqa: BLE001
-            _LOGGER.warning("Ventilation '%s': switching %s failed", entity_id, "on" if on else "off", exc_info=True)
+            _LOGGER.warning(
+                "%s '%s': switching %s failed", self._label, entity_id, "on" if on else "off", exc_info=True
+            )
             return False
         # Our own switch is no hand on it in the next cycle
         self._last_state[entity_id] = "on" if on else "off"
+        if not on and self._min_off_s:
+            self._off_at[entity_id] = self._now
         return True

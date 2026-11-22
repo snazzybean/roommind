@@ -93,6 +93,14 @@ NORMAL_ROOM_KEYS = {
     "air_quality_bad",
     "air_quality_reason",
     "ventilation_active",
+    "humidity_high",
+    "humidity_low",
+    "humidity_ventilate",
+    "humidity_vent_blocked",
+    "dehumidifier_active",
+    "humidifier_active",
+    "ac_dry_active",
+    "ac_dry_entities",
 }
 
 OUTDOOR_ROOM_KEYS = {
@@ -148,6 +156,14 @@ OUTDOOR_ROOM_KEYS = {
     "air_quality_bad",
     "air_quality_reason",
     "ventilation_active",
+    "humidity_high",
+    "humidity_low",
+    "humidity_ventilate",
+    "humidity_vent_blocked",
+    "dehumidifier_active",
+    "humidifier_active",
+    "ac_dry_active",
+    "ac_dry_entities",
 }
 
 

@@ -1657,6 +1657,7 @@ def _make_analytics_coordinator(history_rows=None, estimator=None, rooms_live=No
     coordinator.outdoor_humidity = 60
     coordinator._weather_manager._outdoor_forecast = []
     coordinator._window_manager._paused = {}
+    coordinator.room_solar.return_value = None
 
     if history_rows is not None:
         hs = MagicMock()
@@ -2780,7 +2781,7 @@ async def test_save_settings_compressor_master_entity_valid(ws_hass, store, conn
 
 @pytest.mark.asyncio
 async def test_save_settings_compressor_master_non_climate(ws_hass, store, connection):
-    """Master entity must be a climate entity."""
+    """Master entity must be a climate, switch or input_boolean entity."""
     await store.async_load()
 
     msg = {
@@ -2791,7 +2792,7 @@ async def test_save_settings_compressor_master_non_climate(ws_hass, store, conne
                 "id": "g1",
                 "name": "Test",
                 "members": ["climate.ac1"],
-                "master_entity": "switch.boiler",
+                "master_entity": "light.boiler",
             },
         ],
     }
@@ -2799,6 +2800,64 @@ async def test_save_settings_compressor_master_non_climate(ws_hass, store, conne
 
     connection.send_error.assert_called_once()
     assert connection.send_error.call_args[0][1] == "invalid_master_entity"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("master", ["switch.boiler", "input_boolean.boiler", "climate.boiler"])
+async def test_save_settings_compressor_master_switch_and_setpoints(ws_hass, store, connection, master):
+    """A switch or input_boolean can be the master; rooms needed, delays and setpoints are saved."""
+    await store.async_load()
+    group = {
+        "id": "g1",
+        "name": "Boiler",
+        "members": ["climate.trv1"],
+        "master_entity": master,
+        "min_rooms": 2,
+        "start_delay_seconds": 120,
+        "run_on_seconds": 600,
+        "on_temperature": 60,
+        "off_temperature": 10,
+        "off_mode": "temperature",
+    }
+    validated = websocket_save_settings._ws_schema(
+        {"id": 31, "type": "roommind/settings/save", "compressor_groups": [group]}
+    )
+    await _save_settings(ws_hass, connection, validated)
+
+    connection.send_error.assert_not_called()
+    saved = connection.send_result.call_args[0][1]["settings"]["compressor_groups"][0]
+    assert saved["master_entity"] == master
+    assert (saved["min_rooms"], saved["start_delay_seconds"], saved["run_on_seconds"]) == (2, 120, 600)
+    assert (saved["on_temperature"], saved["off_temperature"], saved["off_mode"]) == (60.0, 10.0, "temperature")
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"min_rooms": 0},
+        {"start_delay_seconds": 3601},
+        {"run_on_seconds": -1},
+        {"on_temperature": 95},
+        {"off_temperature": 2},
+        {"off_mode": "pause"},
+    ],
+)
+def test_save_settings_compressor_master_options_invalid(change):
+    import voluptuous as vol
+
+    group = {"id": "g1", "name": "Boiler", "members": ["climate.trv1"], "master_entity": "switch.boiler", **change}
+    with pytest.raises(vol.Invalid):
+        websocket_save_settings._ws_schema({"id": 1, "type": "roommind/settings/save", "compressor_groups": [group]})
+
+
+def test_save_settings_compressor_master_option_defaults():
+    group = {"id": "g1", "name": "Boiler", "members": ["climate.trv1"]}
+    validated = websocket_save_settings._ws_schema(
+        {"id": 1, "type": "roommind/settings/save", "compressor_groups": [group]}
+    )["compressor_groups"][0]
+    assert validated["min_rooms"] == 1
+    assert (validated["start_delay_seconds"], validated["run_on_seconds"]) == (0, 0)
+    assert (validated["on_temperature"], validated["off_temperature"], validated["off_mode"]) == (None, None, "off")
 
 
 @pytest.mark.asyncio
@@ -3110,7 +3169,7 @@ async def test_coil_dry_device_schema_defaults():
 
 @pytest.mark.asyncio
 async def test_setpoint_offset_schema_default_and_range():
-    """setpoint_offset defaults to 0.0 and is limited to -5..+5 (#369)."""
+    """setpoint_offset defaults to 0.0 and is limited to -10..+10 (#369)."""
     import voluptuous as vol
 
     schema = websocket_save_room._ws_schema
@@ -3121,10 +3180,13 @@ async def test_setpoint_offset_schema_default_and_range():
     assert _validate({"entity_id": "climate.ac", "type": "ac"})["setpoint_offset"] == 0.0
     assert _validate({"entity_id": "climate.ac", "type": "ac", "setpoint_offset": "1.5"})["setpoint_offset"] == 1.5
     assert _validate({"entity_id": "climate.ac", "type": "ac", "setpoint_offset": -5})["setpoint_offset"] == -5.0
+    assert _validate({"entity_id": "climate.ac", "type": "ac", "setpoint_offset": -10})["setpoint_offset"] == -10.0
+    assert _validate({"entity_id": "climate.trv", "type": "trv", "setpoint_offset": 8})["setpoint_offset"] == 8.0
+    assert _validate({"entity_id": "climate.trv", "type": "trv", "setpoint_offset": 10})["setpoint_offset"] == 10.0
     with pytest.raises(vol.Invalid):
-        _validate({"entity_id": "climate.ac", "type": "ac", "setpoint_offset": 5.5})
+        _validate({"entity_id": "climate.ac", "type": "ac", "setpoint_offset": 10.5})
     with pytest.raises(vol.Invalid):
-        _validate({"entity_id": "climate.ac", "type": "ac", "setpoint_offset": -6})
+        _validate({"entity_id": "climate.ac", "type": "ac", "setpoint_offset": -10.5})
 
 
 @pytest.mark.asyncio
@@ -3319,6 +3381,27 @@ async def test_analytics_model_reports_solar_gain_now_and_today(ws_hass, store, 
     model = connection.send_result.call_args[0][1]["model"]
     assert model["solar_gain_now"] == pytest.approx(0.4)
     assert model["solar_gain_today_max"] == pytest.approx(0.6)
+
+
+@pytest.mark.asyncio
+async def test_analytics_solar_gain_now_uses_the_sun_sensor(ws_hass, store, connection):
+    """With a sun sensor the room's own input counts, already behind its covers (#303)."""
+    await store.async_load()
+    await store.async_save_room("room_a", {"thermostats": ["climate.trv1"]})
+
+    est = _make_mock_estimator(model_dict={"Q_heat": 3.0, "Q_solar": 2.0, "Q_occupancy": 0.3})
+    est.get_model.return_value.Q_solar = 2.0
+    coordinator = _make_analytics_coordinator(
+        history_rows=[], estimator=est, rooms_live={"room_a": {"shading_factor": 0.5, "solar_input": 0.15}}
+    )
+    coordinator._current_q_solar = 0.4
+    ws_hass.data[DOMAIN]["coordinator"] = coordinator
+
+    msg = {"id": 63, "type": "roommind/analytics/get", "area_id": "room_a"}
+    await _get_analytics(ws_hass, connection, msg)
+
+    model = connection.send_result.call_args[0][1]["model"]
+    assert model["solar_gain_now"] == pytest.approx(0.3)
 
 
 @pytest.mark.asyncio
@@ -3727,6 +3810,249 @@ async def test_list_rooms_forwards_air_quality(ws_hass, store, connection):
     }
 
 
+def test_humidity_schema():
+    """Limits in % RH, dehumidifier/humidifier as humidifier/switch/input_boolean (#518, #526)."""
+    import voluptuous as vol
+
+    schema = websocket_save_room._ws_schema
+    base = {"type": "roommind/rooms/save", "id": 1, "area_id": "bath"}
+    result = schema(
+        {
+            **base,
+            "humidity_max": "65",
+            "humidity_min": 35,
+            "dehumidifier_entity": "humidifier.cellar",
+            "humidifier_entity": "switch.plug",
+        }
+    )
+    assert result["humidity_max"] == 65.0 and result["humidity_min"] == 35.0
+    assert schema({**base, "humidity_max": None, "humidity_min": None})["humidity_max"] is None
+    for eid in ("", "input_boolean.dehum"):
+        assert schema({**base, "dehumidifier_entity": eid})["dehumidifier_entity"] == eid
+    for bad in (
+        {"humidity_max": 39},
+        {"humidity_max": 91},
+        {"humidity_min": 19},
+        {"humidity_min": 61},
+        {"dehumidifier_entity": "fan.bath"},
+        {"humidifier_entity": "climate.ac"},
+    ):
+        with pytest.raises(vol.Invalid):
+            schema({**base, **bad})
+
+
+@pytest.mark.asyncio
+async def test_save_room_humidity_defaults_and_roundtrip(ws_hass, store, connection):
+    await store.async_load()
+    await _save_room(ws_hass, connection, {"id": 2, "type": "roommind/rooms/save", "area_id": "bath"})
+    stored = store.get_room("bath")
+    assert [stored[k] for k in ("humidity_max", "humidity_min", "dehumidifier_entity", "humidifier_entity")] == [
+        None,
+        None,
+        "",
+        "",
+    ]
+    await _save_room(
+        ws_hass,
+        connection,
+        {
+            "id": 3,
+            "type": "roommind/rooms/save",
+            "area_id": "bath",
+            "humidity_max": 70,
+            "dehumidifier_entity": "switch.d",
+        },
+    )
+    connection.send_error.assert_not_called()
+    stored = store.get_room("bath")
+    assert stored["humidity_max"] == 70 and stored["dehumidifier_entity"] == "switch.d"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "first,second",
+    [
+        ({"humidity_max": 50}, {"humidity_min": 41}),  # the second field alone, against the stored one
+        ({"humidity_min": 45}, {"humidity_max": 54}),
+        ({}, {"humidity_max": 50, "humidity_min": 45}),
+    ],
+)
+async def test_save_room_limits_keep_their_gap(ws_hass, store, connection, first, second):
+    await store.async_load()
+    await _save_room(ws_hass, connection, {"id": 2, "type": "roommind/rooms/save", "area_id": "bath", **first})
+    connection.send_error.assert_not_called()
+    await _save_room(ws_hass, connection, {"id": 3, "type": "roommind/rooms/save", "area_id": "bath", **second})
+    assert connection.send_error.call_args[0][1] == "invalid_format"
+
+
+@pytest.mark.asyncio
+async def test_save_room_limits_with_the_gap_and_cleared_ones_pass(ws_hass, store, connection):
+    await store.async_load()
+    for i, fields in enumerate(
+        ({"humidity_max": 50}, {"humidity_min": 40}, {"humidity_max": None}, {"humidity_min": 55})
+    ):
+        await _save_room(ws_hass, connection, {"id": i, "type": "roommind/rooms/save", "area_id": "bath", **fields})
+    connection.send_error.assert_not_called()
+    assert store.get_room("bath")["humidity_min"] == 55
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {"ventilation_entity": "switch.plug", "dehumidifier_entity": "switch.plug"},
+        {"dehumidifier_entity": "switch.plug", "humidifier_entity": "switch.plug"},
+        {"ventilation_entity": "fan.ceiling", "room_fan_entity": "fan.ceiling"},
+    ],
+)
+async def test_save_room_one_role_per_entity(ws_hass, store, connection, fields):
+    await store.async_load()
+    await _save_room(ws_hass, connection, {"id": 2, "type": "roommind/rooms/save", "area_id": "bath", **fields})
+    assert connection.send_error.call_args[0][1] == "invalid_entity"
+
+
+@pytest.mark.asyncio
+async def test_save_room_one_role_per_entity_against_the_stored_room(ws_hass, store, connection):
+    await store.async_load()
+    msg = {"type": "roommind/rooms/save", "area_id": "bath"}
+    await _save_room(ws_hass, connection, {**msg, "id": 2, "ventilation_entity": "switch.plug"})
+    await _save_room(ws_hass, connection, {**msg, "id": 3, "humidifier_entity": "switch.plug"})
+    assert connection.send_error.call_args[0][1] == "invalid_entity"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "first,second,ok",
+    [
+        ({"ventilation_entity": "switch.plug"}, {"dehumidifier_entity": "switch.plug"}, False),
+        ({"dehumidifier_entity": "switch.plug"}, {"humidifier_entity": "switch.plug"}, False),
+        ({"humidifier_entity": "switch.plug"}, {"ventilation_entity": "switch.plug"}, False),
+        ({"dehumidifier_entity": "switch.plug"}, {"dehumidifier_entity": "switch.plug"}, True),
+        ({"ventilation_entity": "fan.hall"}, {"ventilation_entity": "fan.hall"}, True),
+        ({"room_fan_entity": "fan.hall"}, {"ventilation_entity": "fan.hall"}, False),
+        ({"dehumidifier_entity": "switch.plug"}, {"room_fan_entity": "switch.plug"}, False),
+        ({"room_fan_entity": "fan.hall"}, {"room_fan_entity": "fan.hall"}, True),
+    ],
+)
+async def test_save_room_one_role_per_entity_across_rooms(ws_hass, store, connection, first, second, ok):
+    """Ventilation and humidity devices run on two controllers: one switch keeps one role everywhere."""
+    await store.async_load()
+    msg = {"type": "roommind/rooms/save"}
+    await _save_room(ws_hass, connection, {**msg, "id": 2, "area_id": "bath", **first})
+    connection.send_error.assert_not_called()
+    await _save_room(ws_hass, connection, {**msg, "id": 3, "area_id": "hall", **second})
+    if ok:
+        connection.send_error.assert_not_called()
+    else:
+        assert connection.send_error.call_args[0][1] == "invalid_entity"
+
+
+@pytest.mark.asyncio
+async def test_save_room_device_class_only_checked_for_the_field_sent(ws_hass, store, connection):
+    """A humidifier that reports its class only later must not block other saves of the room."""
+    from types import SimpleNamespace
+
+    await store.async_load()
+    msg = {"type": "roommind/rooms/save", "area_id": "bath"}
+    ws_hass.states.get = lambda eid: SimpleNamespace(state="off", attributes={})
+    await _save_room(ws_hass, connection, {**msg, "id": 2, "dehumidifier_entity": "humidifier.unit"})
+    ws_hass.states.get = lambda eid: SimpleNamespace(state="off", attributes={"device_class": "humidifier"})
+    await _save_room(ws_hass, connection, {**msg, "id": 3, "comfort_heat": 22.0})
+    connection.send_error.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "field,device_class,ok",
+    [
+        ("dehumidifier_entity", "dehumidifier", True),
+        ("dehumidifier_entity", "humidifier", False),
+        ("humidifier_entity", "dehumidifier", False),
+        ("humidifier_entity", "humidifier", True),
+        ("humidifier_entity", None, True),
+    ],
+)
+async def test_save_room_humidifier_direction_from_its_device_class(
+    ws_hass, store, connection, field, device_class, ok
+):
+    from types import SimpleNamespace
+
+    await store.async_load()
+    ws_hass.states.get = lambda eid: SimpleNamespace(state="off", attributes={"device_class": device_class})
+    await _save_room(
+        ws_hass, connection, {"id": 2, "type": "roommind/rooms/save", "area_id": "bath", field: "humidifier.unit"}
+    )
+    if ok:
+        connection.send_error.assert_not_called()
+    else:
+        assert connection.send_error.call_args[0][1] == "invalid_entity"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("field", ["dehumidifier_entity", "humidifier_entity"])
+async def test_save_room_rejects_own_humidity_entities(ws_hass, store, connection, field):
+    await store.async_load()
+    msg = {"id": 2, "type": "roommind/rooms/save", "area_id": "bath", field: "switch.roommind_bath_climate_control"}
+    await _save_room(ws_hass, connection, msg)
+    assert connection.send_error.call_args[0][1] == "invalid_entity"
+
+
+@pytest.mark.asyncio
+async def test_sun_sensor_roundtrip_and_live_status(ws_hass, store, connection):
+    """The sun sensor is a plain room field; rooms/list carries what RoomMind makes of it (#303)."""
+    await store.async_load()
+    await _save_room(ws_hass, connection, {"id": 2, "type": "roommind/rooms/save", "area_id": "office"})
+    assert store.get_room("office")["solar_sensor"] == ""
+    msg = {"id": 3, "type": "roommind/rooms/save", "area_id": "office", "solar_sensor": "sensor.office_lux"}
+    await _save_room(ws_hass, connection, msg)
+    assert store.get_room("office")["solar_sensor"] == "sensor.office_lux"
+
+    status = {"kind": "illuminance", "state": "learning", "position": None}
+    mock_coordinator = MagicMock()
+    mock_coordinator.rooms = {"office": {"solar_sensor": status}}
+    mock_coordinator.async_request_refresh = AsyncMock()
+    ws_hass.data[DOMAIN]["coordinator"] = mock_coordinator
+    await _list_rooms(ws_hass, connection, {"id": 4, "type": "roommind/rooms/list"})
+    assert connection.send_result.call_args[0][1]["rooms"]["office"]["live"]["solar_sensor"] == status
+
+
+@pytest.mark.asyncio
+async def test_save_room_rejects_own_entity_as_sun_sensor(ws_hass, store, connection):
+    await store.async_load()
+    msg = {
+        "id": 2,
+        "type": "roommind/rooms/save",
+        "area_id": "office",
+        "solar_sensor": "sensor.roommind_living_room_target_temp",
+    }
+    await _save_room(ws_hass, connection, msg)
+    assert connection.send_error.call_args[0][1] == "invalid_entity"
+
+
+@pytest.mark.asyncio
+async def test_list_rooms_forwards_humidity_control(ws_hass, store, connection):
+    await store.async_load()
+    await _save_room(ws_hass, connection, {"id": 2, "type": "roommind/rooms/save", "area_id": "bath"})
+    keys = (
+        "humidity_high",
+        "humidity_low",
+        "humidity_ventilate",
+        "humidity_vent_blocked",
+        "dehumidifier_active",
+        "humidifier_active",
+        "ac_dry_active",
+    )
+    mock_coordinator = MagicMock()
+    mock_coordinator.rooms = {"bath": dict.fromkeys(keys, True)}
+    mock_coordinator.async_request_refresh = AsyncMock()
+    ws_hass.data[DOMAIN]["coordinator"] = mock_coordinator
+
+    await _list_rooms(ws_hass, connection, {"id": 3, "type": "roommind/rooms/list"})
+
+    live = connection.send_result.call_args[0][1]["rooms"]["bath"]["live"]
+    assert {k: live[k] for k in keys} == dict.fromkeys(keys, True)
+
+
 # ── Admin-only commands and non-admin room saves ───────────────────────
 
 
@@ -3888,3 +4214,113 @@ async def test_save_room_power_sensors_roundtrip_and_own_entity_rejected(ws_hass
     connection.reset_mock()
     await _save_room(ws_hass, connection, {**msg, "power_sensors": ["sensor.roommind_office_target_temp"]})
     connection.send_error.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_save_room_room_fan_fields(ws_hass, store, connection):
+    """Room fan (#266): fan/switch/input_boolean and heat/cool/both; stored, defaults for new rooms."""
+    await store.async_load()
+    msg = {"type": "roommind/rooms/save", "area_id": "living"}
+    await _save_room(ws_hass, connection, {**msg, "id": 2, "comfort_heat": 21.0})
+    assert store.get_room("living")["room_fan_entity"] == ""
+    assert store.get_room("living")["room_fan_mode"] == "both"
+    await _save_room(ws_hass, connection, {**msg, "id": 3, "room_fan_entity": "fan.ceiling", "room_fan_mode": "heat"})
+    connection.send_error.assert_not_called()
+    assert store.get_room("living")["room_fan_entity"] == "fan.ceiling"
+    assert store.get_room("living")["room_fan_mode"] == "heat"
+
+
+@pytest.mark.asyncio
+async def test_save_room_ac_dry_enabled(ws_hass, store, connection):
+    """AC dry switch (#440): on for new rooms, stored when switched off."""
+    import voluptuous as vol
+
+    await store.async_load()
+    msg = {"type": "roommind/rooms/save", "area_id": "living"}
+    await _save_room(ws_hass, connection, {**msg, "id": 2, "comfort_heat": 21.0})
+    assert store.get_room("living")["ac_dry_enabled"] is True
+    await _save_room(ws_hass, connection, {**msg, "id": 3, "ac_dry_enabled": False})
+    connection.send_error.assert_not_called()
+    assert store.get_room("living")["ac_dry_enabled"] is False
+    with pytest.raises(vol.Invalid):
+        websocket_save_room._ws_schema({**msg, "id": 4, "ac_dry_enabled": "maybe"})
+
+
+def test_room_fan_schema():
+    """Room fan (#266): fan/switch/input_boolean, mode heat/cool/both."""
+    import voluptuous as vol
+
+    schema = websocket_save_room._ws_schema
+    base = {"type": "roommind/rooms/save", "id": 1, "area_id": "living"}
+    for eid in ("", "fan.ceiling", "switch.plug", "input_boolean.fan"):
+        assert schema({**base, "room_fan_entity": eid})["room_fan_entity"] == eid
+    for mode in ("heat", "cool", "both"):
+        assert schema({**base, "room_fan_mode": mode})["room_fan_mode"] == mode
+    for bad in ({"room_fan_entity": "climate.living"}, {"room_fan_mode": "dry"}, {"room_fan_mode": ""}):
+        with pytest.raises(vol.Invalid):
+            schema({**base, **bad})
+
+
+@pytest.mark.asyncio
+async def test_save_room_room_fan_rejects_own_entity(ws_hass, store, connection):
+    await store.async_load()
+    msg = {"id": 2, "type": "roommind/rooms/save", "area_id": "living"}
+    await _save_room(ws_hass, connection, {**msg, "room_fan_entity": "switch.roommind_living_climate_control"})
+    connection.send_error.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_away_temperature_schema():
+    """presence_away_action accepts "away"; a room takes away levels in range, or null for eco."""
+    import voluptuous as vol
+
+    settings = websocket_save_settings._ws_schema
+    assert (
+        settings({"id": 1, "type": "roommind/settings/save", "presence_away_action": "away"})["presence_away_action"]
+        == "away"
+    )
+    room = websocket_save_room._ws_schema
+    base = {"id": 1, "type": "roommind/rooms/save", "area_id": "lr"}
+    assert room({**base, "away_heat": "16"})["away_heat"] == 16.0
+    assert room({**base, "away_heat": None, "away_cool": None})["away_cool"] is None
+    with pytest.raises(vol.Invalid):
+        room({**base, "away_heat": float("nan")})
+
+
+@pytest.mark.asyncio
+async def test_save_room_stores_away_levels(ws_hass, store, connection):
+    await store.async_load()
+    await _save_room(ws_hass, connection, {"id": 1, "type": "roommind/rooms/save", "area_id": "lr", "away_heat": 16.0})
+    assert store.get_room("lr")["away_heat"] == 16.0
+    await _save_room(ws_hass, connection, {"id": 2, "type": "roommind/rooms/save", "area_id": "lr", "away_heat": None})
+    assert store.get_room("lr")["away_heat"] is None
+
+
+@pytest.mark.asyncio
+async def test_save_settings_compressor_master_option_defaults_are_not_stored(ws_hass, store, connection):
+    """Groups without the master options stay readable for older releases."""
+    await store.async_load()
+    group = {"id": "g1", "name": "Boiler", "members": ["climate.trv1"], "master_entity": "switch.boiler"}
+    validated = websocket_save_settings._ws_schema(
+        {
+            "id": 32,
+            "type": "roommind/settings/save",
+            "compressor_groups": [{**group, "min_rooms": 1, "run_on_seconds": 0}],
+        }
+    )
+    await _save_settings(ws_hass, connection, validated)
+    saved = store.get_settings()["compressor_groups"][0]
+    for key in ("min_rooms", "start_delay_seconds", "run_on_seconds", "on_temperature", "off_temperature", "off_mode"):
+        assert key not in saved
+
+
+@pytest.mark.asyncio
+async def test_save_settings_compressor_master_not_roommind_itself(ws_hass, store, connection):
+    """RoomMind's own switches cannot be a main device: idle would switch RoomMind off."""
+    await store.async_load()
+    group = {"id": "g1", "name": "G", "members": ["climate.trv1"], "master_entity": "switch.roommind_climate_control"}
+    validated = websocket_save_settings._ws_schema(
+        {"id": 33, "type": "roommind/settings/save", "compressor_groups": [group]}
+    )
+    await _save_settings(ws_hass, connection, validated)
+    assert connection.send_error.call_args[0][1] == "invalid_master_entity"

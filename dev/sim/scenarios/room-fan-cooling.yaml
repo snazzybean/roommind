@@ -1,0 +1,24 @@
+name: room-fan-cooling
+extends: ac-precool-comfort-block
+description: >
+  The summer living room of ac-precool-comfort-block with a ceiling fan RoomMind runs while
+  the AC cools (#266, room fan for cooling only). The sim fan does not cool the air (no
+  perceived temperature), only adds its motor heat, so comfort and AC energy show the cost
+  side; the checks are on how the fan follows the AC.
+refs: [266]
+tags: [ac, appliances, room-fan]
+house:
+  rooms:
+    wohnzimmer:
+      appliances: [{entity_id: fan.wz_decke, profile: ceiling_fan, initial_percentage: 33}]
+roommind:
+  rooms:
+    wohnzimmer:
+      room_fan_entity: fan.wz_decke
+      room_fan_mode: cool
+expect+:
+  - {metric: appliance.rejected_commands, entity_id: fan.wz_decke, max: 0}
+  - {metric: appliance.starts, entity_id: fan.wz_decke, min: 3}
+  - {metric: appliance.shortest_run_min, entity_id: fan.wz_decke, min: 10}
+  - {check: "(state('fan.wz_decke') == 'on') == room.wohnzimmer.room_fan_active", at: "+3d17h", label: fan follows RoomMind}
+  - {check: "appliance('fan.wz_decke').pct == 33", at: "+4d", label: speed stays as the user set it}

@@ -1,0 +1,6 @@
+description: Bathroom exhaust fan, outdoor air in through leaks, room air out (on/off; speed_count > 0 on fan.* adds speeds).
+model: exhaust_fan
+params:
+  airflow_m3_h: 80     # typical 60-100 m³/h for a bathroom fan
+  power_w: 15          # electric only, the motor heat leaves with the exhaust
+  speed_count: 0

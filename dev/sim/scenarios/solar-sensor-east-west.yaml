@@ -1,0 +1,55 @@
+name: solar-sensor-east-west
+description: >
+  Sim physics only. Spring, a living room with an east and a west window, a roller shutter on
+  the west one. Solar sensors in all three kinds: W/m² behind glass and cover over both windows
+  (default), lux on the outside of the east window (saturates at 65535 lx), lux behind the west
+  window with a cheap indoor sensor that saturates at 2000 lx, and % behind the west window.
+  Day 2 the shutter is closed 14:00-20:00 by hand: the sensors behind it drop, the outside one
+  does not.
+tags: [solar, sensors, demo]
+refs: [303]
+start: 2026-04-20T00:00
+duration: 2d
+location: {latitude: 52.5, longitude: 13.4, time_zone: Europe/Berlin}
+weather: {profile: temperate, forecast_error: false, fixed: {cloud: 0}}
+house:
+  building: bestand_teilsaniert
+  outdoor: {sensors: {temperature: sensor.aussen_temp}}
+  rooms:
+    wohnzimmer:
+      name: Wohnzimmer
+      floor_area_m2: 24
+      initial: {temperature: 20.0}
+      windows:
+        - {orientation: E, area_m2: 2.5}
+        - {orientation: W, area_m2: 2.5}
+      covers: [{entity_id: cover.wohnzimmer_rollo, profile: roller_shutter, windows: [1]}]
+      devices: [{entity_id: climate.wohnzimmer_trv, profile: generic_trv}]
+      sensors:
+        temperature: {entity_id: sensor.wohnzimmer_temp}
+        solar: {entity_id: sensor.wohnzimmer_sonne}
+        solar_ost: {entity_id: sensor.wohnzimmer_lux_ost, unit: lx, position: outside, windows: [0]}
+        solar_west: {entity_id: sensor.wohnzimmer_lux_west, unit: lx, windows: [1], max_value: 2000}
+        solar_west_pct: {entity_id: sensor.wohnzimmer_sonne_west_pct, unit: "%", windows: [1]}
+roommind:
+  settings:
+    outdoor_temp_sensor: sensor.aussen_temp
+  rooms:
+    wohnzimmer:
+      devices: [{entity_id: climate.wohnzimmer_trv, type: trv, heating_system_type: radiator}]
+      temperature_sensor: sensor.wohnzimmer_temp
+      climate_mode: heat_only
+      comfort_temp: 21.0
+      eco_temp: 18.0
+timeline:
+  - {at: "+1d14h", do: cover.manual, entity_id: cover.wohnzimmer_rollo, position: 0}
+  - {at: "+1d20h", do: cover.manual, entity_id: cover.wohnzimmer_rollo, position: 100}
+expect:
+  - {check: "sensor('sensor.wohnzimmer_sonne') == 0 and sensor('sensor.wohnzimmer_lux_ost') == 0", at: "+0d02h", label: dark at night}
+  - {check: "sensor('sensor.wohnzimmer_lux_ost') > 10 * sensor('sensor.wohnzimmer_sonne_west_pct') * 120", at: "+0d08h", label: east bright in the morning, west in the shade}
+  # physics, 2026-11-18 seed 1: west % 50 at 18:00 open, 5 with the shutter down (max_shading 0.9);
+  # the cheap indoor lux sensor sits at its 2000 lx cap on diffuse light alone
+  - {check: "sensor('sensor.wohnzimmer_sonne_west_pct') > 30", at: "+0d18h", label: west sun behind the open shutter}
+  - {check: "sensor('sensor.wohnzimmer_sonne_west_pct') < 10", at: "+1d18h", label: closed shutter, sensor behind it drops}
+  - {metric: sensor.saturated_h, entity_id: sensor.wohnzimmer_lux_west, min: 10}
+  - {metric: sensor.saturated_h, entity_id: sensor.wohnzimmer_sonne_west_pct, max: 0}

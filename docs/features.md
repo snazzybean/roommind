@@ -38,6 +38,8 @@ TRVs that expose their valve opening as `number` entities (e.g. SONOFF TRVZB) ar
 
 Estimates solar irradiance from sun position and weather data. The model learns each room's solar response and reduces unnecessary heating.
 
+Optionally, a room gets its own sun sensor (irradiance in W/m², illuminance in lx or a percentage, inside behind the window or outside). RoomMind learns the sensor's scale over the first two days with sun and uses the weather data until then. Afterwards the reading is the room's solar gain, and RoomMind learns from it when the sun reaches the room (orientation, trees, neighbouring buildings) for its forecasts and the covers. A sensor behind a cover is recognized, so the shading is not counted twice. Without a reading the room falls back to the weather data.
+
 ## Schedules and targets
 
 ### Schedules
@@ -58,7 +60,7 @@ Per room, optional (in the schedule settings). A temperature set on the TRV dial
 
 ### Presence
 
-Link `person.*`, `device_tracker.*`, `binary_sensor.*`, or `input_boolean.*` entities globally or per room. Eco temperature is used when all assigned persons are away. Rooms can opt out of presence detection to always follow their schedule.
+Link `person.*`, `device_tracker.*`, `binary_sensor.*`, or `input_boolean.*` entities globally or per room. When all assigned persons are away, a room goes to its eco temperature, switches its devices off, or uses its own away temperature, as set under presence. The away temperature is set per room next to comfort and eco and follows eco until you set it. It never asks for more heating or cooling than the schedule does at that moment: leaving during an 18 °C night with an away temperature of 19 °C keeps 18 °C. Rooms can opt out of presence detection to always follow their schedule.
 
 ### Eco when the room is empty
 
@@ -76,7 +78,13 @@ Rooms with both TRVs and ACs automatically route heating demand to the most effi
 
 ### Shared system: boiler or outdoor unit (compressor groups)
 
-Settings > Shared system (boiler, outdoor unit). Define groups of climate devices sharing a boiler or an outdoor compressor. A main device (gas boiler, heat pump outdoor unit, main switch of a ducted system) is switched on as soon as a room in the group wants to heat or cool, and off when all rooms are idle. Enforces minimum run and off times to prevent short-cycling. Until `min_run_minutes` has elapsed, a device keeps its last active setpoint, including a boost setpoint, so the room can overshoot its target further than without protection. A target that changes on purpose in the meantime (override, vacation, schedule off, presence) is passed on to the device right away (a device with a single heat/cool setpoint only when that cannot push the room the wrong way).
+Settings > Shared system (boiler, outdoor unit). Define groups of climate devices sharing a boiler or an outdoor compressor. A main device (gas boiler, heat pump outdoor unit, main switch of a ducted system) is switched on as soon as a room in the group wants to heat or cool, and off when all rooms are idle. The main device can be a thermostat (`climate`, it gets heat, cool or off) or a `switch` / `input_boolean` (turned on and off). Per group you can also set:
+
+- **Rooms needed:** the main device runs only while at least this many rooms of the group want to heat (or cool). A single room then opens its own valve but does not start the boiler alone, and its model learns that time as a room without heat. Never more than the group's rooms with climate control on. Rooms needed and the delays apply to cooling too.
+- **Start delay and run-on** (seconds): demand must hold for the start delay before the main device switches on, and it keeps running for the run-on after demand drops. Demand that drops or returns within the wait switches nothing. Both run to the second, alongside the minimum run and off times (whichever ends later).
+- **On and off temperature** (thermostat only): the setpoint it gets when heating and when switched off (e.g. a boiler's flow temperature), kept within the thermostat's own range. The off temperature needs an on temperature. A thermostat that can also cool keeps its heat mode only after it last heated, otherwise it is switched off; after cooling it gets no off temperature. `When switching off` decides whether it is switched off or keeps its heat mode at the off temperature. A thermostat switched by hand is set back on the next cycle.
+
+Enforces minimum run and off times to prevent short-cycling. Until `min_run_minutes` has elapsed, a device keeps its last active setpoint, including a boost setpoint, so the room can overshoot its target further than without protection. A target that changes on purpose in the meantime (override, vacation, schedule off, presence) is passed on to the device right away (a device with a single heat/cool setpoint only when that cannot push the room the wrong way).
 
 ### Idle modes
 

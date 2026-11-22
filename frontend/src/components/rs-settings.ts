@@ -15,6 +15,7 @@ import type {
   CompressorGroup,
   RoomWithoutArea,
   PriceStatus,
+  PresenceAwayAction,
 } from "../types";
 import { localize } from "../utils/localize";
 import { errorText } from "../utils/errors";
@@ -213,7 +214,7 @@ export class RsSettings extends LitElement {
   @state() private _vacationUntil = "";
   @state() private _presenceEnabled = false;
   @state() private _presencePersons: string[] = [];
-  @state() private _presenceAwayAction: "eco" | "off" = "eco";
+  @state() private _presenceAwayAction: PresenceAwayAction = "eco";
   @state() private _presenceClearsOverride = false;
   @state() private _scheduleOffAction: "eco" | "off" = "eco";
   @state() private _valveProtectionEnabled = false;
@@ -643,7 +644,9 @@ export class RsSettings extends LitElement {
         const action = localize(
           this._presenceAwayAction === "off"
             ? "settings.summary.away_off"
-            : "settings.summary.away_eco",
+            : this._presenceAwayAction === "away"
+              ? "settings.summary.away_away"
+              : "settings.summary.away_eco",
           l,
         );
         const key =

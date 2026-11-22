@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import time
 from functools import partial
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 from ..const import (
     APPROACH_RATE_MIN,
@@ -46,6 +46,9 @@ from .residual_heat import (
     mean_rebound,
 )
 from .thermal_model import RCModel, ThermalEKF
+
+if TYPE_CHECKING:
+    from ..managers.solar_sensor_manager import RoomSolar
 
 
 def build_forecast_outdoor_series(
@@ -91,6 +94,7 @@ def build_forecast_solar_series(
     forecast: list[dict],
     n_blocks: int,
     shading_factor: float = 1.0,
+    room_solar: RoomSolar | None = None,
 ) -> list[float] | None:
     """Build solar series for analytics prediction from forecast cloud coverage.
 
@@ -115,6 +119,9 @@ def build_forecast_solar_series(
             cloud_series.append(cloud_series[-1] if cloud_series else None)
 
     series = build_solar_series(latitude, longitude, n_blocks, 5.0, cloud_series=cloud_series)
+    if room_solar is not None:
+        # The room's sun sensor: same profile as the controller's forecast
+        series = room_solar.scale(series, time.time(), 5.0)
     if series is not None and shading_factor != 1.0:
         series = [s * shading_factor for s in series]
     return series

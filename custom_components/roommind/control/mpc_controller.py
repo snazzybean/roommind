@@ -81,6 +81,7 @@ from .thermal_model import RoomModelManager
 if TYPE_CHECKING:
     from ..managers.head_offset_tracker import HeadOffsetTracker
     from ..managers.heat_source_orchestrator import HeatSourcePlan
+    from ..managers.solar_sensor_manager import RoomSolar
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -966,6 +967,40 @@ async def async_idle_device(
     return False
 
 
+async def async_climate_command(
+    hass: HomeAssistant, entity_id: str, service: str, data: dict, *, area_id: str = "unknown"
+) -> bool:
+    """Send one climate call as RoomMind and note it in the command cache; False if it failed.
+
+    For managers that drive a device outside ``async_apply`` (AC dry, #440): the cache then
+    knows the device left its idle state, so an IR unit still gets the idle action afterwards.
+    """
+    try:
+        await hass.services.async_call(
+            "climate",
+            service,
+            {"entity_id": entity_id, **data},
+            blocking=True,
+            context=make_roommind_context(),
+        )
+    except Exception:  # noqa: BLE001
+        _LOGGER.warning("Area '%s': climate.%s%s failed on '%s'", area_id, service, data, entity_id, exc_info=True)
+        return False
+    _remember_command(entity_id, service, data)
+    return True
+
+
+def device_setpoint_ha(hass: HomeAssistant, state: Any, celsius: float) -> float:
+    """A room temperature as setpoint in the device's units: snapped to its step, within its limits."""
+    value = celsius_to_ha_temp(hass, celsius)
+    attrs = state.attributes if state is not None else {}
+    value = _snap_to_step(value, _resolve_step(hass, attrs))
+    for limit, pick in (("min_temp", max), ("max_temp", min)):
+        if attrs.get(limit) is not None:
+            value = pick(value, float(attrs[limit]))
+    return value
+
+
 def boost_cap_ha(hass: HomeAssistant, state: Any) -> float | None:
     """Highest proportional heating setpoint a device gets, in HA units; None without a max_temp.
 
@@ -1518,6 +1553,7 @@ class MPCController:
         target_resolver: Callable[[float], TargetTemps | float] | None = None,
         schedule_target_resolver: Callable[[float], TargetTemps] | None = None,
         q_solar: float = 0.0,
+        room_solar: RoomSolar | None = None,
         latitude: float = 0.0,
         longitude: float = 0.0,
         cloud_series: list[float | None] | None = None,
@@ -1583,6 +1619,9 @@ class MPCController:
         self._mode_on_since = mode_on_since
         self._idle_since = idle_since
         self._shading_factor = shading_factor
+        # Sun sensor (#303): its input already sits behind the covers, and forecasts follow its profile
+        self._room_solar = room_solar
+        self._q_solar_shaded = q_solar * shading_factor if room_solar is None else room_solar.q_effective
         self.q_occupancy = q_occupancy
         # Power of the room's metered devices now (kW)
         self.q_power = q_power
@@ -1828,7 +1867,7 @@ class MPCController:
             T_out,
             Q_active=0.0,
             dt_minutes=dt_minutes,
-            q_solar=self.q_solar * self._shading_factor,
+            q_solar=self._q_solar_shaded,
             q_residual=self.q_residual,
             q_occupancy=self.q_occupancy,
             q_power=self.q_power,
@@ -2097,7 +2136,7 @@ class MPCController:
             current_temp,
             outdoor_temp,
             target,
-            q_solar=self.q_solar * self._shading_factor,
+            q_solar=self._q_solar_shaded,
             q_residual=self.q_residual,
             q_occupancy=self.q_occupancy,
             rebound_charge=self.q_rebound,
@@ -2110,7 +2149,7 @@ class MPCController:
             current_temp,
             outdoor_temp,
             target,
-            q_solar=self.q_solar * self._shading_factor,
+            q_solar=self._q_solar_shaded,
             q_occupancy=self.q_occupancy,
             q_power=self.q_power,
         )
@@ -2296,6 +2335,8 @@ class MPCController:
         )
         # MPC uses unshaded solar to avoid oscillation feedback loop:
         # covers deployed → low solar prediction → retract → high solar → deploy
+        if self._room_solar is not None:
+            return self._room_solar.scale(series, time.time(), PLAN_DT_MINUTES)
         return series
 
     @property

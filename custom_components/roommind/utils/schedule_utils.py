@@ -284,11 +284,14 @@ def resolve_targets_at_time(
     schedule_off_action: str = "eco",
     presence_clears_override: bool = False,
     room_vacant: bool = False,
+    away_heat: float | None = None,
+    away_cool: float | None = None,
 ) -> TargetTemps:
     """Resolve dual heat/cool target temps at a specific timestamp.
 
     Returns TargetTemps(heat, cool). None values mean "force off".
     ``room_vacant`` caps the schedule result at eco (occupancy eco, #180).
+    With presence_away_action "away", nobody home uses away_heat/away_cool (see away_target_temps).
     """
     # 1. Override — split heat/cool dead-band (skipped when presence-away suppresses it)
     if (override_heat is not None or override_cool is not None) and (override_until is None or ts < override_until):
@@ -298,16 +301,60 @@ def resolve_targets_at_time(
     if vacation_until is not None and ts < vacation_until and vacation_temp is not None:
         t = float(vacation_temp)
         return TargetTemps(heat=t, cool=max(t, eco_cool))
+
+    def at_home() -> TargetTemps:
+        targets = _schedule_targets_at_time(
+            ts,
+            schedule_blocks,
+            comfort_heat,
+            comfort_cool,
+            eco_heat,
+            eco_cool,
+            block_temp_converter,
+            schedule_off_action,
+        )
+        return cap_to_eco(targets, eco_heat, eco_cool) if room_vacant else targets
+
     # 2.5 Presence
     if presence_away:
         if presence_away_action == "off":
             return TargetTemps(heat=None, cool=None)
+        if presence_away_action == "away":
+            return away_target_temps(away_heat, away_cool, eco_heat, eco_cool, at_home)
         return TargetTemps(heat=eco_heat, cool=eco_cool)
     # 3. Schedule blocks
-    targets = _schedule_targets_at_time(
-        ts, schedule_blocks, comfort_heat, comfort_cool, eco_heat, eco_cool, block_temp_converter, schedule_off_action
-    )
-    return cap_to_eco(targets, eco_heat, eco_cool) if room_vacant else targets
+    return at_home()
+
+
+def away_target_temps(
+    away_heat: float | None,
+    away_cool: float | None,
+    eco_heat: float,
+    eco_cool: float,
+    schedule_targets: Callable[[], TargetTemps],
+) -> TargetTemps:
+    """Targets while nobody is home with presence_away_action "away".
+
+    With no side set the room is at eco, exactly as with the "eco" action. Otherwise an unset
+    side is eco and a set side never asks for more than the schedule would at home (D480): away
+    19 °C during an 18 °C night stays at 18, a side the schedule has off stays off, and a schedule
+    that is off entirely stays off (devices off, as at home). ``schedule_targets`` is what applies at home (occupancy eco included) and is only
+    called when a side is set.
+    """
+    if away_heat is None and away_cool is None:
+        return TargetTemps(heat=eco_heat, cool=eco_cool)
+    sched = schedule_targets()
+    if sched.heat is None and sched.cool is None:
+        return sched
+    if away_heat is None:
+        heat: float | None = eco_heat
+    else:
+        heat = None if sched.heat is None else min(float(away_heat), sched.heat)
+    if away_cool is None:
+        cool: float | None = eco_cool
+    else:
+        cool = None if sched.cool is None else max(float(away_cool), sched.cool)
+    return TargetTemps(heat=heat, cool=cool)
 
 
 def cap_to_eco(targets: TargetTemps, eco_heat: float, eco_cool: float) -> TargetTemps:
@@ -603,6 +650,8 @@ def make_target_resolver(
             schedule_off_action=schedule_off_action,
             presence_clears_override=presence_clears_override,
             room_vacant=room_vacant,
+            away_heat=room.get("away_heat"),
+            away_cool=room.get("away_cool"),
         )
         if targets.heat is None and targets.cool is None:
             return targets

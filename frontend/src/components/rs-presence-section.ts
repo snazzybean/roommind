@@ -1,6 +1,6 @@
 import { LitElement, html, css, nothing } from "lit";
 import { customElement, property } from "lit/decorators.js";
-import type { HomeAssistant } from "../types";
+import type { HomeAssistant, PresenceAwayAction } from "../types";
 import { localize } from "../utils/localize";
 import { tokens } from "../styles/tokens";
 import { formStyles } from "../styles/form-styles";
@@ -18,8 +18,8 @@ export class RsPresenceSection extends LitElement {
   @property({ attribute: false }) public selectedPresencePersons: string[] = [];
   @property({ type: Boolean }) public ignorePresence = false;
   @property({ type: Boolean }) public editing = false;
-  /** Global presence_away_action: eco or devices off. */
-  @property({ type: String }) public awayAction: "eco" | "off" = "eco";
+  /** Global presence_away_action: eco, devices off, or the room's away level. */
+  @property({ type: String }) public awayAction: PresenceAwayAction = "eco";
   @property() public language = "en";
 
   private _focusPersons = false;
@@ -176,9 +176,9 @@ export class RsPresenceSection extends LitElement {
   }
 
   private _allCountKey() {
-    return this.awayAction === "off"
-      ? ("presence.room_none_assigned_off" as const)
-      : ("presence.room_none_assigned" as const);
+    if (this.awayAction === "off") return "presence.room_none_assigned_off" as const;
+    if (this.awayAction === "away") return "presence.room_none_assigned_away" as const;
+    return "presence.room_none_assigned" as const;
   }
 
   private _renderAssigned(pid: string) {

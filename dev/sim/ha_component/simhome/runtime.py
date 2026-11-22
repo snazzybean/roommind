@@ -150,6 +150,8 @@ class SimRuntime:
                     rooms_by_entity[w.sensor] = room.area_id
             for c in room.covers:
                 rooms_by_entity[c.entity_id] = room.area_id
+            for a in room.appliances:
+                rooms_by_entity[a.entity_id] = room.area_id
         devices = dr.async_get(self.hass)
         for eid, area in rooms_by_entity.items():
             entry = reg.async_get(eid)
@@ -259,6 +261,10 @@ class SimRuntime:
         rec: dict[str, Any] = {"t": round(time.time(), 1), "rooms": rooms}
         # Helpers and fans RoomMind may switch (ventilation, #267): their state for checks
         states = {s.entity_id: s.state for s in self.hass.states.async_all(OBSERVED_STATE_DOMAINS)}
+        for eid in self.world.appliances:
+            st = self.hass.states.get(eid)
+            if st is not None:
+                states[eid] = st.state
         if states:
             rec["states"] = states
         if rec["t"] % MODEL_TRACE_INTERVAL_S < OBSERVE_INTERVAL_S:

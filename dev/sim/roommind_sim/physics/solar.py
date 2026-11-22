@@ -87,8 +87,8 @@ def irradiance(sun: SunPosition, cloud_pct: float) -> Irradiance:
     return Irradiance(dni, dhi, ghi)
 
 
-def window_gain_w(sun: SunPosition, irr: Irradiance, orientation: str | float, area_m2: float, g_value: float) -> float:
-    """Solar heat through a vertical window (before shading)."""
+def window_irradiance(sun: SunPosition, irr: Irradiance, orientation: str | float) -> float:
+    """Irradiance on a vertical window plane in W/m² (beam + sky diffuse + ground reflection)."""
     if irr.ghi <= 0:
         return 0.0
     win_az = ORIENTATION_DEG.get(str(orientation).upper(), None)
@@ -97,4 +97,11 @@ def window_gain_w(sun: SunPosition, irr: Irradiance, orientation: str | float, a
     cos_inc = math.cos(el) * math.cos(math.radians(sun.azimuth_deg - win_az))
     beam = irr.dni * max(0.0, cos_inc)
     diffuse = irr.dhi * 0.5 + irr.ghi * 0.2 * 0.5  # sky view + ground reflection
-    return area_m2 * g_value * (beam + diffuse)
+    return beam + diffuse
+
+
+def window_gain_w(sun: SunPosition, irr: Irradiance, orientation: str | float, area_m2: float, g_value: float) -> float:
+    """Solar heat through a vertical window (before shading)."""
+    if irr.ghi <= 0:
+        return 0.0
+    return area_m2 * g_value * window_irradiance(sun, irr, orientation)

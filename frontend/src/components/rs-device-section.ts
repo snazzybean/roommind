@@ -638,8 +638,8 @@ export class RsDeviceSection extends LitElement {
               .label=${localize("devices.setpoint_offset", l)}
               .info=${localize("devices.setpoint_offset_info", l)}
               .value=${device.setpoint_offset ?? 0}
-              .min=${-5}
-              .max=${5}
+              .min=${-10}
+              .max=${10}
               @value-changed=${(e: CustomEvent<{ value: number }>) =>
                 this._onSetpointOffsetChange(id, e.detail.value)}
             ></rs-number-field>`
@@ -1130,7 +1130,7 @@ export class RsDeviceSection extends LitElement {
   }
 
   private _onSetpointOffsetChange(entityId: string, value: number): void {
-    const celsius = Math.max(-5, Math.min(5, Math.round(value * 100) / 100));
+    const celsius = Math.max(-10, Math.min(10, Math.round(value * 100) / 100));
     this._fireDeviceChanged(
       this.devices.map((d) => (d.entity_id === entityId ? { ...d, setpoint_offset: celsius } : d)),
     );

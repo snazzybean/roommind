@@ -7,6 +7,7 @@ import { customElement, property } from "lit/decorators.js";
 import type { HomeAssistant, PriceStatus } from "../../types";
 import { localize } from "../../utils/localize";
 import { describePriceStatus } from "../../utils/price-status";
+import "../shared/rs-field";
 
 // A price sensor (with or without a forecast attribute), an event with rates (Octopus Energy)
 // or something that is on while cheap
@@ -29,18 +30,19 @@ export class RsSettingsPrice extends RsSettingsBase {
     const l = this.hass.language;
     return html`
       <div class="settings-section first">
-        <ha-entity-picker
-          .hass=${this.hass}
-          .value=${this.priceEntity}
-          .includeDomains=${PRICE_DOMAINS}
-          .label=${localize("settings.price_entity", l)}
-          allow-custom-entity
-          @value-changed=${(e: CustomEvent) => {
-            const v = (e.detail?.value as string) ?? "";
-            if (v !== this.priceEntity) this._fire("priceEntity", v);
-          }}
-        ></ha-entity-picker>
-        <span class="field-hint">${localize("settings.price_entity_hint", l)}</span>
+        <rs-field .info=${localize("settings.price_entity_hint", l)}>
+          <ha-entity-picker
+            .hass=${this.hass}
+            .value=${this.priceEntity}
+            .includeDomains=${PRICE_DOMAINS}
+            .label=${localize("settings.price_entity", l)}
+            allow-custom-entity
+            @value-changed=${(e: CustomEvent) => {
+              const v = (e.detail?.value as string) ?? "";
+              if (v !== this.priceEntity) this._fire("priceEntity", v);
+            }}
+          ></ha-entity-picker>
+        </rs-field>
         ${this.priceEntity ? this._renderStatus(l) : nothing}
       </div>
       <div class="settings-section">

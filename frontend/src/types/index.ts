@@ -23,6 +23,14 @@ export interface CoverScheduleEntry {
   mode?: "force" | "gate";
 }
 
+/** What RoomMind makes of a room's sun sensor (#303). */
+export interface SolarSensorLive {
+  kind: "irradiance" | "illuminance" | "percent" | null;
+  /** learning: scale not known yet (weather model in use); unavailable: weather model meanwhile. */
+  state: "learning" | "active" | "unavailable" | "unsupported";
+  position: "inside" | "outside" | null;
+}
+
 export interface RoomLiveData {
   current_temp: number | null;
   current_humidity: number | null;
@@ -51,6 +59,22 @@ export interface RoomLiveData {
   air_quality_reason?: "co2" | "voc" | null;
   /** RoomMind runs the room's ventilation entity for bad air. */
   ventilation_active?: boolean;
+  /** Past the room's humidity limits (#518, #526), with hysteresis. */
+  humidity_high?: boolean;
+  humidity_low?: boolean;
+  /** Too humid and the outdoor air dries: the room wants its ventilation for humidity. */
+  humidity_ventilate?: boolean;
+  /** Too humid, but the outdoor air is not drier: no ventilation for humidity. */
+  humidity_vent_blocked?: boolean;
+  /** RoomMind runs the room's dehumidifier / humidifier. */
+  dehumidifier_active?: boolean;
+  /** An AC runs in dry for the too humid room (#440). */
+  ac_dry_active?: boolean;
+  humidifier_active?: boolean;
+  /** Sun sensor (#303); null without one. */
+  solar_sensor?: SolarSensorLive | null;
+  /** RoomMind runs the room fan while the room heats or cools (#266). */
+  room_fan_active?: boolean;
   mold_risk_level: "ok" | "warning" | "critical";
   mold_surface_rh: number | null;
   mold_surface_temp: number | null;
@@ -139,7 +163,24 @@ export interface CompressorGroup {
   conflict_resolution: ConflictResolution;
   action_script: string;
   enforce_uniform_mode: boolean;
+  /** The main device runs only while at least this many member rooms want its action. */
+  min_rooms?: number;
+  /** Seconds a wanted switch must hold before the main device follows: on, off. */
+  start_delay_seconds?: number;
+  run_on_seconds?: number;
+  /** Climate main device: setpoint when heating and when off (its own unit), null = mode only. */
+  on_temperature?: number | null;
+  off_temperature?: number | null;
+  /** "off": switch the thermostat off, "temperature": keep its heat mode at the off temperature. */
+  off_mode?: MasterOffMode;
 }
+
+export type RoomFanMode = "heat" | "cool" | "both";
+
+/** What a room does when nobody is home: eco, devices off, or its own away level. */
+export type PresenceAwayAction = "eco" | "off" | "away";
+
+export type MasterOffMode = "off" | "temperature";
 
 export interface RoomConfig {
   area_id: string;
@@ -159,6 +200,19 @@ export interface RoomConfig {
   voc_threshold?: number | null;
   /** fan.*, switch.* or input_boolean.* RoomMind switches on for bad air. */
   ventilation_entity?: string;
+  /** % RH; null = not regulated. Too humid from max on, too dry from min on (#518, #526). */
+  humidity_max?: number | null;
+  humidity_min?: number | null;
+  /** humidifier.*, switch.* or input_boolean.* RoomMind runs past the limits. */
+  dehumidifier_entity?: string;
+  humidifier_entity?: string;
+  /** Sunlight on the room: W/m², lx or % (#303). */
+  solar_sensor?: string;
+  /** fan.*, switch.* or input_boolean.* RoomMind runs while the room heats or cools (#266). */
+  room_fan_entity?: string;
+  room_fan_mode?: RoomFanMode;
+  /** An AC with `dry` may dry the room past humidity_max (#440); missing = on. */
+  ac_dry_enabled?: boolean;
   preheat_enabled?: boolean;
   /** K the schedule target may move with the electricity price, 0 = off. */
   price_shift?: number;
@@ -176,6 +230,9 @@ export interface RoomConfig {
   comfort_cool: number;
   eco_heat: number;
   eco_cool: number;
+  /** Levels while nobody is home with presence_away_action "away"; unset or null = eco. */
+  away_heat?: number | null;
+  away_cool?: number | null;
   override_heat?: number | null;
   override_cool?: number | null;
   override_until?: number | null;
@@ -242,7 +299,7 @@ export interface GlobalSettings {
   vacation_until?: number | null;
   presence_enabled?: boolean;
   presence_persons?: string[];
-  presence_away_action?: "eco" | "off";
+  presence_away_action?: PresenceAwayAction;
   presence_clears_override?: boolean;
   schedule_off_action?: "eco" | "off";
   valve_protection_enabled?: boolean;

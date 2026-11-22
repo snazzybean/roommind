@@ -19,6 +19,7 @@ from .const import (
     DEFAULT_HEAT_SOURCE_OUTDOOR_THRESHOLD,
     DEFAULT_HEAT_SOURCE_PRIMARY_DELTA,
     DEFAULT_OCCUPANCY_ECO_DELAY_MINUTES,
+    DEFAULT_ROOM_FAN_MODE,
     DOMAIN,
 )
 from .utils.device_utils import (
@@ -269,6 +270,9 @@ class RoomMindStore:
             "comfort_cool": config.get("comfort_cool", DEFAULT_COMFORT_COOL),
             "eco_heat": eco_heat,
             "eco_cool": config.get("eco_cool", DEFAULT_ECO_COOL),
+            # Nobody home with presence_away_action "away"; None = eco
+            "away_heat": config.get("away_heat"),
+            "away_cool": config.get("away_cool"),
             "presence_persons": config.get("presence_persons", []),
             "display_name": config.get("display_name", ""),
             "heating_system_type": config.get("heating_system_type", ""),
@@ -304,6 +308,14 @@ class RoomMindStore:
             "voc_sensor": config.get("voc_sensor", ""),
             "voc_threshold": config.get("voc_threshold"),
             "ventilation_entity": config.get("ventilation_entity", ""),
+            "humidity_max": config.get("humidity_max"),
+            "humidity_min": config.get("humidity_min"),
+            "dehumidifier_entity": config.get("dehumidifier_entity", ""),
+            "humidifier_entity": config.get("humidifier_entity", ""),
+            "solar_sensor": config.get("solar_sensor", ""),
+            "room_fan_entity": config.get("room_fan_entity", ""),
+            "room_fan_mode": config.get("room_fan_mode", DEFAULT_ROOM_FAN_MODE),
+            "ac_dry_enabled": config.get("ac_dry_enabled", True),
         }
         _single_temps_to_cool_side(room, config, room["climate_mode"])
         # Directional device sync for new rooms (truthiness check, not just presence)

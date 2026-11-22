@@ -802,7 +802,7 @@ class TestGetSetpointOffsets:
             {"entity_id": "climate.a", "setpoint_mode": "direct", "setpoint_offset": 99},
             {"entity_id": "climate.b", "setpoint_mode": "direct", "setpoint_offset": -99},
         ]
-        assert get_setpoint_offsets(devices) == {"climate.a": 5.0, "climate.b": -5.0}
+        assert get_setpoint_offsets(devices) == {"climate.a": 10.0, "climate.b": -10.0}
 
     def test_device_without_entity_id_skipped(self):
         devices = [{"setpoint_mode": "direct", "setpoint_offset": 1.0}]

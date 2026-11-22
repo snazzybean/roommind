@@ -60,7 +60,7 @@ test their own code.
 
 ## Scenarios
 
-YAML in `scenarios/`, profiles in `profiles/{devices,buildings,sensors,covers,people,weather}`.
+YAML in `scenarios/`, profiles in `profiles/{devices,appliances,buildings,sensors,covers,people,weather}`.
 A scenario describes location, start/duration, weather, rooms with devices and sensors,
 helpers (schedules, input_boolean/number), RoomMind settings and room configs (sent
 through RoomMind's real WebSocket handlers, so validation is identical to the panel),
@@ -98,7 +98,79 @@ setpoint once the room is at its cool target), `no_rejected_commands`, `window_o
 `no_heat_and_cool_same_group`, `uniform_group_one_mode` (#533: no unit or master in heat while
 another is in cool, dry or fan in a group with "All in the same mode"), `no_commands_when_climate_off`, `max_commands_per_hour`.
 Check expressions see `room.<area>.<live field>`, `dev('<entity_id>')`,
-`cover('<entity_id>')`, `true_temp('<area>')` and `outdoor`.
+`cover('<entity_id>')`, `appliance('<entity_id>')` (ground truth: `on`, `running`, `pct`,
+`target_rh`, `electric_w`, `heat_w`, `moisture_g_h`), `sensor('<entity_id>')` (reported value
+of a solar sensor), `state('<entity_id>')` (HA state of helpers, fans and the sim appliances),
+`true_temp('<area>')`, `rh('<area>')` (true RH) and `outdoor`.
+
+Metric groups for `metric:` expectations: `room.*` / `comfort.*` (with `room:`), `device.*`,
+`cover.*`, `appliance.*`, `sensor.*` (with `entity_id:`) and `model.*`. Rooms also carry
+`rh_max`, `rh_mean` and `rh_over_60_h` / `_70_h` / `_80_h` (hours at or above).
+
+### Appliances and solar sensors
+
+Fans, dehumidifiers and humidifiers are `appliances:` of a room, not climate devices. The
+HA domain comes from the entity id, the behaviour from the profile in `profiles/appliances/`;
+keys besides `entity_id`, `profile` and `name` override profile params.
+
+```yaml
+house:
+  rooms:
+    bad:
+      appliances:
+        # exhaust fan as fan.* or switch.*; make-up air from outdoors unless makeup_room is set
+        - {entity_id: fan.bad_luefter, profile: exhaust_fan, airflow_m3_h: 80, makeup_room: flur}
+        # dehumidifier as humidifier.* (device class dehumidifier) or switch.* (smart plug)
+        - {entity_id: humidifier.bad_entfeuchter, profile: dehumidifier, target_humidity: 55}
+        # humidifier as humidifier.* (device class humidifier)
+        - {entity_id: humidifier.bad_befeuchter, profile: humidifier, target_humidity: 45}
+        # ceiling/standing fan as fan.* (speed_count speeds) or switch.*
+        - {entity_id: fan.bad_decke, profile: ceiling_fan, radiator_boost: 1.3, initial_on: true}
+      sensors:
+        solar: {entity_id: sensor.bad_sonne}                       # W/m², behind glass and cover
+        solar_lux: {entity_id: sensor.bad_lux, unit: lx, windows: [0], max_value: 2000}
+        solar_aussen: {entity_id: sensor.bad_sonne_pct, unit: "%", position: outside}
+timeline:
+  - {at: "+1d07h20m", do: device.manual, entity_id: fan.bad_luefter, state: "off"}  # a hand at the device
+```
+
+| Profile (model) | Entities | Physics | Main params |
+|---|---|---|---|
+| `exhaust_fan` | `fan.*`, `switch.*` | Air exchange `airflow_m3_h` x share: by default outdoor air through the zone's ventilation term (heat loss and moisture exchange with the outdoor humidity ratio); with `makeup_room` the air comes from that room at its temperature and humidity, and that room draws the same flow of outdoor air. Motor heat leaves with the exhaust. | `airflow_m3_h` 80, `power_w` 15, `speed_count` 0, `makeup_room` |
+| `dehumidifier` | `humidifier.*` (dehumidifier), `switch.*` | Removes `rated_kg_h` at `rated_temp_c`/`rated_rh` (20 °C / 60 %), proportional to the humidity ratio above saturation at `coil_temp_c` (5 °C), capped at `max_factor`. Electric power and the condensation heat (~270 W at 0.4 kg/h) go into the room. Restart delay `min_off_s`. | `rated_kg_h` 0.4, `power_w` 300, `target_humidity`, `hysteresis_pct` 2, `min_off_s` 180 |
+| `humidifier` | `humidifier.*` (humidifier), `switch.*` | Adds `rated_kg_h`, tapering to 0 between 90 and 100 % RH; the water evaporates in the room air and takes its latent heat (heat = `power_w` - rate x latent heat). | `rated_kg_h` 0.3, `power_w` 30, `target_humidity`, `hysteresis_pct` 2 |
+| `room_fan` (`ceiling_fan`) | `fan.*` (percentage), `switch.*` | Motor heat `power_w` x share. While it runs the room's radiators deliver `radiator_boost` x their output (the extra all convective, so the radiator also cools down faster after a run) and the air-to-mass coupling grows by `mixing_boost`. No cooling of the air: the zone has no stratification or perceived temperature. | `speed_count` 3, `power_w` 40, `radiator_boost` 1.3, `mixing_boost` 0.1 |
+
+Share = percentage / 100 on `fan.*` entities with speeds, else 1. `target_humidity` is the
+device's own hygrostat (null = runs whenever it is on); it reads the true room RH plus
+`rh_offset`. `humidifier.*` entities accept `humidifier.turn_on/off` and `set_humidity`
+(`min_humidity`..`max_humidity`, 30-80), report `action` (drying/humidifying/idle/off) and
+`current_humidity`; `fan.*` accept `fan.turn_on` (with `percentage`), `turn_off`,
+`set_percentage` (0 = off); `switch.*` accept `turn_on/off` and show `current_power_w`.
+Unsupported services are rejected and logged like climate commands. `device.manual` with
+`state: "on"|"off"`, `percentage` or `target_humidity` changes an appliance without a command
+(quote `"on"`/`"off"` or use true/false; both work), `entity.unavailable` and
+`sim.param` (`device.<entity_id>.<param>`) work as for climate devices. Ground truth goes to
+the samples under `appliances` only if the scenario has any; the observer adds their HA state.
+
+Solar sensors are room sensors with the key `solar` or `solar_<suffix>` (several per room).
+`windows:` picks window indices (default all, area-weighted). `position: inside` (default)
+measures behind the glass (`transmittance` 0.75) and the room's covers, `outside` the
+irradiance on the window plane in front of the cover. `unit`: `W/m²` (default, device class
+irradiance), `lx` (illuminance, `lux_per_w_m2` 120, saturates at `max_value`, default 65535)
+or `%` (no device class, `full_scale_w_m2` 1000 = 100 %). Noise is relative (`noise_rel`
+0.02), reporting as for the other sensors (`report`, `resolution`). Reported values go to the
+samples under `solar_sensors`.
+
+Appliance metrics (`appliance.*`): `commands`, `commands_per_hour`, `redundant_commands`,
+`rejected_commands`, `manual_switches` (`device.manual` actions), `power_ons`, `on_h`, `starts`,
+`run_h`, `shortest_run_min`, `longest_run_min` (running = actually working), `electric_kwh`,
+`heat_kwh`, `moisture_removed_kg`, `moisture_added_kg`. Solar sensor metrics (`sensor.*`):
+`max`, `mean` and `sun_h` (while above 0), `saturated_h` (at `max_value`).
+
+Not modelled: water tank full, defrost of dehumidifiers in cold rooms, condensation on cold
+surfaces (RH can pass 100 % in the zone when moisture keeps coming), backdraft through a
+stopped exhaust fan, perceived temperature under a fan, indoor light for lux sensors.
 
 ## Realism defaults
 
