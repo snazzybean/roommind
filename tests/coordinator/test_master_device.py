@@ -3469,8 +3469,9 @@ def _switch_state(state):
     return s
 
 
-def _climate_state(mode, temperature=None):
+def _climate_state(mode, temperature=None, features=1):
     s = _make_master_state(mode, ["off", "heat"])
+    s.attributes["supported_features"] = features  # 1: target temperature
     if temperature is not None:
         s.attributes["temperature"] = temperature
     return s
@@ -3659,7 +3660,9 @@ class TestMasterOptionsFollowUp:
 
     @pytest.mark.asyncio
     async def test_restart_does_not_read_a_master_kept_in_heat_as_heating(self, hass, mock_config_entry):
-        group = _group("climate.boiler", off_temperature=10, off_mode="temperature", enforce_uniform_mode=True)
+        group = _group(
+            "climate.boiler", on_temperature=60, off_temperature=10, off_mode="temperature", enforce_uniform_mode=True
+        )
         hass.data = {"roommind": {"store": _make_store_mock({})}}
         hass.states.get = MagicMock(
             side_effect=lambda eid: _climate_state("heat", 10) if eid == "climate.boiler" else _climate_state("off")
@@ -3692,11 +3695,35 @@ class TestMasterOptionsFollowUp:
         assert coordinator._master_target(coordinator._compressor_manager.get_groups()["g1"], "idle") == ("off", 10)
 
     @pytest.mark.asyncio
-    async def test_a_master_without_setpoint_gets_none(self, hass, mock_config_entry):
-        await _run_group(
-            hass, mock_config_entry, _group("climate.boiler", on_temperature=60), _climate_state("heat"), "18.0"
-        )
+    async def test_a_master_without_setpoint_gets_none_and_is_switched_off(self, hass, mock_config_entry):
+        group = _group("climate.boiler", on_temperature=60, off_temperature=10, off_mode="temperature")
+        await _run_group(hass, mock_config_entry, group, _climate_state("heat", features=0), "18.0")
         assert _master_calls(hass, "climate.boiler") == []
+        await _run_group(hass, mock_config_entry, group, _climate_state("heat", features=0), "22.0")
+        assert _master_calls(hass, "climate.boiler") == [("climate", "set_hvac_mode", {"hvac_mode": "off"})]
+
+    @pytest.mark.asyncio
+    async def test_a_heat_pump_keeps_heat_only_after_heating(self, hass, mock_config_entry):
+        group = _group("climate.hp", on_temperature=45, off_temperature=20, off_mode="temperature")
+        state = _make_master_state("off", ["off", "heat", "cool"])
+        state.attributes["supported_features"] = 1
+        hass.data = {"roommind": {"store": _make_store_mock({})}}
+        hass.states.get = MagicMock(return_value=state)
+        coordinator = _create_coordinator(hass, mock_config_entry)
+        manager = coordinator._compressor_manager
+        manager.load_groups([group])
+        cfg = manager.get_groups()["g1"]
+        # After a restart RoomMind does not know how it ran: a unit that can cool stays off
+        assert coordinator._master_target(cfg, "idle") == ("off", 20)
+        manager.set_master_action("g1", "heat")
+        manager.set_master_action("g1", "idle")
+        assert coordinator._master_target(cfg, "idle") == ("heat", 20)
+        # Only a cool really sent counts, not a wish for it
+        manager.set_desired_action("g1", "cool")
+        assert coordinator._master_target(cfg, "idle") == ("heat", 20)
+        manager.set_master_action("g1", "cool")
+        manager.set_master_action("g1", "idle")
+        assert coordinator._master_target(cfg, "idle") == ("off", 20)
 
     @pytest.mark.asyncio
     async def test_climate_control_off_forgets_a_running_start_delay(self, hass, mock_config_entry, monkeypatch):
@@ -3731,3 +3758,21 @@ class TestMasterOptionsFollowUp:
         assert coordinator._delivering_eids(room, "heating", ac_only) == ["climate.ac"]
         assert coordinator._delivering_eids(room, "heating", None) == ["climate.trv", "climate.ac"]
         assert coordinator._delivering_eids(room, "cooling", None) == ["climate.ac"]
+
+    @pytest.mark.asyncio
+    async def test_an_ac_sitting_heating_out_does_not_keep_the_room_training(
+        self, hass, mock_config_entry, monkeypatch
+    ):
+        monkeypatch.setattr("custom_components.roommind.coordinator.async_call_later", lambda *_a: lambda: None)
+        room = _room_with_device("living_room_abc12345", "climate.living_trv")
+        room["devices"] = [*room["devices"], {"entity_id": "climate.living_ac", "type": "ac", "role": "auto"}]
+        room["climate_mode"] = "heat_only"
+        rooms = {"living_room_abc12345": room}
+        group = _group("switch.boiler", start_delay_seconds=120)
+        coordinator = await _run_group(hass, mock_config_entry, group, _switch_state("off"), "22.0", rooms=rooms)
+        coordinator._ekf_training.process = MagicMock()
+        coordinator._resolve_outdoor_temp = MagicMock(return_value=(5.0, "sensor"))
+        await _run_group(
+            hass, mock_config_entry, group, _switch_state("off"), "18.0", rooms=rooms, coordinator=coordinator
+        )
+        assert not coordinator._ekf_training.process.called

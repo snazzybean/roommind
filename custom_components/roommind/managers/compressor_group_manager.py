@@ -80,6 +80,8 @@ class CompressorGroupState:
     master_on_since: float | None = None
     master_off_since: float | None = None
     member_started_at: dict[str, float] = field(default_factory=dict)
+    # The last heat or cool the master was really sent (in memory, None after a restart)
+    master_last_active: str | None = None
     # Start delay / run-on: the action the rooms want, and since when (monotonic)
     delay_wanted: str | None = None
     delay_wanted_since: float | None = None
@@ -459,6 +461,7 @@ class CompressorGroupManager:
             state.switch_wait_since = None
         if action in UNIFORM_MODE_CONFLICTS:
             state.last_mode_action = action
+            state.master_last_active = action
         if action != "idle" and (prev is None or prev == "idle"):
             state.master_on_since = monotonic()
             state.master_off_since = None
