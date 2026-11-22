@@ -360,3 +360,18 @@ def test_restarts_within_ten_minutes_of_a_stop_are_counted():
     m = _device_metrics(run_data, "climate.d", 24.0)
     assert m["commanded_runs"] == 3
     assert m["restarts_10min"] == 1
+
+
+def test_metric_vs_room_compares_two_rooms():
+    from roommind_sim.analysis.evaluate import _metric
+
+    metrics = {"rooms": {}, "devices": {}, "model": {"a": {"mae": 0.15}, "b": {"mae": 0.2}, "c": {"mae": 0.0}}}
+    ok = _metric(None, metrics, {"metric": "model.mae", "room": "a", "vs_room": "b", "max": 0.8})  # type: ignore[arg-type]
+    assert ok["passed"] and ok["value"] == 0.75
+    assert "vs b" in ok["label"]
+    worse = _metric(None, metrics, {"metric": "model.mae", "room": "b", "vs_room": "a", "max": 0.8})  # type: ignore[arg-type]
+    assert not worse["passed"]
+    none = _metric(None, metrics, {"metric": "model.mae", "room": "a", "vs_room": "c", "max": 0.8})  # type: ignore[arg-type]
+    assert not none["passed"] and "no value" in none["detail"]
+    unknown = _metric(None, metrics, {"metric": "x.mae", "room": "a"})  # type: ignore[arg-type]
+    assert not unknown["passed"]

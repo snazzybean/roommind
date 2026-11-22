@@ -324,7 +324,7 @@ def _device(room: str, ddata: dict[str, Any], where: str) -> DeviceSpec:
 
 
 def _sensor(kind: str, sdata: dict[str, Any] | str, room: str | None, where: str, n_windows: int = 0) -> SensorSpec:
-    """``kind`` is the key in ``sensors:``; ``solar_<suffix>`` allows several solar sensors per room."""
+    """``kind`` is the key in ``sensors:``; ``solar_<suffix>`` / ``power_<load>`` allow several per room."""
     if isinstance(sdata, str):
         sdata = {"entity_id": sdata}
     sdata = dict(sdata or {})
@@ -332,6 +332,10 @@ def _sensor(kind: str, sdata: dict[str, Any] | str, room: str | None, where: str
     base_kind = kind.removeprefix("outdoor_")
     if base_kind.startswith("solar_") and room is not None:
         base_kind = kind = "solar"
+    # power_<load>: several power sensors per room, each measuring its own power.set load
+    if base_kind.startswith("power_") and room is not None:
+        sdata.setdefault("load", base_kind.removeprefix("power_"))
+        base_kind = kind = "power"
     if base_kind not in SENSOR_KINDS or (base_kind == "solar" and room is None):
         raise ScenarioError(f"unknown sensor kind {kind!r} (allowed: {sorted(SENSOR_KINDS)})", where)
     _check_entity_id(eid, "binary_sensor" if base_kind == "occupancy" else "sensor", where)

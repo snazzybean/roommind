@@ -637,10 +637,6 @@ def _model_metrics(run: RunData) -> dict[str, Any]:
         beta_s = _truth_beta_s(run, area, truth["capacity_j_k"])
         beta_h = _truth_beta_device(run, area, truth["capacity_j_k"], "heating")
         beta_c = _truth_beta_device(run, area, truth["capacity_j_k"], "cooling")
-        # Only rooms whose power sensors RoomMind knows learn beta_p; the others keep the default
-        metered = bool(((run.scenario.roommind.get("rooms") or {}).get(area) or {}).get("power_sensors"))
-        beta_p = _truth_beta_p(run, area, truth["capacity_j_k"]) if metered else None
-        learned_beta_p = _learned_beta_p(learned) if metered else None
         # learned / truth: the expectation form for heating and cooling rates
         ratio = {
             key: round(x[i] / truth_val, 2) if len(x) > i and truth_val else None
@@ -656,10 +652,9 @@ def _model_metrics(run: RunData) -> dict[str, Any]:
             "learned_beta_h": round(x[2], 3) if len(x) > 2 else None,
             "learned_beta_c": round(x[3], 3) if len(x) > 3 else None,
             "learned_beta_s": round(x[4], 3) if len(x) > 4 else None,
-            "truth_beta_p": round(beta_p, 3) if beta_p is not None else None,
-            "learned_beta_p": round(learned_beta_p, 3) if learned_beta_p is not None else None,
-            "beta_p_ratio": round(learned_beta_p / beta_p, 2) if learned_beta_p is not None and beta_p else None,
             **ratio,
+            **_power_sensor_metrics(run, area, truth["capacity_j_k"]),
+            **_backtest_metrics(run, area),
             "n_updates": learned.get("n_updates"),
         }
     return out
@@ -686,23 +681,81 @@ def _truth_beta_device(run: RunData, area: str, capacity_j_k: float, action: str
     return power / share * 3600.0 / capacity_j_k
 
 
-def _learned_beta_p(learned: dict[str, Any]) -> float | None:
-    """beta_p from RoomMind's storage: its own entry beside the 6D x (or x[7] of a full vector)."""
-    side = learned.get("beta_p")
-    if isinstance(side, dict) and isinstance(side.get("x"), int | float):
-        return float(side["x"])
-    x = learned.get("x") or []
-    return float(x[7]) if len(x) > 7 else None
+def _backtest_metrics(run: RunData, area: str) -> dict[str, Any]:
+    """RoomMind's own backtest of the room (one-hour prediction error over its history).
 
-
-def _truth_beta_p(run: RunData, area: str, capacity_j_k: float) -> float | None:
-    """Device heat in RoomMind's units (K/h per kW, lumped capacity): every metered watt heats the room.
-
-    None when the room's metered devices never ran.
+    Read from the last ``roommind.ws`` call of ``roommind/analytics/get`` for the room in the
+    timeline: ``backtest_idle_mae`` / ``backtest_active_mae`` [K], ``backtest_idle_n`` windows.
     """
-    if capacity_j_k <= 0 or not any(s["rooms"][area].get("power_w", 0) > 0 for s in run.samples):
+    for event in reversed(run.events):
+        args = event.get("args") or {}
+        if (
+            event.get("type") == "action"
+            and event.get("action") == "roommind.ws"
+            and args.get("type") == "roommind/analytics/get"
+            and args.get("area_id") == area
+            and isinstance(event.get("result"), dict)
+        ):
+            bt = ((event["result"].get("model") or {}).get("backtest")) or {}
+            idle, active = bt.get("idle") or {}, bt.get("active") or {}
+            return {
+                "backtest_idle_mae": idle.get("mae"),
+                "backtest_idle_n": idle.get("n"),
+                "backtest_active_mae": active.get("mae"),
+            }
+    return {}
+
+
+def _power_sensor_metrics(run: RunData, area: str, capacity_j_k: float) -> dict[str, Any]:
+    """Per power sensor RoomMind knows: the learned gain, whether it is used, and the truth.
+
+    Keys ``power_<object id>_gain|truth|ratio|active|no_effect|improvement|windows`` (K/h per kW;
+    active / no_effect 1 or 0; improvement the share of the prediction error it removes). The truth is the share of the load's power that heats
+    the room per lumped capacity, given only for a load without lag.
+    """
+    sensors = ((run.scenario.roommind.get("rooms") or {}).get(area) or {}).get("power_sensors") or []
+    if not sensors:
+        return {}
+    learned = (run.storage.get("power_gains") or {}).get(area) or {}
+    gains = dict(zip(learned.get("sensors") or [], learned.get("gain") or [], strict=False))
+    scores = learned.get("state") or {}
+    last = run.observer[-1] if run.observer else {}
+    status = ((last.get("rooms") or {}).get(area) or {}).get("power_sensor_status") or {}
+    out: dict[str, Any] = {}
+    for eid in sensors:
+        key = "power_" + eid.split(".", 1)[-1]
+        gain = gains.get(eid)
+        truth = _truth_power_gain(run, area, eid, capacity_j_k)
+        out[f"{key}_gain"] = round(gain, 3) if gain is not None else None
+        out[f"{key}_truth"] = round(truth, 3) if truth is not None else None
+        out[f"{key}_ratio"] = round(gain / truth, 2) if gain is not None and truth else None
+        out[f"{key}_active"] = 1 if status.get(eid) == "active" else 0
+        score = scores.get(eid) or {}
+        without = score.get("sse_without") or 0.0
+        # Share of the prediction error the sensor removes, scored by RoomMind before each update
+        out[f"{key}_improvement"] = round(1.0 - (score.get("sse_with") or 0.0) / without, 3) if without else None
+        out[f"{key}_windows"] = score.get("n")
+        out[f"{key}_no_effect"] = 1 if status.get(eid) == "no_effect" else 0
+    return out
+
+
+def _truth_power_gain(run: RunData, area: str, eid: str, capacity_j_k: float) -> float | None:
+    """K/h per kW of the load a sensor measures, None with a lag or mixed heat shares."""
+    spec = next((s for s in run.scenario.all_sensors() if s.entity_id == eid), None)
+    if spec is None or capacity_j_k <= 0:
         return None
-    return 1000.0 * 3600.0 / capacity_j_k
+    name = spec.params.get("load")
+    heats = {
+        (float(item.args.get("heat", 1.0)), float(item.args.get("heat_tau", 0.0)))
+        for item in run.scenario.timeline
+        if item.action == "power.set"
+        and item.args.get("room") == area
+        and (name is None or str(item.args.get("load", "devices")) == name)
+    }
+    if len(heats) != 1:
+        return None
+    heat, lag = heats.pop()
+    return heat * 1000.0 * 3600.0 / capacity_j_k if lag == 0 else None
 
 
 def _truth_beta_s(run: RunData, area: str, capacity_j_k: float) -> float | None:

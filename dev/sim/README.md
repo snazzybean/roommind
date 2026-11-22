@@ -85,7 +85,7 @@ known_failure: "candidate: ..."    # failing expectations count as XFAIL
 `extends:` merges mappings recursively and replaces lists; `key+: [...]` appends to the
 inherited list, `key-: ~` removes an inherited key.
 
-Actions: `window.open/close`, `person.leave/arrive`, `occupancy.set`, `power.set` (W of metered devices in a room, all of it heat; a room sensor of kind `power` reports it), `cover.manual`,
+Actions: `window.open/close`, `person.leave/arrive`, `occupancy.set`, `power.set` (W of a metered device in a room: `load` names it, default `devices`; `heat` is the share that ends up as room heat, default 1, e.g. 0.1 for a dishwasher; `heat_tau` minutes of lag of that heat, e.g. an oven; a room sensor `power` reports all loads of the room, `power_<load>` one load), `cover.manual`,
 `device.manual`, `entity.unavailable/available/remove`, `weather.set`,
 `weather.forecast_unavailable`, `humidity.event`, `roommind.ws`, `ha.service`,
 `ha.restart`, `roommind.reload`, `sim.param`, `clock.speed/pause`, `mark`.

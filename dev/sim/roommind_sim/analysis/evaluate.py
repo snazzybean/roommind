@@ -105,26 +105,30 @@ def _evaluate(run: RunData, metrics: dict[str, Any], exp: dict[str, Any]) -> dic
     return _check(run, exp)
 
 
+def _metric_scope(metrics: dict[str, Any], group: str, exp: dict[str, Any], room: str) -> tuple[dict, str] | None:
+    """The metrics a group/room or group/entity expectation reads, and its label suffix."""
+    if group in ("comfort", "room"):
+        return metrics["rooms"].get(room, {}), f"[{room}]"
+    if group == "model":
+        return metrics["model"].get(room, {}), f"[{room}]"
+    if group == "device":
+        return metrics["devices"].get(exp.get("entity_id", ""), {}), f"[{exp.get('entity_id')}]"
+    if group == "cover":
+        return metrics.get("covers", {}).get(exp.get("entity_id", ""), {}), f"[{exp.get('entity_id')}]"
+    if group in ("appliance", "sensor"):
+        return metrics.get(f"{group}s", {}).get(exp.get("entity_id", ""), {}), f"[{exp.get('entity_id')}]"
+    return None
+
+
 def _metric(run: RunData, metrics: dict[str, Any], exp: dict[str, Any]) -> dict[str, Any]:
+    """A metric against min/max; with ``vs_room`` the ratio of the room's value to that room's."""
     group, _, key = exp["metric"].partition(".")
     label = exp.get("label", exp["metric"])
-    if group == "comfort" or group == "room":
-        scope = metrics["rooms"].get(exp.get("room", ""), {})
-        label += f"[{exp.get('room')}]"
-    elif group == "device":
-        scope = metrics["devices"].get(exp.get("entity_id", ""), {})
-        label += f"[{exp.get('entity_id')}]"
-    elif group == "cover":
-        scope = metrics.get("covers", {}).get(exp.get("entity_id", ""), {})
-        label += f"[{exp.get('entity_id')}]"
-    elif group == "model":
-        scope = metrics["model"].get(exp.get("room", ""), {})
-        label += f"[{exp.get('room')}]"
-    elif group in ("appliance", "sensor"):
-        scope = metrics.get(f"{group}s", {}).get(exp.get("entity_id", ""), {})
-        label += f"[{exp.get('entity_id')}]"
-    else:
+    found = _metric_scope(metrics, group, exp, exp.get("room", ""))
+    if found is None:
         return {"label": label, "passed": False, "detail": f"unknown metric group {group!r}"}
+    scope, suffix = found
+    label += suffix
     value = scope.get(key)
     if value is None:
         return {
@@ -132,6 +136,13 @@ def _metric(run: RunData, metrics: dict[str, Any], exp: dict[str, Any]) -> dict[
             "passed": False,
             "detail": f"no value for {key!r} (available: {', '.join(sorted(scope))})",
         }
+    if "vs_room" in exp:
+        other_scope, _ = _metric_scope(metrics, group, exp, exp["vs_room"]) or ({}, "")
+        other = other_scope.get(key)
+        label += f" vs {exp['vs_room']}"
+        if not other:
+            return {"label": label, "passed": False, "detail": f"no value for {key!r} in {exp['vs_room']}"}
+        value = round(value / other, 3)
     ok = True
     bounds = []
     if "max" in exp:
@@ -236,10 +247,12 @@ def _lines(metrics: dict[str, Any], warnings: list[dict[str, Any]]) -> list[str]
                 f"model {area}: alpha learned {m['learned_alpha_per_h']} vs lumped truth {m['truth_alpha_per_h']} 1/h, "
                 f"beta_s learned {m['learned_beta_s']} vs truth {m['truth_beta_s']} K/h per kW/m² ({m['n_updates']} updates)"
             )
-            if m.get("truth_beta_p") is not None:
+            for key in sorted(k for k in m if k.startswith("power_") and k.endswith("_gain")):
+                name = key.removesuffix("_gain")
+                state = "used" if m.get(f"{name}_active") else "no effect" if m.get(f"{name}_no_effect") else "learning"
                 lines.append(
-                    f"model {area}: beta_p learned {m['learned_beta_p']} vs truth {m['truth_beta_p']} K/h per kW "
-                    f"(ratio {m['beta_p_ratio']})"
+                    f"model {area}: {name.removeprefix('power_')} gain {m[key]} vs truth {m.get(f'{name}_truth')} "
+                    f"K/h per kW, {state}"
                 )
             for side in ("h", "c"):
                 if m.get(f"truth_beta_{side}") is not None:
