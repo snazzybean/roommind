@@ -502,7 +502,7 @@
   "compressor.delays_hint": "Délai de démarrage : combien de temps suffisamment de pièces doivent demander de la chaleur avant que l'appareil principal s'allume ; une demande qui disparaît avant n'allume rien. Post-fonctionnement : combien de temps il continue après que trop peu de pièces demandent de la chaleur ; une demande qui revient avant le garde en marche.",
   "compressor.on_temperature": "Température de marche",
   "compressor.off_temperature": "Température d'arrêt",
-  "compressor.temperatures_hint": "Consigne que reçoit le thermostat en chauffe et à l'arrêt, dans sa propre unité (par ex. la température de départ d'une chaudière). Vide : seul le mode est changé.",
+  "compressor.temperatures_hint": "Consigne que reçoit le thermostat en chauffe et à l'arrêt, par ex. la température de départ d'une chaudière. Vide : seul le mode est changé.",
   "compressor.off_mode": "À l'arrêt",
   "compressor.off_mode_off": "Éteindre le thermostat",
   "compressor.off_mode_temperature": "Garder le mode chauffage à la température d'arrêt",
