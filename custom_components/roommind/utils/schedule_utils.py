@@ -335,10 +335,10 @@ def away_target_temps(
 ) -> TargetTemps:
     """Targets while nobody is home with presence_away_action "away".
 
-    An unset side is eco, as with the "eco" action. A set side never asks for more than the
-    schedule would at home (D480): away 19 °C during an 18 °C night stays at 18, a side the
-    schedule has off stays off, and a schedule that is off entirely stays off (devices off, as at
-    home). ``schedule_targets`` is what applies at home (occupancy eco included) and is only
+    With no side set the room is at eco, exactly as with the "eco" action. Otherwise an unset
+    side is eco and a set side never asks for more than the schedule would at home (D480): away
+    19 °C during an 18 °C night stays at 18, a side the schedule has off stays off, and a schedule
+    that is off entirely stays off (devices off, as at home). ``schedule_targets`` is what applies at home (occupancy eco included) and is only
     called when a side is set.
     """
     if away_heat is None and away_cool is None:
