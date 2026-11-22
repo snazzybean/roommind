@@ -4,7 +4,6 @@
 import { html, css, nothing } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import { RsSettingsBase } from "./rs-settings-base";
-import "../shared/rs-number-field";
 import type { HomeAssistant } from "../../types";
 import { localize } from "../../utils/localize";
 import { tempUnit, toDisplayDelta } from "../../utils/temperature";
@@ -12,6 +11,7 @@ import { formatNumber } from "../../utils/format";
 import "../shared/rs-segmented";
 import "../shared/rs-info-icon";
 import "../shared/rs-field";
+import { numberRow } from "../shared/number-row";
 
 // DIN 4108-2 temperature factor f_Rsi of the coldest spot (corner, window reveal) per insulation level.
 const INSULATION_LEVELS = [
@@ -48,28 +48,26 @@ export class RsSettingsMold extends RsSettingsBase {
         ${
           this.moldDetectionEnabled
             ? html`
-                <div class="threshold-grid sub">
-                  <rs-number-field
-                    .label=${localize("mold.threshold", l)}
-                    suffix="%"
-                    .info=${localize("mold.threshold_hint", l)}
-                    .min=${50}
-                    .max=${90}
-                    .value=${this.moldHumidityThreshold}
-                    @value-changed=${(e: CustomEvent<{ value: number }>) =>
-                      this._fire("moldHumidityThreshold", e.detail.value)}
-                  ></rs-number-field>
-                  <rs-number-field
-                    .label=${localize("mold.sustained", l)}
-                    suffix="min"
-                    .info=${localize("mold.sustained_hint", l)}
-                    .min=${5}
-                    .max=${120}
-                    .value=${this.moldSustainedMinutes}
-                    @value-changed=${(e: CustomEvent<{ value: number }>) =>
-                      this._fire("moldSustainedMinutes", e.detail.value)}
-                  ></rs-number-field>
-                </div>
+                ${numberRow({
+                  hass: this.hass,
+                  label: localize("mold.threshold", l),
+                  info: localize("mold.threshold_hint", l),
+                  unit: "%",
+                  min: 50,
+                  max: 90,
+                  value: this.moldHumidityThreshold,
+                  onChange: (v) => this._fire("moldHumidityThreshold", v),
+                })}
+                ${numberRow({
+                  hass: this.hass,
+                  label: localize("mold.sustained", l),
+                  info: localize("mold.sustained_hint", l),
+                  unit: "min",
+                  min: 5,
+                  max: 120,
+                  value: this.moldSustainedMinutes,
+                  onChange: (v) => this._fire("moldSustainedMinutes", v),
+                })}
               `
             : nothing
         }

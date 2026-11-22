@@ -3,7 +3,7 @@
  */
 import { html, css, nothing } from "lit";
 import { RsSettingsBase } from "./rs-settings-base";
-import "../shared/rs-number-field";
+import { numberRow } from "../shared/number-row";
 import { customElement, property, state } from "lit/decorators.js";
 import type { HomeAssistant } from "../../types";
 import { localize } from "../../utils/localize";
@@ -103,30 +103,27 @@ export class RsSettingsControl extends RsSettingsBase {
       }
 
       <div class="settings-section">
-        <div class="threshold-grid">
-          <rs-number-field
-            .hass=${this.hass}
-            kind="temperature"
-            .label=${localize("settings.outdoor_cooling_min", l)}
-            .info=${localize("settings.outdoor_cooling_min_hint", l)}
-            .min=${-10}
-            .max=${40}
-            .value=${this.outdoorCoolingMin}
-            @value-changed=${(e: CustomEvent<{ value: number }>) =>
-              this._fire("outdoorCoolingMin", e.detail.value)}
-          ></rs-number-field>
-          <rs-number-field
-            .hass=${this.hass}
-            kind="temperature"
-            .label=${localize("settings.outdoor_heating_max", l)}
-            .info=${localize("settings.outdoor_heating_max_hint", l)}
-            .min=${0}
-            .max=${40}
-            .value=${this.outdoorHeatingMax}
-            @value-changed=${(e: CustomEvent<{ value: number }>) =>
-              this._fire("outdoorHeatingMax", e.detail.value)}
-          ></rs-number-field>
-        </div>
+        <h3 class="section-title">${localize("settings.section_outdoor_limits", l)}</h3>
+        ${numberRow({
+          hass: this.hass,
+          kind: "temperature",
+          label: localize("settings.outdoor_cooling_min", l),
+          info: localize("settings.outdoor_cooling_min_hint", l),
+          min: -10,
+          max: 40,
+          value: this.outdoorCoolingMin,
+          onChange: (v) => this._fire("outdoorCoolingMin", v),
+        })}
+        ${numberRow({
+          hass: this.hass,
+          kind: "temperature",
+          label: localize("settings.outdoor_heating_max", l),
+          info: localize("settings.outdoor_heating_max_hint", l),
+          min: 0,
+          max: 40,
+          value: this.outdoorHeatingMax,
+          onChange: (v) => this._fire("outdoorHeatingMax", v),
+        })}
       </div>
 
       <div class="settings-section">

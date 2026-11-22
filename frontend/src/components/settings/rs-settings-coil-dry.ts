@@ -3,7 +3,7 @@
  */
 import { html, css, nothing } from "lit";
 import { RsSettingsBase } from "./rs-settings-base";
-import "../shared/rs-number-field";
+import { numberRow } from "../shared/number-row";
 import { customElement, property } from "lit/decorators.js";
 import type { HomeAssistant } from "../../types";
 import { localize, type TranslationKey } from "../../utils/localize";
@@ -37,17 +37,16 @@ export class RsSettingsCoilDry extends RsSettingsBase {
     max: number,
   ) {
     const l = this.hass.language;
-    return html`
-      <rs-number-field
-        .label=${localize(labelKey, l)}
-        .suffix=${localize(suffixKey, l)}
-        .info=${localize(hintKey, l)}
-        .min=${min}
-        .max=${max}
-        .value=${value}
-        @value-changed=${(e: CustomEvent<{ value: number }>) => this._fire(key, e.detail.value)}
-      ></rs-number-field>
-    `;
+    return numberRow({
+      hass: this.hass,
+      label: localize(labelKey, l),
+      info: localize(hintKey, l),
+      unit: localize(suffixKey, l),
+      min,
+      max,
+      value,
+      onChange: (v) => this._fire(key, v),
+    });
   }
 
   render() {
@@ -77,35 +76,33 @@ export class RsSettingsCoilDry extends RsSettingsBase {
         this.coilDryEnabled
           ? html`
               <div class="settings-section">
-                <div class="threshold-grid">
-                  ${this._numberField(
-                    "coilDryMinutes",
-                    this.coilDryMinutes,
-                    "coil_dry.duration_label",
-                    "coil_dry.duration_suffix",
-                    "coil_dry.duration_hint",
-                    1,
-                    60,
-                  )}
-                  ${this._numberField(
-                    "coilDryMinCoolingMinutes",
-                    this.coilDryMinCoolingMinutes,
-                    "coil_dry.min_cooling_label",
-                    "coil_dry.min_cooling_suffix",
-                    "coil_dry.min_cooling_hint",
-                    1,
-                    240,
-                  )}
-                  ${this._numberField(
-                    "coilDryDrainMinutes",
-                    this.coilDryDrainMinutes,
-                    "coil_dry.drain_label",
-                    "coil_dry.drain_suffix",
-                    "coil_dry.drain_hint",
-                    0,
-                    15,
-                  )}
-                </div>
+                ${this._numberField(
+                  "coilDryMinutes",
+                  this.coilDryMinutes,
+                  "coil_dry.duration_label",
+                  "coil_dry.duration_suffix",
+                  "coil_dry.duration_hint",
+                  1,
+                  60,
+                )}
+                ${this._numberField(
+                  "coilDryMinCoolingMinutes",
+                  this.coilDryMinCoolingMinutes,
+                  "coil_dry.min_cooling_label",
+                  "coil_dry.min_cooling_suffix",
+                  "coil_dry.min_cooling_hint",
+                  1,
+                  240,
+                )}
+                ${this._numberField(
+                  "coilDryDrainMinutes",
+                  this.coilDryDrainMinutes,
+                  "coil_dry.drain_label",
+                  "coil_dry.drain_suffix",
+                  "coil_dry.drain_hint",
+                  0,
+                  15,
+                )}
               </div>
 
               <div class="settings-section stack">

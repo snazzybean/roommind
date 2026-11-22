@@ -3,11 +3,11 @@
  */
 import { html, nothing } from "lit";
 import { RsSettingsBase } from "./rs-settings-base";
-import "../shared/rs-number-field";
 import { customElement, property } from "lit/decorators.js";
 import type { HomeAssistant } from "../../types";
 import { localize } from "../../utils/localize";
 import "../shared/rs-info-icon";
+import { numberRow } from "../shared/number-row";
 
 @customElement("rs-settings-valve")
 export class RsSettingsValve extends RsSettingsBase {
@@ -36,18 +36,16 @@ export class RsSettingsValve extends RsSettingsBase {
         this.valveProtectionEnabled
           ? html`
               <div class="settings-section">
-                <div class="threshold-grid">
-                  <rs-number-field
-                    .label=${localize("valve_protection.interval_label", l)}
-                    .suffix=${localize("valve_protection.interval_suffix", l)}
-                    .info=${localize("valve_protection.interval_hint", l)}
-                    .min=${1}
-                    .max=${90}
-                    .value=${this.valveProtectionInterval}
-                    @value-changed=${(e: CustomEvent<{ value: number }>) =>
-                      this._fire("valveProtectionInterval", e.detail.value)}
-                  ></rs-number-field>
-                </div>
+                ${numberRow({
+                  hass: this.hass,
+                  label: localize("valve_protection.interval_label", l),
+                  info: localize("valve_protection.interval_hint", l),
+                  unit: localize("valve_protection.interval_suffix", l),
+                  min: 1,
+                  max: 90,
+                  value: this.valveProtectionInterval,
+                  onChange: (v) => this._fire("valveProtectionInterval", v),
+                })}
               </div>
             `
           : nothing

@@ -503,8 +503,8 @@
   "compressor.run_on_hint": "So lange läuft das Hauptgerät weiter, nachdem zu wenige Räume es brauchen. Kommt der Bedarf vorher zurück, läuft es einfach weiter.",
   "compressor.on_temperature": "Ein-Temperatur",
   "compressor.off_temperature": "Aus-Temperatur",
-  "compressor.on_temperature_hint": "Sollwert, den der Thermostat beim Heizen bekommt, z. B. die Vorlauftemperatur eines Kessels. Leer: nur der Modus wird geschaltet.",
-  "compressor.off_temperature_hint": "Sollwert, den der Thermostat beim Ausschalten bekommt. Gilt nur zusammen mit einer Ein-Temperatur.",
+  "compressor.on_temperature_hint": "Sollwert beim Heizen.",
+  "compressor.off_temperature_hint": "Sollwert beim Ausschalten.",
   "compressor.off_mode": "Beim Ausschalten",
   "compressor.off_mode_hint": "Ausschalten: der Thermostat geht aus. Heizmodus behalten: er bleibt im Heizmodus auf der Aus-Temperatur, z. B. damit das Warmwasser weiterläuft. Ein Gerät, das zuletzt gekühlt hat, wird immer ausgeschaltet.",
   "compressor.off_mode_off": "Thermostat ausschalten",
@@ -1156,5 +1156,14 @@
   "covers.schedule_default_name": "{room} Rollläden",
   "schedules.also_in": "Auch in {rooms}",
   "schedules.covers_in": "Rollläden: {rooms}",
-  "schedules.temperature_in": "Temperatur: {rooms}"
+  "schedules.temperature_in": "Temperatur: {rooms}",
+  "settings.section_outdoor_limits": "Grenzen nach Außentemperatur",
+  "compressor.group": "Gruppe",
+  "compressor.summary_master": "Hauptgerät {name}",
+  "compressor.summary_rooms": "ab {count} Räumen",
+  "compressor.section_protection": "Schutz vor Kurzlauf",
+  "compressor.section_more": "Weiteres",
+  "compressor.setpoints": "Sollwerte vorgeben",
+  "compressor.setpoints_hint": "Der Thermostat bekommt beim Heizen und beim Ausschalten einen festen Sollwert, z. B. die Vorlauftemperatur eines Kessels. Aus: nur der Modus wird geschaltet.",
+  "vacation.section_during": "Während des Urlaubs"
 }

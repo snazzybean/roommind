@@ -2,7 +2,7 @@
  * rs-settings-compressor – Compressor protection group management.
  */
 import { html, css, nothing } from "lit";
-import { customElement, property } from "lit/decorators.js";
+import { customElement, property, state } from "lit/decorators.js";
 import type {
   HomeAssistant,
   CompressorGroup,
@@ -13,12 +13,15 @@ import { localize, type TranslationKey } from "../../utils/localize";
 import { getSelectValue } from "../../utils/events";
 import "../shared/rs-confirm-button";
 import "../shared/rs-icon-button";
-import "../shared/rs-number-field";
+import "../shared/rs-edit-dialog";
+import { numberRow } from "../shared/number-row";
 import "../shared/rs-list-row";
 import "../shared/rs-field";
 import "../shared/rs-info-icon";
 import "../shared/rs-segmented";
 import { inputStyles } from "../../styles/input-styles";
+import { formStyles } from "../../styles/form-styles";
+import { toCelsius } from "../../utils/temperature";
 import { alertStyles } from "../../styles/tokens";
 import { RsSettingsBase } from "./rs-settings-base";
 
@@ -52,15 +55,17 @@ export class RsSettingsCompressor extends RsSettingsBase {
   @property({ attribute: false }) public hass!: HomeAssistant;
   @property({ type: Array }) public compressorGroups: CompressorGroup[] = [];
 
+  /** Id of the group whose dialog is open. */
+  @state() private _editId: string | null = null;
+
   static styles = [
     ...RsSettingsBase.settingsBaseStyles,
     alertStyles,
     inputStyles,
+    formStyles,
     css`
-      .group {
-        display: flex;
-        flex-direction: column;
-        gap: var(--rs-space-3);
+      .dialog-body {
+        --rs-form-inline: var(--rs-space-6);
       }
       .members {
         display: flex;
@@ -69,6 +74,7 @@ export class RsSettingsCompressor extends RsSettingsBase {
       .delete-row {
         display: flex;
         justify-content: flex-end;
+        margin-top: var(--rs-space-6);
       }
       .draft-note {
         margin: 0;
@@ -76,7 +82,10 @@ export class RsSettingsCompressor extends RsSettingsBase {
         line-height: 1.4;
         color: var(--secondary-text-color);
       }
-      .group .rs-alert {
+      .group-problem {
+        margin: 0 0 var(--rs-space-2);
+      }
+      .rs-alert {
         margin: 0;
       }
       ha-textfield,
@@ -89,8 +98,15 @@ export class RsSettingsCompressor extends RsSettingsBase {
   render() {
     const l = this.hass.language;
     const groups = this.compressorGroups;
+    const editing = groups.findIndex((g) => g.id === this._editId);
     return html`
-      ${groups.map((group, idx) => this._renderGroup(group, idx))}
+      ${
+        groups.length
+          ? html`<div class="settings-section first">
+              ${groups.map((group, idx) => this._renderGroupRow(group, idx))}
+            </div>`
+          : nothing
+      }
       <div class="settings-section ${groups.length ? "" : "first"}">
         <rs-list-row
           clickable
@@ -102,28 +118,72 @@ export class RsSettingsCompressor extends RsSettingsBase {
           @row-click=${this._addGroup}
         ></rs-list-row>
       </div>
+      ${editing >= 0 ? this._renderDialog(groups[editing], editing) : nothing}
     `;
   }
 
-  private _renderGroup(group: CompressorGroup, idx: number) {
-    const l = this.hass.language;
-    const label = group.name || `#${idx + 1}`;
-    return html`
-      <section class="settings-section group ${idx === 0 ? "first" : ""}" aria-label=${label}>
-        ${this._renderProblem(group)}
-        <ha-textfield
-          .value=${group.name}
-          .label=${localize("compressor.group_name", l)}
-          @change=${(e: Event) => {
-            const v = (e.target as HTMLInputElement).value;
-            this._updateGroup(idx, "name", v);
-          }}
-        ></ha-textfield>
+  private _groupLabel(group: CompressorGroup, idx: number): string {
+    return group.name || `${localize("compressor.group", this.hass.language)} ${idx + 1}`;
+  }
 
-        <rs-field
-          .label=${localize("compressor.members", l)}
-          .info=${localize("compressor.members_hint", l)}
-        >
+  /** One group: name, its devices and main device at a glance; the dialog edits it. */
+  private _renderGroupRow(group: CompressorGroup, idx: number) {
+    const l = this.hass.language;
+    const n = group.members.length;
+    const parts = [
+      n === 1
+        ? localize("settings.summary.devices_one", l)
+        : localize("settings.summary.devices", l, { count: n }),
+    ];
+    if (group.master_entity) {
+      const name =
+        (this.hass.states[group.master_entity]?.attributes?.friendly_name as string) ||
+        group.master_entity;
+      parts.push(localize("compressor.summary_master", l, { name }));
+    }
+    if ((group.min_rooms ?? 1) > 1)
+      parts.push(localize("compressor.summary_rooms", l, { count: group.min_rooms ?? 1 }));
+    const problem = compressorGroupProblem(group, this.compressorGroups);
+    return html`
+      <rs-list-row
+        clickable
+        chevron
+        icon=${group.master_entity.startsWith("climate.") ? "mdi:water-boiler" : "mdi:hvac"}
+        .heading=${this._groupLabel(group, idx)}
+        .secondary=${parts.join(" · ")}
+        variant=${problem && problem !== "compressor.draft_no_members" ? "warn" : "default"}
+        @row-click=${() => (this._editId = group.id)}
+      ></rs-list-row>
+    `;
+  }
+
+  private _renderDialog(group: CompressorGroup, idx: number) {
+    const l = this.hass.language;
+    const label = this._groupLabel(group, idx);
+    return html`<rs-edit-dialog
+      open
+      icon="mdi:hvac"
+      .heading=${label}
+      @rs-dialog-closed=${() => (this._editId = null)}
+    >
+      <div class="dialog-body">
+        ${this._renderProblem(group)}
+        <section class="group">
+          <ha-textfield
+            .value=${group.name}
+            .label=${localize("compressor.group_name", l)}
+            @change=${(e: Event) => {
+              const v = (e.target as HTMLInputElement).value;
+              this._updateGroup(idx, "name", v);
+            }}
+          ></ha-textfield>
+        </section>
+
+        <section class="group">
+          <h3 class="group-title">
+            ${localize("compressor.members", l)}
+            <rs-info-icon .text=${localize("compressor.members_hint", l)}></rs-info-icon>
+          </h3>
           ${
             group.members.length > 0
               ? html`<div class="members">
@@ -146,35 +206,39 @@ export class RsSettingsCompressor extends RsSettingsBase {
               if (picker) picker.value = "";
             }}
           ></ha-entity-picker>
-        </rs-field>
+        </section>
 
-        <div class="threshold-grid">
-          <rs-number-field
-            .label=${localize("compressor.min_run", l)}
-            .suffix=${localize("compressor.min_run_suffix", l)}
-            .info=${localize("compressor.min_run_hint", l)}
-            .min=${1}
-            .max=${60}
-            .value=${group.min_run_minutes}
-            @value-changed=${(e: CustomEvent<{ value: number }>) =>
-              this._updateGroup(idx, "min_run_minutes", e.detail.value)}
-          ></rs-number-field>
-          <rs-number-field
-            .label=${localize("compressor.min_off", l)}
-            .suffix=${localize("compressor.min_off_suffix", l)}
-            .info=${localize("compressor.min_off_hint", l)}
-            .min=${1}
-            .max=${30}
-            .value=${group.min_off_minutes}
-            @value-changed=${(e: CustomEvent<{ value: number }>) =>
-              this._updateGroup(idx, "min_off_minutes", e.detail.value)}
-          ></rs-number-field>
-        </div>
+        <section class="group">
+          <h3 class="group-title">${localize("compressor.section_protection", l)}</h3>
+          <div>
+            ${numberRow({
+              hass: this.hass,
+              label: localize("compressor.min_run", l),
+              info: localize("compressor.min_run_hint", l),
+              unit: localize("compressor.min_run_suffix", l),
+              min: 1,
+              max: 60,
+              value: group.min_run_minutes,
+              onChange: (v) => this._updateGroup(idx, "min_run_minutes", v),
+            })}
+            ${numberRow({
+              hass: this.hass,
+              label: localize("compressor.min_off", l),
+              info: localize("compressor.min_off_hint", l),
+              unit: localize("compressor.min_off_suffix", l),
+              min: 1,
+              max: 30,
+              value: group.min_off_minutes,
+              onChange: (v) => this._updateGroup(idx, "min_off_minutes", v),
+            })}
+          </div>
+        </section>
 
-        <rs-field
-          .label=${localize("compressor.master_entity", l)}
-          .info=${localize("compressor.master_entity_hint", l)}
-        >
+        <section class="group">
+          <h3 class="group-title">
+            ${localize("compressor.master_entity", l)}
+            <rs-info-icon .text=${localize("compressor.master_entity_hint", l)}></rs-info-icon>
+          </h3>
           <ha-entity-picker
             .hass=${this.hass}
             .value=${group.master_entity || ""}
@@ -184,28 +248,28 @@ export class RsSettingsCompressor extends RsSettingsBase {
               this._updateGroup(idx, "master_entity", (e.detail?.value as string) ?? "");
             }}
           ></ha-entity-picker>
-        </rs-field>
-        ${group.master_entity || group.action_script ? this._renderMasterOptions(group, idx) : nothing}
+          ${group.master_entity || group.action_script ? this._renderMasterOptions(group, idx) : nothing}
+        </section>
 
-        <rs-list-row
-          switch
-          wrap
-          .heading=${localize("compressor.enforce_uniform_mode", l)}
-          .checked=${group.enforce_uniform_mode || false}
-          @toggle-changed=${(e: CustomEvent<boolean>) => {
-            this._updateGroup(idx, "enforce_uniform_mode", e.detail);
-          }}
-        >
-          <rs-info-icon
-            slot="end"
-            .text=${localize("compressor.enforce_uniform_mode_hint", l)}
-          ></rs-info-icon>
-        </rs-list-row>
-
-        ${
-          group.master_entity || group.enforce_uniform_mode
-            ? html`
-                <rs-field .info=${localize("compressor.conflict_resolution_hint", l)}>
+        <section class="group">
+          <h3 class="group-title">${localize("compressor.section_more", l)}</h3>
+          <rs-list-row
+            switch
+            wrap
+            .heading=${localize("compressor.enforce_uniform_mode", l)}
+            .checked=${group.enforce_uniform_mode || false}
+            @toggle-changed=${(e: CustomEvent<boolean>) => {
+              this._updateGroup(idx, "enforce_uniform_mode", e.detail);
+            }}
+          >
+            <rs-info-icon
+              slot="end"
+              .text=${localize("compressor.enforce_uniform_mode_hint", l)}
+            ></rs-info-icon>
+          </rs-list-row>
+          ${
+            group.master_entity || group.enforce_uniform_mode
+              ? html`<rs-field .info=${localize("compressor.conflict_resolution_hint", l)}>
                   <ha-select
                     .label=${localize("compressor.conflict_resolution", l)}
                     .value=${group.conflict_resolution || "heating_priority"}
@@ -218,10 +282,7 @@ export class RsSettingsCompressor extends RsSettingsBase {
                         value: "cooling_priority",
                         label: localize("compressor.conflict_cooling_priority", l),
                       },
-                      {
-                        value: "majority",
-                        label: localize("compressor.conflict_majority", l),
-                      },
+                      { value: "majority", label: localize("compressor.conflict_majority", l) },
                       {
                         value: "outdoor_temp",
                         label: localize("compressor.conflict_outdoor_temp", l),
@@ -233,24 +294,22 @@ export class RsSettingsCompressor extends RsSettingsBase {
                     }}
                     @closed=${(e: Event) => e.stopPropagation()}
                     fixedMenuPosition
-                  >
-                  </ha-select>
-                </rs-field>
-              `
-            : nothing
-        }
-
-        <rs-field .info=${localize("compressor.action_script_hint", l)}>
-          <ha-entity-picker
-            .hass=${this.hass}
-            .value=${group.action_script || ""}
-            .includeDomains=${["script"]}
-            .label=${localize("compressor.action_script", l)}
-            @value-changed=${(e: CustomEvent) => {
-              this._updateGroup(idx, "action_script", (e.detail?.value as string) ?? "");
-            }}
-          ></ha-entity-picker>
-        </rs-field>
+                  ></ha-select>
+                </rs-field>`
+              : nothing
+          }
+          <rs-field .info=${localize("compressor.action_script_hint", l)}>
+            <ha-entity-picker
+              .hass=${this.hass}
+              .value=${group.action_script || ""}
+              .includeDomains=${["script"]}
+              .label=${localize("compressor.action_script", l)}
+              @value-changed=${(e: CustomEvent) => {
+                this._updateGroup(idx, "action_script", (e.detail?.value as string) ?? "");
+              }}
+            ></ha-entity-picker>
+          </rs-field>
+        </section>
 
         <div class="delete-row">
           <rs-confirm-button
@@ -260,112 +319,141 @@ export class RsSettingsCompressor extends RsSettingsBase {
             .accessibleLabel=${`${localize("compressor.delete", l)}: ${label}`}
             .confirmMessage=${localize("compressor.delete_confirm", l).replace("{name}", label)}
             @confirmed=${() => {
+              this._editId = null;
               this._fireGroups(this.compressorGroups.filter((_, i) => i !== idx));
             }}
           ></rs-confirm-button>
         </div>
-      </section>
-    `;
+      </div>
+    </rs-edit-dialog>`;
   }
 
   /** Rooms needed, start delay and run-on; setpoints and how it switches off for a thermostat. */
   private _renderMasterOptions(group: CompressorGroup, idx: number) {
     const l = this.hass.language;
     const thermostat = group.master_entity.startsWith("climate.");
-    const number = (field: keyof CompressorGroup) => (e: CustomEvent<{ value: number | null }>) => {
-      if (e.detail.value != null) this._updateGroup(idx, field, e.detail.value);
-    };
-    const optional = (field: keyof CompressorGroup) => (e: CustomEvent<{ value: number | null }>) =>
-      this._updateGroup(idx, field, e.detail.value);
+    const setpoints = group.on_temperature != null;
     return html`
-      <rs-number-field
-        .label=${localize("compressor.min_rooms", l)}
-        .info=${localize("compressor.min_rooms_hint", l)}
-        .min=${1}
-        .max=${50}
-        .step=${1}
-        .value=${group.min_rooms ?? 1}
-        @value-changed=${number("min_rooms")}
-      ></rs-number-field>
-      <div class="threshold-grid">
-        <rs-number-field
-          .label=${localize("compressor.start_delay", l)}
-          .info=${localize("compressor.start_delay_hint", l)}
-          suffix="s"
-          .min=${0}
-          .max=${3600}
-          .step=${1}
-          .value=${group.start_delay_seconds ?? 0}
-          @value-changed=${number("start_delay_seconds")}
-        ></rs-number-field>
-        <rs-number-field
-          .label=${localize("compressor.run_on", l)}
-          .info=${localize("compressor.run_on_hint", l)}
-          suffix="s"
-          .min=${0}
-          .max=${3600}
-          .step=${1}
-          .value=${group.run_on_seconds ?? 0}
-          @value-changed=${number("run_on_seconds")}
-        ></rs-number-field>
+      <div>
+        ${numberRow({
+          hass: this.hass,
+          label: localize("compressor.min_rooms", l),
+          info: localize("compressor.min_rooms_hint", l),
+          min: 1,
+          max: 50,
+          value: group.min_rooms ?? 1,
+          onChange: (v) => this._updateGroup(idx, "min_rooms", v),
+        })}
+        ${numberRow({
+          hass: this.hass,
+          label: localize("compressor.start_delay", l),
+          info: localize("compressor.start_delay_hint", l),
+          unit: "s",
+          min: 0,
+          max: 3600,
+          step: 30,
+          value: group.start_delay_seconds ?? 0,
+          onChange: (v) => this._updateGroup(idx, "start_delay_seconds", v),
+        })}
+        ${numberRow({
+          hass: this.hass,
+          label: localize("compressor.run_on", l),
+          info: localize("compressor.run_on_hint", l),
+          unit: "s",
+          min: 0,
+          max: 3600,
+          step: 30,
+          value: group.run_on_seconds ?? 0,
+          onChange: (v) => this._updateGroup(idx, "run_on_seconds", v),
+        })}
+        ${
+          thermostat
+            ? html`
+                <rs-list-row
+                  switch
+                  wrap
+                  .heading=${localize("compressor.setpoints", l)}
+                  .checked=${setpoints}
+                  @toggle-changed=${(e: CustomEvent<boolean>) => this._setSetpoints(group, idx, e.detail)}
+                >
+                  <rs-info-icon
+                    slot="end"
+                    .text=${localize("compressor.setpoints_hint", l)}
+                  ></rs-info-icon>
+                </rs-list-row>
+                ${
+                  setpoints
+                    ? html`
+                        ${numberRow({
+                          hass: this.hass,
+                          kind: "temperature",
+                          label: localize("compressor.on_temperature", l),
+                          info: localize("compressor.on_temperature_hint", l),
+                          min: 5,
+                          max: 90,
+                          value: group.on_temperature ?? 60,
+                          onChange: (v) => this._updateGroup(idx, "on_temperature", v),
+                        })}
+                        ${numberRow({
+                          hass: this.hass,
+                          kind: "temperature",
+                          label: localize("compressor.off_temperature", l),
+                          info: localize("compressor.off_temperature_hint", l),
+                          min: 5,
+                          max: 90,
+                          value: group.off_temperature ?? 5,
+                          onChange: (v) => this._updateGroup(idx, "off_temperature", v),
+                        })}
+                      `
+                    : nothing
+                }
+              `
+            : nothing
+        }
       </div>
       ${
-        thermostat
-          ? html`
-              <div class="threshold-grid">
-                <rs-number-field
-                  allow-empty
-                  kind="temperature"
-                  .hass=${this.hass}
-                  .label=${localize("compressor.on_temperature", l)}
-                  .info=${localize("compressor.on_temperature_hint", l)}
-                  .min=${5}
-                  .max=${90}
-                  .value=${group.on_temperature ?? null}
-                  @value-changed=${optional("on_temperature")}
-                ></rs-number-field>
-                <rs-number-field
-                  allow-empty
-                  kind="temperature"
-                  .hass=${this.hass}
-                  .label=${localize("compressor.off_temperature", l)}
-                  .info=${localize("compressor.off_temperature_hint", l)}
-                  .min=${5}
-                  .max=${90}
-                  .disabled=${group.on_temperature == null}
-                  .value=${group.off_temperature ?? null}
-                  @value-changed=${optional("off_temperature")}
-                ></rs-number-field>
-              </div>
-              ${
-                group.on_temperature != null && group.off_temperature != null
-                  ? html`<rs-field
-                      .label=${localize("compressor.off_mode", l)}
-                      .info=${localize("compressor.off_mode_hint", l)}
-                    >
-                      <rs-segmented
-                        wrap
-                        .label=${localize("compressor.off_mode", l)}
-                        .options=${[
-                          { value: "off", label: localize("compressor.off_mode_off", l) },
-                          {
-                            value: "temperature",
-                            label: localize("compressor.off_mode_temperature", l),
-                          },
-                        ]}
-                        .value=${group.off_mode ?? "off"}
-                        @value-changed=${(e: CustomEvent<{ value: string }>) => {
-                          if (e.detail.value)
-                            this._updateGroup(idx, "off_mode", e.detail.value as MasterOffMode);
-                        }}
-                      ></rs-segmented>
-                    </rs-field>`
-                  : nothing
-              }
-            `
+        thermostat && setpoints
+          ? html`<rs-field
+              .label=${localize("compressor.off_mode", l)}
+              .info=${localize("compressor.off_mode_hint", l)}
+            >
+              <rs-segmented
+                wrap
+                .label=${localize("compressor.off_mode", l)}
+                .options=${[
+                  { value: "off", label: localize("compressor.off_mode_off", l) },
+                  { value: "temperature", label: localize("compressor.off_mode_temperature", l) },
+                ]}
+                .value=${group.off_mode ?? "off"}
+                @value-changed=${(e: CustomEvent<{ value: string }>) => {
+                  if (e.detail.value)
+                    this._updateGroup(idx, "off_mode", e.detail.value as MasterOffMode);
+                }}
+              ></rs-segmented>
+            </rs-field>`
           : nothing
       }
     `;
+  }
+
+  /** Setpoints on: start from the thermostat's own setpoint and lowest value; off: mode only. */
+  private _setSetpoints(group: CompressorGroup, idx: number, on: boolean) {
+    const updated = [...this.compressorGroups];
+    if (!on) {
+      updated[idx] = { ...group, on_temperature: null, off_temperature: null, off_mode: "off" };
+    } else {
+      const attrs = this.hass.states[group.master_entity]?.attributes ?? {};
+      const inRange = (v: unknown, fallback: number) => {
+        const c = typeof v === "number" ? toCelsius(v, this.hass) : NaN;
+        return c >= 5 && c <= 90 ? Math.round(c * 2) / 2 : fallback;
+      };
+      updated[idx] = {
+        ...group,
+        on_temperature: inRange(attrs.temperature, 60),
+        off_temperature: inRange(attrs.min_temp, 5),
+      };
+    }
+    this._fireGroups(updated);
   }
 
   private _renderMember(entityId: string, groupIdx: number) {
@@ -440,10 +528,13 @@ export class RsSettingsCompressor extends RsSettingsBase {
   }
 
   private _addGroup() {
+    const id =
+      self.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    this._editId = id;
     this._fireGroups([
       ...this.compressorGroups,
       {
-        id: self.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        id,
         name: "",
         members: [],
         min_run_minutes: 15,

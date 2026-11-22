@@ -503,8 +503,8 @@
   "compressor.run_on_hint": "Cuánto tiempo sigue en marcha el dispositivo principal después de que muy pocas habitaciones lo necesiten. Si la demanda vuelve antes, sigue en marcha.",
   "compressor.on_temperature": "Temperatura de encendido",
   "compressor.off_temperature": "Temperatura de apagado",
-  "compressor.on_temperature_hint": "Consigna que recibe el termostato al calentar, p. ej. la temperatura de impulsión de una caldera. Vacío: solo se cambia el modo.",
-  "compressor.off_temperature_hint": "Consigna que recibe el termostato al apagarse. Solo junto con una temperatura de encendido.",
+  "compressor.on_temperature_hint": "Consigna al calentar.",
+  "compressor.off_temperature_hint": "Consigna al apagarse.",
   "compressor.off_mode": "Al apagar",
   "compressor.off_mode_hint": "Apagar: el termostato se apaga. Mantener el modo calor: sigue en modo calor a la temperatura de apagado, p. ej. para que el agua caliente siga funcionando. Un aparato que enfrió por última vez siempre se apaga.",
   "compressor.off_mode_off": "Apagar el termostato",
@@ -1156,5 +1156,14 @@
   "covers.schedule_default_name": "Persianas de {room}",
   "schedules.also_in": "También en {rooms}",
   "schedules.covers_in": "Persianas: {rooms}",
-  "schedules.temperature_in": "Temperatura: {rooms}"
+  "schedules.temperature_in": "Temperatura: {rooms}",
+  "settings.section_outdoor_limits": "Límites según la temperatura exterior",
+  "compressor.group": "Grupo",
+  "compressor.summary_master": "dispositivo principal {name}",
+  "compressor.summary_rooms": "desde {count} habitaciones",
+  "compressor.section_protection": "Protección contra ciclos cortos",
+  "compressor.section_more": "Más",
+  "compressor.setpoints": "Fijar consignas",
+  "compressor.setpoints_hint": "El termostato recibe una consigna fija al calentar y al apagarse, p. ej. la temperatura de impulsión de una caldera. Desactivado: solo se cambia el modo.",
+  "vacation.section_during": "Durante las vacaciones"
 }

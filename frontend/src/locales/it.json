@@ -503,8 +503,8 @@
   "compressor.run_on_hint": "Per quanto tempo il dispositivo principale continua dopo che troppo poche stanze ne hanno bisogno. Una richiesta che torna prima lo tiene acceso.",
   "compressor.on_temperature": "Temperatura di accensione",
   "compressor.off_temperature": "Temperatura di spegnimento",
-  "compressor.on_temperature_hint": "Setpoint che il termostato riceve in riscaldamento, ad es. la temperatura di mandata di una caldaia. Vuoto: viene cambiata solo la modalità.",
-  "compressor.off_temperature_hint": "Setpoint che il termostato riceve allo spegnimento. Solo insieme a una temperatura di accensione.",
+  "compressor.on_temperature_hint": "Setpoint in riscaldamento.",
+  "compressor.off_temperature_hint": "Setpoint allo spegnimento.",
   "compressor.off_mode": "Allo spegnimento",
   "compressor.off_mode_hint": "Spegnere: il termostato si spegne. Mantenere il riscaldamento: resta in riscaldamento alla temperatura di spegnimento, ad es. perché l'acqua calda continui a funzionare. Un dispositivo che ha raffrescato per ultimo viene sempre spento.",
   "compressor.off_mode_off": "Spegnere il termostato",
@@ -1156,5 +1156,14 @@
   "covers.schedule_default_name": "{room} tapparelle",
   "schedules.also_in": "Anche in {rooms}",
   "schedules.covers_in": "Tapparelle: {rooms}",
-  "schedules.temperature_in": "Temperatura: {rooms}"
+  "schedules.temperature_in": "Temperatura: {rooms}",
+  "settings.section_outdoor_limits": "Limiti secondo la temperatura esterna",
+  "compressor.group": "Gruppo",
+  "compressor.summary_master": "dispositivo principale {name}",
+  "compressor.summary_rooms": "da {count} stanze",
+  "compressor.section_protection": "Protezione dai cicli brevi",
+  "compressor.section_more": "Altro",
+  "compressor.setpoints": "Imporre i setpoint",
+  "compressor.setpoints_hint": "Il termostato riceve un setpoint fisso in riscaldamento e allo spegnimento, ad es. la temperatura di mandata di una caldaia. Disattivato: viene cambiata solo la modalità.",
+  "vacation.section_during": "Durante le vacanze"
 }

@@ -4,7 +4,6 @@
  */
 import { html, css, nothing } from "lit";
 import { RsSettingsBase } from "./rs-settings-base";
-import "../shared/rs-number-field";
 import { customElement, property } from "lit/decorators.js";
 import type { HomeAssistant, NotificationTarget } from "../../types";
 import { localize } from "../../utils/localize";
@@ -14,6 +13,7 @@ import "../shared/rs-segmented";
 import { notifyTargetIcon, notifyTargetName } from "../../utils/notify-target";
 import "../shared/rs-info-icon";
 import "../shared/rs-field";
+import { numberRow } from "../shared/number-row";
 
 @customElement("rs-settings-notifications")
 export class RsSettingsNotifications extends RsSettingsBase {
@@ -87,19 +87,16 @@ export class RsSettingsNotifications extends RsSettingsBase {
               </div>
 
               <div class="settings-section">
-                <div class="threshold-grid">
-                  <rs-number-field
-                    .label=${localize("notifications.cooldown", l)}
-                    suffix="min"
-                    .info=${localize("notifications.cooldown_hint", l)}
-                    .min=${10}
-                    .max=${1440}
-                    .value=${this.notificationCooldown}
-                    @value-changed=${(e: CustomEvent<{ value: number }>) =>
-                      this._fire("moldNotificationCooldown", e.detail.value)}
-                  ></rs-number-field>
-                </div>
-
+                ${numberRow({
+                  hass: this.hass,
+                  label: localize("notifications.cooldown", l),
+                  info: localize("notifications.cooldown_hint", l),
+                  unit: "min",
+                  min: 10,
+                  max: 1440,
+                  value: this.notificationCooldown,
+                  onChange: (v) => this._fire("moldNotificationCooldown", v),
+                })}
                 ${
                   this.moldPreventionEnabled
                     ? html`

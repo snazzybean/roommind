@@ -503,8 +503,8 @@
   "compressor.run_on_hint": "How long the main device keeps running after too few rooms need it. Demand that returns within it keeps it running.",
   "compressor.on_temperature": "On temperature",
   "compressor.off_temperature": "Off temperature",
-  "compressor.on_temperature_hint": "Setpoint the thermostat gets when heating, e.g. a boiler's flow temperature. Empty: only the mode is switched.",
-  "compressor.off_temperature_hint": "Setpoint the thermostat gets when switched off. Only together with an on temperature.",
+  "compressor.on_temperature_hint": "Setpoint when heating.",
+  "compressor.off_temperature_hint": "Setpoint when switched off.",
   "compressor.off_mode": "When switching off",
   "compressor.off_mode_hint": "Switch off: the thermostat goes off. Keep heat mode: it stays in heat mode at the off temperature, e.g. so hot water keeps working. A unit that last cooled is always switched off.",
   "compressor.off_mode_off": "Switch the thermostat off",
@@ -1156,5 +1156,14 @@
   "covers.schedule_default_name": "{room} covers",
   "schedules.also_in": "Also in {rooms}",
   "schedules.covers_in": "Covers: {rooms}",
-  "schedules.temperature_in": "Temperature: {rooms}"
+  "schedules.temperature_in": "Temperature: {rooms}",
+  "settings.section_outdoor_limits": "Limits by outdoor temperature",
+  "compressor.group": "Group",
+  "compressor.summary_master": "main device {name}",
+  "compressor.summary_rooms": "from {count} rooms",
+  "compressor.section_protection": "Short-cycle protection",
+  "compressor.section_more": "More",
+  "compressor.setpoints": "Set setpoints",
+  "compressor.setpoints_hint": "The thermostat gets a fixed setpoint when heating and when switched off, e.g. a boiler's flow temperature. Off: only the mode is switched.",
+  "vacation.section_during": "While you are away"
 }

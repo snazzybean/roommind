@@ -3,11 +3,11 @@
  */
 import { css, html, nothing } from "lit";
 import { RsSettingsBase } from "./rs-settings-base";
-import "../shared/rs-number-field";
 import { customElement, property, state } from "lit/decorators.js";
 import type { HomeAssistant } from "../../types";
 import { localize } from "../../utils/localize";
 import "../shared/rs-info-icon";
+import { numberRow } from "../shared/number-row";
 
 @customElement("rs-settings-vacation")
 export class RsSettingsVacation extends RsSettingsBase {
@@ -42,19 +42,17 @@ export class RsSettingsVacation extends RsSettingsBase {
         this.vacationActive
           ? html`
               <div class="settings-section">
-                <div class="threshold-grid" style="align-items: end">
-                  <div class="threshold-field end">${this._renderEndDate()}</div>
-                  <rs-number-field
-                    .hass=${this.hass}
-                    kind="temperature"
-                    .label=${localize("vacation.setback_temp", l)}
-                    .min=${5}
-                    .max=${25}
-                    .value=${this.vacationTemp}
-                    @value-changed=${(e: CustomEvent<{ value: number }>) =>
-                      this._fire("vacationTemp", e.detail.value)}
-                  ></rs-number-field>
-                </div>
+                <h3 class="section-title">${localize("vacation.section_during", l)}</h3>
+                ${numberRow({
+                  hass: this.hass,
+                  kind: "temperature",
+                  label: localize("vacation.setback_temp", l),
+                  min: 5,
+                  max: 25,
+                  value: this.vacationTemp,
+                  onChange: (v) => this._fire("vacationTemp", v),
+                })}
+                <div class="end">${this._renderEndDate()}</div>
               </div>
             `
           : nothing
@@ -120,9 +118,8 @@ export class RsSettingsVacation extends RsSettingsBase {
     RsSettingsBase.settingsBaseStyles,
     css`
       /* the time field carries its label above, the date field inside: align their bottoms */
-      /* date and time need the whole row, a 12-hour time field is wide */
-      .threshold-field.end {
-        grid-column: 1 / -1;
+      .end {
+        margin-top: var(--rs-space-3);
       }
       .end-date {
         display: flex;
@@ -140,7 +137,7 @@ export class RsSettingsVacation extends RsSettingsBase {
         flex: none;
         width: auto;
       }
-      .threshold-field .field-label {
+      .end .field-label {
         margin: 0;
         color: var(--secondary-text-color);
         font-size: var(--rs-font-sm);
