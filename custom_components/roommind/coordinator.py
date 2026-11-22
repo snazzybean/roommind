@@ -280,6 +280,10 @@ _NO_HUMIDITY_CONTROL: dict[str, Any] = {
 }
 
 
+# Modes of a master that runs (or just ran) the cooling side
+_MASTER_COOLING_MODES = ("cool", "dry", "fan_only")
+
+
 def _takes_setpoint(state: Any) -> bool:
     """Whether a climate entity takes a target temperature."""
     try:
@@ -364,6 +368,8 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         self._master_delay_timers: dict[str, Callable[[], None]] = {}
         # Groups whose master refused a setpoint, warned about once
         self._master_setpoint_warned: set[str] = set()
+        # Rooms whose group master held back their heat last cycle (residual heat sees them idle)
+        self._supply_withheld_rooms: set[str] = set()
         # AC evaporator drying (anti-odour): bounded fan run after cooling
         self._coil_dry_manager = AcCoilDryManager(hass)
         # ACs in dry while a room is too humid and needs neither heating nor cooling (#440)
@@ -1508,6 +1514,18 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 compressor_protection_reason = "uniform_mode"
                 compressor_protection_until = None
 
+        # Valves open while the group's boiler waits for more rooms or its start delay: no heat
+        # comes, so the residual heat and the model see the room idle (a stop of the boiler ends the run)
+        supply_withheld = (
+            climate_active
+            and has_external_sensor
+            and mode in (MODE_HEATING, MODE_COOLING)
+            and self._compressor_manager.supply_withheld(
+                self._delivering_eids(room, mode, heat_source_plan), "heat" if mode == MODE_HEATING else "cool"
+            )
+        )
+        delivered_mode = MODE_IDLE if supply_withheld else mode
+
         # --- Residual heat transition tracking ---
         # After compressor constraints may have changed mode to IDLE.
         # The learner runs first: the tracker forgets the stop once heating restarts.
@@ -1515,7 +1533,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             area_id,
             model=self._model_manager.get_model(area_id),
             system_type=system_type if radiator else "",
-            mode=mode,
+            mode=delivered_mode,
             current_temp=current_temp_raw,
             T_outdoor=self.outdoor_temp_effective,
             dt_minutes=UPDATE_INTERVAL / 60.0,
@@ -1557,14 +1575,19 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             # A radiator's stored heat follows how long it ran, not the commanded pf: a TRV
             # with a boosted setpoint opens fully from a low pf on, and many never report
             # hvac_action. Its runs count at full power; the learned scale covers the rest.
-            residual_pf = 1.0 if radiator and mode == MODE_HEATING else power_fraction
+            residual_pf = 0.0 if supply_withheld else 1.0 if radiator and mode == MODE_HEATING else power_fraction
             self._residual_tracker.update(
                 area_id,
-                mode,
+                delivered_mode,
                 residual_pf,
-                self._previous_modes.get(area_id, MODE_IDLE),
+                MODE_IDLE if area_id in self._supply_withheld_rooms else self._previous_modes.get(area_id, MODE_IDLE),
                 q_residual=q_residual,
             )
+
+        if supply_withheld:
+            self._supply_withheld_rooms.add(area_id)
+        else:
+            self._supply_withheld_rooms.discard(area_id)
 
         # AC evaporator drying: bounded fan run after cooling.  Runs even under
         # window pause and force_off — the coordinator already bypasses the
@@ -1766,6 +1789,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             heat_source_plan=heat_source_plan,
             climate_active=climate_active,
             coil_dry_skip_training=coil_dry.skip_ekf_training,
+            supply_withheld=supply_withheld,
             ac_drying=ac_dry.active or (ac_dry.settling and mode == MODE_IDLE),
             compressor_held=compressor_forced_on,
         )
@@ -1905,6 +1929,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         q_rebound: float | None = None,
         climate_active: bool,
         coil_dry_skip_training: bool = False,
+        supply_withheld: bool = False,
         ac_drying: bool = False,
         compressor_held: set[str] | None = None,
     ) -> tuple[str, float]:
@@ -1997,13 +2022,11 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 ekf_pf = 0.0
                 q_residual_training = 0.0
 
-        # Valves open while the group's boiler waits for more rooms or its start delay: no heat comes
-        if ekf_mode in (MODE_HEATING, MODE_COOLING) and self._compressor_manager.supply_withheld(
-            self._delivering_eids(room, ekf_mode, heat_source_plan), "heat" if ekf_mode == MODE_HEATING else "cool"
-        ):
+        # Its group's boiler waits for more rooms or its start delay: no heat comes, the
+        # radiator's afterglow stays in q_residual (the tracker saw the stop)
+        if supply_withheld and ekf_mode in (MODE_HEATING, MODE_COOLING):
             ekf_mode = MODE_IDLE
             ekf_pf = 0.0
-            q_residual_training = 0.0
 
         # Delivered power as the training label (not the commanded one): a TRV's own
         # P band or an AC's control loop runs at (nearly) full output from pf ~0.1 on,
@@ -4104,21 +4127,23 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         if group.off_mode != MASTER_OFF_MODE_TEMPERATURE or off_temperature is None:
             return False
         state = self.hass.states.get(group.master_entity)
-        if state is None or not _takes_setpoint(state):
+        modes = state.attributes.get("hvac_modes", []) if state is not None else []
+        if state is None or not _takes_setpoint(state) or "heat" not in modes:
+            return False
+        if _uniform_mode(state) in _MASTER_COOLING_MODES:
             return False
         group_state = self._compressor_manager.get_state(group.id)
         last = group_state.master_last_active if group_state is not None else None
         if last is not None:
             return last == "heat"
-        return "cool" not in state.attributes.get("hvac_modes", [])
+        return not any(m in modes for m in ("cool", "heat_cool", "auto"))
 
     def _master_cooled(self, group: CompressorGroupConfig) -> bool:
         """Whether the master last ran cooling: sent cool last, or sits in a cooling mode."""
         group_state = self._compressor_manager.get_state(group.id)
         if group_state is not None and group_state.master_last_active == "cool":
             return True
-        state = self.hass.states.get(group.master_entity)
-        return state is not None and state.state in ("cool", "dry", "fan_only")
+        return _uniform_mode(self.hass.states.get(group.master_entity)) in _MASTER_COOLING_MODES
 
     def _master_setpoint(self, state: Any, temperature: float) -> float:
         """*temperature* (stored in °C) in HA's unit, within the master thermostat's min_temp/max_temp."""
@@ -4138,8 +4163,13 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         mode, temperature = target
         if state.state != mode:
             return False
-        # A thermostat without a setpoint: sending one every cycle changes nothing
-        if temperature is None or mode == "off" or not _takes_setpoint(state):
+        # A thermostat without a setpoint, or one not reporting it (a range in heat_cool): resending changes nothing
+        if (
+            temperature is None
+            or mode == "off"
+            or not _takes_setpoint(state)
+            or state.attributes.get("temperature") is None
+        ):
             return True
         try:
             step = float(

@@ -386,7 +386,8 @@ class CompressorGroupManager:
                 return False
             if group.min_rooms <= 1 and group.start_delay_seconds <= 0:
                 return False
-            if state.master_action == action:
+            # Not judged this cycle (startup, master unreadable, climate control off): unknown
+            if state.desired_action is None or state.master_action is None or state.master_action == action:
                 return False
         return bool(eids)
 

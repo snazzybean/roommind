@@ -622,6 +622,9 @@ class TestMasterSupplyWithheld:
         assert self._mgr().supply_withheld([member], "heat") is False
         mgr = self._mgr(min_rooms=2)
         mgr.set_master_action("g1", "idle")
+        # Not judged this cycle yet (startup, climate control off, master unreadable)
+        assert mgr.supply_withheld([member], "heat") is False
+        mgr.set_desired_action("g1", "idle")
         assert mgr.supply_withheld([member], "heat") is True
         assert mgr.supply_withheld(["climate.other"], "heat") is False
         mgr.set_master_action("g1", "heat")
@@ -644,6 +647,7 @@ class TestMasterSupplyWithheld:
     def test_a_unit_outside_the_waiting_group_still_delivers(self):
         mgr = self._mgr(min_rooms=2)
         mgr.set_master_action("g1", "idle")
+        mgr.set_desired_action("g1", "idle")
         member = _make_group()["members"][0]
         assert mgr.supply_withheld([member, "climate.not_in_a_group"], "heat") is False
         assert mgr.supply_withheld([], "heat") is False
