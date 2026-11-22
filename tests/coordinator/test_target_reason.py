@@ -118,3 +118,17 @@ def test_presence_away_uses_the_away_level(hass, mock_config_entry):
     unset = {**SAMPLE_ROOM, "eco_heat": 18.0, "eco_cool": 27.0}
     targets, _ = coordinator._resolve_target_temps_and_reason(unset, settings)
     assert (targets.heat, targets.cool) == (18.0, 27.0)
+
+
+def test_presence_away_level_is_capped_by_the_schedule(hass, mock_config_entry):
+    """D480: leaving during an 18 °C night must not heat up to an away level of 19."""
+    coordinator = _create_coordinator(hass, mock_config_entry)
+    coordinator._is_presence_away = lambda room, settings: True
+    settings = {"presence_away_action": "away"}
+    room = {**SAMPLE_ROOM, "eco_heat": 17.0, "eco_cool": 27.0, "away_heat": 19.0}
+    coordinator._resolve_schedule_targets = lambda *a: _targets(18.0, 27.0)
+    targets, _ = coordinator._resolve_target_temps_and_reason(room, settings)
+    assert targets.heat == 18.0
+    coordinator._resolve_schedule_targets = lambda *a: _targets(None, None)
+    targets, _ = coordinator._resolve_target_temps_and_reason(room, settings)
+    assert (targets.heat, targets.cool) == (None, 27.0)

@@ -2750,10 +2750,14 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             eco_heat = room.get("eco_heat", room.get("eco_temp", DEFAULT_ECO_HEAT))
             eco_cool = room.get("eco_cool", DEFAULT_ECO_COOL)
             if away_action == "away":
-                return (
-                    away_target_temps(room.get("away_heat"), room.get("away_cool"), eco_heat, eco_cool),
-                    TARGET_REASON_AWAY,
+                targets = away_target_temps(
+                    room.get("away_heat"),
+                    room.get("away_cool"),
+                    eco_heat,
+                    eco_cool,
+                    lambda: self._resolve_schedule_targets(room, settings, schedule_blocks, schedule_entity_id),
                 )
+                return targets, TARGET_REASON_AWAY
             return TargetTemps(heat=eco_heat, cool=eco_cool), TARGET_REASON_AWAY
 
         # 3. Schedule / comfort / eco
