@@ -4257,3 +4257,21 @@ async def test_save_room_stores_away_levels(ws_hass, store, connection):
     assert store.get_room("lr")["away_heat"] == 16.0
     await _save_room(ws_hass, connection, {"id": 2, "type": "roommind/rooms/save", "area_id": "lr", "away_heat": None})
     assert store.get_room("lr")["away_heat"] is None
+
+
+@pytest.mark.asyncio
+async def test_save_settings_compressor_master_option_defaults_are_not_stored(ws_hass, store, connection):
+    """Groups without the master options stay readable for older releases."""
+    await store.async_load()
+    group = {"id": "g1", "name": "Boiler", "members": ["climate.trv1"], "master_entity": "switch.boiler"}
+    validated = websocket_save_settings._ws_schema(
+        {
+            "id": 32,
+            "type": "roommind/settings/save",
+            "compressor_groups": [{**group, "min_rooms": 1, "run_on_seconds": 0}],
+        }
+    )
+    await _save_settings(ws_hass, connection, validated)
+    saved = store.get_settings()["compressor_groups"][0]
+    for key in ("min_rooms", "start_delay_seconds", "run_on_seconds", "on_temperature", "off_temperature", "off_mode"):
+        assert key not in saved
