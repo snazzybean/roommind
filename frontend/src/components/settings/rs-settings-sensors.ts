@@ -8,6 +8,8 @@ import type { HomeAssistant, HassEntity } from "../../types";
 import { localize } from "../../utils/localize";
 import { tempUnit } from "../../utils/temperature";
 import { formatNumber, formatPercent } from "../../utils/format";
+import "../shared/rs-info-icon";
+import "../shared/rs-field";
 
 @customElement("rs-settings-sensors")
 export class RsSettingsSensors extends RsSettingsBase {
@@ -102,18 +104,19 @@ export class RsSettingsSensors extends RsSettingsBase {
       </div>
 
       <div class="settings-section">
-        <ha-entity-picker
-          .hass=${this.hass}
-          .value=${this.weatherEntity}
-          .includeDomains=${["weather"]}
-          .label=${localize("settings.weather_entity", l)}
-          allow-custom-entity
-          @value-changed=${(e: CustomEvent) => {
-            const v = (e.detail?.value as string) ?? "";
-            if (v !== this.weatherEntity) this._fire("weatherEntity", v);
-          }}
-        ></ha-entity-picker>
-        <span class="field-hint">${localize("settings.weather_entity_hint", l)}</span>
+        <rs-field .info=${localize("settings.weather_entity_hint", l)}>
+          <ha-entity-picker
+            .hass=${this.hass}
+            .value=${this.weatherEntity}
+            .includeDomains=${["weather"]}
+            .label=${localize("settings.weather_entity", l)}
+            allow-custom-entity
+            @value-changed=${(e: CustomEvent) => {
+              const v = (e.detail?.value as string) ?? "";
+              if (v !== this.weatherEntity) this._fire("weatherEntity", v);
+            }}
+          ></ha-entity-picker>
+        </rs-field>
       </div>
 
       <div class="settings-section">
@@ -121,11 +124,15 @@ export class RsSettingsSensors extends RsSettingsBase {
           switch
           wrap
           .heading=${localize("settings.outdoor_unavailable_notify", l)}
-          .secondary=${localize("settings.outdoor_unavailable_notify_hint", l)}
           .checked=${this.outdoorUnavailableNotify}
           @toggle-changed=${(e: CustomEvent<boolean>) =>
             this._fire("outdoorUnavailableNotify", e.detail)}
-        ></rs-list-row>
+        >
+          <rs-info-icon
+            slot="end"
+            .text=${localize("settings.outdoor_unavailable_notify_hint", l)}
+          ></rs-info-icon>
+        </rs-list-row>
       </div>
     `;
   }

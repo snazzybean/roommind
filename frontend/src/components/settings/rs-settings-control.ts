@@ -10,6 +10,8 @@ import { localize } from "../../utils/localize";
 import { preheatLeadHours } from "../../utils/constants";
 import { formatHours } from "../../utils/format";
 import "../shared/rs-segmented";
+import "../shared/rs-info-icon";
+import "../shared/rs-field";
 
 const CONTROL_DOCS_URL =
   "https://github.com/snazzybean/roommind/blob/main/docs/control-and-devices.md";
@@ -31,26 +33,29 @@ export class RsSettingsControl extends RsSettingsBase {
 
     return html`
       <div class="settings-section first">
-        <span class="field-label">${localize("settings.control_mode", l)}</span>
-        <rs-segmented
+        <rs-field
           .label=${localize("settings.control_mode", l)}
-          .options=${[
-            {
-              value: "mpc",
-              label: localize("settings.control_mode_mpc", l),
-              icon: "mdi:brain",
-            },
-            {
-              value: "bangbang",
-              label: localize("settings.control_mode_simple", l),
-              icon: "mdi:toggle-switch-outline",
-            },
-          ]}
-          .value=${this.controlMode}
-          @value-changed=${(e: CustomEvent<{ value: string }>) =>
-            this._setControlMode(e.detail.value as "mpc" | "bangbang")}
-        ></rs-segmented>
-        <p class="hint">${localize("settings.control_mode_hint", l)}</p>
+          .info=${localize("settings.control_mode_hint", l)}
+        >
+          <rs-segmented
+            .label=${localize("settings.control_mode", l)}
+            .options=${[
+              {
+                value: "mpc",
+                label: localize("settings.control_mode_mpc", l),
+                icon: "mdi:brain",
+              },
+              {
+                value: "bangbang",
+                label: localize("settings.control_mode_simple", l),
+                icon: "mdi:toggle-switch-outline",
+              },
+            ]}
+            .value=${this.controlMode}
+            @value-changed=${(e: CustomEvent<{ value: string }>) =>
+              this._setControlMode(e.detail.value as "mpc" | "bangbang")}
+          ></rs-segmented>
+        </rs-field>
       </div>
 
       ${
@@ -58,34 +63,37 @@ export class RsSettingsControl extends RsSettingsBase {
         this.controlMode === "mpc"
           ? html`
               <div class="settings-section">
-                <span class="field-label">${localize("settings.comfort_weight", l)}</span>
-                <div class="slider-row">
-                  <span class="slider-label"
-                    >${localize("settings.comfort_weight_efficiency", l)}</span
-                  >
-                  <input
-                    type="range"
-                    aria-label=${localize("settings.comfort_weight", l)}
-                    min="0"
-                    max="100"
-                    step="5"
-                    .value=${String(this.comfortWeight)}
-                    @input=${(e: Event) => {
-                      const v = parseInt((e.target as HTMLInputElement).value, 10);
-                      this._dragWeight = isNaN(v) ? null : v;
-                    }}
-                    @change=${(e: Event) => {
-                      const v = parseInt((e.target as HTMLInputElement).value, 10);
-                      this._dragWeight = null;
-                      if (!isNaN(v) && v !== this.comfortWeight) this._fire("comfortWeight", v);
-                    }}
-                  />
-                  <span class="slider-label"
-                    >${localize("settings.comfort_weight_comfort", l)}</span
-                  >
-                </div>
+                <rs-field
+                  .label=${localize("settings.comfort_weight", l)}
+                  .info=${localize("settings.comfort_weight_hint", l)}
+                >
+                  <div class="slider-row">
+                    <span class="slider-label"
+                      >${localize("settings.comfort_weight_efficiency", l)}</span
+                    >
+                    <input
+                      type="range"
+                      aria-label=${localize("settings.comfort_weight", l)}
+                      min="0"
+                      max="100"
+                      step="5"
+                      .value=${String(this.comfortWeight)}
+                      @input=${(e: Event) => {
+                        const v = parseInt((e.target as HTMLInputElement).value, 10);
+                        this._dragWeight = isNaN(v) ? null : v;
+                      }}
+                      @change=${(e: Event) => {
+                        const v = parseInt((e.target as HTMLInputElement).value, 10);
+                        this._dragWeight = null;
+                        if (!isNaN(v) && v !== this.comfortWeight) this._fire("comfortWeight", v);
+                      }}
+                    />
+                    <span class="slider-label"
+                      >${localize("settings.comfort_weight_comfort", l)}</span
+                    >
+                  </div>
+                </rs-field>
                 <p class="preheat-lead">${this._preheatLeadText(l)}</p>
-                <p class="hint helper-text">${localize("settings.comfort_weight_hint", l)}</p>
                 <a class="helper-link" href=${CONTROL_DOCS_URL} target="_blank" rel="noreferrer">
                   ${localize("common.learn_more", l)}
                 </a>
@@ -100,7 +108,7 @@ export class RsSettingsControl extends RsSettingsBase {
             .hass=${this.hass}
             kind="temperature"
             .label=${localize("settings.outdoor_cooling_min", l)}
-            .hint=${localize("settings.outdoor_cooling_min_hint", l)}
+            .info=${localize("settings.outdoor_cooling_min_hint", l)}
             .min=${-10}
             .max=${40}
             .value=${this.outdoorCoolingMin}
@@ -111,7 +119,7 @@ export class RsSettingsControl extends RsSettingsBase {
             .hass=${this.hass}
             kind="temperature"
             .label=${localize("settings.outdoor_heating_max", l)}
-            .hint=${localize("settings.outdoor_heating_max_hint", l)}
+            .info=${localize("settings.outdoor_heating_max_hint", l)}
             .min=${0}
             .max=${40}
             .value=${this.outdoorHeatingMax}
@@ -126,10 +134,14 @@ export class RsSettingsControl extends RsSettingsBase {
           switch
           wrap
           .heading=${localize("settings.prediction_enabled", l)}
-          .secondary=${localize("settings.prediction_enabled_hint", l)}
           .checked=${this.predictionEnabled}
           @toggle-changed=${(e: CustomEvent<boolean>) => this._fire("predictionEnabled", e.detail)}
-        ></rs-list-row>
+        >
+          <rs-info-icon
+            slot="end"
+            .text=${localize("settings.prediction_enabled_hint", l)}
+          ></rs-info-icon>
+        </rs-list-row>
       </div>
 
       <div class="settings-section">
@@ -167,18 +179,6 @@ export class RsSettingsControl extends RsSettingsBase {
   static styles = [
     RsSettingsBase.settingsBaseStyles,
     css`
-      .hint {
-        color: var(--secondary-text-color);
-        font-size: 13px;
-        line-height: 1.5;
-        margin: var(--rs-space-3) 0 0;
-      }
-      .settings-section > .hint:first-child {
-        margin: 0 0 var(--rs-space-3);
-      }
-      .helper-text {
-        margin: 10px 0 0;
-      }
       .preheat-lead {
         margin: 10px 0 0;
         font-size: 13px;

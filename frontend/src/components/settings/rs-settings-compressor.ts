@@ -16,6 +16,7 @@ import "../shared/rs-icon-button";
 import "../shared/rs-number-field";
 import "../shared/rs-list-row";
 import "../shared/rs-field";
+import "../shared/rs-info-icon";
 import "../shared/rs-segmented";
 import { inputStyles } from "../../styles/input-styles";
 import { alertStyles } from "../../styles/tokens";
@@ -61,16 +62,9 @@ export class RsSettingsCompressor extends RsSettingsBase {
         flex-direction: column;
         gap: var(--rs-space-3);
       }
-      .group .field-label {
-        margin: var(--rs-space-2) 0 0;
-        font-weight: 500;
-      }
       .members {
         display: flex;
         flex-direction: column;
-      }
-      .group .field-hint {
-        margin-top: calc(-1 * var(--rs-space-2));
       }
       .delete-row {
         display: flex;
@@ -126,36 +120,39 @@ export class RsSettingsCompressor extends RsSettingsBase {
           }}
         ></ha-textfield>
 
-        <span class="field-label">${localize("compressor.members", l)}</span>
-        ${
-          group.members.length > 0
-            ? html`<div class="members">
-                ${group.members.map((eid) => this._renderMember(eid, idx))}
-              </div>`
-            : nothing
-        }
-        <ha-entity-picker
-          .hass=${this.hass}
-          .value=${""}
-          .includeDomains=${["climate"]}
-          .entityFilter=${this._memberFilter}
-          @value-changed=${(e: CustomEvent) => {
-            const v = (e.detail?.value as string) ?? "";
-            if (!v) return;
-            const updated = [...this.compressorGroups];
-            updated[idx] = { ...updated[idx], members: [...updated[idx].members, v] };
-            this._fireGroups(updated);
-            const picker = e.target as HTMLElement & { value?: string };
-            if (picker) picker.value = "";
-          }}
-        ></ha-entity-picker>
-        <span class="field-hint">${localize("compressor.members_hint", l)}</span>
+        <rs-field
+          .label=${localize("compressor.members", l)}
+          .info=${localize("compressor.members_hint", l)}
+        >
+          ${
+            group.members.length > 0
+              ? html`<div class="members">
+                  ${group.members.map((eid) => this._renderMember(eid, idx))}
+                </div>`
+              : nothing
+          }
+          <ha-entity-picker
+            .hass=${this.hass}
+            .value=${""}
+            .includeDomains=${["climate"]}
+            .entityFilter=${this._memberFilter}
+            @value-changed=${(e: CustomEvent) => {
+              const v = (e.detail?.value as string) ?? "";
+              if (!v) return;
+              const updated = [...this.compressorGroups];
+              updated[idx] = { ...updated[idx], members: [...updated[idx].members, v] };
+              this._fireGroups(updated);
+              const picker = e.target as HTMLElement & { value?: string };
+              if (picker) picker.value = "";
+            }}
+          ></ha-entity-picker>
+        </rs-field>
 
         <div class="threshold-grid">
           <rs-number-field
             .label=${localize("compressor.min_run", l)}
             .suffix=${localize("compressor.min_run_suffix", l)}
-            .hint=${localize("compressor.min_run_hint", l)}
+            .info=${localize("compressor.min_run_hint", l)}
             .min=${1}
             .max=${60}
             .value=${group.min_run_minutes}
@@ -165,7 +162,7 @@ export class RsSettingsCompressor extends RsSettingsBase {
           <rs-number-field
             .label=${localize("compressor.min_off", l)}
             .suffix=${localize("compressor.min_off_suffix", l)}
-            .hint=${localize("compressor.min_off_hint", l)}
+            .info=${localize("compressor.min_off_hint", l)}
             .min=${1}
             .max=${30}
             .value=${group.min_off_minutes}
@@ -174,79 +171,86 @@ export class RsSettingsCompressor extends RsSettingsBase {
           ></rs-number-field>
         </div>
 
-        <span class="field-label">${localize("compressor.master_entity", l)}</span>
-        <ha-entity-picker
-          .hass=${this.hass}
-          .value=${group.master_entity || ""}
-          .includeDomains=${MASTER_DOMAINS}
-          .entityFilter=${this._masterFilter}
-          @value-changed=${(e: CustomEvent) => {
-            this._updateGroup(idx, "master_entity", (e.detail?.value as string) ?? "");
-          }}
-        ></ha-entity-picker>
-        <span class="field-hint">${localize("compressor.master_entity_hint", l)}</span>
+        <rs-field
+          .label=${localize("compressor.master_entity", l)}
+          .info=${localize("compressor.master_entity_hint", l)}
+        >
+          <ha-entity-picker
+            .hass=${this.hass}
+            .value=${group.master_entity || ""}
+            .includeDomains=${MASTER_DOMAINS}
+            .entityFilter=${this._masterFilter}
+            @value-changed=${(e: CustomEvent) => {
+              this._updateGroup(idx, "master_entity", (e.detail?.value as string) ?? "");
+            }}
+          ></ha-entity-picker>
+        </rs-field>
         ${group.master_entity || group.action_script ? this._renderMasterOptions(group, idx) : nothing}
 
         <rs-list-row
           switch
           wrap
           .heading=${localize("compressor.enforce_uniform_mode", l)}
-          .secondary=${localize("compressor.enforce_uniform_mode_hint", l)}
           .checked=${group.enforce_uniform_mode || false}
           @toggle-changed=${(e: CustomEvent<boolean>) => {
             this._updateGroup(idx, "enforce_uniform_mode", e.detail);
           }}
-        ></rs-list-row>
+        >
+          <rs-info-icon
+            slot="end"
+            .text=${localize("compressor.enforce_uniform_mode_hint", l)}
+          ></rs-info-icon>
+        </rs-list-row>
 
         ${
           group.master_entity || group.enforce_uniform_mode
             ? html`
-                <ha-select
-                  .label=${localize("compressor.conflict_resolution", l)}
-                  .value=${group.conflict_resolution || "heating_priority"}
-                  .options=${[
-                    {
-                      value: "heating_priority",
-                      label: localize("compressor.conflict_heating_priority", l),
-                    },
-                    {
-                      value: "cooling_priority",
-                      label: localize("compressor.conflict_cooling_priority", l),
-                    },
-                    {
-                      value: "majority",
-                      label: localize("compressor.conflict_majority", l),
-                    },
-                    {
-                      value: "outdoor_temp",
-                      label: localize("compressor.conflict_outdoor_temp", l),
-                    },
-                  ]}
-                  @selected=${(e: Event) => {
-                    const v = getSelectValue(e);
-                    if (v) this._updateGroup(idx, "conflict_resolution", v);
-                  }}
-                  @closed=${(e: Event) => e.stopPropagation()}
-                  fixedMenuPosition
-                >
-                </ha-select>
-                <span class="field-hint">
-                  ${localize("compressor.conflict_resolution_hint", l)}
-                </span>
+                <rs-field .info=${localize("compressor.conflict_resolution_hint", l)}>
+                  <ha-select
+                    .label=${localize("compressor.conflict_resolution", l)}
+                    .value=${group.conflict_resolution || "heating_priority"}
+                    .options=${[
+                      {
+                        value: "heating_priority",
+                        label: localize("compressor.conflict_heating_priority", l),
+                      },
+                      {
+                        value: "cooling_priority",
+                        label: localize("compressor.conflict_cooling_priority", l),
+                      },
+                      {
+                        value: "majority",
+                        label: localize("compressor.conflict_majority", l),
+                      },
+                      {
+                        value: "outdoor_temp",
+                        label: localize("compressor.conflict_outdoor_temp", l),
+                      },
+                    ]}
+                    @selected=${(e: Event) => {
+                      const v = getSelectValue(e);
+                      if (v) this._updateGroup(idx, "conflict_resolution", v);
+                    }}
+                    @closed=${(e: Event) => e.stopPropagation()}
+                    fixedMenuPosition
+                  >
+                  </ha-select>
+                </rs-field>
               `
             : nothing
         }
 
-        <ha-entity-picker
-          .hass=${this.hass}
-          .value=${group.action_script || ""}
-          .includeDomains=${["script"]}
-          .label=${localize("compressor.action_script", l)}
-          @value-changed=${(e: CustomEvent) => {
-            this._updateGroup(idx, "action_script", (e.detail?.value as string) ?? "");
-          }}
-        ></ha-entity-picker>
-        <span class="field-hint">${localize("compressor.action_script_hint", l)}</span>
+        <rs-field .info=${localize("compressor.action_script_hint", l)}>
+          <ha-entity-picker
+            .hass=${this.hass}
+            .value=${group.action_script || ""}
+            .includeDomains=${["script"]}
+            .label=${localize("compressor.action_script", l)}
+            @value-changed=${(e: CustomEvent) => {
+              this._updateGroup(idx, "action_script", (e.detail?.value as string) ?? "");
+            }}
+          ></ha-entity-picker>
+        </rs-field>
 
         <div class="delete-row">
           <rs-confirm-button
@@ -276,7 +280,7 @@ export class RsSettingsCompressor extends RsSettingsBase {
     return html`
       <rs-number-field
         .label=${localize("compressor.min_rooms", l)}
-        .hint=${localize("compressor.min_rooms_hint", l)}
+        .info=${localize("compressor.min_rooms_hint", l)}
         .min=${1}
         .max=${50}
         .step=${1}
@@ -286,6 +290,7 @@ export class RsSettingsCompressor extends RsSettingsBase {
       <div class="threshold-grid">
         <rs-number-field
           .label=${localize("compressor.start_delay", l)}
+          .info=${localize("compressor.start_delay_hint", l)}
           suffix="s"
           .min=${0}
           .max=${3600}
@@ -295,6 +300,7 @@ export class RsSettingsCompressor extends RsSettingsBase {
         ></rs-number-field>
         <rs-number-field
           .label=${localize("compressor.run_on", l)}
+          .info=${localize("compressor.run_on_hint", l)}
           suffix="s"
           .min=${0}
           .max=${3600}
@@ -303,7 +309,6 @@ export class RsSettingsCompressor extends RsSettingsBase {
           @value-changed=${number("run_on_seconds")}
         ></rs-number-field>
       </div>
-      <span class="field-hint">${localize("compressor.delays_hint", l)}</span>
       ${
         thermostat
           ? html`
@@ -313,6 +318,7 @@ export class RsSettingsCompressor extends RsSettingsBase {
                   kind="temperature"
                   .hass=${this.hass}
                   .label=${localize("compressor.on_temperature", l)}
+                  .info=${localize("compressor.on_temperature_hint", l)}
                   .min=${5}
                   .max=${90}
                   .value=${group.on_temperature ?? null}
@@ -323,6 +329,7 @@ export class RsSettingsCompressor extends RsSettingsBase {
                   kind="temperature"
                   .hass=${this.hass}
                   .label=${localize("compressor.off_temperature", l)}
+                  .info=${localize("compressor.off_temperature_hint", l)}
                   .min=${5}
                   .max=${90}
                   .disabled=${group.on_temperature == null}
@@ -330,10 +337,12 @@ export class RsSettingsCompressor extends RsSettingsBase {
                   @value-changed=${optional("off_temperature")}
                 ></rs-number-field>
               </div>
-              <span class="field-hint">${localize("compressor.temperatures_hint", l)}</span>
               ${
                 group.on_temperature != null && group.off_temperature != null
-                  ? html`<rs-field .label=${localize("compressor.off_mode", l)}>
+                  ? html`<rs-field
+                      .label=${localize("compressor.off_mode", l)}
+                      .info=${localize("compressor.off_mode_hint", l)}
+                    >
                       <rs-segmented
                         wrap
                         .label=${localize("compressor.off_mode", l)}

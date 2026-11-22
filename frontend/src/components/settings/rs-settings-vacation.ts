@@ -7,6 +7,7 @@ import "../shared/rs-number-field";
 import { customElement, property, state } from "lit/decorators.js";
 import type { HomeAssistant } from "../../types";
 import { localize } from "../../utils/localize";
+import "../shared/rs-info-icon";
 
 @customElement("rs-settings-vacation")
 export class RsSettingsVacation extends RsSettingsBase {
@@ -26,14 +27,15 @@ export class RsSettingsVacation extends RsSettingsBase {
           switch
           wrap
           .heading=${localize("vacation.switch", l)}
-          .secondary=${localize("vacation.hint", l)}
           .checked=${this.vacationActive}
           @toggle-changed=${(e: CustomEvent<boolean>) => {
             const active = e.detail;
             this._fire("vacationActive", active);
             if (!active) this._fire("vacationUntil", "");
           }}
-        ></rs-list-row>
+        >
+          <rs-info-icon slot="end" .text=${localize("vacation.hint", l)}></rs-info-icon>
+        </rs-list-row>
       </div>
 
       ${

@@ -7,6 +7,7 @@ import "../shared/rs-number-field";
 import { customElement, property } from "lit/decorators.js";
 import type { HomeAssistant } from "../../types";
 import { localize } from "../../utils/localize";
+import "../shared/rs-info-icon";
 
 @customElement("rs-settings-valve")
 export class RsSettingsValve extends RsSettingsBase {
@@ -23,11 +24,12 @@ export class RsSettingsValve extends RsSettingsBase {
           switch
           wrap
           .heading=${localize("valve_protection.title", l)}
-          .secondary=${localize("valve_protection.hint", l)}
           .checked=${this.valveProtectionEnabled}
           @toggle-changed=${(e: CustomEvent<boolean>) =>
             this._fire("valveProtectionEnabled", e.detail)}
-        ></rs-list-row>
+        >
+          <rs-info-icon slot="end" .text=${localize("valve_protection.hint", l)}></rs-info-icon>
+        </rs-list-row>
       </div>
 
       ${
@@ -38,7 +40,7 @@ export class RsSettingsValve extends RsSettingsBase {
                   <rs-number-field
                     .label=${localize("valve_protection.interval_label", l)}
                     .suffix=${localize("valve_protection.interval_suffix", l)}
-                    .hint=${localize("valve_protection.interval_hint", l)}
+                    .info=${localize("valve_protection.interval_hint", l)}
                     .min=${1}
                     .max=${90}
                     .value=${this.valveProtectionInterval}

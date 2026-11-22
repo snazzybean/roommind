@@ -8,6 +8,7 @@ import type { HomeAssistant, PresenceAwayAction } from "../../types";
 import { localize } from "../../utils/localize";
 import "../shared/rs-segmented";
 import "../shared/rs-icon-button";
+import "../shared/rs-info-icon";
 
 @customElement("rs-settings-presence")
 export class RsSettingsPresence extends RsSettingsBase {
@@ -116,11 +117,15 @@ export class RsSettingsPresence extends RsSettingsBase {
                   switch
                   wrap
                   .heading=${localize("presence.clears_override_label", l)}
-                  .secondary=${localize("presence.clears_override_hint", l)}
                   .checked=${this.presenceClearsOverride}
                   @toggle-changed=${(e: CustomEvent<boolean>) =>
                     this._fire("presenceClearsOverride", e.detail)}
-                ></rs-list-row>
+                >
+                  <rs-info-icon
+                    slot="end"
+                    .text=${localize("presence.clears_override_hint", l)}
+                  ></rs-info-icon>
+                </rs-list-row>
               </div>
             `
           : nothing

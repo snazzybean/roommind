@@ -10,6 +10,8 @@ import { localize, type TranslationKey } from "../../utils/localize";
 import { getSelectValue } from "../../utils/events";
 import { fanModeLabel, type FanModeOption } from "../../utils/device-utils";
 import "../shared/rs-segmented";
+import "../shared/rs-info-icon";
+import "../shared/rs-field";
 
 const KEEP = "__keep__";
 
@@ -39,7 +41,7 @@ export class RsSettingsCoilDry extends RsSettingsBase {
       <rs-number-field
         .label=${localize(labelKey, l)}
         .suffix=${localize(suffixKey, l)}
-        .hint=${localize(hintKey, l)}
+        .info=${localize(hintKey, l)}
         .min=${min}
         .max=${max}
         .value=${value}
@@ -64,10 +66,11 @@ export class RsSettingsCoilDry extends RsSettingsBase {
           switch
           wrap
           .heading=${localize("coil_dry.switch", l)}
-          .secondary=${localize("coil_dry.hint", l)}
           .checked=${this.coilDryEnabled}
           @toggle-changed=${(e: CustomEvent<boolean>) => this._fire("coilDryEnabled", e.detail)}
-        ></rs-list-row>
+        >
+          <rs-info-icon slot="end" .text=${localize("coil_dry.hint", l)}></rs-info-icon>
+        </rs-list-row>
       </div>
 
       ${
@@ -107,33 +110,36 @@ export class RsSettingsCoilDry extends RsSettingsBase {
 
               <div class="settings-section stack">
                 <div class="threshold-field">
-                  <ha-select
-                    .label=${localize("coil_dry.fan_mode_label", l)}
-                    .value=${this.coilDryFanMode === "" ? KEEP : this.coilDryFanMode}
-                    .options=${[
-                      { value: KEEP, label: localize("coil_dry.fan_mode_keep", l) },
-                      ...fanModes,
-                    ]}
-                    @selected=${(e: Event) => {
-                      const v = getSelectValue(e);
-                      const current = this.coilDryFanMode === "" ? KEEP : this.coilDryFanMode;
-                      if (v && v !== current) this._fire("coilDryFanMode", v === KEEP ? "" : v);
-                    }}
-                    @closed=${(e: Event) => e.stopPropagation()}
-                    fixedMenuPosition
-                  >
-                    <ha-list-item value="${KEEP}"
-                      >${localize("coil_dry.fan_mode_keep", l)}</ha-list-item
+                  <rs-field .info=${localize("coil_dry.fan_mode_hint", l)}>
+                    <ha-select
+                      .label=${localize("coil_dry.fan_mode_label", l)}
+                      .value=${this.coilDryFanMode === "" ? KEEP : this.coilDryFanMode}
+                      .options=${[
+                        { value: KEEP, label: localize("coil_dry.fan_mode_keep", l) },
+                        ...fanModes,
+                      ]}
+                      @selected=${(e: Event) => {
+                        const v = getSelectValue(e);
+                        const current = this.coilDryFanMode === "" ? KEEP : this.coilDryFanMode;
+                        if (v && v !== current) this._fire("coilDryFanMode", v === KEEP ? "" : v);
+                      }}
+                      @closed=${(e: Event) => e.stopPropagation()}
+                      fixedMenuPosition
                     >
-                    ${fanModes.map(
-                      (fm) => html`<ha-list-item value=${fm.value}>${fm.label}</ha-list-item>`,
-                    )}
-                  </ha-select>
-                  <span class="field-hint">${localize("coil_dry.fan_mode_hint", l)}</span>
+                      <ha-list-item value="${KEEP}"
+                        >${localize("coil_dry.fan_mode_keep", l)}</ha-list-item
+                      >
+                      ${fanModes.map(
+                        (fm) => html`<ha-list-item value=${fm.value}>${fm.label}</ha-list-item>`,
+                      )}
+                    </ha-select>
+                  </rs-field>
                 </div>
 
-                <div>
-                  <span class="field-label">${localize("coil_dry.mode_label", l)}</span>
+                <rs-field
+                  .label=${localize("coil_dry.mode_label", l)}
+                  .info=${localize("coil_dry.mode_hint", l)}
+                >
                   <rs-segmented
                     wrap
                     .label=${localize("coil_dry.mode_label", l)}
@@ -154,7 +160,7 @@ export class RsSettingsCoilDry extends RsSettingsBase {
                         >`
                       : nothing
                   }
-                </div>
+                </rs-field>
               </div>
             `
           : nothing
