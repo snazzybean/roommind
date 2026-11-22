@@ -3,7 +3,9 @@ description: >
   Radiator room with comfort 20 °C in the day block and eco 18 °C at night, presence action
   "away" with an away temperature of 19 °C (D480). Leaving during the day lowers the room to
   19, leaving at night keeps the 18 of the schedule (the away temperature never asks for more
-  than the schedule), coming home returns to the schedule (#530, PR #531).
+  than the schedule), coming home returns to the schedule (#530, PR #531). The office has
+  occupancy eco and nobody in it: it sits at eco 17 and must stay there when the last person
+  leaves the house instead of rising to its away level 19.
 refs: [530, 531]
 tags: [trv, presence]
 start: 2026-01-12T00:00
@@ -25,6 +27,17 @@ house:
         - {entity_id: climate.kessel, profile: generic_boiler}
       sensors:
         temperature: {entity_id: sensor.wz_temp}
+    buero:
+      name: Büro
+      floor_area_m2: 12
+      exterior_wall_m2: 8
+      initial: {temperature: 18.0}
+      windows: [{orientation: E, area_m2: 1.5}]
+      devices:
+        - {entity_id: climate.buero_trv, profile: generic_trv}
+      sensors:
+        temperature: {entity_id: sensor.buero_temp}
+        occupancy: {entity_id: binary_sensor.buero_praesenz}
 people:
   - {id: anna, profile: home_office, rooms: {living: wohnzimmer}}
 helpers:
@@ -39,7 +52,7 @@ roommind:
     presence_persons: [person.anna]
     presence_away_action: away
     compressor_groups:
-      - {id: kessel, name: Kessel, members: [climate.wz_trv], master_entity: climate.kessel, min_run_minutes: 5, min_off_minutes: 5}
+      - {id: kessel, name: Kessel, members: [climate.wz_trv, climate.buero_trv], master_entity: climate.kessel, min_run_minutes: 5, min_off_minutes: 5}
   rooms:
     wohnzimmer:
       devices: [{entity_id: climate.wz_trv, type: trv, heating_system_type: radiator}]
@@ -48,6 +61,16 @@ roommind:
       climate_mode: heat_only
       comfort_temp: 20.0
       eco_temp: 18.0
+      away_heat: 19.0
+    buero:
+      devices: [{entity_id: climate.buero_trv, type: trv, heating_system_type: radiator}]
+      temperature_sensor: sensor.buero_temp
+      schedules: [{entity_id: schedule.plan_wohnen}]
+      occupancy_sensors: [binary_sensor.buero_praesenz]
+      occupancy_eco_enabled: true
+      climate_mode: heat_only
+      comfort_temp: 21.0
+      eco_temp: 17.0
       away_heat: 19.0
 timeline:
   - {at: "+0d02h", do: person.leave, person: anna, for: 2h}
@@ -60,3 +83,5 @@ expect:
   - {check: "room.wohnzimmer.target_temp == 20.0", at: "+1d09h", label: day at home -> comfort}
   - {check: "room.wohnzimmer.presence_away == true and room.wohnzimmer.target_temp == 19.0", at: "+1d11h", label: leaving during the day -> away 19}
   - {check: "room.wohnzimmer.presence_away == false and room.wohnzimmer.target_temp == 20.0", at: "+1d14h", label: home again -> comfort}
+  - {check: "room.buero.occupancy_vacant == true and room.buero.target_temp == 17.0", at: "+1d09h", label: empty office at home -> eco}
+  - {check: "room.buero.presence_away == true and room.buero.target_temp == 17.0", at: "+1d11h", label: empty office stays at eco when the house empties}
