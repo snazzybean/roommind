@@ -6,13 +6,16 @@ it off much later. So each sensor gets its own gain [degC/h per kW], and a senso
 counts once it measurably improves the room's prediction; otherwise it shows "no effect"
 and is ignored.
 
-The learner works on each sensor's deviation from its usual load (a slow average): a
-constant load such as a fridge or a server sits on its usual load, never excites the
-learner and leaves the thermal model as it is without a sensor, so it cannot keep the
-heating rate from learning. Only what changes is learned, from the model's own
-prediction errors over idle windows: for each window the residual of the model without
-the devices is regressed on the deviations of all sensors at once (recursive least squares),
-so two plugs switching together do not take each other's heat.
+The gain is learned from each sensor's deviation from its usual load (a slow average),
+from the model's own prediction errors over idle windows: for each window the residual of
+the model without the devices is regressed on the deviations of all sensors at once
+(recursive least squares, with a constant term for what the model misses anyway), so two
+plugs switching together do not take each other's heat. A constant load such as a fridge
+sits on its usual load, never excites the learner and is never used: it stays in the
+thermal model as without a sensor, so it cannot keep the heating rate from learning.
+
+A sensor in use adds its full heat, gain x power, to the model as a known input, so the
+model no longer books its device's heat on the room's own parameters.
 
 Rooms without power sensors have no state here, and nothing about the devices is stored
 with the room's thermal model.
@@ -34,6 +37,7 @@ POWER_BASELINE_TAU_H = 48.0
 POWER_MIN_DEVIATION_KW = 0.05
 # Gain prior and residual noise of a window
 _GAIN_INIT_VAR = 4.0  # (degC/h per kW)^2
+_BIAS_INIT_VAR = 1.0  # (degC/h)^2
 _WINDOW_NOISE_VAR = 0.01  # (0.1 K)^2
 # RLS forgetting per window and decay of the scores
 _FORGET = 0.999
@@ -48,6 +52,8 @@ POWER_NO_EFFECT_WINDOWS = 80
 POWER_CONSTANT_DAYS = 7.0
 
 STATUS_LEARNING = "learning"
+# Key of the constant term while the terms are matched to the configured sensors
+_BIAS = "\0bias"
 STATUS_ACTIVE = "active"
 STATUS_NO_EFFECT = "no_effect"
 
@@ -91,10 +97,12 @@ class _Window:
 @dataclass
 class _Room:
     sensors: list[str] = field(default_factory=list)
-    gain: list[float] = field(default_factory=list)
-    P: list[list[float]] = field(default_factory=list)
+    # One gain per sensor, then the constant term [degC/h]; P covers both
+    gain: list[float] = field(default_factory=lambda: [0.0])
+    P: list[list[float]] = field(default_factory=lambda: [[_BIAS_INIT_VAR]])
     state: dict[str, _Sensor] = field(default_factory=dict)
-    # Deviation of each sensor this cycle [kW], None without a reading
+    # Reading and deviation from the usual load of each sensor this cycle [kW], None without a reading
+    reading: dict[str, float | None] = field(default_factory=dict)
     now: dict[str, float | None] = field(default_factory=dict)
     window: _Window | None = None
 
@@ -118,9 +126,11 @@ class PowerGainLearner:
         room = self._sync(area_id, sensors)
         k = 1.0 - math.exp(-max(dt_minutes, 0.0) / 60.0 / POWER_BASELINE_TAU_H)
         room.now = {}
+        room.reading = {}
         for eid in room.sensors:
             st = room.state[eid]
             reading = readings.get(eid)
+            room.reading[eid] = reading
             if reading is None:
                 room.now[eid] = None
                 continue
@@ -135,15 +145,15 @@ class PowerGainLearner:
         return self.device_heat(area_id)
 
     def device_heat(self, area_id: str) -> float:
-        """Heat of the active sensors' deviation from their usual load this cycle [degC/h]."""
+        """Heat the sensors in use add to the room this cycle [degC/h]: gain x power."""
         room = self._rooms.get(area_id)
         if room is None:
             return 0.0
         total = 0.0
         for i, eid in enumerate(room.sensors):
-            x = room.now.get(eid)
-            if x is not None and room.state[eid].active:
-                total += room.gain[i] * x
+            reading = room.reading.get(eid)
+            if reading is not None and room.state[eid].active:
+                total += max(room.gain[i], 0.0) * reading
         return total
 
     def observe(
@@ -211,13 +221,14 @@ class PowerGainLearner:
         base = model.predict(win.T_start, win.t_out, 0.0, win.minutes, **inputs)
         per_unit = model.predict(win.T_start, win.t_out, 0.0, win.minutes, u_device=1.0, **inputs) - base
         residual = T_end - base
-        z = [d * per_unit for d in win.deviation]
         excited = [abs(d) >= POWER_MIN_DEVIATION_KW for d in win.deviation]
         if not any(excited) or per_unit <= 0:
             return
-        n = len(room.sensors)
+        # Regressors: each sensor's deviation, then the constant term
+        z = [d * per_unit for d in win.deviation] + [per_unit]
+        n = len(z)
         predicted = sum(room.gain[i] * z[i] for i in range(n))
-        # Score before learning: the window with every gain, and without each sensor's own
+        # Score before learning: the window with every term, and without each sensor's own
         for i, eid in enumerate(room.sensors):
             if not excited[i]:
                 continue
@@ -255,18 +266,22 @@ class PowerGainLearner:
         room = self._rooms.setdefault(area_id, _Room())
         if room.sensors == sensors:
             return room
-        keep = {eid: i for i, eid in enumerate(room.sensors)}
+        bias = len(room.sensors)
+        keep: dict[str, int] = {eid: i for i, eid in enumerate(room.sensors)}
+        keep[_BIAS] = bias
         order = list(dict.fromkeys(sensors))
+        terms = [*order, _BIAS]
+        init = {_BIAS: _BIAS_INIT_VAR}
         gain: list[float] = []
         P: list[list[float]] = []
-        for a in order:
+        for a in terms:
             gain.append(room.gain[keep[a]] if a in keep else 0.0)
             row = []
-            for b in order:
+            for b in terms:
                 if a in keep and b in keep:
                     row.append(room.P[keep[a]][keep[b]])
                 else:
-                    row.append(_GAIN_INIT_VAR if a == b else 0.0)
+                    row.append(init.get(a, _GAIN_INIT_VAR) if a == b else 0.0)
             P.append(row)
         room.sensors, room.gain, room.P = order, gain, P
         room.state = {eid: room.state.get(eid) or _Sensor() for eid in order}
@@ -294,7 +309,7 @@ class PowerGainLearner:
         out = []
         for i, eid in enumerate(room.sensors):
             st = room.state[eid]
-            x = room.now.get(eid)
+            reading = room.reading.get(eid)
             active = st.active
             out.append(
                 {
@@ -306,10 +321,8 @@ class PowerGainLearner:
                     "windows": st.n,
                     "windows_needed": POWER_ACTIVE_MIN_WINDOWS,
                     "baseline_kw": round(st.baseline_kw, 3) if st.baseline_kw is not None else None,
-                    "power_kw": (
-                        round(st.baseline_kw + x, 3) if st.baseline_kw is not None and x is not None else None
-                    ),
-                    "heat_now": round(room.gain[i] * x, 3) if active and x is not None else 0.0,
+                    "power_kw": round(reading, 3) if reading is not None else None,
+                    "heat_now": round(max(room.gain[i], 0.0) * reading, 3) if active and reading is not None else 0.0,
                 }
             )
         return out
@@ -353,7 +366,7 @@ class PowerGainLearner:
         for area_id, raw in data.items():
             try:
                 sensors = [str(e) for e in raw["sensors"]]
-                n = len(sensors)
+                n = len(sensors) + 1  # the gains and the constant term
                 gain = [float(g) for g in raw["gain"]]
                 P = [[float(v) for v in row] for row in raw["P"]]
                 if len(gain) != n or len(P) != n or any(len(row) != n for row in P):

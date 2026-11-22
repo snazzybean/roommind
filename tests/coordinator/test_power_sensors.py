@@ -74,8 +74,8 @@ async def test_an_active_sensor_heats_the_plan_and_the_training(hass, mock_confi
     hass.data["roommind"]["store"].get_power_gains.return_value = {
         AREA: {
             "sensors": ["sensor.pc_power"],
-            "gain": [1.5],
-            "P": [[0.01]],
+            "gain": [1.5, 0.0],
+            "P": [[0.01, 0.0], [0.0, 1.0]],
             "state": {"sensor.pc_power": {"baseline_kw": 0.1, "active": True, "n": 50}},
         }
     }
@@ -94,10 +94,10 @@ async def test_an_active_sensor_heats_the_plan_and_the_training(hass, mock_confi
         controller.direct_target.return_value = None
         controller.predicted_peak_temp = None
         data = await coordinator._async_update_data()
-    # 400 W against a usual 100 W: 0.3 kW x 1.5 degC/h per kW
-    assert controller_cls.call_args.kwargs["u_device"] == pytest.approx(0.45, rel=0.01)
-    assert process.call_args.kwargs["u_device"] == pytest.approx(0.45, rel=0.01)
-    assert data["rooms"][AREA]["device_heat"] == pytest.approx(0.45, rel=0.01)
+    # in use: its full heat, 0.4 kW x 1.5 degC/h per kW
+    assert controller_cls.call_args.kwargs["u_device"] == pytest.approx(0.6)
+    assert process.call_args.kwargs["u_device"] == pytest.approx(0.6)
+    assert data["rooms"][AREA]["device_heat"] == pytest.approx(0.6)
     assert observe.call_args.kwargs["mode"] is not None
     assert learner is not coordinator._power_gains  # replaced by the stored state
 
@@ -107,7 +107,14 @@ async def test_power_gains_are_loaded_saved_and_reset(hass, mock_config_entry):
     room = {**SAMPLE_ROOM, "power_sensors": ["sensor.pc_power"]}
     coordinator = _setup(hass, mock_config_entry, room, {"sensor.pc_power": ("400", {"unit_of_measurement": "W"})})
     store = hass.data["roommind"]["store"]
-    saved = {AREA: {"sensors": ["sensor.pc_power"], "gain": [1.1], "P": [[0.2]], "state": {"sensor.pc_power": {}}}}
+    saved = {
+        AREA: {
+            "sensors": ["sensor.pc_power"],
+            "gain": [1.1, 0.0],
+            "P": [[0.2, 0.0], [0.0, 1.0]],
+            "state": {"sensor.pc_power": {}},
+        }
+    }
     store.get_power_gains.return_value = saved
     with patch("custom_components.roommind.coordinator.room_device_ids", return_value=set()):
         await coordinator._async_update_data()

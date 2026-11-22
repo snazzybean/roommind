@@ -75,9 +75,9 @@ def test_a_pc_is_learned_and_used():
     assert info["status"] == STATUS_ACTIVE
     assert info["gain"] == pytest.approx(1.2, rel=0.2)
     assert info["improvement"] > 0.5
-    # once active its heat is a model input: warmer than usual while on, cooler while off
-    assert max(heats[-960:]) > 0.1
-    assert min(heats[-960:]) < 0.0
+    # once active its full heat is a model input: gain x power while on, nothing while off
+    assert max(heats[-960:]) == pytest.approx(0.4 * info["gain"], rel=0.01)
+    assert min(heats[-960:]) == 0.0
 
 
 def test_a_load_without_room_heat_shows_no_effect():
@@ -184,9 +184,9 @@ def test_persistence_round_trip():
     [
         None,
         "bad",
-        {"r": {"sensors": ["a"], "gain": [1.0], "P": [[1.0, 0.0]], "state": {"a": {}}}},
-        {"r": {"sensors": ["a"], "gain": [1.0], "P": [[1.0]], "state": {}}},
-        {"r": {"sensors": ["a"], "gain": ["x"], "P": [[1.0]], "state": {"a": {}}}},
+        {"r": {"sensors": ["a"], "gain": [1.0], "P": [[1.0]], "state": {"a": {}}}},
+        {"r": {"sensors": ["a"], "gain": [1.0, 0.0], "P": [[1.0, 0.0], [0.0, 1.0]], "state": {}}},
+        {"r": {"sensors": ["a"], "gain": ["x", 0.0], "P": [[1.0, 0.0], [0.0, 1.0]], "state": {"a": {}}}},
     ],
 )
 def test_malformed_state_starts_over(data):

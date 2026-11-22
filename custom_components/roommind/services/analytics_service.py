@@ -153,7 +153,7 @@ def _csv_to_points(rows: list[dict]) -> list[dict]:
                 "room_temp_max": _safe_float(row.get("room_temp_max", "")),
                 "room_temp_min": _safe_float(row.get("room_temp_min", "")),
                 "co2": _safe_float(row.get("co2", "")),
-                # Metered device power (kW): a model input of the backtest only
+                # Heat of the power sensors in use [degC/h]: a model input of the backtest only
                 "device_heat": _safe_float(row.get("device_heat", "")),
                 **{f: _safe_float(row.get(f, "")) for f in MODEL_INPUT_FIELDS},
             }
