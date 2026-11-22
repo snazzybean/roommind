@@ -20,11 +20,13 @@ Radiator rooms learn how much heat is still released after heating stops and how
 
 Devices running in a room heat it: a PC with 300 W warms a small office about as much as a weak radiator. Assign their power sensors to the room in the room's sensors (Device power: sensor entities with device class `power`, in W or kW).
 
-- **Learning:** RoomMind adds them up and learns how much each kW warms the room ("Device Heat" in the analytics model card, in °C/h per kW). It learns while the devices draw more than 20 W and the room is not heating, the same way as the solar gain.
-- **Planning:** the MPC plans with it and heats less while the devices run. Nothing says when a device switches off, so the plan lets the measured power fade over about an hour. The analytics backtest replays the recorded device power too.
-- **Better model:** without the sensors, the device heat ends up in the room's loss rate and heating power. With them, those two are learned more accurately as well.
+- **Learned per sensor:** a power reading does not say how much of it stays in the room. A PC or a server turns all of it into room heat, a dishwasher or washing machine sends most of it down the drain, an oven gives it off much later. So RoomMind learns for each sensor how much its device warms the room when it draws more than usual (°C/h per kW), from how the temperature follows while the room is not heating.
+- **Used only when it helps:** a sensor counts once it measurably improves the room's prediction (at least 40 half-hour windows, a gain clearly above zero and at least 10 % less prediction error). Until then it shows "learning", a sensor that does not help shows "no effect" and is ignored. The status is shown next to each sensor and in the "Device heat" tile of the analytics model card.
+- **Constant loads:** a fridge or a server that always draws about the same never leaves its usual load, so it is never used and changes nothing: its heat stays in the room's model as without a sensor, and the heating rate keeps learning.
+- **Planning:** the heat of the sensors in use goes into the model as a known input, so it is not booked on the room's heat loss or heating power. The MPC heats less while they run; nothing says when a device switches off, so the plan lets their heat fade over about an hour. The analytics backtest replays it too.
+- **No change without sensors:** rooms without power sensors keep their model exactly as before; nothing about power sensors is stored for them.
 - **Not counted:** the power of the room's own heaters and ACs. Their heat is already learned as heating power, so a sensor on the same device is ignored with a warning in the log.
-- **Readings:** negative readings (a meter that also counts feed-in) count as 0. An unavailable sensor counts as off.
+- **Readings:** negative readings (a meter that also counts feed-in) count as 0. A sensor without a reading pauses the learning and adds no heat.
 
 ### Proportional valve control
 

@@ -160,7 +160,7 @@ In **Full Control**, RoomMind calculates device setpoints from the planned heati
 
 ### Predictive Control
 
-An Extended Kalman Filter watches the room temperature and learns each room's heat loss, heating and cooling power and response to sun and occupancy and, with power sensors, to the devices running in it. Once its forecasts are good enough (prediction accuracy better than 0.5 °C), the optimizer plans the next hours and calculates how much power the room needs. Until then RoomMind uses on/off control with hysteresis (see [The first hours](#getting-started)).
+An Extended Kalman Filter watches the room temperature and learns each room's heat loss, heating and cooling power and response to sun and occupancy; with power sensors it also learns, per sensor, how much the devices running in the room warm it, and uses a sensor only once that improves the prediction. Once its forecasts are good enough (prediction accuracy better than 0.5 °C), the optimizer plans the next hours and calculates how much power the room needs. Until then RoomMind uses on/off control with hysteresis (see [The first hours](#getting-started)).
 
 `Settings → Control → Control Mode` decides whether predictive control is used at all. **Intelligent (MPC)** is the default. **Simple** keeps every room on on/off control with hysteresis; the model still learns in the background and feeds the analytics prediction, but it never makes heating or cooling decisions. Automatic blinds then shade from a simpler solar estimate instead of the forecast.
 
