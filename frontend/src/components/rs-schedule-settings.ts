@@ -384,7 +384,10 @@ export class RsScheduleSettings extends RsScheduleBase {
     if (this.schedules.length && this.scheduleOffAction === "eco") {
       when.push(localize("detail.schedule.when_schedule_off", l));
     }
-    if (this.presenceActive && this.presenceAwayAction === "eco") {
+    const awayIsEco =
+      this.presenceAwayAction === "eco" ||
+      (this.presenceAwayAction === "away" && this.awayHeat == null && this.awayCool == null);
+    if (this.presenceActive && awayIsEco) {
       when.push(localize("detail.schedule.when_away", l));
     }
     if (this.occupancyEco) when.push(localize("detail.schedule.when_empty", l));

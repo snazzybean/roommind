@@ -301,33 +301,29 @@ def resolve_targets_at_time(
     if vacation_until is not None and ts < vacation_until and vacation_temp is not None:
         t = float(vacation_temp)
         return TargetTemps(heat=t, cool=max(t, eco_cool))
+
+    def at_home() -> TargetTemps:
+        targets = _schedule_targets_at_time(
+            ts,
+            schedule_blocks,
+            comfort_heat,
+            comfort_cool,
+            eco_heat,
+            eco_cool,
+            block_temp_converter,
+            schedule_off_action,
+        )
+        return cap_to_eco(targets, eco_heat, eco_cool) if room_vacant else targets
+
     # 2.5 Presence
     if presence_away:
         if presence_away_action == "off":
             return TargetTemps(heat=None, cool=None)
         if presence_away_action == "away":
-            return away_target_temps(
-                away_heat,
-                away_cool,
-                eco_heat,
-                eco_cool,
-                lambda: _schedule_targets_at_time(
-                    ts,
-                    schedule_blocks,
-                    comfort_heat,
-                    comfort_cool,
-                    eco_heat,
-                    eco_cool,
-                    block_temp_converter,
-                    schedule_off_action,
-                ),
-            )
+            return away_target_temps(away_heat, away_cool, eco_heat, eco_cool, at_home)
         return TargetTemps(heat=eco_heat, cool=eco_cool)
     # 3. Schedule blocks
-    targets = _schedule_targets_at_time(
-        ts, schedule_blocks, comfort_heat, comfort_cool, eco_heat, eco_cool, block_temp_converter, schedule_off_action
-    )
-    return cap_to_eco(targets, eco_heat, eco_cool) if room_vacant else targets
+    return at_home()
 
 
 def away_target_temps(
@@ -340,12 +336,16 @@ def away_target_temps(
     """Targets while nobody is home with presence_away_action "away".
 
     An unset side is eco, as with the "eco" action. A set side never asks for more than the
-    schedule would at home (D480): away 19 °C during an 18 °C night stays at 18, and a side the
-    schedule has off stays off. ``schedule_targets`` is only called when a side is set.
+    schedule would at home (D480): away 19 °C during an 18 °C night stays at 18, a side the
+    schedule has off stays off, and a schedule that is off entirely stays off (devices off, as at
+    home). ``schedule_targets`` is what applies at home (occupancy eco included) and is only
+    called when a side is set.
     """
     if away_heat is None and away_cool is None:
         return TargetTemps(heat=eco_heat, cool=eco_cool)
     sched = schedule_targets()
+    if sched.heat is None and sched.cool is None:
+        return sched
     if away_heat is None:
         heat: float | None = eco_heat
     else:

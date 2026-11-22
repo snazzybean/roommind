@@ -2755,7 +2755,9 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                     room.get("away_cool"),
                     eco_heat,
                     eco_cool,
-                    lambda: self._resolve_schedule_targets(room, settings, schedule_blocks, schedule_entity_id),
+                    lambda: self._schedule_targets_at_home(
+                        room, settings, schedule_blocks, schedule_entity_id, room_vacant
+                    ),
                 )
                 return targets, TARGET_REASON_AWAY
             return TargetTemps(heat=eco_heat, cool=eco_cool), TARGET_REASON_AWAY
@@ -2763,14 +2765,30 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         # 3. Schedule / comfort / eco
         targets = self._resolve_schedule_targets(room, settings, schedule_blocks, schedule_entity_id)
         if room_vacant:
-            capped = cap_to_eco(
-                targets,
-                room.get("eco_heat", room.get("eco_temp", DEFAULT_ECO_HEAT)),
-                room.get("eco_cool", DEFAULT_ECO_COOL),
-            )
+            capped = self._cap_vacant(room, targets)
             # Only an empty room that actually lowered the schedule is worth naming
             return capped, TARGET_REASON_VACANT if capped != targets else ""
         return targets, ""
+
+    @staticmethod
+    def _cap_vacant(room: dict, targets: TargetTemps) -> TargetTemps:
+        return cap_to_eco(
+            targets,
+            room.get("eco_heat", room.get("eco_temp", DEFAULT_ECO_HEAT)),
+            room.get("eco_cool", DEFAULT_ECO_COOL),
+        )
+
+    def _schedule_targets_at_home(
+        self,
+        room: dict,
+        settings: dict,
+        schedule_blocks: dict | None,
+        schedule_entity_id: str | None,
+        room_vacant: bool,
+    ) -> TargetTemps:
+        """What step 3 would resolve if someone were home, the bound for the away level."""
+        targets = self._resolve_schedule_targets(room, settings, schedule_blocks, schedule_entity_id)
+        return self._cap_vacant(room, targets) if room_vacant else targets
 
     def _resolve_schedule_targets(
         self,
