@@ -5,6 +5,7 @@ description: >
   setpoint when on and a low one when off. The guest room heats all day but is not in
   the group, so it never runs the boiler alone.
 tags: [trv, compressor-group, master]
+refs: [519]
 start: 2026-01-12T00:00
 duration: 3d
 location: {latitude: 52.5, longitude: 13.4, time_zone: Europe/Berlin}

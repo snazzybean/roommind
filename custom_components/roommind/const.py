@@ -422,6 +422,15 @@ MIN_MASTER_TEMPERATURE = 5.0
 MAX_MASTER_TEMPERATURE = 90.0
 # Setpoints closer than this count as already set
 MASTER_TEMPERATURE_TOLERANCE = 0.05
+# Master options at these values are not stored: groups without them stay readable for older releases
+MASTER_OPTION_DEFAULTS: dict[str, object] = {
+    "min_rooms": 1,
+    "start_delay_seconds": 0,
+    "run_on_seconds": 0,
+    "on_temperature": None,
+    "off_temperature": None,
+    "off_mode": MASTER_OFF_MODE_OFF,
+}
 
 
 # Far-future sentinel: vacation active indefinitely (year 2999)

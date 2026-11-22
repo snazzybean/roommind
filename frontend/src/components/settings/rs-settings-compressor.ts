@@ -310,19 +310,21 @@ export class RsSettingsCompressor extends RsSettingsBase {
               <div class="threshold-grid">
                 <rs-number-field
                   allow-empty
+                  kind="temperature"
+                  .hass=${this.hass}
                   .label=${localize("compressor.on_temperature", l)}
                   .min=${5}
                   .max=${90}
-                  .step=${0.5}
                   .value=${group.on_temperature ?? null}
                   @value-changed=${optional("on_temperature")}
                 ></rs-number-field>
                 <rs-number-field
                   allow-empty
+                  kind="temperature"
+                  .hass=${this.hass}
                   .label=${localize("compressor.off_temperature", l)}
                   .min=${5}
                   .max=${90}
-                  .step=${0.5}
                   .value=${group.off_temperature ?? null}
                   @value-changed=${optional("off_temperature")}
                 ></rs-number-field>

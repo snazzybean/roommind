@@ -3535,8 +3535,17 @@ class TestMasterOptions:
 
     @pytest.mark.asyncio
     async def test_rooms_needed_keeps_the_master_off_for_one_room(self, hass, mock_config_entry):
-        await _run_group(hass, mock_config_entry, _group("switch.boiler", min_rooms=2), _switch_state("on"), "18.0")
+        office = {**_room_with_device("office_abc12345", "climate.office_trv"), "climate_control_enabled": False}
+        rooms = {"living_room_abc12345": _room_with_device("living_room_abc12345", "climate.living_trv")}
+        rooms["office_abc12345"] = office
+        group = {**_group("switch.boiler", min_rooms=2), "members": ["climate.living_trv", "climate.office_trv"]}
+        await _run_group(hass, mock_config_entry, group, _switch_state("on"), "18.0", rooms=rooms)
         assert _master_calls(hass, "switch.boiler") == [("switch", "turn_off", {})]
+
+    @pytest.mark.asyncio
+    async def test_rooms_needed_never_asks_for_more_rooms_than_the_group_has(self, hass, mock_config_entry):
+        await _run_group(hass, mock_config_entry, _group("switch.boiler", min_rooms=3), _switch_state("off"), "18.0")
+        assert _master_calls(hass, "switch.boiler") == [("switch", "turn_on", {})]
 
     @pytest.mark.asyncio
     async def test_rooms_needed_met_by_two_rooms(self, hass, mock_config_entry):
@@ -3605,3 +3614,49 @@ class TestMasterOptions:
         # The mode switch counts: the run-on applies to it, not an immediate off
         assert coordinator._compressor_manager.get_state("g1").master_action == "heat"
         assert caplog.text.count("set_temperature") == 1
+
+
+class TestMasterOptionsFollowUp:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(("options", "trained"), [({"start_delay_seconds": 120}, False), ({}, True)])
+    async def test_a_room_waiting_for_the_boiler_does_not_train(
+        self, hass, mock_config_entry, monkeypatch, options, trained
+    ):
+        monkeypatch.setattr("custom_components.roommind.coordinator.async_call_later", lambda *_a: lambda: None)
+        group = _group("switch.boiler", **options)
+        coordinator = await _run_group(hass, mock_config_entry, group, _switch_state("off"), "22.0")
+        coordinator._ekf_training.process = MagicMock()
+        coordinator._resolve_outdoor_temp = MagicMock(return_value=(5.0, "sensor"))
+        await _run_group(hass, mock_config_entry, group, _switch_state("off"), "18.0", coordinator=coordinator)
+        assert coordinator._ekf_training.process.called is trained
+
+    @pytest.mark.asyncio
+    async def test_setpoints_are_sent_in_fahrenheit(self, hass, mock_config_entry):
+        from homeassistant.const import UnitOfTemperature
+
+        hass.config.units.temperature_unit = UnitOfTemperature.FAHRENHEIT
+        group = _group("climate.boiler", on_temperature=60)
+        await _run_group(hass, mock_config_entry, group, _climate_state("off"), "18.0")
+        assert _master_calls(hass, "climate.boiler")[-1] == ("climate", "set_temperature", {"temperature": 140.0})
+
+    @pytest.mark.asyncio
+    async def test_a_setpoint_the_thermostat_rounds_is_not_sent_again(self, hass, mock_config_entry):
+        state = _climate_state("heat", 60)
+        state.attributes["target_temp_step"] = 1
+        await _run_group(hass, mock_config_entry, _group("climate.boiler", on_temperature=60.5), state, "18.0")
+        assert _master_calls(hass, "climate.boiler") == []
+
+    @pytest.mark.asyncio
+    async def test_restart_does_not_read_a_master_kept_in_heat_as_heating(self, hass, mock_config_entry):
+        group = _group("climate.boiler", off_temperature=10, off_mode="temperature", enforce_uniform_mode=True)
+        hass.data = {"roommind": {"store": _make_store_mock({})}}
+        hass.states.get = MagicMock(
+            side_effect=lambda eid: _climate_state("heat", 10) if eid == "climate.boiler" else _climate_state("off")
+        )
+        coordinator = _create_coordinator(hass, mock_config_entry)
+        coordinator._compressor_manager.load_groups([group])
+        coordinator._seed_uniform_modes()
+        assert coordinator._compressor_manager.get_state("g1").last_mode_action is None
+        coordinator._compressor_manager.load_groups([{**group, "off_mode": "off"}])
+        coordinator._seed_uniform_modes()
+        assert coordinator._compressor_manager.get_state("g1").last_mode_action == "heat"

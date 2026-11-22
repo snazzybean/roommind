@@ -609,3 +609,34 @@ class TestMasterStartDelayAndRunOn:
         cfg = mgr.get_groups()["g1"]
         assert (cfg.min_rooms, cfg.on_temperature, cfg.off_temperature, cfg.off_mode) == (2, 60, 10, "temperature")
         assert cfg.master_domain == "climate"
+
+
+class TestMasterSupplyWithheld:
+    def _mgr(self, **options):
+        mgr = CompressorGroupManager()
+        mgr.load_groups([{**_make_group(), "master_entity": "switch.boiler", **options}])
+        return mgr
+
+    def test_only_groups_with_rooms_needed_or_a_start_delay_withhold(self):
+        member = _make_group()["members"][0]
+        assert self._mgr().supply_withheld([member], "heat") is False
+        mgr = self._mgr(min_rooms=2)
+        mgr.set_master_action("g1", "idle")
+        assert mgr.supply_withheld([member], "heat") is True
+        assert mgr.supply_withheld(["climate.other"], "heat") is False
+        mgr.set_master_action("g1", "heat")
+        assert mgr.supply_withheld([member], "heat") is False
+
+    def test_a_group_without_master_or_script_withholds_nothing(self):
+        mgr = CompressorGroupManager()
+        mgr.load_groups([{**_make_group(), "start_delay_seconds": 60}])
+        assert mgr.supply_withheld(_make_group()["members"], "heat") is False
+
+    def test_an_unreadable_master_starts_its_delay_over(self):
+        mgr = self._mgr(start_delay_seconds=60)
+        mgr.set_master_action("g1", "idle")
+        mgr.delayed_action("g1", "heat")
+        mgr._states["g1"].delay_wanted_since = time.monotonic() - 1000
+        mgr.note_master_readable("g1", False)
+        action, wait = mgr.delayed_action("g1", "heat")
+        assert action == "idle" and wait > 59

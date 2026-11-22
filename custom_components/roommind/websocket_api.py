@@ -25,6 +25,7 @@ from .const import (
     MASTER_ENTITY_DOMAINS,
     MASTER_OFF_MODE_OFF,
     MASTER_OFF_MODES,
+    MASTER_OPTION_DEFAULTS,
     MAX_CO2_THRESHOLD,
     MAX_HUMIDITY_MAX,
     MAX_HUMIDITY_MIN,
@@ -1140,6 +1141,10 @@ async def websocket_save_settings(
                 "A master entity cannot be assigned to multiple groups",
             )
             return
+        changes["compressor_groups"] = [
+            {k: v for k, v in g.items() if k not in MASTER_OPTION_DEFAULTS or v != MASTER_OPTION_DEFAULTS[k]}
+            for g in groups
+        ]
 
     settings = await store.async_save_settings(changes)
     connection.send_result(msg["id"], {"settings": settings})

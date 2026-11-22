@@ -147,7 +147,7 @@ from .utils.schedule_utils import (
     set_band_sides,
 )
 from .utils.sensor_utils import read_sensor_value
-from .utils.temp_utils import celsius_delta_to_ha, ha_temp_to_celsius, ha_temp_unit_str
+from .utils.temp_utils import celsius_delta_to_ha, celsius_to_ha_temp, ha_temp_to_celsius, ha_temp_unit_str
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -2023,8 +2023,13 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         # cooling, so training that window as idle would drift alpha (spec 9.3).
         learning_disabled = settings.get("learning_disabled_rooms", [])
         learning_active = area_id not in learning_disabled
+        # Valves open while the group's boiler waits for more rooms or its start delay: no heat comes
+        supply_withheld = ekf_mode in (MODE_HEATING, MODE_COOLING) and self._compressor_manager.supply_withheld(
+            get_all_entity_ids(room.get("devices", [])), "heat" if ekf_mode == MODE_HEATING else "cool"
+        )
         if (
             learning_active
+            and not supply_withheld
             and not coil_dry_skip_training
             and not ac_drying
             and hold_running is None
@@ -3579,6 +3584,18 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             modes.append(MODE_COOLING)
         return modes
 
+    @staticmethod
+    def _member_room_count(members: list[str], rooms_config: dict[str, dict]) -> int:
+        """Rooms holding a device of the group: rooms needed never asks for more (at least 1)."""
+        member_set = set(members)
+        count = sum(
+            1
+            for room in rooms_config.values()
+            if not room.get("is_outdoor", False)
+            and member_set & {d.get("entity_id", "") for d in room.get("devices", [])}
+        )
+        return max(1, count)
+
     def _managed_vote(self, state: Any, heat_target: float | None, cool_target: float | None) -> str:
         """A Managed unit's vote in its uniform-mode group: what it does, else its reading against the band (#533)."""
         if state is None:
@@ -3607,7 +3624,11 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             state = self._compressor_manager.get_state(gid)
             if not group.enforce_uniform_mode or state is None or state.last_mode_action is not None:
                 continue
-            units = ([group.master_entity] if group.master_entity else []) + list(group.members)
+            # A master kept in heat at its off temperature tells nothing about the way the group ran
+            master_reads = group.master_entity and not (
+                group.off_mode == MASTER_OFF_MODE_TEMPERATURE and group.off_temperature is not None
+            )
+            units = ([group.master_entity] if master_reads else []) + list(group.members)
             modes = [_uniform_mode(self.hass.states.get(e)) for e in units]
             for action in ("heat", "cool"):
                 if action in modes or (action == "cool" and "dry" in modes):
@@ -3920,7 +3941,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                     group.conflict_resolution,
                     self.outdoor_temp_effective,
                     settings.get("outdoor_heating_max", DEFAULT_OUTDOOR_HEATING_MAX),
-                    group.min_rooms,
+                    min(group.min_rooms, self._member_room_count(group.members, rooms_config)),
                 )
 
                 self._compressor_manager.set_desired_action(gid, new_action)
@@ -4043,27 +4064,34 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         mode = self._resolve_master_hvac_mode(group.master_entity, action)
         return (mode, None) if mode else None
 
-    @staticmethod
-    def _master_setpoint(state: Any, temperature: float) -> float:
-        """*temperature* within the range the master thermostat accepts (its min_temp/max_temp)."""
+    def _master_setpoint(self, state: Any, temperature: float) -> float:
+        """*temperature* (stored in °C) in HA's unit, within the master thermostat's min_temp/max_temp."""
+        value = celsius_to_ha_temp(self.hass, temperature)
         for bound, pick in (("min_temp", max), ("max_temp", min)):
             try:
-                temperature = pick(temperature, float(state.attributes[bound]))
+                value = pick(value, float(state.attributes[bound]))
             except (KeyError, TypeError, ValueError):
                 pass
-        return temperature
+        return value
 
-    @classmethod
-    def _master_matches(cls, state: Any, target: tuple[str, float | None]) -> bool:
-        """True when the master entity already is in *target* (a switched-off climate ignores its setpoint)."""
+    def _master_matches(self, state: Any, target: tuple[str, float | None]) -> bool:
+        """True when the master entity already is in *target* (a switched-off climate ignores its setpoint).
+
+        The setpoint matches within half the thermostat's step, which rounds what it is sent.
+        """
         mode, temperature = target
         if state.state != mode:
             return False
         if temperature is None or mode == "off":
             return True
-        current = state.attributes.get("temperature")
         try:
-            return abs(float(current) - cls._master_setpoint(state, temperature)) <= MASTER_TEMPERATURE_TOLERANCE
+            step = float(
+                state.attributes.get("target_temp_step") or (1.0 if ha_temp_unit_str(self.hass) == "°F" else 0.5)
+            )
+            current = float(state.attributes.get("temperature"))
+            return abs(current - self._master_setpoint(state, temperature)) <= max(
+                MASTER_TEMPERATURE_TOLERANCE, step / 2
+            )
         except (TypeError, ValueError):
             return False
 
@@ -4081,7 +4109,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         if domain != "climate":
             return await self._async_master_call(group, domain, "turn_off" if mode == "off" else "turn_on", {})
         setpoint = None if temperature is None else self._master_setpoint(state, temperature)
-        needs_setpoint = setpoint is not None and not self._master_matches(state, (state.state, setpoint))
+        needs_setpoint = temperature is not None and not self._master_matches(state, (state.state, temperature))
         if mode == "off":
             if state.state == "off":
                 return True
