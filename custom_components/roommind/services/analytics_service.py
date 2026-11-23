@@ -126,6 +126,7 @@ def _csv_to_points(rows: list[dict]) -> list[dict]:
         ts = _safe_float(row.get("timestamp", ""))
         if ts is None:
             continue
+        schedule_active = row.get("shared_system_schedule_active", "")
         result.append(
             {
                 "ts": ts,
@@ -149,9 +150,14 @@ def _csv_to_points(rows: list[dict]) -> list[dict]:
                 "price_level": row.get("price_level", ""),
                 "price_shift": _safe_float(row.get("price_shift", "")),
                 "shared_system_id": row.get("shared_system_id", ""),
-                "shared_system_schedule_active": row.get("shared_system_schedule_active", "") in ("True", "true", "1"),
+                "shared_system_schedule_active": (
+                    None if schedule_active in ("", None) else schedule_active in ("True", "true", "1")
+                ),
                 "shared_system_demand_blocked": row.get("shared_system_demand_blocked", "") in ("True", "true", "1"),
                 "shared_system_block_reason": row.get("shared_system_block_reason", ""),
+                "shared_system_zone_action": row.get("shared_system_zone_action", "") or None,
+                "shared_system_master_action": row.get("shared_system_master_action", "") or None,
+                "shared_system_master_setpoint": _safe_float(row.get("shared_system_master_setpoint", "")),
                 "learning_pause_reason": row.get("learning_pause_reason", ""),
                 "heat_starts": _safe_int(row.get("heat_starts", "")),
                 "cool_starts": _safe_int(row.get("cool_starts", "")),

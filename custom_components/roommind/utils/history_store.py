@@ -39,6 +39,9 @@ DETAIL_FIELDS = [
     "shared_system_schedule_active",
     "shared_system_demand_blocked",
     "shared_system_block_reason",
+    "shared_system_zone_action",
+    "shared_system_master_action",
+    "shared_system_master_setpoint",
     "learning_pause_reason",
     # Runs starting at this row, summed per history bucket: the bucket keeps only its first
     # mode, its transitions lose the short runs
@@ -147,6 +150,9 @@ class HistoryStore:
                     "shared_system_schedule_active": data.get("shared_system_schedule_active", ""),
                     "shared_system_demand_blocked": data.get("shared_system_demand_blocked", ""),
                     "shared_system_block_reason": data.get("shared_system_block_reason", ""),
+                    "shared_system_zone_action": data.get("shared_system_zone_action", ""),
+                    "shared_system_master_action": data.get("shared_system_master_action", ""),
+                    "shared_system_master_setpoint": data.get("shared_system_master_setpoint", ""),
                     "learning_pause_reason": data.get("learning_pause_reason", ""),
                     "co2": data.get("co2", ""),
                     **{field: data.get(field, "") for field in MODEL_INPUT_FIELDS},
@@ -281,6 +287,9 @@ class HistoryStore:
                 "shared_system_schedule_active": bucket[0].get("shared_system_schedule_active", ""),
                 "shared_system_demand_blocked": bucket[0].get("shared_system_demand_blocked", ""),
                 "shared_system_block_reason": bucket[0].get("shared_system_block_reason", ""),
+                "shared_system_zone_action": bucket[0].get("shared_system_zone_action", ""),
+                "shared_system_master_action": bucket[0].get("shared_system_master_action", ""),
+                "shared_system_master_setpoint": bucket[0].get("shared_system_master_setpoint", ""),
                 "learning_pause_reason": bucket[0].get("learning_pause_reason", ""),
             }
             for field in (

@@ -385,10 +385,11 @@ async def websocket_list_rooms(
         room_data = dict(room_config)
         live = live_states.get(area_id, {})
         # Managed Mode rooms train too (on the device reading), only outdoor areas never do.
+        learning_paused_reason: str | None
         if not learning_enabled:
-            learning_paused_reason: str | None = "global_disabled"
+            learning_paused_reason = "global_disabled"
         elif not outdoor_available and area_id not in learning_disabled and not room_config.get("is_outdoor", False):
-            learning_paused_reason: str | None = "outdoor_unavailable"
+            learning_paused_reason = "outdoor_unavailable"
         else:
             learning_paused_reason = None
 
@@ -450,6 +451,9 @@ async def websocket_list_rooms(
             "shared_system_schedule_active": live.get("shared_system_schedule_active"),
             "shared_system_demand_blocked": live.get("shared_system_demand_blocked", False),
             "shared_system_block_reason": live.get("shared_system_block_reason", ""),
+            "shared_system_zone_action": live.get("shared_system_zone_action"),
+            "shared_system_master_action": live.get("shared_system_master_action"),
+            "shared_system_master_setpoint": live.get("shared_system_master_setpoint"),
             "coil_dry_active": live.get("coil_dry_active", False),
             "coil_dry_phase": live.get("coil_dry_phase"),
             "coil_dry_until": live.get("coil_dry_until"),
@@ -1033,7 +1037,7 @@ async def websocket_get_settings(
                 vol.Optional("master_entity", default=""): str,
                 vol.Optional("master_schedule_entity", default=""): str,
                 vol.Optional("master_control_mode", default="hvac_mode"): vol.In(
-                    ["hvac_mode", "target_temperature"]
+                    ["hvac_mode", "target_temperature", "monitor"]
                 ),
                 vol.Optional("master_comfort_temperature", default=19.0): vol.All(
                     vol.Coerce(float), vol.Range(min=0, max=30)
@@ -1045,9 +1049,7 @@ async def websocket_get_settings(
                 vol.Optional("master_idle_temperature", default=5.0): vol.All(
                     vol.Coerce(float), vol.Range(min=0, max=30)
                 ),
-                vol.Optional("master_demand_offset", default=0.0): vol.All(
-                    vol.Coerce(float), vol.Range(min=0, max=10)
-                ),
+                vol.Optional("master_demand_offset", default=0.0): vol.All(vol.Coerce(float), vol.Range(min=0, max=10)),
                 vol.Optional("conflict_resolution", default=DEFAULT_CONFLICT_RESOLUTION): vol.In(CONFLICT_RESOLUTIONS),
                 vol.Optional("action_script", default=""): str,
                 vol.Optional("enforce_uniform_mode", default=False): bool,

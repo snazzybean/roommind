@@ -176,17 +176,30 @@ export class RsSettingsCompressor extends RsSettingsBase {
         ></ha-entity-picker>
         <span class="field-hint">${localize("compressor.master_entity_hint", l)}</span>
 
-        <span class="field-label">${localize("compressor.master_schedule_entity", l)}</span>
-        <ha-entity-picker
-          .hass=${this.hass}
-          .value=${group.master_schedule_entity || ""}
-          .includeDomains=${["schedule"]}
-          @value-changed=${(e: CustomEvent) => {
-            this._updateGroup(idx, "master_schedule_entity", (e.detail?.value as string) ?? "");
-          }}
-        ></ha-entity-picker>
-        <span class="field-hint">${localize("compressor.master_schedule_entity_hint", l)}</span>
-
+        ${
+          group.master_control_mode === "monitor"
+            ? html`<span class="field-hint"
+                >${localize("compressor.master_schedule_monitor_hint", l)}</span
+              >`
+            : html`
+                <span class="field-label">${localize("compressor.master_schedule_entity", l)}</span>
+                <ha-entity-picker
+                  .hass=${this.hass}
+                  .value=${group.master_schedule_entity || ""}
+                  .includeDomains=${["schedule"]}
+                  @value-changed=${(e: CustomEvent) => {
+                    this._updateGroup(
+                      idx,
+                      "master_schedule_entity",
+                      (e.detail?.value as string) ?? "",
+                    );
+                  }}
+                ></ha-entity-picker>
+                <span class="field-hint"
+                  >${localize("compressor.master_schedule_entity_hint", l)}</span
+                >
+              `
+        }
         ${
           group.master_entity
             ? html`
@@ -202,6 +215,10 @@ export class RsSettingsCompressor extends RsSettingsBase {
                       value: "target_temperature",
                       label: localize("compressor.master_control_mode_target", l),
                     },
+                    {
+                      value: "monitor",
+                      label: localize("compressor.master_control_mode_monitor", l),
+                    },
                   ]}
                   @selected=${(e: Event) => {
                     const v = getSelectValue(e);
@@ -210,7 +227,9 @@ export class RsSettingsCompressor extends RsSettingsBase {
                   @closed=${(e: Event) => e.stopPropagation()}
                   fixedMenuPosition
                 ></ha-select>
-                <span class="field-hint">${localize("compressor.master_control_mode_hint", l)}</span>
+                <span class="field-hint"
+                  >${localize("compressor.master_control_mode_hint", l)}</span
+                >
                 ${
                   group.master_control_mode === "target_temperature"
                     ? html`

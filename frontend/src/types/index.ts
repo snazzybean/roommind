@@ -100,6 +100,9 @@ export interface RoomLiveData {
   shared_system_schedule_active?: boolean | null;
   shared_system_demand_blocked?: boolean;
   shared_system_block_reason?: string;
+  shared_system_zone_action?: RoomMode | null;
+  shared_system_master_action?: RoomMode | null;
+  shared_system_master_setpoint?: number | null;
   /** Model updates so far (one per ~3 min of learning). */
   n_observations?: number;
   /** `n_observations` when "learn faster" was last used, null if never (counts the fade). */
@@ -165,7 +168,7 @@ export interface CompressorGroup {
   min_off_minutes: number;
   master_entity: string;
   master_schedule_entity?: string;
-  master_control_mode?: "hvac_mode" | "target_temperature";
+  master_control_mode?: "hvac_mode" | "target_temperature" | "monitor";
   master_comfort_temperature?: number;
   master_eco_temperature?: number;
   master_idle_temperature?: number;
@@ -410,6 +413,9 @@ export interface AnalyticsDataPoint {
   shared_system_schedule_active?: boolean | null;
   shared_system_demand_blocked?: boolean;
   shared_system_block_reason?: string;
+  shared_system_zone_action?: RoomMode | null;
+  shared_system_master_action?: RoomMode | null;
+  shared_system_master_setpoint?: number | null;
   learning_pause_reason?: "" | "global" | "room" | "master_gate" | "outdoor_unavailable";
 }
 
