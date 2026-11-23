@@ -389,3 +389,52 @@ async def test_a_mode_change_while_heating_reaches_the_valve_next_cycle(hass, mo
         await coordinator._async_update_data()
 
     assert _number_calls(hass) == [(CLOSE, 40.0)]
+
+
+# --- TRV kept off while its valve is held (#537) ------------------------------------------
+
+VALVE_OFF_ROOM = {
+    **SAMPLE_ROOM,
+    "devices": [
+        {
+            "entity_id": "climate.living_room",
+            "type": "trv",
+            "role": "auto",
+            "heating_system_type": "",
+            "valve_opening_entity": OPEN,
+            "valve_closing_mode": "single",
+            "valve_thermostat_off": True,
+        }
+    ],
+}
+
+
+def _trv_state(state):
+    s = MagicMock()
+    s.state = state
+    s.attributes = {"hvac_action": "idle"}
+    return s
+
+
+def test_a_valve_held_on_a_switched_off_trv_counts_as_heating(hass, mock_config_entry):
+    """Off says nothing here: the room model learns from the opening RoomMind holds."""
+    from custom_components.roommind.const import MODE_HEATING
+    from custom_components.roommind.control import direct_valve
+
+    _setup(hass, VALVE_OFF_ROOM, {})
+    coordinator = _create_coordinator(hass, mock_config_entry)
+    hass.states.get = MagicMock(side_effect={"climate.living_room": _trv_state("off")}.get)
+    direct_valve._valve_sent["climate.living_room"] = direct_valve._Held(0.0, 40, 21.0, OPEN, "", False, True)
+
+    assert coordinator._delivered_training_power(VALVE_OFF_ROOM, MODE_HEATING, 0.7, None) == 0.4
+
+
+def test_a_switched_off_trv_without_a_held_valve_delivers_nothing_to_observe(hass, mock_config_entry):
+    from custom_components.roommind.const import MODE_HEATING
+
+    _setup(hass, VALVE_OFF_ROOM, {})
+    coordinator = _create_coordinator(hass, mock_config_entry)
+    hass.states.get = MagicMock(side_effect={"climate.living_room": _trv_state("off")}.get)
+
+    # No observable device: the commanded power stands, as before
+    assert coordinator._delivered_training_power(VALVE_OFF_ROOM, MODE_HEATING, 0.7, None) == 0.7

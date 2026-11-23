@@ -142,6 +142,7 @@ export interface DeviceConfig {
   valve_opening_entity?: string; // number entity for direct valve opening degree (0-100%)
   valve_closing_entity?: string; // number entity for direct valve closing degree (0-100%)
   valve_closing_mode?: "closing_degree" | "idle_opening" | "single"; // idle_opening: the second entity is the opening while idle (SONOFF TRV-ZBT); single: no second entity (Bosch BTH-RA)
+  valve_thermostat_off?: boolean; // the TRV stays off while RoomMind holds its valve (Shelly TRV BLE takes a position only while off)
 }
 
 export type ConflictResolution =

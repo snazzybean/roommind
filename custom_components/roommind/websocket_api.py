@@ -542,6 +542,8 @@ async def websocket_list_rooms(
                     vol.Optional("valve_closing_entity"): _number_entity_or_empty,
                     # No default: devices without it keep their stored form (#482)
                     vol.Optional("valve_closing_mode"): vol.In(VALVE_CLOSING_MODES),
+                    # The TRV stays off while its valve is held (#537); no default, as above
+                    vol.Optional("valve_thermostat_off"): bool,
                 },
                 _validate_device_idle_action,
                 _validate_device_coil_dry,

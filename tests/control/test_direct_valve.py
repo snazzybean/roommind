@@ -15,8 +15,11 @@ from custom_components.roommind.managers.heat_source_orchestrator import DeviceC
 from custom_components.roommind.utils.device_utils import (
     ValveEntities,
     get_direct_setpoint_eids,
+    get_idle_action,
     get_valve_entities,
+    get_valve_off_eids,
     has_direct_valve,
+    valve_keeps_thermostat_off,
 )
 
 from .conftest import build_hass, make_room
@@ -1063,3 +1066,183 @@ def test_single_valve_trv_ignores_the_direct_setpoint_mode():
     assert has_direct_valve(single)
     assert not has_direct_valve(trv)
     assert not has_direct_valve({**single, "valve_opening_entity": ""})
+
+
+# --- TRV that takes a valve position only while switched off (#537) -----------------------
+
+VP = "number.trv_valve_position"
+
+
+def _off_room(**overrides):
+    room = _valve_room(closing=False, **overrides)
+    for d in room["devices"]:
+        if d["type"] == "trv":
+            d["valve_opening_entity"] = VP
+            d["valve_closing_mode"] = "single"
+            d["valve_thermostat_off"] = True
+    return room
+
+
+def _hvac_modes(hass):
+    return [c["hvac_mode"] for c in _climate_calls(hass, "set_hvac_mode")]
+
+
+@pytest.mark.asyncio
+async def test_valve_only_trv_is_switched_off_before_the_valve_is_written():
+    """In heat the TRV refuses the position: off first, then the valve, and no setpoint."""
+    hass = _hass({TRV: _trv("heat"), VP: _number(0)})
+    ctrl = _controller(hass, _off_room())
+
+    await ctrl.async_apply(
+        MODE_HEATING,
+        TargetTemps(heat=21.0, cool=24.0),
+        power_fraction=0.35,
+        current_temp=20.6,
+        heating_boost_target=30.0,
+    )
+
+    calls = [(c[0][0], c[0][1]) for c in hass.services.async_call.call_args_list]
+    assert calls.index(("climate", "set_hvac_mode")) < calls.index(("number", "set_value"))
+    assert _hvac_modes(hass) == ["off"]
+    assert _number_calls(hass) == [(VP, 35.0)]
+    # Switching off lowers the setpoint to the minimum first; no heating setpoint follows
+    assert [c["temperature"] for c in _climate_calls(hass, "set_temperature")] == [5.0]
+    assert direct_valve._valve_sent[TRV].thermostat_off
+
+
+@pytest.mark.asyncio
+async def test_valve_only_trv_that_is_off_gets_the_valve_only():
+    hass = _hass({TRV: _trv("off"), VP: _number(0)})
+    ctrl = _controller(hass, _off_room())
+
+    await ctrl.async_apply(
+        MODE_HEATING,
+        TargetTemps(heat=21.0, cool=24.0),
+        power_fraction=0.35,
+        current_temp=20.6,
+        heating_boost_target=30.0,
+    )
+
+    assert "heat" not in _hvac_modes(hass)
+    assert _number_calls(hass) == [(VP, 35.0)]
+    assert _climate_calls(hass, "set_temperature") == []
+
+
+@pytest.mark.asyncio
+async def test_valve_only_trv_idle_closes_the_valve_and_stays_off():
+    hass = _hass({TRV: _trv("off"), VP: _number(35)})
+    direct_valve._valve_sent[TRV] = direct_valve._Held(0.0, 35, 21.0, VP, "", False, True)
+    ctrl = _controller(hass, _off_room())
+
+    await ctrl.async_apply(MODE_IDLE, TargetTemps(heat=21.0, cool=24.0), power_fraction=0.0, current_temp=21.3)
+
+    assert _number_calls(hass) == [(VP, 0.0)]
+    assert "heat" not in _hvac_modes(hass)
+    assert _climate_calls(hass, "set_temperature") == []
+
+
+@pytest.mark.asyncio
+async def test_valve_only_trv_ignores_a_low_setpoint_idle_action():
+    """A low setpoint would switch the TRV to heat, where it refuses the closing position."""
+    room = _off_room()
+    room["devices"][0]["idle_action"] = "low"
+    hass = _hass({TRV: _trv("heat"), VP: _number(35)})
+    direct_valve._valve_sent[TRV] = direct_valve._Held(0.0, 35, 21.0, VP, "", False, True)
+    ctrl = _controller(hass, room)
+
+    await ctrl.async_apply(MODE_IDLE, TargetTemps(heat=21.0, cool=24.0), power_fraction=0.0, current_temp=21.3)
+
+    assert _hvac_modes(hass) == ["off"]
+    assert [c["temperature"] for c in _climate_calls(hass, "set_temperature")] == [5.0]
+    assert _number_calls(hass) == [(VP, 0.0)]
+
+
+@pytest.mark.asyncio
+async def test_valve_only_trv_in_managed_mode_is_a_normal_thermostat():
+    """Without the room sensor RoomMind does not hold the valve: the TRV heats by its setpoint."""
+    hass = _hass({TRV: _trv("off"), VP: _number(0)})
+    ctrl = _controller(hass, _off_room(), has_external_sensor=False)
+
+    await ctrl.async_apply(MODE_HEATING, TargetTemps(heat=21.0, cool=24.0), power_fraction=1.0, current_temp=20.0)
+
+    assert _hvac_modes(hass) == ["heat"]
+    assert len(_climate_calls(hass, "set_temperature")) == 1
+    assert _number_calls(hass) == []
+
+
+@pytest.mark.asyncio
+async def test_trv_without_the_option_still_heats_in_heat():
+    hass = _hass({TRV: _trv("off"), PI: _number(0)})
+    ctrl = _controller(hass, _single_room())
+
+    await ctrl.async_apply(
+        MODE_HEATING,
+        TargetTemps(heat=21.0, cool=24.0),
+        power_fraction=0.35,
+        current_temp=20.6,
+        heating_boost_target=30.0,
+    )
+
+    assert _hvac_modes(hass) == ["heat"]
+    assert len(_climate_calls(hass, "set_temperature")) == 1
+    assert not direct_valve._valve_sent[TRV].thermostat_off
+
+
+@pytest.mark.asyncio
+async def test_hand_back_switches_a_valve_only_trv_on_again():
+    """Off, the TRV would not heat at all once RoomMind lets go."""
+    hass = _hass({VP: _number(30), TRV: _trv("off")})
+    direct_valve._valve_sent[TRV] = direct_valve._Held(0.0, 30, 21.0, VP, "", False, True)
+
+    await async_release_valve(hass, TRV, VP, "", area_id="a", hand_back=True)
+
+    assert _number_calls(hass) == [(VP, 0.0)]
+    assert _climate_calls(hass, "set_temperature") == [{"entity_id": TRV, "temperature": 21.0, "hvac_mode": "heat"}]
+
+
+@pytest.mark.asyncio
+async def test_release_without_hand_back_leaves_a_valve_only_trv_off():
+    hass = _hass({VP: _number(30), TRV: _trv("off")})
+    direct_valve._valve_sent[TRV] = direct_valve._Held(0.0, 30, 21.0, VP, "", False, True)
+
+    await async_release_valve(hass, TRV, VP, "", area_id="a")
+
+    assert _number_calls(hass) == [(VP, 0.0)]
+    assert _climate_calls(hass, "set_temperature") == []
+
+
+@pytest.mark.asyncio
+async def test_compressor_hold_of_a_valve_only_trv_keeps_it_off():
+    hass = _hass({TRV: _trv("off"), VP: _number(40)})
+    ctrl = _controller(hass, _off_room())
+    ctrl._compressor_forced_on = {TRV}
+
+    assert await ctrl._async_hold_valve(TRV, TargetTemps(heat=21.0, cool=24.0))
+
+    assert direct_valve._valve_sent[TRV].thermostat_off
+    assert _climate_calls(hass, "set_hvac_mode") == []
+
+
+def test_valve_keeps_thermostat_off_needs_a_valve():
+    trv = {"entity_id": TRV, "type": "trv", "valve_thermostat_off": True}
+    single = {**trv, "valve_opening_entity": VP, "valve_closing_mode": "single"}
+    pair = {**trv, "valve_opening_entity": OPEN, "valve_closing_entity": CLOSE}
+
+    assert not valve_keeps_thermostat_off(trv)
+    assert valve_keeps_thermostat_off(single)
+    assert valve_keeps_thermostat_off(pair)
+    assert not valve_keeps_thermostat_off({**single, "valve_thermostat_off": False})
+    assert get_valve_off_eids([trv, {**single, "entity_id": "climate.b"}]) == {"climate.b"}
+
+
+def test_valve_only_trv_always_idles_off():
+    single = {
+        "entity_id": TRV,
+        "type": "trv",
+        "valve_opening_entity": VP,
+        "valve_closing_mode": "single",
+        "idle_action": "low",
+    }
+
+    assert get_idle_action([single], TRV)[0] == "low"
+    assert get_idle_action([{**single, "valve_thermostat_off": True}], TRV)[0] == "off"

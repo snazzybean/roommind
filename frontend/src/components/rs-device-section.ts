@@ -605,7 +605,7 @@ export class RsDeviceSection extends LitElement {
       </div>
 
       ${hasSensor && !hasValve ? this._renderControlGroup(device) : nothing}
-      ${this._renderIdleGroup(device)}
+      ${hasValve && device.valve_thermostat_off ? nothing : this._renderIdleGroup(device)}
       ${isTrv && (showValve || this.valveProtectionEnabled) ? this._renderValveGroup(device) : nothing}
       ${device.type === "ac" ? this._renderCoilDryGroup(device) : nothing}
       <div class="group">${this._renderRemove(device)}</div>
@@ -847,6 +847,23 @@ export class RsDeviceSection extends LitElement {
                   (v) => this._onValveClosingModeChange(id, v),
                 )}
               </rs-field>`
+          : nothing
+      }
+      ${
+        show && hasValve
+          ? html`<rs-list-row
+              switch
+              wrap
+              .heading=${localize("devices.valve_thermostat_off", l)}
+              .checked=${device.valve_thermostat_off ?? false}
+              @toggle-changed=${(e: CustomEvent<boolean>) =>
+                this._onValveThermostatOffChange(id, e.detail)}
+            >
+              <rs-info-icon
+                slot="end"
+                .text=${localize("devices.valve_thermostat_off_info", l)}
+              ></rs-info-icon>
+            </rs-list-row>`
           : nothing
       }
       ${
@@ -1092,6 +1109,7 @@ export class RsDeviceSection extends LitElement {
         delete updated.valve_opening_entity;
         delete updated.valve_closing_entity;
         delete updated.valve_closing_mode;
+        delete updated.valve_thermostat_off;
       }
       return updated;
     });
@@ -1220,6 +1238,7 @@ export class RsDeviceSection extends LitElement {
         delete updated.valve_opening_entity;
         delete updated.valve_closing_entity;
         delete updated.valve_closing_mode;
+        delete updated.valve_thermostat_off;
         if (pair) [updated.valve_opening_entity, updated.valve_closing_entity] = pair;
         return updated;
       }),
@@ -1238,6 +1257,7 @@ export class RsDeviceSection extends LitElement {
           delete updated.valve_opening_entity;
           delete updated.valve_closing_entity;
           delete updated.valve_closing_mode;
+          delete updated.valve_thermostat_off;
           return updated;
         }
         updated.valve_opening_entity = value;
@@ -1255,6 +1275,19 @@ export class RsDeviceSection extends LitElement {
         const updated = { ...d };
         if (value) updated.valve_closing_entity = value;
         else delete updated.valve_closing_entity;
+        return updated;
+      }),
+    );
+  }
+
+  private _onValveThermostatOffChange(entityId: string, enabled: boolean): void {
+    this._fireDeviceChanged(
+      this.devices.map((d) => {
+        if (d.entity_id !== entityId) return d;
+        const updated = { ...d };
+        // The default stays unstored, so devices of everyone else keep their saved form
+        if (enabled) updated.valve_thermostat_off = true;
+        else delete updated.valve_thermostat_off;
         return updated;
       }),
     );

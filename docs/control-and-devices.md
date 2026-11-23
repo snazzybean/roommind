@@ -135,6 +135,15 @@ These TRVs differ from the ones above in two ways:
 
 Use this mode only for TRVs that take the valve back by themselves. One that keeps a written position for good would stay closed after RoomMind lets go, until you set the position yourself.
 
+### TRVs that take a valve position only while switched off
+
+Some TRVs refuse a valve position while their climate entity is in `heat` and take it only while it is off, for example the Shelly TRV BLE through ZHA (`number.<name>_valve_position`). For these, set up direct valve control as above and switch on `Thermostat stays off`.
+
+- While the room heats, RoomMind switches the TRV off and sets the valve position; the TRV gets no setpoint. While the room does not heat, the valve is set to 0 % and the TRV stays off.
+- `When idle` does not apply: a low setpoint would switch the TRV to `heat`, where it refuses the closing position. The setting is hidden for these TRVs.
+- When RoomMind lets go of a valve it holds (direct valve control switched off, room removed, climate control off, reload), it closes the valve and switches the TRV to `heat` with the room target, so it works as a normal thermostat again.
+- Without an external room sensor (`Managed` mode) the option has no effect: the TRV is switched to `heat` and regulates by its own setpoint.
+
 A valve does not deliver heat in proportion to its opening: many radiators give most of their output at a small opening. RoomMind learns the room's response at the openings it actually uses.
 
 ## Idle Behavior: Off, Fan Only, Setback

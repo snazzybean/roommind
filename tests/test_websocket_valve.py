@@ -261,3 +261,16 @@ async def test_switching_a_held_pair_to_single_releases_the_pair(ws_hass, store,
     await _save(ws_hass, connection, [_device(valve_opening_entity=OPEN, valve_closing_mode="single")], msg_id=2)
 
     assert _number_calls(ws_hass) == [(OPEN, 100.0), (CLOSE, 100.0)]
+
+
+@pytest.mark.asyncio
+async def test_thermostat_off_option_is_stored_only_when_set(ws_hass, store, connection):
+    await store.async_load()
+
+    await _save(ws_hass, connection, [_single(valve_thermostat_off=True)])
+    [device] = store.get_room("living")["devices"]
+    assert device["valve_thermostat_off"] is True
+
+    await _save(ws_hass, connection, [_single()], msg_id=2)
+    [device] = store.get_room("living")["devices"]
+    assert "valve_thermostat_off" not in device

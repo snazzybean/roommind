@@ -40,6 +40,7 @@ class _Held(NamedTuple):
     opening_eid: str
     closing_eid: str
     idle_opening: bool = False
+    thermostat_off: bool = False  # the TRV stays off while its valve is held (#537)
 
     @property
     def valve(self) -> ValveEntities:
@@ -149,6 +150,7 @@ async def async_set_valve(
     target: float | None = None,
     urgent: bool = False,
     idle_opening: bool = False,
+    thermostat_off: bool = False,
 ) -> None:
     """Hold the valve at ``opening_pct`` (0-100).
 
@@ -161,6 +163,9 @@ async def async_set_valve(
     Without ``closing_eid`` the TRV has a single valve position entity (#537). Its own
     controller takes the valve back some time after a write, so a held position goes out
     again after ``VALVE_SINGLE_RESEND_SECONDS``, also unchanged.
+
+    ``thermostat_off``: the caller keeps the TRV switched off while the valve is held
+    (#537); a hand-back then switches it on again.
     """
     if _stopped:
         return
@@ -197,7 +202,7 @@ async def async_set_valve(
         # Try again next cycle; a half-applied position is not remembered as held
         _valve_sent.pop(climate_eid, None)
         return
-    _valve_sent[climate_eid] = _Held(_now(), pct, target, opening_eid, closing_eid, idle_opening)
+    _valve_sent[climate_eid] = _Held(_now(), pct, target, opening_eid, closing_eid, idle_opening, thermostat_off)
 
 
 async def async_release_valve(
@@ -223,7 +228,8 @@ async def async_release_valve(
     degrees set by hand while RoomMind does not control the TRV stay. ``hand_back``
     (RoomMind lets go for good: climate control off, room removed, unload) also sets the
     TRV to the room target it was pinned for; its proportional setpoint would otherwise
-    heat the room flat out once the valve is free.
+    heat the room flat out once the valve is free. A TRV that was kept off while its valve
+    was held (#537) is switched to ``heat`` with that target: off, it would not heat at all.
     """
     held = _valve_sent.get(climate_eid)
     # Checked in the other closing mode does not count: its hand-back would open a TRV-ZBT while idle
@@ -251,7 +257,11 @@ async def async_release_valve(
             await hass.services.async_call(
                 "climate",
                 "set_temperature",
-                {"entity_id": climate_eid, "temperature": celsius_to_ha_temp(hass, held.target)},
+                {
+                    "entity_id": climate_eid,
+                    "temperature": celsius_to_ha_temp(hass, held.target),
+                    **({"hvac_mode": "heat"} if held.thermostat_off else {}),
+                },
                 blocking=True,
                 context=make_roommind_context(),
             )

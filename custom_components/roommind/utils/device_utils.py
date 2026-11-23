@@ -278,6 +278,9 @@ def get_idle_action(devices: list[dict], entity_id: str) -> tuple[str, str]:
     dev = get_device_by_eid(devices, entity_id)
     if dev is None:
         return (IDLE_ACTION_OFF, DEFAULT_IDLE_FAN_MODE)
+    if valve_keeps_thermostat_off(dev):
+        # Off is the only state this TRV takes a valve position in, also the closing one
+        return (IDLE_ACTION_OFF, dev.get("idle_fan_mode", DEFAULT_IDLE_FAN_MODE))
     return (
         dev.get("idle_action", IDLE_ACTION_OFF),
         dev.get("idle_fan_mode", DEFAULT_IDLE_FAN_MODE),
@@ -327,6 +330,20 @@ def get_setpoint_offsets(devices: list[dict]) -> dict[str, float]:
     """Return {entity_id: offset} for direct-mode devices with a non-zero offset."""
     offsets = {d["entity_id"]: get_setpoint_offset(devices, d["entity_id"]) for d in devices if d.get("entity_id")}
     return {eid: off for eid, off in offsets.items() if off}
+
+
+def valve_keeps_thermostat_off(device: dict) -> bool:
+    """True for a TRV whose valve RoomMind holds while the TRV itself stays switched off (#537).
+
+    Some TRVs take a valve position only while their climate entity is off, e.g. the
+    Shelly TRV BLE: in ``heat`` the write is refused.
+    """
+    return has_direct_valve(device) and bool(device.get("valve_thermostat_off"))
+
+
+def get_valve_off_eids(devices: list[dict]) -> set[str]:
+    """Entity IDs of the TRVs that stay off while RoomMind holds their valve (#537)."""
+    return {d["entity_id"] for d in devices if d.get("entity_id") and valve_keeps_thermostat_off(d)}
 
 
 class ValveEntities(NamedTuple):

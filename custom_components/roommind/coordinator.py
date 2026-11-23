@@ -1647,14 +1647,19 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                     # If user manually turned it off, respect that.
                     dev_state = self.hass.states.get(eid)
                     actually_on = (
-                        dev_state is not None
-                        and dev_state.state
-                        not in (
-                            "off",
-                            "unavailable",
-                            "unknown",
+                        (
+                            dev_state is not None
+                            and dev_state.state
+                            not in (
+                                "off",
+                                "unavailable",
+                                "unknown",
+                            )
                         )
-                    ) or self._compressor_manager.recently_started(eid, COMPRESSOR_STATE_SETTLE_SECONDS)
+                        or self._compressor_manager.recently_started(eid, COMPRESSOR_STATE_SETTLE_SECONDS)
+                        # A TRV kept off while RoomMind holds its valve open heats all the same (#537)
+                        or bool(held_opening(eid))
+                    )
                     self._compressor_manager.update_member(eid, actually_on)
                 elif eid in coil_dry.compressor_active_eids or eid in ac_dry.drying_eids:
                     # coil_dry_mode="dry" and dry for humidity really run the compressor
@@ -2483,12 +2488,15 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         labels: list[float] = []
         for eid, pf in driven.items():
             state = self.hass.states.get(eid)
-            if state is None or state.state in ("unavailable", "unknown", "off"):
+            if state is None or state.state in ("unavailable", "unknown"):
+                continue
+            held = held_opening(eid) if eid in valve_eids and mode == MODE_HEATING else None
+            if state.state == "off" and held is None:
                 continue
             action = state.attributes.get("hvac_action")
             if eid in valve_eids and mode == MODE_HEATING:
-                # The valve sits at the opening RoomMind holds; its hvac_action says only that it is open
-                held = held_opening(eid)
+                # The valve sits at the opening RoomMind holds; its hvac_action says only that it is
+                # open, and a TRV that is kept off while its valve is held (#537) says nothing at all
                 labels.append(held if held is not None else pf)
             elif action in running_actions:
                 labels.append(1.0)

@@ -70,6 +70,7 @@ from ..utils.device_utils import (
     get_setpoint_offsets,
     get_trv_eids,
     get_valve_entities,
+    get_valve_off_eids,
     has_reliable_hvac_modes,
 )
 from ..utils.temp_utils import celsius_delta_to_ha, celsius_to_ha_temp
@@ -1581,6 +1582,8 @@ class MPCController:
         self.has_external_sensor = has_external_sensor
         # Direct valve control needs RoomMind's own room sensor; Managed Mode keeps the TRV's setpoint
         self._valve_eids = self._valve_entities if has_external_sensor else {}
+        # TRVs that take a valve position only while switched off (#537)
+        self._valve_off_eids = get_valve_off_eids(self._devices) & set(self._valve_eids)
         self._model_manager = model_manager
         self._area_id = room_config.get("area_id", "unknown")
         self._target_resolver = target_resolver
@@ -2640,6 +2643,8 @@ class MPCController:
                             t = min(trv_heat_boost, t)
                         else:
                             t = trv_heat_boost if self.has_external_sensor else effective_target
+                        if await self._async_drive_valve_only(cmd.entity_id, cmd.power_fraction, effective_target):
+                            continue
                         ha_t = self._heating_setpoint_ha(cmd.entity_id, t, effective_target, direct_target)
                         await self._call("set_hvac_mode", {"entity_id": cmd.entity_id, "hvac_mode": "heat"})
                         await self._async_drive_valve(cmd.entity_id, cmd.power_fraction, effective_target)
@@ -2739,6 +2744,8 @@ class MPCController:
                         release_setback=self._group_conflicts(eid),
                     )
                     await self._async_release_valve(eid)
+                    continue
+                if await self._async_drive_valve_only(eid, power_fraction, effective_target):
                     continue
                 ha_t = self._heating_setpoint_ha(eid, trv_target, effective_target, direct_target)
                 await self._call("set_hvac_mode", {"entity_id": eid, "hvac_mode": "heat"})
@@ -2956,7 +2963,20 @@ class MPCController:
                 area_id=self._area_id,
                 target=target,
                 idle_opening=valve.idle_opening,
+                thermostat_off=eid in self._valve_off_eids,
             )
+
+    async def _async_drive_valve_only(self, eid: str, power_fraction: float, target: float) -> bool:
+        """Heat through the valve alone, for a TRV that takes a position only while off (#537).
+
+        The TRV is switched off first and gets no setpoint: in ``heat`` it refuses the
+        write. False for every other TRV, the caller then heats it the usual way.
+        """
+        if eid not in self._valve_off_eids:
+            return False
+        await self._call("set_hvac_mode", {"entity_id": eid, "hvac_mode": "off"})
+        await self._async_drive_valve(eid, power_fraction, target)
+        return True
 
     async def _async_hold_valve(self, eid: str, targets: TargetTemps) -> bool:
         """Compressor min-run hold of a TRV with direct valve control: the minimum opening.
@@ -2977,6 +2997,7 @@ class MPCController:
             target=targets.heat,
             urgent=True,
             idle_opening=valve.idle_opening,
+            thermostat_off=eid in self._valve_off_eids,
         )
         return True
 
