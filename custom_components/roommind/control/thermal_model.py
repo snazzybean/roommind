@@ -364,6 +364,8 @@ class ThermalEKF:
         self._n_cooling: int = 0
         self._n_idle: int = 0
         self._applicable_modes: set[str] = {"heating", "cooling", "idle"}
+        # Radiator room: alpha learns only while the room coasts (see set_alpha_coasting_only)
+        self._alpha_coasting_only: bool = False
         self._last_mode: str | None = None
         self._initialized: bool = False
         self._k_window: float = self._K_WINDOW_DEFAULT
@@ -631,6 +633,19 @@ class ThermalEKF:
         # Track temperature without updating EKF parameters
         self._x[0] = T_measured
 
+    def set_alpha_coasting_only(self, enabled: bool) -> None:
+        """Learn alpha only from idle steps without afterglow (radiator rooms).
+
+        While a radiator heats or glows, the temperature change also depends on how well
+        beta_h * pf and the afterglow (its own learner) describe the emitter, and alpha
+        took up their errors. Replaying three months of two real radiator bedrooms,
+        alpha learned from all data came out 2.8x and 5.7x the loss measured on clean
+        nights, learned only while coasting 1.3x and 1.9x. Heating steps and idle steps
+        with afterglow then leave alpha (and its variance) alone, like beta_s outside
+        the sun.
+        """
+        self._alpha_coasting_only = enabled
+
     def set_applicable_modes(self, can_heat: bool, can_cool: bool) -> None:
         """Update which modes this room supports."""
         modes = {"idle"}
@@ -879,7 +894,8 @@ class ThermalEKF:
             q_occupancy=q_occupancy,
             q_rebound=q_rebound,
         )
-        self._excited = [True, True] + [F[0][i] != 0.0 for i in range(2, self._N)]
+        alpha_learnable = not (self._alpha_coasting_only and (mode == "heating" or q_residual > 0))
+        self._excited = [True, alpha_learnable] + [F[0][i] != 0.0 for i in range(2, self._N)]
         # Solar gain is learned from sunny steps without heating only: while
         # heating, the innovation is dominated by how far the emitter's real
         # output differs from beta_h * power_fraction, and beta_s would absorb it.
@@ -896,7 +912,7 @@ class ThermalEKF:
         # correlated parameters (alpha ↔ beta_h coupling → time-constant
         # oscillation).
         alpha_ratio = max(alpha, self._ALPHA_MIN) / self._DEFAULT_ALPHA
-        q_alpha = self._Q_ALPHA * min(1.0, alpha_ratio * alpha_ratio)
+        q_alpha = self._Q_ALPHA * min(1.0, alpha_ratio * alpha_ratio) if alpha_learnable else 0.0
         Q = [
             self._Q_T,
             q_alpha,
@@ -1262,6 +1278,10 @@ class RoomModelManager:
     ) -> float:
         """Predict future temperature for *area_id*."""
         return self.get_estimator(area_id).get_model().predict(T_room, T_outdoor, Q_active, dt_minutes)
+
+    def set_alpha_coasting_only(self, area_id: str, enabled: bool) -> None:
+        """Let *area_id* learn alpha only while it coasts (radiator rooms, see ThermalEKF)."""
+        self.get_estimator(area_id).set_alpha_coasting_only(enabled)
 
     def get_model(self, area_id: str) -> RCModel:
         """Return the learned RCModel for *area_id* (C=1 normalization)."""
