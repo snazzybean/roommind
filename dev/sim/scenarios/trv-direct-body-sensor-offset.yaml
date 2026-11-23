@@ -1,0 +1,56 @@
+name: trv-direct-body-sensor-offset
+description: >
+  A tado X in Direct mode that measures on its body next to the radiator: with a hot
+  radiator it reads ~4-5 K above the room and closes on its own before the room is warm.
+  A setpoint offset of +8 K (allowed since #543, before capped at +5) keeps the valve open,
+  so the room sensor decides when to stop. The sent setpoint stays within the TRV's
+  max_temp (30 °C).
+refs: [543, 369]
+tags: [trv, mpc, direct, setpoint-offset]
+start: 2026-01-12T00:00
+duration: 5d
+location: {latitude: 52.5, longitude: 13.4, time_zone: Europe/Berlin}
+weather: {profile: temperate}
+house:
+  building: bestand_teilsaniert
+  outdoor:
+    sensors:
+      temperature: sensor.aussen_temp
+  rooms:
+    wohnzimmer:
+      name: Wohnzimmer
+      floor_area_m2: 24
+      exterior_wall_m2: 14
+      initial: {temperature: 19.0}
+      windows: [{orientation: S, area_m2: 3.0}]
+      devices:
+        # Head on the radiator body: reading = air + 0.25 x (radiator - air). Fixed 55 °C supply
+        # (no heating curve): ~+5 K over the room when hot, as measured on a tado X in #543.
+        - {entity_id: climate.wz_tado, profile: tado_x_matter, sensor_bias: 0.25, heating_curve: false, supply_temp_c: 55}
+      sensors:
+        temperature: {entity_id: sensor.wohnzimmer_temp, profile: sonoff_snzb02d}
+helpers:
+  schedule:
+    plan_wohnen: {weekdays: ["06:00-08:00", "16:30-22:30"], weekend: ["07:30-23:00"]}
+roommind:
+  settings:
+    outdoor_temp_sensor: sensor.aussen_temp
+    weather_entity: weather.simhome
+    control_mode: mpc
+  rooms:
+    wohnzimmer:
+      devices:
+        - {entity_id: climate.wz_tado, type: trv, heating_system_type: radiator, setpoint_mode: direct, setpoint_offset: 8.0}
+      temperature_sensor: sensor.wohnzimmer_temp
+      climate_mode: heat_only
+      schedules: [{entity_id: schedule.plan_wohnen}]
+      comfort_temp: 21.0
+      eco_temp: 18.0
+expect:
+  # 2026-11-21, 5 d: offset 0 in band 58.7 %, under 86.6 Kh (the head closes the valve below
+  # the room target); +5 93.8 %, 14.9 Kh, 54 starts; +8 95.0 %, 12.9 Kh, 72 starts.
+  # Before #543 the +8 here was rejected when saving the room.
+  - {invariant: no_rejected_commands}
+  - {metric: comfort.in_band_pct, room: wohnzimmer, min: 92}
+  - {metric: comfort.undershoot_kh, room: wohnzimmer, max: 16}
+  - {metric: device.starts_per_day, entity_id: climate.wz_tado, max: 18}

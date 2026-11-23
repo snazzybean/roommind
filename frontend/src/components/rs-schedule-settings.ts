@@ -1,6 +1,6 @@
 import { html, css, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
-import type { ScheduleEntry, ClimateMode, ScheduleTempWarning } from "../types";
+import type { ScheduleEntry, ClimateMode, ScheduleTempWarning, PresenceAwayAction } from "../types";
 import { localize } from "../utils/localize";
 import {
   formatTempLocale,
@@ -85,7 +85,10 @@ export class RsScheduleSettings extends RsScheduleBase {
   @property({ type: Boolean }) public priceConfigured = false;
   /** What the room does while its schedule is off / everybody is away (global settings). */
   @property({ type: String }) public scheduleOffAction: "eco" | "off" = "eco";
-  @property({ type: String }) public presenceAwayAction: "eco" | "off" = "eco";
+  @property({ type: String }) public presenceAwayAction: PresenceAwayAction = "eco";
+  /** Away levels (presence_away_action "away"); null = eco. */
+  @property({ attribute: false }) public awayHeat: number | null = null;
+  @property({ attribute: false }) public awayCool: number | null = null;
   /** Presence detection applies to this room (on globally, persons to watch, not ignored). */
   @property({ type: Boolean }) public presenceActive = false;
   /** An empty room drops to eco (occupancy eco with sensors). */
@@ -269,6 +272,24 @@ export class RsScheduleSettings extends RsScheduleBase {
         @row-click=${open("temperatures")}
       ></rs-list-row>
       ${
+        this.presenceAwayAction === "away"
+          ? html`<rs-list-row
+              clickable
+              chevron
+              icon="mdi:home-export-outline"
+              .heading=${localize("override.away", l)}
+              .secondary=${localize(
+                this.presenceActive
+                  ? "detail.schedule.away_sub"
+                  : "detail.schedule.away_sub_inactive",
+                l,
+              )}
+              .value=${band(this.awayHeat ?? this.ecoHeat, this.awayCool ?? this.ecoCool)}
+              @row-click=${open("temperatures")}
+            ></rs-list-row>`
+          : nothing
+      }
+      ${
         this.preheatSides
           ? html`<rs-list-row
               switch
@@ -363,7 +384,10 @@ export class RsScheduleSettings extends RsScheduleBase {
     if (this.schedules.length && this.scheduleOffAction === "eco") {
       when.push(localize("detail.schedule.when_schedule_off", l));
     }
-    if (this.presenceActive && this.presenceAwayAction === "eco") {
+    const awayIsEco =
+      this.presenceAwayAction === "eco" ||
+      (this.presenceAwayAction === "away" && this.awayHeat == null && this.awayCool == null);
+    if (this.presenceActive && awayIsEco) {
       when.push(localize("detail.schedule.when_away", l));
     }
     if (this.occupancyEco) when.push(localize("detail.schedule.when_empty", l));

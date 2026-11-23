@@ -11,6 +11,7 @@ import type {
   DeviceType,
   DeviceRole,
   RoomFanMode,
+  PresenceAwayAction,
 } from "../types";
 import "./room-detail/rs-room-hero";
 import "./rs-schedule-settings";
@@ -139,6 +140,8 @@ const ROOM_FIELDS: [string, RoomFieldSync][] = [
   ["comfort_cool", plain("_comfortCool", (c) => c?.comfort_cool ?? 24.0)],
   ["eco_heat", plain("_ecoHeat", (c) => c?.eco_heat ?? c?.eco_temp ?? 17.0)],
   ["eco_cool", plain("_ecoCool", (c) => c?.eco_cool ?? 27.0)],
+  ["away_heat", plain("_awayHeat", (c) => c?.away_heat ?? null)],
+  ["away_cool", plain("_awayCool", (c) => c?.away_cool ?? null)],
   [
     "presence_persons",
     {
@@ -236,7 +239,7 @@ export class RsRoomDetail extends LitElement {
   @property({ type: Boolean }) public climateControlActive = true;
   /** Global: what rooms do while their schedule is off / everybody is away. */
   @property({ type: String }) public scheduleOffAction: "eco" | "off" = "eco";
-  @property({ type: String }) public presenceAwayAction: "eco" | "off" = "eco";
+  @property({ type: String }) public presenceAwayAction: PresenceAwayAction = "eco";
 
   @property({ type: Boolean }) public valveProtectionEnabled = false;
   @property({ type: String }) public controlMode: "mpc" | "bangbang" = "mpc";
@@ -280,6 +283,8 @@ export class RsRoomDetail extends LitElement {
   @state() private _comfortHeat = 21.0;
   @state() private _comfortCool = 24.0;
   @state() private _ecoHeat = 17.0;
+  @state() private _awayHeat: number | null = null;
+  @state() private _awayCool: number | null = null;
   @state() private _ecoCool = 27.0;
   @state() private _error = "";
   @state() private _dirty = false;
@@ -557,6 +562,7 @@ export class RsRoomDetail extends LitElement {
             .outdoorTemp=${this.outdoorTemp}
             .vacationActive=${this.vacationActive}
             .vacationUntil=${this.vacationUntil}
+            .presenceAwayAction=${this.presenceAwayAction}
             @display-name-changed=${this._onDisplayNameChanged}
           >
             ${
@@ -679,6 +685,8 @@ export class RsRoomDetail extends LitElement {
           .comfortCool=${this._comfortCool}
           .ecoHeat=${this._ecoHeat}
           .ecoCool=${this._ecoCool}
+          .awayHeat=${this._awayHeat}
+          .awayCool=${this._awayCool}
           .climateMode=${this._climateMode}
           .scheduleTempWarnings=${live?.schedule_temp_warnings ?? []}
           .preheatEnabled=${this._preheatEnabled}
@@ -920,7 +928,12 @@ export class RsRoomDetail extends LitElement {
         return html`<rs-edit-dialog
           open
           icon="mdi:thermometer"
-          .heading=${localize("detail.schedule.dialog_temps", lang)}
+          .heading=${localize(
+            this.presenceAwayAction === "away"
+              ? "detail.schedule.dialog_temps_away"
+              : "detail.schedule.dialog_temps",
+            lang,
+          )}
           hasInfo
           .error=${this._error}
           @rs-dialog-closed=${this._closeEdit}
@@ -932,7 +945,12 @@ export class RsRoomDetail extends LitElement {
             .comfortCool=${this._comfortCool}
             .ecoHeat=${this._ecoHeat}
             .ecoCool=${this._ecoCool}
+            .showAway=${this.presenceAwayAction === "away"}
+            .awayHeat=${this._awayHeat}
+            .awayCool=${this._awayCool}
             .climateMode=${this._climateMode}
+            @away-heat-changed=${this._onAwayHeatChanged}
+            @away-cool-changed=${this._onAwayCoolChanged}
             @comfort-heat-changed=${this._onComfortHeatChanged}
             @comfort-cool-changed=${this._onComfortCoolChanged}
             @eco-heat-changed=${this._onEcoHeatChanged}
@@ -1274,6 +1292,21 @@ export class RsRoomDetail extends LitElement {
   private _onEcoCoolChanged(e: CustomEvent<{ value: number }>) {
     this._ecoCool = e.detail.value;
     if (this._ecoHeat > this._ecoCool) this._ecoHeat = this._ecoCool;
+    this._autoSave();
+  }
+
+  /** The away level starts from eco: the first change on one side fixes both. */
+  private _onAwayHeatChanged(e: CustomEvent<{ value: number }>) {
+    this._awayHeat = e.detail.value;
+    this._awayCool ??= this._ecoCool;
+    if (this._awayCool < this._awayHeat) this._awayCool = this._awayHeat;
+    this._autoSave();
+  }
+
+  private _onAwayCoolChanged(e: CustomEvent<{ value: number }>) {
+    this._awayCool = e.detail.value;
+    this._awayHeat ??= this._ecoHeat;
+    if (this._awayHeat > this._awayCool) this._awayHeat = this._awayCool;
     this._autoSave();
   }
 

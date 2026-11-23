@@ -176,9 +176,24 @@ export interface CompressorGroup {
   conflict_resolution: ConflictResolution;
   action_script: string;
   enforce_uniform_mode: boolean;
+  /** The main device runs only while at least this many member rooms want its action. */
+  min_rooms?: number;
+  /** Seconds a wanted switch must hold before the main device follows: on, off. */
+  start_delay_seconds?: number;
+  run_on_seconds?: number;
+  /** Climate main device: setpoint when heating and when off (its own unit), null = mode only. */
+  on_temperature?: number | null;
+  off_temperature?: number | null;
+  /** "off": switch the thermostat off, "temperature": keep its heat mode at the off temperature. */
+  off_mode?: MasterOffMode;
 }
 
 export type RoomFanMode = "heat" | "cool" | "both";
+
+/** What a room does when nobody is home: eco, devices off, or its own away level. */
+export type PresenceAwayAction = "eco" | "off" | "away";
+
+export type MasterOffMode = "off" | "temperature";
 
 export interface RoomConfig {
   area_id: string;
@@ -227,6 +242,9 @@ export interface RoomConfig {
   comfort_cool: number;
   eco_heat: number;
   eco_cool: number;
+  /** Levels while nobody is home with presence_away_action "away"; unset or null = eco. */
+  away_heat?: number | null;
+  away_cool?: number | null;
   override_heat?: number | null;
   override_cool?: number | null;
   override_until?: number | null;
@@ -294,7 +312,7 @@ export interface GlobalSettings {
   vacation_until?: number | null;
   presence_enabled?: boolean;
   presence_persons?: string[];
-  presence_away_action?: "eco" | "off";
+  presence_away_action?: PresenceAwayAction;
   presence_clears_override?: boolean;
   schedule_off_action?: "eco" | "off";
   valve_protection_enabled?: boolean;

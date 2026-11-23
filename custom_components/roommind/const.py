@@ -28,7 +28,7 @@ OVERRIDE_TYPES = [OVERRIDE_BOOST, OVERRIDE_ECO, OVERRIDE_CUSTOM]
 OVERRIDE_TURN_ON_REFRESH_DELAY_S = 3.0
 # A hold "until the schedule changes" while the schedule cannot be read ends after this
 # (h, same as the dashboard card's fallback without a schedule) instead of never
-SCHEDULE_UNREADABLE_HOLD_HOURS = 4
+SCHEDULE_UNREADABLE_HOLD_HOURS = 6
 
 # Room modes
 MODE_IDLE = "idle"
@@ -409,6 +409,28 @@ CONFLICT_RESOLUTIONS = [
     CONFLICT_RESOLUTION_OUTDOOR_TEMP,
 ]
 DEFAULT_CONFLICT_RESOLUTION = CONFLICT_RESOLUTION_HEATING_PRIORITY
+# Master device of a group: a climate entity gets a mode (and optional setpoints), a switch is turned on/off
+MASTER_ENTITY_DOMAINS = ("climate", "switch", "input_boolean")
+# How a climate master is switched off: hvac_mode off, or only its off temperature in its heat mode
+MASTER_OFF_MODE_OFF = "off"
+MASTER_OFF_MODE_TEMPERATURE = "temperature"
+MASTER_OFF_MODES = [MASTER_OFF_MODE_OFF, MASTER_OFF_MODE_TEMPERATURE]
+# Start delay and run-on of a master device, in seconds
+MAX_MASTER_DELAY_S = 3600
+# Setpoints sent to a climate master (its own unit, e.g. a boiler's flow temperature)
+MIN_MASTER_TEMPERATURE = 5.0
+MAX_MASTER_TEMPERATURE = 90.0
+# Setpoints closer than this count as already set
+MASTER_TEMPERATURE_TOLERANCE = 0.05
+# Master options at these values are not stored: groups without them stay readable for older releases
+MASTER_OPTION_DEFAULTS: dict[str, object] = {
+    "min_rooms": 1,
+    "start_delay_seconds": 0,
+    "run_on_seconds": 0,
+    "on_temperature": None,
+    "off_temperature": None,
+    "off_mode": MASTER_OFF_MODE_OFF,
+}
 
 
 # Far-future sentinel: vacation active indefinitely (year 2999)

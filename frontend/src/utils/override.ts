@@ -12,7 +12,7 @@ export const OVERRIDE_DURATIONS_H = [1, 2, 4];
 export const OVERRIDE_PERMANENT_H = 0;
 
 /** Fallback duration of a dashboard quick override in a room without schedule (h). */
-export const QUICK_OVERRIDE_FALLBACK_H = 4;
+export const QUICK_OVERRIDE_FALLBACK_H = 6;
 
 /** Override as the UI shows it: live data, or what the user just set before the poll confirms it. */
 export interface EffectiveOverride {
