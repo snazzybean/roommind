@@ -3,10 +3,11 @@ import de from "../locales/de.json";
 import fr from "../locales/fr.json";
 import it from "../locales/it.json";
 import es from "../locales/es.json";
+import pl from "../locales/pl.json";
 
 export type TranslationKey = keyof typeof en;
 
-const translations: Record<string, Record<string, string>> = { en, de, fr, it, es };
+const translations: Record<string, Record<string, string>> = { en, de, fr, it, es, pl };
 
 /**
  * HA profile language once the frontend is connected, else the browser language. For
