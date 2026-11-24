@@ -255,6 +255,28 @@ class TestComputeTargetForecast:
 class TestBuildAnalyticsData:
     """Tests for build_analytics_data edge cases."""
 
+    def test_prediction_heat_availability_follows_monitored_master(self):
+        from types import SimpleNamespace
+
+        from custom_components.roommind.services.analytics_service import _prediction_heat_available
+
+        coordinator = MagicMock()
+        coordinator.rooms = {
+            "living_room": {
+                "shared_system_id": "boiler",
+                "shared_system_master_action": "idle",
+                "shared_system_demand_blocked": False,
+            }
+        }
+        coordinator._compressor_manager.get_groups.return_value = {
+            "boiler": SimpleNamespace(master_control_mode="monitor")
+        }
+
+        assert _prediction_heat_available(coordinator, "living_room") is False
+
+        coordinator.rooms["living_room"]["shared_system_master_action"] = "heating"
+        assert _prediction_heat_available(coordinator, "living_room") is True
+
     @pytest.mark.asyncio
     async def test_forecast_gets_the_live_occupancy_vacancy(self):
         hass = MagicMock()

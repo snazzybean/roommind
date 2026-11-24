@@ -71,6 +71,34 @@ class TestMasterDeviceControl:
 
         assert coordinator._shared_system_master_observation("g1") == ("heating", 20.5)
 
+    def test_master_observation_uses_hvac_action_not_hvac_mode(self, hass, mock_config_entry):
+        """An auto or boost mode is not heating unless hvac_action says so."""
+        coordinator = _create_coordinator(hass, mock_config_entry)
+        coordinator._compressor_manager.load_groups(
+            [
+                {
+                    "id": "g1",
+                    "name": "G1",
+                    "members": ["climate.living_trv"],
+                    "master_entity": "climate.boiler",
+                }
+            ]
+        )
+        master_state = MagicMock()
+        master_state.state = "auto"
+        master_state.attributes = {"hvac_action": "idle", "temperature": 12.0}
+        hass.states.get = MagicMock(return_value=master_state)
+
+        assert coordinator._shared_system_master_observation("g1") == ("idle", 12.0)
+
+        master_state.state = "boost"
+        master_state.attributes["hvac_action"] = "heating"
+        assert coordinator._shared_system_master_observation("g1") == ("heating", 12.0)
+
+        master_state.state = "off"
+        master_state.attributes = {"temperature": 12.0}
+        assert coordinator._shared_system_master_observation("g1") == (None, 12.0)
+
     @pytest.mark.asyncio
     async def test_master_schedule_does_not_pause_learning(self, hass, mock_config_entry, monkeypatch):
         """A closed master schedule still lets the model learn from room observations."""

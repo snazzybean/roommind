@@ -4,7 +4,7 @@
 import { LitElement, html, css, nothing, type PropertyValues } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import type { HomeAssistant, AnalyticsData, AnalyticsDataPoint } from "../../types";
-import { localize, type TranslationKey } from "../../utils/localize";
+import { localize } from "../../utils/localize";
 import { tokens } from "../../styles/tokens";
 import "../shared/rs-list-card";
 import "../shared/rs-info-icon";
@@ -328,6 +328,7 @@ export class RsAnalyticsChart extends LitElement {
     const visibleStates = states.filter(([, spans]) =>
       spans.some(([a, b]) => b > start && a < this.rangeEnd),
     );
+    if (visibleStates.length === 0) return nothing;
 
     return html`
       <div
@@ -395,41 +396,42 @@ export class RsAnalyticsChart extends LitElement {
       (p) => p.shared_system_zone_action != null || p.shared_system_master_action != null,
     );
     if (sharedPoints.length === 0 || this.isOutdoor) return nothing;
+    const groupName =
+      sharedPoints.find((p) => p.shared_system_name)?.shared_system_name ||
+      localize("analytics.shared_system", this.language);
+    const groupLabel = localize("analytics.group_calling_heat", this.language, { name: groupName });
     const start = this.rangeStart;
     const length = Math.max(this.rangeEnd - start, 1);
     const pct = (ms: number) => Math.min(Math.max(((ms - start) / length) * 100, 0), 100);
     const tracks = [
       {
-        key: "analytics.zone_calling_heat" as TranslationKey,
+        label: localize("analytics.zone_calling_heat", this.language),
         colour: "var(--rs-warn)",
         spans: timeSpans(sharedPoints, (p) => p.shared_system_zone_action === "heating"),
       },
       {
-        key: "analytics.boiler_calling_heat" as TranslationKey,
+        label: groupLabel,
         colour: "var(--rs-heat)",
         spans: timeSpans(sharedPoints, (p) => p.shared_system_master_action === "heating"),
       },
-    ].filter(({ spans }) => spans.some(([a, b]) => b > start && a < this.rangeEnd));
+    ];
 
     return html`
       <div
         class="master-gate-timeline boiler-call-timeline"
-        aria-label=${localize("analytics.boiler_calling_heat", this.language)}
+        aria-label=${localize("analytics.shared_system_heat_demand", this.language)}
       >
-        <div class="master-gate-heading">
-          ${localize("analytics.boiler_calling_heat", this.language)}
-        </div>
         ${tracks.map(
-          ({ key, colour, spans }) => html`
+          ({ label, colour, spans }) => html`
             <div class="boiler-call-row">
-              <span class="boiler-call-label">${localize(key, this.language)}</span>
+              <span class="boiler-call-label">${label}</span>
               <div class="master-gate-track">
                 ${spans
                   .filter(([a, b]) => b > start && a < this.rangeEnd)
                   .map(
                     ([a, b]) =>
                       html`<i
-                        title=${localize(key, this.language)}
+                        title=${label}
                         style="left: ${pct(a)}%; width: ${pct(b) - pct(a)}%; background: ${colour}"
                       ></i>`,
                   )}
@@ -437,14 +439,6 @@ export class RsAnalyticsChart extends LitElement {
             </div>
           `,
         )}
-        <div class="master-gate-key">
-          ${tracks.map(
-            ({ key, colour }) =>
-              html`<span
-                ><i style="background: ${colour}"></i>${localize(key, this.language)}</span
-              >`,
-          )}
-        </div>
       </div>
     `;
   }

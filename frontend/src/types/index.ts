@@ -428,6 +428,7 @@ export interface AnalyticsDataPoint {
   price_shift?: number | null;
   /** Shared-system state recorded for rooms in a master heating group. */
   shared_system_id?: string | null;
+  shared_system_name?: string | null;
   shared_system_schedule_active?: boolean | null;
   shared_system_demand_blocked?: boolean;
   shared_system_block_reason?: string;

@@ -183,6 +183,7 @@ def simulate_prediction(
     q_rebound: float | None = None,
     run_system: str | None = None,
     outdoor_known: bool = True,
+    heat_available: bool = True,
 ) -> list[float]:
     """Simulate temperature prediction for the analytics chart.
 
@@ -190,6 +191,10 @@ def simulate_prediction(
     - Window open: pure heat exchange via window
     - MPC active: rolling-horizon optimizer simulation
     - Fallback: bang-bang with hysteresis
+
+    ``heat_available`` is false when a monitored shared system is not currently
+    heating. A room can still call for heat in that state, but the forecast must
+    not add heat that the boiler cannot deliver.
     """
     # Run rules follow the system actually heating (AC alone in a UFH room, as in the controller)
     rules = heating_system_type if run_system is None else run_system
@@ -218,6 +223,7 @@ def simulate_prediction(
             q_rebound=q_rebound,
             run_system=rules,
             outdoor_known=outdoor_known,
+            heat_available=heat_available,
         )
 
     return _simulate_bangbang(
@@ -241,6 +247,7 @@ def simulate_prediction(
         q_rebound=q_rebound,
         run_system=rules,
         capped=is_mpc_enabled(settings) and not is_slow_heat(get_min_run_blocks(rules, PLAN_DT_MINUTES)),
+        heat_available=heat_available,
     )
 
 
@@ -353,6 +360,7 @@ def _simulate_mpc(
     q_rebound: float | None = None,
     run_system: str | None = None,
     outdoor_known: bool = True,
+    heat_available: bool = True,
 ) -> list[float]:
     """Rolling-horizon MPC simulation matching the real controller.
 
@@ -398,6 +406,9 @@ def _simulate_mpc(
     run_seconds: float | None = (
         mode_elapsed_minutes * 60 if previous_mode != MODE_IDLE and mode_elapsed_minutes is not None else None
     )
+    if not heat_available and prev_action == MODE_HEATING:
+        prev_action = MODE_IDLE
+        run_seconds = None
     # Track residual heat through simulated mode transitions; a run in progress
     # counts, so stopping it at once leaves its afterglow like in the controller
     sim_residual_elapsed = 0.0  # minutes since simulated heating stopped
@@ -425,6 +436,7 @@ def _simulate_mpc(
             can_heat, can_cool = get_can_heat_cool(
                 room_config, T_out, ocm, ohm, acs_can_heat=acs_can_heat, override_active=override_active
             )
+            can_heat = can_heat and heat_available
             horizon = compute_horizon_blocks(model, T, h_tgt if h_tgt is not None else c_tgt)
             window = target_forecast[i : i + horizon]
             filled = [
@@ -603,6 +615,7 @@ def _simulate_bangbang(
     q_rebound: float | None = None,
     run_system: str | None = None,
     capped: bool = True,
+    heat_available: bool = True,
 ) -> list[float]:
     """Bang-bang fallback simulation with mode stickiness + idle rate cap.
 
@@ -620,6 +633,8 @@ def _simulate_bangbang(
 
     T = current_temp
     sim_mode = previous_mode
+    if not heat_available and sim_mode == MODE_HEATING:
+        sim_mode = MODE_IDLE
     # A run without a known start counts as past its min run, like the controller's
     blocks_in_mode = int(mode_elapsed_minutes // PLAN_DT_MINUTES) if mode_elapsed_minutes is not None else min_run
     # Track residual heat through simulated mode transitions

@@ -1,0 +1,19 @@
+description: Wiser-style central heating controller. Auto is enabled, while hvac_action reports idle or heating.
+model: boiler
+capabilities:
+  hvac_modes: ["auto", "heat", "off"]
+  preset_modes: ["advance_schedule", "cancel_overrides", "boost_30m", "boost_1h", "boost_2h", "boost_3h"]
+  min_temp: 5
+  max_temp: 30
+  target_temp_step: 0.5
+  unit: C
+params:
+  initial_target_c: 12
+  supply_temp_c: 60
+  heating_curve: true
+  supply_foot_c: 25
+  design_outdoor_c: -12
+  serves: all
+  warmup_s: 120
+  tpi_idle: false
+quirks: []

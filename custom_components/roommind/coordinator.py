@@ -1951,8 +1951,6 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             "idle": MODE_IDLE,
             "off": MODE_IDLE,
         }.get(state.attributes.get("hvac_action"))
-        if action is None and state.state == "off":
-            action = MODE_IDLE
 
         setpoint = None
         for attribute in ("temperature", "target_temperature"):
