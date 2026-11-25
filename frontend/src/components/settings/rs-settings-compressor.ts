@@ -248,6 +248,16 @@ export class RsSettingsCompressor extends RsSettingsBase {
               this._updateGroup(idx, "master_entity", (e.detail?.value as string) ?? "");
             }}
           ></ha-entity-picker>
+          <span class="field-label">${localize("compressor.master_schedule_entity", l)}</span>
+          <ha-entity-picker
+            .hass=${this.hass}
+            .value=${group.master_schedule_entity || ""}
+            .includeDomains=${["schedule"]}
+            @value-changed=${(e: CustomEvent) => {
+              this._updateGroup(idx, "master_schedule_entity", (e.detail?.value as string) ?? "");
+            }}
+          ></ha-entity-picker>
+          <span class="field-hint">${localize("compressor.master_schedule_entity_hint", l)}</span>
           ${
             group.master_entity && group.master_control_mode === "monitor"
               ? html`<rs-field .info=${localize("compressor.master_schedule_monitor_hint", l)}>
@@ -448,6 +458,44 @@ export class RsSettingsCompressor extends RsSettingsBase {
               `
             : nothing
         }
+        ${
+          group.master_control_mode === "target_temperature"
+            ? html`
+                <div class="threshold-grid">
+                  ${numberRow({
+                    hass: this.hass,
+                    kind: "temperature",
+                    label: localize("compressor.master_comfort_temperature", l),
+                    info: localize("compressor.master_comfort_temperature_hint", l),
+                    min: 0,
+                    max: 30,
+                    value: group.master_comfort_temperature ?? 19,
+                    onChange: (v) => this._updateGroup(idx, "master_comfort_temperature", v),
+                  })}
+                  ${numberRow({
+                    hass: this.hass,
+                    kind: "temperature",
+                    label: localize("compressor.master_eco_temperature", l),
+                    info: localize("compressor.master_eco_temperature_hint", l),
+                    min: 0,
+                    max: 30,
+                    value: group.master_eco_temperature ?? group.master_idle_temperature ?? 5,
+                    onChange: (v) => this._updateGroup(idx, "master_eco_temperature", v),
+                  })}
+                  ${numberRow({
+                    hass: this.hass,
+                    kind: "temperature",
+                    label: localize("compressor.master_demand_offset", l),
+                    info: localize("compressor.master_demand_offset_hint", l),
+                    min: 0,
+                    max: 10,
+                    value: group.master_demand_offset ?? 0,
+                    onChange: (v) => this._updateGroup(idx, "master_demand_offset", v),
+                  })}
+                </div>
+              `
+            : nothing
+        }
       </div>
       ${
         thermostat && setpoints
@@ -578,7 +626,12 @@ export class RsSettingsCompressor extends RsSettingsBase {
         min_run_minutes: 15,
         min_off_minutes: 5,
         master_entity: "",
+        master_schedule_entity: "",
         master_control_mode: "hvac_mode",
+        master_comfort_temperature: 19,
+        master_eco_temperature: 5,
+        master_idle_temperature: 5,
+        master_demand_offset: 0,
         conflict_resolution: "heating_priority" as ConflictResolution,
         action_script: "",
         enforce_uniform_mode: false,

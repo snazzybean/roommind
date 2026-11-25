@@ -442,6 +442,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         )
         # Per-entity cache of schedule blocks; fallback when schedule.get_schedule fails (#308)
         self._schedule_blocks_cache: dict[str, dict] = {}
+        self._master_schedule_gates: dict[str, dict[str, str | bool | float | None]] = {}
         # Entity platform callbacks, set by platform async_setup_entry
         self.async_add_entities: Any = None
         self.async_add_switch_entities: Any = None
@@ -481,6 +482,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
 
         # Load compressor groups from settings (every cycle, cheap)
         self._compressor_manager.load_groups(settings.get("compressor_groups", []))
+        await self._async_resolve_master_schedule_gates()
         self._uniform_claims.clear()
         self._seed_uniform_modes()
 
@@ -994,7 +996,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         """Process a single room: read sensor, evaluate schedule, apply control."""
         room = self._without_pending_override_seed(room)
         area_id = room.get("area_id", "unknown")
-        shared_system_id = self._shared_system_group_for_room(room)
+        shared_system_id, shared_system_schedule_blocked = self._shared_system_gate_for_room(room)
         shared_system_master_action, shared_system_master_setpoint = self._shared_system_master_observation(
             shared_system_id
         )
@@ -1055,9 +1057,11 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 "coil_dry_entities": [],
                 "schedule_temp_warnings": [],
                 "shared_system_id": shared_system_id,
-                "shared_system_schedule_active": None,
-                "shared_system_demand_blocked": False,
-                "shared_system_block_reason": "",
+                "shared_system_schedule_active": (
+                    not shared_system_schedule_blocked if shared_system_id else None
+                ),
+                "shared_system_demand_blocked": bool(shared_system_schedule_blocked),
+                "shared_system_block_reason": "master_schedule" if shared_system_schedule_blocked else "",
                 "shared_system_zone_action": None,
                 "shared_system_master_action": shared_system_master_action,
                 "shared_system_master_setpoint": shared_system_master_setpoint,
@@ -1830,6 +1834,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             ac_drying=ac_dry.active or (ac_dry.settling and mode == MODE_IDLE),
             compressor_held=compressor_forced_on,
             shared_system_master_action=shared_system_master_action,
+            shared_system_schedule_blocked=shared_system_schedule_blocked,
         )
 
         room_state = self._build_room_state_dict(
@@ -1889,9 +1894,17 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             compressor_protection_until=compressor_protection_until,
             coil_dry=coil_dry,
             shared_system_id=shared_system_id,
-            shared_system_schedule_active=None,
-            shared_system_demand_blocked=supply_withheld,
-            shared_system_block_reason="boiler_off" if supply_withheld else "",
+            shared_system_schedule_active=(
+                not shared_system_schedule_blocked if shared_system_id else None
+            ),
+            shared_system_demand_blocked=bool(shared_system_schedule_blocked or supply_withheld),
+            shared_system_block_reason=(
+                "master_schedule"
+                if shared_system_schedule_blocked
+                else "boiler_off"
+                if supply_withheld
+                else ""
+            ),
             shared_system_zone_action=shared_system_zone_action,
             shared_system_master_action=shared_system_master_action,
             shared_system_master_setpoint=shared_system_master_setpoint,
@@ -1926,6 +1939,64 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             if group_id is not None:
                 return group_id
         return None
+
+    async def _async_resolve_master_schedule_gates(self) -> None:
+        """Resolve group master schedules before room control and learning."""
+        from .utils.schedule_utils import find_active_block, read_schedule_blocks
+
+        gates: dict[str, dict[str, str | bool | float | None]] = {}
+        for group_id, group in self._compressor_manager.get_groups().items():
+            schedule_entity = group.master_schedule_entity
+            if not schedule_entity:
+                gates[group_id] = {"active": True, "blocked": False, "reason": "", "target": None}
+                self._compressor_manager.set_master_schedule_blocked(group_id, False)
+                continue
+
+            blocks = await read_schedule_blocks(
+                self.hass,
+                schedule_entity,
+                cache=self._schedule_blocks_cache,
+            )
+            state = self.hass.states.get(schedule_entity)
+            active_block = find_active_block(blocks, time.time()) if blocks is not None else None
+            if blocks is None or state is None or state.state in ("unavailable", "unknown"):
+                gates[group_id] = {
+                    "active": False,
+                    "blocked": True,
+                    "reason": "master_schedule_unavailable",
+                    "target": None,
+                }
+            else:
+                active = state.state == SCHEDULE_STATE_ON and active_block is not None
+                target = None
+                if active_block is not None:
+                    for field in ("temperature", "heat_temperature"):
+                        try:
+                            target = float(active_block[field])
+                        except (KeyError, TypeError, ValueError):
+                            continue
+                        break
+                gates[group_id] = {
+                    "active": active,
+                    "blocked": not active,
+                    "reason": "" if active else "master_schedule",
+                    "target": target,
+                }
+            self._compressor_manager.set_master_schedule_blocked(
+                group_id, bool(gates[group_id]["blocked"])
+            )
+        self._master_schedule_gates = gates
+
+    def _shared_system_gate_for_room(self, room: dict) -> tuple[str | None, bool]:
+        """Return the first shared-system group and whether its schedule blocks demand."""
+        for entity_id in get_all_entity_ids(room.get("devices", [])):
+            group_id = self._compressor_manager.get_group_for_entity(entity_id)
+            if group_id is None:
+                continue
+            gate = self._master_schedule_gates.get(group_id)
+            if gate is not None:
+                return group_id, bool(gate["blocked"])
+        return None, False
 
     def _shared_system_is_monitor_only(self, group_id: str) -> bool:
         """Whether a shared-system group observes its master without commanding it."""
@@ -2022,6 +2093,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         ac_drying: bool = False,
         compressor_held: set[str] | None = None,
         shared_system_master_action: str | None = None,
+        shared_system_schedule_blocked: bool = False,
     ) -> tuple[str, float]:
         """Observe device state, train EKF, compute display mode.
 
@@ -2153,6 +2225,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         # cooling, so training that window as idle would drift alpha (spec 9.3).
         learning_disabled = settings.get("learning_disabled_rooms", [])
         learning_active = area_id not in learning_disabled
+        learning_active = learning_active and not shared_system_schedule_blocked
         if (
             learning_active
             and not coil_dry_skip_training
@@ -2192,7 +2265,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             # alpha up 5x (sim ac-dry-humid-summer), so the model resyncs after it. Idle steps of
             # the first 30 min after it are left out too: the air warming back to the walls went
             # into beta_s (3.1 vs 1.2) and, as rebound charge, into beta_c (ratio 4.7, sim ac-dry-cooling-day)
-            device_pause = hold_running is not None or coil_dry_skip_training
+            device_pause = hold_running is not None or coil_dry_skip_training or shared_system_schedule_blocked
             observed = learning_active and current_temp_raw is not None and self.outdoor_temp_effective is not None
             self._ekf_training.clear(area_id, resync=not (device_pause and observed))
         # Same mode the EKF learns from, so the charge matches its labels.
@@ -2306,6 +2379,24 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         shared_system_master_setpoint: float | None = None,
     ) -> dict:
         """Build the final room state dictionary."""
+        shared_system_is_heating = (
+            shared_system_zone_action == MODE_HEATING and shared_system_master_action == MODE_HEATING
+        )
+        if (
+            display_mode == MODE_HEATING
+            and shared_system_id is not None
+            and (
+                shared_system_demand_blocked
+                or (
+                    self._shared_system_is_monitor_only(shared_system_id)
+                    and shared_system_master_action is not None
+                    and not shared_system_is_heating
+                )
+            )
+        ):
+            display_mode = MODE_IDLE
+            display_pf = 0.0
+
         _room_devices = room.get("devices", [])
         _direct_eids = get_direct_setpoint_eids(_room_devices)
         # Directness is evaluated only over the devices actually driven in the
@@ -4098,6 +4189,14 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 )
 
                 self._compressor_manager.set_desired_action(gid, new_action)
+                gate = self._master_schedule_gates.get(gid)
+                if gate and gate["blocked"]:
+                    _LOGGER.debug(
+                        "Group '%s': master schedule blocks %s demand",
+                        group.name,
+                        new_action,
+                    )
+                    new_action = "idle"
 
                 if has_master and group.master_control_mode == "monitor":
                     self._compressor_manager.clear_delay(gid)
@@ -4139,6 +4238,15 @@ class RoomMindCoordinator(DataUpdateCoordinator):
 
                 # 5. Control the master entity (when configured)
                 if has_master and master_state is not None:
+                    target_control = group.master_control_mode == "target_temperature"
+                    if target_control and master_state.state == "off":
+                        _LOGGER.debug(
+                            "Master '%s' (group '%s') is manually off; respecting Away state",
+                            group.master_entity,
+                            group.name,
+                        )
+                        continue
+
                     # Min-run/min-off guard: prevent master short-cycling
                     if not self._compressor_manager.check_master_can_switch(gid, new_action):
                         continue
@@ -4215,6 +4323,18 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         """
         if group.master_domain != "climate":
             return ("off" if action == "idle" else "on", None)
+        if group.master_control_mode == "target_temperature":
+            mode = self._resolve_master_hvac_mode(group.master_entity, "heat")
+            if mode is None:
+                return None
+            target = group.master_eco_temperature
+            gate = self._master_schedule_gates.get(group.id)
+            if action != "idle" and (gate is None or gate["active"]):
+                target = group.master_comfort_temperature
+                if gate and gate.get("target") is not None:
+                    target = float(gate["target"])
+                target += group.master_demand_offset
+            return mode, target
         if action == "heat":
             mode = self._resolve_master_hvac_mode(group.master_entity, "heat")
             return (mode, group.on_temperature) if mode else None
