@@ -15,6 +15,7 @@ const CODE_KEYS: Record<string, TranslationKey> = {
   invalid_member: "error.invalid_member",
   duplicate_member: "error.duplicate_member",
   invalid_master_entity: "error.invalid_master_entity",
+  invalid_master_schedule_mode: "error.invalid_master_schedule_mode",
   master_in_members: "error.master_in_members",
   master_is_other_member: "error.master_is_other_member",
   duplicate_master: "error.duplicate_master",

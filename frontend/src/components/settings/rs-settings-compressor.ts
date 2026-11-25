@@ -248,21 +248,27 @@ export class RsSettingsCompressor extends RsSettingsBase {
               this._updateGroup(idx, "master_entity", (e.detail?.value as string) ?? "");
             }}
           ></ha-entity-picker>
-          <span class="field-label">${localize("compressor.master_schedule_entity", l)}</span>
-          <ha-entity-picker
-            .hass=${this.hass}
-            .value=${group.master_schedule_entity || ""}
-            .includeDomains=${["schedule"]}
-            @value-changed=${(e: CustomEvent) => {
-              this._updateGroup(idx, "master_schedule_entity", (e.detail?.value as string) ?? "");
-            }}
-          ></ha-entity-picker>
-          <span class="field-hint">${localize("compressor.master_schedule_entity_hint", l)}</span>
           ${
-            group.master_entity && group.master_control_mode === "monitor"
+            group.master_control_mode === "monitor"
               ? html`<rs-field .info=${localize("compressor.master_schedule_monitor_hint", l)}>
                   ${localize("compressor.master_control_mode_monitor", l)}
                 </rs-field>`
+              : html`
+                  <span class="field-label">${localize("compressor.master_schedule_entity", l)}</span>
+                  <ha-entity-picker
+                    .hass=${this.hass}
+                    .value=${group.master_schedule_entity || ""}
+                    .includeDomains=${["schedule"]}
+                    @value-changed=${(e: CustomEvent) => {
+                      this._updateGroup(idx, "master_schedule_entity", (e.detail?.value as string) ?? "");
+                    }}
+                  ></ha-entity-picker>
+                  <span class="field-hint">${localize("compressor.master_schedule_entity_hint", l)}</span>
+                `
+          }
+          ${
+            group.master_control_mode === "monitor"
+              ? nothing
               : group.master_entity || group.action_script
                 ? this._renderMasterOptions(group, idx)
                 : nothing
@@ -289,7 +295,7 @@ export class RsSettingsCompressor extends RsSettingsBase {
                     ]}
                     @selected=${(e: Event) => {
                       const v = getSelectValue(e);
-                      if (v) this._updateGroup(idx, "master_control_mode", v);
+                      if (v) this._updateMasterControlMode(idx, v);
                     }}
                     @closed=${(e: Event) => e.stopPropagation()}
                     fixedMenuPosition
@@ -610,6 +616,17 @@ export class RsSettingsCompressor extends RsSettingsBase {
   ) {
     const updated = [...this.compressorGroups];
     updated[idx] = { ...updated[idx], [field]: value };
+    this._fireGroups(updated);
+  }
+
+  private _updateMasterControlMode(idx: number, value: string) {
+    if (value !== "hvac_mode" && value !== "target_temperature" && value !== "monitor") return;
+    const updated = [...this.compressorGroups];
+    updated[idx] = {
+      ...updated[idx],
+      master_control_mode: value,
+      ...(value === "monitor" ? { master_schedule_entity: "" } : {}),
+    };
     this._fireGroups(updated);
   }
 

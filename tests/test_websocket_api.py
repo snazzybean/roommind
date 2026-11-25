@@ -3019,6 +3019,31 @@ async def test_save_settings_compressor_target_temperature_mode(ws_hass, store, 
 
 
 @pytest.mark.asyncio
+async def test_save_settings_rejects_monitor_master_schedule(ws_hass, store, connection):
+    """Monitor-only masters leave schedule control to the external controller."""
+    await store.async_load()
+
+    msg = {
+        "id": 362,
+        "type": "roommind/settings/save",
+        "compressor_groups": [
+            {
+                "id": "g1",
+                "name": "Test",
+                "members": ["climate.ac1"],
+                "master_entity": "climate.boiler",
+                "master_schedule_entity": "schedule.heating",
+                "master_control_mode": "monitor",
+            },
+        ],
+    }
+    await _save_settings(ws_hass, connection, msg)
+
+    connection.send_error.assert_called_once()
+    assert connection.send_error.call_args[0][1] == "invalid_master_schedule_mode"
+
+
+@pytest.mark.asyncio
 async def test_save_settings_compressor_backward_compat(ws_hass, store, connection):
     """Groups without new fields save successfully (no validation errors)."""
     await store.async_load()

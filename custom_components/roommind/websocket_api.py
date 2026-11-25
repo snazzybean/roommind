@@ -1140,6 +1140,13 @@ async def websocket_save_settings(
                     f"Master schedule entity '{master_schedule}' must be a schedule entity",
                 )
                 return
+            if master_schedule and g.get("master_control_mode", "hvac_mode") == "monitor":
+                connection.send_error(
+                    msg["id"],
+                    "invalid_master_schedule_mode",
+                    "Monitor-only masters cannot use a master schedule; the external boiler or controller manages its own schedule",
+                )
+                return
             if master:
                 domain, _, object_id = master.partition(".")
                 # RoomMind's own entities (e.g. its climate control switch) would switch RoomMind itself
