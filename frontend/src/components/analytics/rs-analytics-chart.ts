@@ -26,8 +26,6 @@ import { tempUnit, toDisplayDelta } from "../../utils/temperature";
 import { formatNumber } from "../../utils/format";
 import { timeSpans } from "../../utils/analytics-spans";
 
-type MasterGateState = "comfort" | "eco" | "blocked" | "unavailable";
-
 // Series drawn for another legend entry: hiding that entry hides them too
 const LEGEND_OWNER: Record<string, string> = {
   target_band_base: "target_temp",
@@ -257,7 +255,7 @@ export class RsAnalyticsChart extends LitElement {
                       </div>`,
                   )}
                 </div>
-                ${this._renderMasterGateTimeline(points)} ${this._renderBoilerCallTimeline(points)}
+                ${this._renderBoilerCallTimeline(points)}
                 ${this._renderSeriesLegend(allSeries)}
                 <div class="zoom-hint">
                   ${localize(this._touch ? "analytics.zoom_hint_touch" : "analytics.zoom_hint", l)}
@@ -269,93 +267,6 @@ export class RsAnalyticsChart extends LitElement {
               </div>`
         }
       </rs-list-card>
-    `;
-  }
-
-  private _renderMasterGateTimeline(points: AnalyticsDataPoint[]) {
-    const sharedPoints = points.filter((p) => !!p.shared_system_id);
-    if (sharedPoints.length === 0) return nothing;
-
-    const states: Array<[MasterGateState, Array<[number, number]>]> = [
-      [
-        "comfort",
-        timeSpans(
-          sharedPoints,
-          (p) => p.shared_system_schedule_active === true && !p.shared_system_demand_blocked,
-        ),
-      ],
-      [
-        "eco",
-        timeSpans(
-          sharedPoints,
-          (p) => p.shared_system_schedule_active === false && !p.shared_system_demand_blocked,
-        ),
-      ],
-      [
-        "blocked",
-        timeSpans(
-          sharedPoints,
-          (p) =>
-            p.shared_system_demand_blocked === true &&
-            p.shared_system_block_reason !== "master_schedule_unavailable",
-        ),
-      ],
-      [
-        "unavailable",
-        timeSpans(
-          sharedPoints,
-          (p) =>
-            p.shared_system_demand_blocked === true &&
-            p.shared_system_block_reason === "master_schedule_unavailable",
-        ),
-      ],
-    ];
-    const start = this.rangeStart;
-    const length = Math.max(this.rangeEnd - start, 1);
-    const pct = (ms: number) => Math.min(Math.max(((ms - start) / length) * 100, 0), 100);
-    const labels: Record<MasterGateState, string> = {
-      comfort: localize("analytics.master_gate_comfort", this.language),
-      eco: localize("analytics.master_gate_eco", this.language),
-      blocked: localize("analytics.master_gate_blocked", this.language),
-      unavailable: localize("analytics.master_gate_unavailable", this.language),
-    };
-    const colours: Record<MasterGateState, string> = {
-      comfort: "var(--rs-ok)",
-      eco: "var(--secondary-text-color)",
-      blocked: "var(--rs-heat)",
-      unavailable: "var(--rs-cool)",
-    };
-    const visibleStates = states.filter(([, spans]) =>
-      spans.some(([a, b]) => b > start && a < this.rangeEnd),
-    );
-    if (visibleStates.length === 0) return nothing;
-
-    return html`
-      <div
-        class="master-gate-timeline"
-        aria-label=${localize("analytics.master_gate", this.language)}
-      >
-        <div class="master-gate-heading">${localize("analytics.master_gate", this.language)}</div>
-        <div class="master-gate-track">
-          ${visibleStates.flatMap(([state, spans]) =>
-            spans
-              .filter(([a, b]) => b > start && a < this.rangeEnd)
-              .map(
-                ([a, b]) =>
-                  html`<i
-                    title=${labels[state]}
-                    style="left: ${pct(a)}%; width: ${pct(b) - pct(a)}%; background: ${colours[state]}"
-                  ></i>`,
-              ),
-          )}
-        </div>
-        <div class="master-gate-key">
-          ${visibleStates.map(
-            ([state]) =>
-              html`<span><i style="background: ${colours[state]}"></i>${labels[state]}</span>`,
-          )}
-        </div>
-      </div>
     `;
   }
 
@@ -418,14 +329,14 @@ export class RsAnalyticsChart extends LitElement {
 
     return html`
       <div
-        class="master-gate-timeline boiler-call-timeline"
+        class="analytics-timeline boiler-call-timeline"
         aria-label=${localize("analytics.shared_system_heat_demand", this.language)}
       >
         ${tracks.map(
           ({ label, colour, spans }) => html`
             <div class="boiler-call-row">
               <span class="boiler-call-label">${label}</span>
-              <div class="master-gate-track">
+              <div class="analytics-timeline-track">
                 ${spans
                   .filter(([a, b]) => b > start && a < this.rangeEnd)
                   .map(
@@ -557,17 +468,12 @@ export class RsAnalyticsChart extends LitElement {
         color: var(--secondary-text-color);
       }
 
-      .master-gate-timeline {
+      .analytics-timeline {
         margin: 8px 16px 0;
         font-size: 12px;
       }
 
-      .master-gate-heading {
-        margin-bottom: 4px;
-        color: var(--secondary-text-color);
-      }
-
-      .master-gate-track {
+      .analytics-timeline-track {
         position: relative;
         height: 10px;
         border-radius: 5px;
@@ -575,7 +481,7 @@ export class RsAnalyticsChart extends LitElement {
         overflow: hidden;
       }
 
-      .master-gate-track i {
+      .analytics-timeline-track i {
         position: absolute;
         top: 0;
         bottom: 0;
@@ -592,26 +498,6 @@ export class RsAnalyticsChart extends LitElement {
 
       .boiler-call-label {
         color: var(--secondary-text-color);
-      }
-
-      .master-gate-key {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 2px 10px;
-        margin-top: 4px;
-        color: var(--secondary-text-color);
-      }
-
-      .master-gate-key span {
-        display: inline-flex;
-        align-items: center;
-        gap: 4px;
-      }
-
-      .master-gate-key i {
-        width: 8px;
-        height: 8px;
-        border-radius: 2px;
       }
 
       .series-legend {
