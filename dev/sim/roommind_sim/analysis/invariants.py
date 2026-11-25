@@ -488,6 +488,58 @@ def hold_shows_running_unit(run: RunData) -> list[Violation]:
     return out[:20]
 
 
+def master_rooms_and_delays(run: RunData, tolerance_s: float = 45.0) -> list[Violation]:
+    """A climate master with rooms needed, start delay or run-on follows them.
+
+    It switches on only after enough member rooms heated for the start delay, off only
+    after too few did for the run-on, and is never late by much more than a cycle.
+    ``tolerance_s`` covers a cycle plus the report.
+    """
+    out: list[Violation] = []
+    rooms = run.rooms_config()
+    for group in _groups(run):
+        master = group.get("master_entity") or ""
+        if not master.startswith("climate."):
+            continue
+        need = int(group.get("min_rooms", 1))
+        start_s = float(group.get("start_delay_seconds", 0))
+        run_on_s = float(group.get("run_on_seconds", 0))
+        if need <= 1 and not start_s and not run_on_s:
+            continue
+        members = set(group.get("members", []))
+        areas = [a for a, r in rooms.items() if {d.get("entity_id") for d in r.get("devices", [])} & members]
+        demand = [
+            (o["t"], sum(1 for a in areas if (o.get("rooms", {}).get(a) or {}).get("mode") == "heating") >= need)
+            for o in run.observer
+        ]
+        on = [(s["t"], (s["devices"].get(master) or {}).get("mode") not in (None, "off")) for s in run.samples]
+        for i in range(1, len(on)):
+            t, now_on = on[i]
+            if now_on == on[i - 1][1]:
+                continue
+            hold = start_s if now_on else run_on_s
+            window = [d for tt, d in demand if t - hold + tolerance_s <= tt <= t - tolerance_s]
+            if any(d != now_on for d in window):
+                what = "on before enough rooms heated" if now_on else "off before the run-on ended"
+                out.append(Violation(t, f"group {group.get('id')}: master {what} (delay {hold:.0f} s)"))
+        since: float | None = None
+        since_wanted: bool | None = None
+        j = 0
+        for t, wanted in demand:
+            while j + 1 < len(on) and on[j + 1][0] <= t:
+                j += 1
+            if not on or wanted == on[j][1]:
+                since = None
+                continue
+            if since is None or since_wanted != wanted:
+                since, since_wanted = t, wanted
+            hold = start_s if wanted else run_on_s
+            if t - since > hold + 4 * tolerance_s:
+                out.append(Violation(t, f"group {group.get('id')}: master still {'off' if wanted else 'on'}"))
+                since = None
+    return out[:20]
+
+
 INVARIANTS: dict[str, Callable[..., list[Violation]]] = {
     f.__name__: f
     for f in (
@@ -507,6 +559,7 @@ INVARIANTS: dict[str, Callable[..., list[Violation]]] = {
         uniform_group_one_mode,
         no_commands_when_climate_off,
         max_commands_per_hour,
+        master_rooms_and_delays,
     )
 }
 DEFAULT_INVARIANTS = (

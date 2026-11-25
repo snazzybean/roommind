@@ -1,0 +1,49 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "RoomMind",
+        "description": "Configura RoomMind para controlar la climatización de las habitaciones. Las habitaciones se configuran después en el panel RoomMind de la barra lateral."
+      }
+    },
+    "abort": {
+      "already_configured": "RoomMind ya está configurado."
+    }
+  },
+  "issues": {
+    "restart_required": {
+      "title": "Es necesario reiniciar",
+      "fix_flow": {
+        "step": {
+          "confirm_restart": {
+            "title": "¿Reiniciar Home Assistant?",
+            "description": "RoomMind {version} está instalado, pero Home Assistant sigue ejecutando la versión anterior. La actualización se completa tras un reinicio."
+          }
+        }
+      }
+    },
+    "deprecated_entities": {
+      "title": "Entidades de RoomMind que hay que sustituir",
+      "description": "Ahora cada habitación tiene una única entidad de climatización (`climate.roommind_` más el ID de la habitación) que muestra y controla la habitación: temperatura objetivo, preajustes confort/eco, modo y lo que RoomMind está haciendo en este momento. Las antiguas entidades por habitación siguen funcionando por ahora, pero se eliminarán en una versión futura. Estas siguen referenciadas directamente en automatizaciones o scripts:\n\n{entities}\n\nQué usar en su lugar:\n- sensor de temperatura objetivo → la temperatura objetivo de la entidad de climatización\n- sensor de modo → su `hvac_action`\n- entidad de temperatura temporal → `climate.set_temperature` o un preajuste de la entidad de climatización (se mantiene hasta el siguiente cambio del horario; el preajuste Horario (`none`) vuelve al horario)\n\nEste aviso desaparece cuando ya nada las usa (se comprueba al iniciar Home Assistant)."
+    }
+  },
+  "entity": {
+    "climate": {
+      "room": {
+        "state_attributes": {
+          "preset_mode": {
+            "state": {
+              "none": "Horario",
+              "manual": "Manual"
+            }
+          }
+        }
+      }
+    },
+    "binary_sensor": {
+      "air_quality": {
+        "name": "{room} con mala calidad del aire"
+      }
+    }
+  }
+}

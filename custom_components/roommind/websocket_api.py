@@ -22,14 +22,21 @@ from .const import (
     DOMAIN,
     HUMIDITY_DEVICE_DOMAINS,
     HUMIDITY_LIMIT_GAP,
+    MASTER_ENTITY_DOMAINS,
+    MASTER_OFF_MODE_OFF,
+    MASTER_OFF_MODES,
+    MASTER_OPTION_DEFAULTS,
     MAX_CO2_THRESHOLD,
     MAX_HUMIDITY_MAX,
     MAX_HUMIDITY_MIN,
+    MAX_MASTER_DELAY_S,
+    MAX_MASTER_TEMPERATURE,
     MAX_PRICE_SHIFT_K,
     MAX_TARGET_TEMP,
     MIN_CO2_THRESHOLD,
     MIN_HUMIDITY_MAX,
     MIN_HUMIDITY_MIN,
+    MIN_MASTER_TEMPERATURE,
     MIN_OCCUPANCY_ECO_DELAY_MINUTES,
     MIN_TARGET_TEMP,
     OVERRIDE_CUSTOM,
@@ -151,6 +158,8 @@ _ROOM_SAVE_FIELDS = (
     "comfort_cool",
     "eco_heat",
     "eco_cool",
+    "away_heat",
+    "away_cool",
     "presence_persons",
     "display_name",
     "heating_system_type",
@@ -572,6 +581,9 @@ async def websocket_list_rooms(
         vol.Optional("comfort_cool"): _TARGET_TEMP,
         vol.Optional("eco_heat"): _TARGET_TEMP,
         vol.Optional("eco_cool"): _TARGET_TEMP,
+        # Nobody home with presence_away_action "away"; None (or unset) = eco
+        vol.Optional("away_heat"): vol.Any(None, _TARGET_TEMP),
+        vol.Optional("away_cool"): vol.Any(None, _TARGET_TEMP),
         vol.Optional("presence_persons"): [str],
         vol.Optional("display_name"): str,
         vol.Optional("heating_system_type"): vol.In(["", "radiator", "underfloor"]),
@@ -978,7 +990,7 @@ async def websocket_get_settings(
         vol.Optional("vacation_until"): vol.Any(vol.Coerce(float), None),
         vol.Optional("presence_enabled"): bool,
         vol.Optional("presence_persons"): [str],
-        vol.Optional("presence_away_action"): vol.In(["eco", "off"]),
+        vol.Optional("presence_away_action"): vol.In(["eco", "off", "away"]),
         vol.Optional("presence_clears_override"): bool,
         vol.Optional("schedule_off_action"): vol.In(["eco", "off"]),
         vol.Optional("valve_protection_enabled"): bool,
@@ -1030,6 +1042,22 @@ async def websocket_get_settings(
                 vol.Optional("conflict_resolution", default=DEFAULT_CONFLICT_RESOLUTION): vol.In(CONFLICT_RESOLUTIONS),
                 vol.Optional("action_script", default=""): str,
                 vol.Optional("enforce_uniform_mode", default=False): bool,
+                vol.Optional("min_rooms", default=1): vol.All(vol.Coerce(int), vol.Range(min=1, max=50)),
+                vol.Optional("start_delay_seconds", default=0): vol.All(
+                    vol.Coerce(int), vol.Range(min=0, max=MAX_MASTER_DELAY_S)
+                ),
+                vol.Optional("run_on_seconds", default=0): vol.All(
+                    vol.Coerce(int), vol.Range(min=0, max=MAX_MASTER_DELAY_S)
+                ),
+                vol.Optional("on_temperature", default=None): vol.Any(
+                    None,
+                    vol.All(vol.Coerce(float), vol.Range(min=MIN_MASTER_TEMPERATURE, max=MAX_MASTER_TEMPERATURE)),
+                ),
+                vol.Optional("off_temperature", default=None): vol.Any(
+                    None,
+                    vol.All(vol.Coerce(float), vol.Range(min=MIN_MASTER_TEMPERATURE, max=MAX_MASTER_TEMPERATURE)),
+                ),
+                vol.Optional("off_mode", default=MASTER_OFF_MODE_OFF): vol.In(MASTER_OFF_MODES),
             }
         ],
     }
@@ -1082,11 +1110,13 @@ async def websocket_save_settings(
         for g in groups:
             master = g.get("master_entity", "")
             if master:
-                if not master.startswith("climate."):
+                domain, _, object_id = master.partition(".")
+                # RoomMind's own entities (e.g. its climate control switch) would switch RoomMind itself
+                if domain not in MASTER_ENTITY_DOMAINS or object_id.startswith("roommind_"):
                     connection.send_error(
                         msg["id"],
                         "invalid_master_entity",
-                        f"Master entity '{master}' must be a climate entity",
+                        f"Master entity '{master}' must be a climate, switch or input_boolean entity",
                     )
                     return
                 if master in g.get("members", []):
@@ -1119,6 +1149,10 @@ async def websocket_save_settings(
                 "A master entity cannot be assigned to multiple groups",
             )
             return
+        changes["compressor_groups"] = [
+            {k: v for k, v in g.items() if k not in MASTER_OPTION_DEFAULTS or v != MASTER_OPTION_DEFAULTS[k]}
+            for g in groups
+        ]
 
     settings = await store.async_save_settings(changes)
     connection.send_result(msg["id"], {"settings": settings})

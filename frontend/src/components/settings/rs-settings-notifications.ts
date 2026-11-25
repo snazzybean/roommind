@@ -4,7 +4,6 @@
  */
 import { html, css, nothing } from "lit";
 import { RsSettingsBase } from "./rs-settings-base";
-import "../shared/rs-number-field";
 import { customElement, property } from "lit/decorators.js";
 import type { HomeAssistant, NotificationTarget } from "../../types";
 import { localize } from "../../utils/localize";
@@ -12,6 +11,9 @@ import "../shared/rs-icon-button";
 import "../shared/rs-list-row";
 import "../shared/rs-segmented";
 import { notifyTargetIcon, notifyTargetName } from "../../utils/notify-target";
+import "../shared/rs-info-icon";
+import "../shared/rs-field";
+import { numberRow } from "../shared/number-row";
 
 @customElement("rs-settings-notifications")
 export class RsSettingsNotifications extends RsSettingsBase {
@@ -32,11 +34,15 @@ export class RsSettingsNotifications extends RsSettingsBase {
           switch
           wrap
           .heading=${localize("notifications.enabled", l)}
-          .secondary=${localize("notifications.enabled_hint", l)}
           .checked=${this.notificationsEnabled}
           @toggle-changed=${(e: CustomEvent<boolean>) =>
             this._fire("moldNotificationsEnabled", e.detail)}
-        ></rs-list-row>
+        >
+          <rs-info-icon
+            slot="end"
+            .text=${localize("notifications.enabled_hint", l)}
+          ></rs-info-icon>
+        </rs-list-row>
         ${this.notificationsEnabled && !this.moldDetectionEnabled ? this._renderMoldOff() : nothing}
       </div>
 
@@ -56,43 +62,41 @@ export class RsSettingsNotifications extends RsSettingsBase {
                     : nothing
                 }
                 <div>
-                  <ha-entity-picker
-                    .hass=${this.hass}
-                    .value=${""}
-                    .includeDomains=${["notify"]}
-                    .entityFilter=${(entity: { entity_id: string }) =>
-                      !this.notificationTargets.some((t) => t.entity_id === entity.entity_id)}
-                    .label=${localize("notifications.add_target_label", l)}
-                    allow-custom-entity
-                    @value-changed=${(e: CustomEvent) => {
-                      const v = (e.detail?.value as string) ?? "";
-                      if (!v) return;
-                      this._fire("moldNotificationTargets", [
-                        ...this.notificationTargets,
-                        { entity_id: v, person_entity: "", notify_when: "always" as const },
-                      ]);
-                      const picker = e.target as HTMLElement & { value?: string };
-                      if (picker) picker.value = "";
-                    }}
-                  ></ha-entity-picker>
-                  <span class="field-hint">${localize("notifications.add_target_hint", l)}</span>
+                  <rs-field .info=${localize("notifications.add_target_hint", l)}>
+                    <ha-entity-picker
+                      .hass=${this.hass}
+                      .value=${""}
+                      .includeDomains=${["notify"]}
+                      .entityFilter=${(entity: { entity_id: string }) =>
+                        !this.notificationTargets.some((t) => t.entity_id === entity.entity_id)}
+                      .label=${localize("notifications.add_target_label", l)}
+                      allow-custom-entity
+                      @value-changed=${(e: CustomEvent) => {
+                        const v = (e.detail?.value as string) ?? "";
+                        if (!v) return;
+                        this._fire("moldNotificationTargets", [
+                          ...this.notificationTargets,
+                          { entity_id: v, person_entity: "", notify_when: "always" as const },
+                        ]);
+                        const picker = e.target as HTMLElement & { value?: string };
+                        if (picker) picker.value = "";
+                      }}
+                    ></ha-entity-picker>
+                  </rs-field>
                 </div>
               </div>
 
               <div class="settings-section">
-                <div class="threshold-grid">
-                  <rs-number-field
-                    .label=${localize("notifications.cooldown", l)}
-                    suffix="min"
-                    .hint=${localize("notifications.cooldown_hint", l)}
-                    .min=${10}
-                    .max=${1440}
-                    .value=${this.notificationCooldown}
-                    @value-changed=${(e: CustomEvent<{ value: number }>) =>
-                      this._fire("moldNotificationCooldown", e.detail.value)}
-                  ></rs-number-field>
-                </div>
-
+                ${numberRow({
+                  hass: this.hass,
+                  label: localize("notifications.cooldown", l),
+                  info: localize("notifications.cooldown_hint", l),
+                  unit: "min",
+                  min: 10,
+                  max: 1440,
+                  value: this.notificationCooldown,
+                  onChange: (v) => this._fire("moldNotificationCooldown", v),
+                })}
                 ${
                   this.moldPreventionEnabled
                     ? html`
@@ -101,11 +105,15 @@ export class RsSettingsNotifications extends RsSettingsBase {
                           switch
                           wrap
                           .heading=${localize("notifications.mold_prevention_notify", l)}
-                          .secondary=${localize("notifications.mold_prevention_notify_hint", l)}
                           .checked=${this.moldPreventionNotify}
                           @toggle-changed=${(e: CustomEvent<boolean>) =>
                             this._fire("moldPreventionNotify", e.detail)}
-                        ></rs-list-row>
+                        >
+                          <rs-info-icon
+                            slot="end"
+                            .text=${localize("notifications.mold_prevention_notify_hint", l)}
+                          ></rs-info-icon>
+                        </rs-list-row>
                       `
                     : nothing
                 }

@@ -7,6 +7,7 @@ import { customElement, property } from "lit/decorators.js";
 import type { HomeAssistant } from "../../types";
 import { localize } from "../../utils/localize";
 import { hasFloors } from "../../utils/dashboard";
+import "../shared/rs-info-icon";
 
 @customElement("rs-settings-general")
 export class RsSettingsGeneral extends RsSettingsBase {
@@ -22,11 +23,15 @@ export class RsSettingsGeneral extends RsSettingsBase {
           switch
           wrap
           .heading=${localize("settings.climate_control_active", l)}
-          .secondary=${localize("settings.climate_control_hint", l)}
           .checked=${this.climateControlActive}
           @toggle-changed=${(e: CustomEvent<boolean>) =>
             this._fire("climateControlActive", e.detail)}
-        ></rs-list-row>
+        >
+          <rs-info-icon
+            slot="end"
+            .text=${localize("settings.climate_control_hint", l)}
+          ></rs-info-icon>
+        </rs-list-row>
       </div>
       ${
         hasFloors(this.hass)

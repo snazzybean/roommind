@@ -227,8 +227,10 @@ export class RsListRow extends LitElement {
         flex: none;
       }
 
+      /* long words hyphenate (HA sets the page language) before they break anywhere */
       :host([wrap]) .heading {
         white-space: normal;
+        hyphens: auto;
         overflow-wrap: anywhere;
       }
 

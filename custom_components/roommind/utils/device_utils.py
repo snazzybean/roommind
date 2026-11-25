@@ -42,8 +42,8 @@ SETPOINT_MODE_DIRECT = "direct"
 
 # Per-device offset (°C) added to the room target in direct mode, for devices
 # whose internal sensor reads differently from the room sensor (#369).
-SETPOINT_OFFSET_MIN = -5.0
-SETPOINT_OFFSET_MAX = 5.0
+SETPOINT_OFFSET_MIN = -10.0
+SETPOINT_OFFSET_MAX = 10.0
 SETPOINT_OFFSET_STEP = 0.5
 
 # --- Coil dry (evaporator anti-odour run) ---

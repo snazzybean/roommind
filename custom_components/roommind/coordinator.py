@@ -4,16 +4,18 @@ from __future__ import annotations
 
 import logging
 import time
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from datetime import timedelta
 from functools import partial
 from typing import Any
 
+from homeassistant.components.climate import ClimateEntityFeature
 from homeassistant.components.persistent_notification import async_create as async_create_notification
 from homeassistant.components.persistent_notification import async_dismiss as async_dismiss_notification
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import CoreState, HomeAssistant
 from homeassistant.helpers import area_registry as ar
+from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
 
@@ -37,6 +39,8 @@ from .const import (
     HISTORY_WRITE_CYCLES,
     HUMIDITY_DEVICE_MIN_OFF_MINUTES,
     HUMIDITY_DEVICE_MIN_RUN_MINUTES,
+    MASTER_OFF_MODE_TEMPERATURE,
+    MASTER_TEMPERATURE_TOLERANCE,
     MAX_PREDICTION_DELTA,
     MAX_SENSOR_STALENESS,
     MAX_TARGET_TEMP,
@@ -135,6 +139,7 @@ from .utils.history_store import HistoryStore
 from .utils.presence_utils import is_room_vacant
 from .utils.price_utils import PriceSignal
 from .utils.schedule_utils import (
+    away_target_temps,
     band_in_force,
     cap_to_eco,
     override_hold_until,
@@ -143,7 +148,7 @@ from .utils.schedule_utils import (
     set_band_sides,
 )
 from .utils.sensor_utils import read_sensor_value
-from .utils.temp_utils import celsius_delta_to_ha, ha_temp_to_celsius, ha_temp_unit_str
+from .utils.temp_utils import celsius_delta_to_ha, celsius_to_ha_temp, ha_temp_to_celsius, ha_temp_unit_str
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -193,6 +198,15 @@ def _within_boost_cap(setpoint: float, cap: float | None, floor: float) -> float
     if cap is None:
         return setpoint
     return min(setpoint, max(cap, floor))
+
+
+def _within_device_range(setpoint: float, lo: float | None, hi: float | None) -> float:
+    """A displayed direct setpoint (target + offset) within the device's min_temp/max_temp, as sent."""
+    if hi is not None:
+        setpoint = min(setpoint, hi)
+    if lo is not None:
+        setpoint = max(setpoint, lo)
+    return setpoint
 
 
 def _uniform_mode(state: Any) -> str | None:
@@ -264,6 +278,18 @@ _NO_HUMIDITY_CONTROL: dict[str, Any] = {
     "ac_dry_active": False,
     "ac_dry_entities": [],
 }
+
+
+# Modes of a master that runs (or just ran) the cooling side
+_MASTER_COOLING_MODES = ("cool", "dry", "fan_only")
+
+
+def _takes_setpoint(state: Any) -> bool:
+    """Whether a climate entity takes a target temperature."""
+    try:
+        return bool(int(state.attributes.get("supported_features") or 0) & ClimateEntityFeature.TARGET_TEMPERATURE)
+    except (TypeError, ValueError):
+        return False
 
 
 def _orchestrated_training_power(heat_source_plan: HeatSourcePlan) -> float:
@@ -338,6 +364,12 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         self._cover_orchestrator = CoverOrchestrator(hass, self._cover_manager, self._model_manager)
         # Compressor group management (min-run / min-off protection)
         self._compressor_manager = CompressorGroupManager()
+        # Refresh when a master's start delay or run-on ends (group id -> cancel)
+        self._master_delay_timers: dict[str, Callable[[], None]] = {}
+        # Groups whose master refused a setpoint, warned about once
+        self._master_setpoint_warned: set[str] = set()
+        # Rooms whose group master held back their heat last cycle (residual heat sees them idle)
+        self._supply_withheld_rooms: set[str] = set()
         # AC evaporator drying (anti-odour): bounded fan run after cooling
         self._coil_dry_manager = AcCoilDryManager(hass)
         # ACs in dry while a room is too humid and needs neither heating nor cooling (#440)
@@ -1482,6 +1514,18 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 compressor_protection_reason = "uniform_mode"
                 compressor_protection_until = None
 
+        # Valves open while the group's boiler waits for more rooms or its start delay: no heat
+        # comes, so the residual heat and the model see the room idle (a stop of the boiler ends the run)
+        supply_withheld = (
+            climate_active
+            and has_external_sensor
+            and mode in (MODE_HEATING, MODE_COOLING)
+            and self._compressor_manager.supply_withheld(
+                self._delivering_eids(room, mode, heat_source_plan), "heat" if mode == MODE_HEATING else "cool"
+            )
+        )
+        delivered_mode = MODE_IDLE if supply_withheld else mode
+
         # --- Residual heat transition tracking ---
         # After compressor constraints may have changed mode to IDLE.
         # The learner runs first: the tracker forgets the stop once heating restarts.
@@ -1489,7 +1533,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             area_id,
             model=self._model_manager.get_model(area_id),
             system_type=system_type if radiator else "",
-            mode=mode,
+            mode=delivered_mode,
             current_temp=current_temp_raw,
             T_outdoor=self.outdoor_temp_effective,
             dt_minutes=UPDATE_INTERVAL / 60.0,
@@ -1531,14 +1575,19 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             # A radiator's stored heat follows how long it ran, not the commanded pf: a TRV
             # with a boosted setpoint opens fully from a low pf on, and many never report
             # hvac_action. Its runs count at full power; the learned scale covers the rest.
-            residual_pf = 1.0 if radiator and mode == MODE_HEATING else power_fraction
+            residual_pf = 0.0 if supply_withheld else 1.0 if radiator and mode == MODE_HEATING else power_fraction
             self._residual_tracker.update(
                 area_id,
-                mode,
+                delivered_mode,
                 residual_pf,
-                self._previous_modes.get(area_id, MODE_IDLE),
+                MODE_IDLE if area_id in self._supply_withheld_rooms else self._previous_modes.get(area_id, MODE_IDLE),
                 q_residual=q_residual,
             )
+
+        if supply_withheld:
+            self._supply_withheld_rooms.add(area_id)
+        else:
+            self._supply_withheld_rooms.discard(area_id)
 
         # AC evaporator drying: bounded fan run after cooling.  Runs even under
         # window pause and force_off — the coordinator already bypasses the
@@ -1745,6 +1794,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             heat_source_plan=heat_source_plan,
             climate_active=climate_active,
             coil_dry_skip_training=coil_dry.skip_ekf_training,
+            supply_withheld=supply_withheld,
             ac_drying=ac_dry.active or (ac_dry.settling and mode == MODE_IDLE),
             compressor_held=compressor_forced_on,
         )
@@ -1884,6 +1934,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         q_rebound: float | None = None,
         climate_active: bool,
         coil_dry_skip_training: bool = False,
+        supply_withheld: bool = False,
         ac_drying: bool = False,
         compressor_held: set[str] | None = None,
     ) -> tuple[str, float]:
@@ -1975,6 +2026,12 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 ekf_mode = MODE_IDLE
                 ekf_pf = 0.0
                 q_residual_training = 0.0
+
+        # Its group's boiler waits for more rooms or its start delay: no heat comes, the
+        # radiator's afterglow stays in q_residual (the tracker saw the stop)
+        if supply_withheld and ekf_mode in (MODE_HEATING, MODE_COOLING):
+            ekf_mode = MODE_IDLE
+            ekf_pf = 0.0
 
         # Delivered power as the training label (not the commanded one): a TRV's own
         # P band or an AC's control loop runs at (nearly) full output from pf ~0.1 on,
@@ -2308,7 +2365,10 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         cmd = active_cmds[0]
         if direct_eids and cmd.entity_id in direct_eids:
             base = direct_target if direct_target is not None else target_temp
-            return base + (direct_offsets or {}).get(cmd.entity_id, 0.0)
+            sp = base + (direct_offsets or {}).get(cmd.entity_id, 0.0)
+            if cmd.device_type == "thermostat":
+                return _within_device_range(sp, None, device_max_temp)
+            return _within_device_range(sp, None, ac_device_max_temp)
         if cmd.device_type == "thermostat":
             boost = device_max_temp if device_max_temp is not None else HEATING_BOOST_TARGET
             cap = boost_caps[0]
@@ -2351,7 +2411,11 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         if not has_external_sensor or current_temp is None or target_temp is None:
             return None
         if all_direct:
-            return (direct_target if direct_target is not None else target_temp) + direct_offset
+            sp = (direct_target if direct_target is not None else target_temp) + direct_offset
+            # As _call() clamps it: TRV range while a TRV room heats, else the AC range
+            if has_thermostats and mode != MODE_COOLING:
+                return _within_device_range(sp, None, device_max_temp)
+            return _within_device_range(sp, device_min_temp, ac_device_max_temp)
 
         if mode == MODE_HEATING:
             # A room with TRVs shows the TRV setpoint, else the AC heating one (as async_apply sends it, #507)
@@ -2735,27 +2799,51 @@ class RoomMindCoordinator(DataUpdateCoordinator):
 
         # 2.5 Presence-based eco or off (skip if room ignores presence)
         if not room.get("ignore_presence", False) and self._is_presence_away(room, settings):
-            if settings.get("presence_away_action", "eco") == "off":
+            away_action = settings.get("presence_away_action", "eco")
+            if away_action == "off":
                 return TargetTemps(heat=None, cool=None), TARGET_REASON_AWAY
-            return (
-                TargetTemps(
-                    heat=room.get("eco_heat", room.get("eco_temp", DEFAULT_ECO_HEAT)),
-                    cool=room.get("eco_cool", DEFAULT_ECO_COOL),
-                ),
-                TARGET_REASON_AWAY,
-            )
+            eco_heat = room.get("eco_heat", room.get("eco_temp", DEFAULT_ECO_HEAT))
+            eco_cool = room.get("eco_cool", DEFAULT_ECO_COOL)
+            if away_action == "away":
+                targets = away_target_temps(
+                    room.get("away_heat"),
+                    room.get("away_cool"),
+                    eco_heat,
+                    eco_cool,
+                    lambda: self._schedule_targets_at_home(
+                        room, settings, schedule_blocks, schedule_entity_id, room_vacant
+                    ),
+                )
+                return targets, TARGET_REASON_AWAY
+            return TargetTemps(heat=eco_heat, cool=eco_cool), TARGET_REASON_AWAY
 
         # 3. Schedule / comfort / eco
         targets = self._resolve_schedule_targets(room, settings, schedule_blocks, schedule_entity_id)
         if room_vacant:
-            capped = cap_to_eco(
-                targets,
-                room.get("eco_heat", room.get("eco_temp", DEFAULT_ECO_HEAT)),
-                room.get("eco_cool", DEFAULT_ECO_COOL),
-            )
+            capped = self._cap_vacant(room, targets)
             # Only an empty room that actually lowered the schedule is worth naming
             return capped, TARGET_REASON_VACANT if capped != targets else ""
         return targets, ""
+
+    @staticmethod
+    def _cap_vacant(room: dict, targets: TargetTemps) -> TargetTemps:
+        return cap_to_eco(
+            targets,
+            room.get("eco_heat", room.get("eco_temp", DEFAULT_ECO_HEAT)),
+            room.get("eco_cool", DEFAULT_ECO_COOL),
+        )
+
+    def _schedule_targets_at_home(
+        self,
+        room: dict,
+        settings: dict,
+        schedule_blocks: dict | None,
+        schedule_entity_id: str | None,
+        room_vacant: bool,
+    ) -> TargetTemps:
+        """What step 3 would resolve if someone were home, the bound for the away level."""
+        targets = self._resolve_schedule_targets(room, settings, schedule_blocks, schedule_entity_id)
+        return self._cap_vacant(room, targets) if room_vacant else targets
 
     def _resolve_schedule_targets(
         self,
@@ -3539,6 +3627,29 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             modes.append(MODE_COOLING)
         return modes
 
+    @staticmethod
+    def _delivering_eids(room: dict, mode: str, heat_source_plan: HeatSourcePlan | None) -> list[str]:
+        """Devices that bring the room its heating or cooling this cycle."""
+        devices = room.get("devices", [])
+        if mode == MODE_COOLING:
+            return get_ac_eids(devices)
+        if heat_source_plan is not None and heat_source_plan.commands:
+            return [c.entity_id for c in heat_source_plan.commands if c.active]
+        return get_trv_eids(devices) if ac_heating_excluded(room) else get_all_entity_ids(devices)
+
+    @staticmethod
+    def _member_room_count(members: list[str], rooms_config: dict[str, dict]) -> int:
+        """Controlled rooms holding a device of the group: rooms needed never asks for more (at least 1)."""
+        member_set = set(members)
+        count = sum(
+            1
+            for room in rooms_config.values()
+            if not room.get("is_outdoor", False)
+            and room.get("climate_control_enabled", True)
+            and member_set & {d.get("entity_id", "") for d in room.get("devices", [])}
+        )
+        return max(1, count)
+
     def _managed_vote(self, state: Any, heat_target: float | None, cool_target: float | None) -> str:
         """A Managed unit's vote in its uniform-mode group: what it does, else its reading against the band (#533)."""
         if state is None:
@@ -3567,7 +3678,13 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             state = self._compressor_manager.get_state(gid)
             if not group.enforce_uniform_mode or state is None or state.last_mode_action is not None:
                 continue
-            units = ([group.master_entity] if group.master_entity else []) + list(group.members)
+            # A master kept in heat at its off temperature tells nothing about the way the group ran
+            master_reads = group.master_entity and not (
+                group.off_mode == MASTER_OFF_MODE_TEMPERATURE
+                and group.on_temperature is not None
+                and group.off_temperature is not None
+            )
+            units = ([group.master_entity] if master_reads else []) + list(group.members)
             modes = [_uniform_mode(self.hass.states.get(e)) for e in units]
             for action in ("heat", "cool"):
                 if action in modes or (action == "cool" and "dry" in modes):
@@ -3842,6 +3959,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         if not settings.get("climate_control_active", True):
             for gid in self._compressor_manager.get_groups():
                 self._compressor_manager.set_desired_action(gid, None)
+                self._compressor_manager.clear_delay(gid)
             return
         for gid, group in self._compressor_manager.get_groups().items():
             if not group.master_entity and not group.action_script and not group.enforce_uniform_mode:
@@ -3880,6 +3998,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                     group.conflict_resolution,
                     self.outdoor_temp_effective,
                     settings.get("outdoor_heating_max", DEFAULT_OUTDOOR_HEATING_MAX),
+                    min(group.min_rooms, self._member_room_count(group.members, rooms_config)),
                 )
 
                 self._compressor_manager.set_desired_action(gid, new_action)
@@ -3888,6 +4007,11 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 # still waiting for its first temperature reading.
                 if new_action == "idle" and self._any_member_room_waiting(group.members, rooms_config):
                     continue
+
+                # Start delay / run-on: a switch the rooms want waits, a wish that returns switches nothing
+                new_action, wait = self._compressor_manager.delayed_action(gid, new_action)
+                if wait > 0:
+                    self._schedule_master_delay_refresh(gid, wait)
 
                 # All in the same mode: master and script switch only once no unit runs the other way (#533)
                 if (
@@ -3908,16 +4032,14 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 if new_action == prev_action:
                     self._compressor_manager.clear_switch_wait(gid)
 
-                # 5. Control master climate entity (when configured)
-                if has_master:
+                # 5. Control the master entity (when configured)
+                if has_master and master_state is not None:
                     # Min-run/min-off guard: prevent master short-cycling
                     if not self._compressor_manager.check_master_can_switch(gid, new_action):
                         continue
 
-                    resolved_mode = self._resolve_master_hvac_mode(group.master_entity, new_action)
-
-                    # Skip when mode is unsupported
-                    if resolved_mode is None:
+                    target = self._master_target(group, new_action)
+                    if target is None:
                         if new_action != "idle":
                             _LOGGER.warning(
                                 "Master '%s' (group '%s'): cannot resolve mode for action '%s', skipping",
@@ -3927,8 +4049,8 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                             )
                         continue
 
-                    # Redundancy check — compare resolved mode with actual entity state
-                    if master_state is not None and master_state.state == resolved_mode:
+                    # Redundancy check — compare with the entity's actual state
+                    if self._master_matches(master_state, target):
                         self._compressor_manager.set_master_action(gid, new_action)
                         if new_action == "idle":
                             await self._async_release_woken_zone(gid, rooms_config)
@@ -3949,26 +4071,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                     ):
                         await self._async_wake_member_zone(group, room_states, rooms_config)
 
-                    # Send climate command
-                    try:
-                        await self.hass.services.async_call(
-                            "climate",
-                            "set_hvac_mode",
-                            {
-                                "entity_id": group.master_entity,
-                                "hvac_mode": resolved_mode,
-                            },
-                            blocking=True,
-                            context=make_roommind_context(),
-                        )
-                    except Exception:  # noqa: BLE001
-                        _LOGGER.warning(
-                            "Master '%s' (group '%s'): failed to set hvac_mode '%s'",
-                            group.master_entity,
-                            group.name,
-                            resolved_mode,
-                            exc_info=True,
-                        )
+                    if not await self._async_command_master(group, master_state, target):
                         continue  # don't update state on failed command
                     if new_action == "idle":
                         await self._async_release_woken_zone(gid, rooms_config)
@@ -3995,6 +4098,177 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                     group.name,
                     exc_info=True,
                 )
+
+    def _master_target(self, group: CompressorGroupConfig, action: str) -> tuple[str, float | None] | None:
+        """State the master entity should be in for *action*: (mode or on/off, setpoint or None).
+
+        A switch or input_boolean is on for heat and cool. A climate master gets the
+        mode, heating with its on temperature; off sets its off temperature first, or,
+        with off mode "temperature", keeps the heat mode at the off temperature (not after
+        cooling). The off temperature counts only together with an on temperature.
+        None when the climate master supports no fitting mode.
+        """
+        if group.master_domain != "climate":
+            return ("off" if action == "idle" else "on", None)
+        if action == "heat":
+            mode = self._resolve_master_hvac_mode(group.master_entity, "heat")
+            return (mode, group.on_temperature) if mode else None
+        if action == "idle":
+            # Without an on temperature the off one would stay on the thermostat when heating starts
+            off_temperature = group.off_temperature if group.on_temperature is not None else None
+            keep_heat = self._master_keeps_heat(group, off_temperature)
+            mode = self._resolve_master_hvac_mode(group.master_entity, "heat" if keep_heat else "idle")
+            # The off temperature is a heating setpoint: a unit that cooled is only switched off
+            if not keep_heat and self._master_cooled(group):
+                off_temperature = None
+            return (mode, off_temperature) if mode else None
+        mode = self._resolve_master_hvac_mode(group.master_entity, action)
+        return (mode, None) if mode else None
+
+    def _master_keeps_heat(self, group: CompressorGroupConfig, off_temperature: float | None) -> bool:
+        """Off mode "temperature": idle keeps the heat mode at the off temperature.
+
+        Only for a thermostat that takes a setpoint, and only after it last heated, or, before
+        RoomMind sent it heat or cool (startup), when it cannot cool at all: a heat pump that
+        cooled is switched off.
+        """
+        if group.off_mode != MASTER_OFF_MODE_TEMPERATURE or off_temperature is None:
+            return False
+        state = self.hass.states.get(group.master_entity)
+        modes = state.attributes.get("hvac_modes", []) if state is not None else []
+        if state is None or not _takes_setpoint(state) or "heat" not in modes:
+            return False
+        if _uniform_mode(state) in _MASTER_COOLING_MODES:
+            return False
+        group_state = self._compressor_manager.get_state(group.id)
+        last = group_state.master_last_active if group_state is not None else None
+        if last is not None:
+            return last == "heat"
+        return not any(m in modes for m in ("cool", "heat_cool", "auto"))
+
+    def _master_cooled(self, group: CompressorGroupConfig) -> bool:
+        """Whether the master last ran cooling: sent cool last, or sits in a cooling mode."""
+        group_state = self._compressor_manager.get_state(group.id)
+        if group_state is not None and group_state.master_last_active == "cool":
+            return True
+        return _uniform_mode(self.hass.states.get(group.master_entity)) in _MASTER_COOLING_MODES
+
+    def _master_setpoint(self, state: Any, temperature: float) -> float:
+        """*temperature* (stored in °C) in HA's unit, within the master thermostat's min_temp/max_temp."""
+        value = celsius_to_ha_temp(self.hass, temperature)
+        for bound, pick in (("min_temp", max), ("max_temp", min)):
+            try:
+                value = pick(value, float(state.attributes[bound]))
+            except (KeyError, TypeError, ValueError):
+                pass
+        return value
+
+    def _master_matches(self, state: Any, target: tuple[str, float | None]) -> bool:
+        """True when the master entity already is in *target* (a switched-off climate ignores its setpoint).
+
+        The setpoint matches within half the thermostat's step, which rounds what it is sent.
+        """
+        mode, temperature = target
+        if state.state != mode:
+            return False
+        # A thermostat without a setpoint, or one not reporting it (a range in heat_cool): resending changes nothing
+        if (
+            temperature is None
+            or mode == "off"
+            or not _takes_setpoint(state)
+            or state.attributes.get("temperature") is None
+        ):
+            return True
+        try:
+            step = float(
+                state.attributes.get("target_temp_step") or (1.0 if ha_temp_unit_str(self.hass) == "°F" else 0.5)
+            )
+            current = float(state.attributes.get("temperature"))
+            return abs(current - self._master_setpoint(state, temperature)) <= max(
+                MASTER_TEMPERATURE_TOLERANCE, step / 2
+            )
+        except (TypeError, ValueError):
+            return False
+
+    async def _async_command_master(
+        self, group: CompressorGroupConfig, state: Any, target: tuple[str, float | None]
+    ) -> bool:
+        """Send the master entity into *target*.
+
+        Returns False when switching it failed. A setpoint the thermostat refuses does not
+        undo the switch: it is warned about once and tried again on the next change.
+        """
+        mode, temperature = target
+        entity_id = group.master_entity
+        domain = group.master_domain
+        if domain != "climate":
+            return await self._async_master_call(group, domain, "turn_off" if mode == "off" else "turn_on", {})
+        setpoint = None if temperature is None else self._master_setpoint(state, temperature)
+        needs_setpoint = temperature is not None and not self._master_matches(state, (state.state, temperature))
+        if mode == "off":
+            if state.state == "off":
+                return True
+            # The setpoint first: many thermostats take none while off
+            if needs_setpoint:
+                await self._async_master_call(
+                    group, "climate", "set_temperature", {"temperature": setpoint}, quiet=True
+                )
+            return await self._async_master_call(group, "climate", "set_hvac_mode", {"hvac_mode": "off"})
+        if state.state != mode and not await self._async_master_call(
+            group, "climate", "set_hvac_mode", {"hvac_mode": mode}
+        ):
+            return False
+        if setpoint is not None and (state.state != mode or needs_setpoint):
+            await self._async_master_call(group, "climate", "set_temperature", {"temperature": setpoint}, quiet=True)
+        _LOGGER.debug("Master '%s' (group '%s'): %s at %s", entity_id, group.name, mode, setpoint)
+        return True
+
+    async def _async_master_call(
+        self, group: CompressorGroupConfig, domain: str, service: str, data: dict, *, quiet: bool = False
+    ) -> bool:
+        """Call one service on the master; *quiet* warns about a failure only once per group."""
+        try:
+            await self.hass.services.async_call(
+                domain,
+                service,
+                {"entity_id": group.master_entity, **data},
+                blocking=True,
+                context=make_roommind_context(),
+            )
+        except Exception:  # noqa: BLE001
+            if not quiet or group.id not in self._master_setpoint_warned:
+                _LOGGER.warning(
+                    "Master '%s' (group '%s'): %s.%s %s failed",
+                    group.master_entity,
+                    group.name,
+                    domain,
+                    service,
+                    data,
+                    exc_info=True,
+                )
+                if quiet:
+                    self._master_setpoint_warned.add(group.id)
+            return False
+        if quiet:
+            self._master_setpoint_warned.discard(group.id)
+        return True
+
+    def _schedule_master_delay_refresh(self, group_id: str, seconds: float) -> None:
+        """Refresh when a group's start delay or run-on ends, so it switches to the second."""
+        if (old := self._master_delay_timers.pop(group_id, None)) is not None:
+            old()
+
+        async def _due(_now: Any) -> None:
+            self._master_delay_timers.pop(group_id, None)
+            await self.async_request_refresh()
+
+        self._master_delay_timers[group_id] = async_call_later(self.hass, seconds + 0.1, _due)
+
+    def cancel_master_delay_timers(self) -> None:
+        """Stop pending start delay / run-on refreshes (unload)."""
+        for cancel in self._master_delay_timers.values():
+            cancel()
+        self._master_delay_timers.clear()
 
     async def _call_action_script(
         self,
