@@ -153,6 +153,8 @@ class MPCOptimizer:
         # a sensible default. optimize() refreshes this from dt_minutes per call.
         self._lookahead_blocks = LOOKAHEAD_BASE_BLOCKS
         self._glow_cache: dict[tuple[float, tuple[float, float]], float] = {}
+        # (mean rebound, charge after) of an idle step per block length and charge
+        self._rebound_cache: dict[float, dict[float, tuple[float, float]]] = {}
 
     def optimize(
         self,
@@ -200,6 +202,7 @@ class MPCOptimizer:
         ``schedule_cool_series`` likewise for the pre-cool deadline.
         """
         self._glow_cache.clear()  # scale and decay may have changed since the last plan
+        self._rebound_cache.clear()
         if cool_target_series is None:
             cool_target_series = list(heat_target_series)
 
@@ -562,10 +565,6 @@ class MPCOptimizer:
             goal = _preheat_goal(heat_target_series, schedule)
         n = min(n, len(goal))
         start = schedule[i]
-
-        def rises(j: int) -> bool:
-            return goal[j] > now and schedule[j] > start
-
         rise = next((j for j in range(i + 1, n) if goal[j] > now and schedule[j] > start and goal[j] > T_room), None)
         if rise is None:
             return 0
@@ -638,7 +637,7 @@ class MPCOptimizer:
                 q_residual=qr,
             )
             target = goal[j + 1]
-            if rises(j + 1) and T < target - PREHEAT_DEADLINE_MARGIN:
+            if target > now and schedule[j + 1] > start and T < target - PREHEAT_DEADLINE_MARGIN:
                 return j + 1 - i
         return 0
 
@@ -679,10 +678,6 @@ class MPCOptimizer:
             goal = _precool_goal(cool_target_series, schedule)
         n = min(n, len(goal))
         start = schedule[i]
-
-        def falls(j: int) -> bool:
-            return goal[j] < now and schedule[j] < start
-
         if (
             next((j for j in range(i + 1, n) if goal[j] < now and schedule[j] < start and goal[j] < T_room), None)
             is None
@@ -713,7 +708,8 @@ class MPCOptimizer:
                 q_residual=(q_residual[j - i] if j - i < len(q_residual) else 0.0) if waiting else 0.0,
                 q_rebound=qb,
             )
-            if falls(j + 1) and T > goal[j + 1] + PREHEAT_DEADLINE_MARGIN:
+            target = goal[j + 1]
+            if target < now and schedule[j + 1] < start and T > target + PREHEAT_DEADLINE_MARGIN:
                 return j + 1 - i
         return 0
 
@@ -902,6 +898,7 @@ class MPCOptimizer:
             future_heat_targets[min(LOOKAHEAD_BASE_BLOCKS, n_heat) - 1] if radiator and future_heat_targets else None
         )
         own_run = ((heat_run[0] if heat_run else 0.0) + run_blocks * dt_minutes, 1.0) if heating and radiator else None
+        rebound_steps = self._rebound_cache.setdefault(dt_minutes, {})
         charge = rebound_charge
         synth_pf_sum = 0.0
         for j in range(lookahead):
@@ -957,7 +954,15 @@ class MPCOptimizer:
             if charge is None:
                 qb = None
             else:
-                qb, charge = _rebound_step(charge, block_Q, dt_minutes)
+                # _rebound_step, memoized: every hypothesis of a block decays the same charge
+                step = rebound_steps.get(charge)
+                if step is None:
+                    step = rebound_steps[charge] = (
+                        mean_rebound(charge, 0.0, dt_minutes),
+                        advance_rebound(charge, 0.0, dt_minutes),
+                    )
+                qb = step[0] if block_Q == 0.0 else None
+                charge = step[1]
             T = predict(
                 T,
                 future_T_outdoor[j],
