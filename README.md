@@ -201,7 +201,7 @@ How long a target or preset set here holds is chosen per room on the room page u
 - **For a fixed time**: 5 to 1440 minutes.
 - **Until changed back**: until you pick the preset `none` or end the override on the room page.
 
-The quick choices on the room page and a change taken over from the device keep their own end.
+The same duration applies to a temperature taken over from the device (Take over changes made on the device). The quick choices on the room page keep their own end.
 
 The entity is placed in the room's area once when it is created, so it shows up on area cards and Assist finds it by the area ("set the temperature in the living room to 22"). An area you change or remove later is kept. For voice control, hide the room's own thermostats and ACs from Assist (Settings → Voice assistants → Expose), otherwise Assist finds several climate entities in the room and cannot pick one.
 

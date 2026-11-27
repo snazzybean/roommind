@@ -418,7 +418,7 @@ export class RsScheduleSettings extends RsScheduleBase {
     if (this.overrideDurationMode === "minutes") {
       return formatMinutes(this.overrideDurationMinutes, l);
     }
-    if (this.overrideDurationMode === "permanent") {
+    if (this.overrideDurationMode === "permanent" || this.schedules.length === 0) {
       return localize("schedule.manual_duration_permanent", l);
     }
     return localize("schedule.manual_duration_schedule", l);
