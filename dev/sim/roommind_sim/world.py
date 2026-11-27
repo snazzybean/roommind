@@ -6,6 +6,7 @@ changed entities into HA and routes service calls to ``device_call``/``cover_cal
 
 from __future__ import annotations
 
+import math
 import random
 from dataclasses import dataclass
 from typing import Any
@@ -49,6 +50,44 @@ def _replay_value(rows: list[tuple[float, float]] | None, t: float) -> float | N
     return v0 if t1 <= t0 else v0 + (v1 - v0) * (t - t0) / (t1 - t0)
 
 
+POWER_DEFAULT_LOAD = "devices"
+
+
+@dataclass
+class PowerLoad:
+    """A metered device (power.set): its electrical power and the heat it leaves in the room.
+
+    ``heat`` is the share of the power that ends up as room heat (a dishwasher sends most of
+    it down the drain), released with a first-order lag of ``heat_tau_min`` (an oven).
+    """
+
+    room: str
+    name: str
+    watts: float
+    until: float | None = None
+    heat: float = 1.0
+    heat_tau_min: float = 0.0
+    released_w: float = 0.0
+
+    def step(self, dt: float) -> None:
+        target = self.watts * self.heat
+        if self.heat_tau_min <= 0:
+            self.released_w = target
+        else:
+            self.released_w += (target - self.released_w) * (1.0 - math.exp(-dt / (self.heat_tau_min * 60.0)))
+
+    def snapshot(self) -> dict[str, Any]:
+        return {
+            "room": self.room,
+            "name": self.name,
+            "watts": self.watts,
+            "until": self.until,
+            "heat": self.heat,
+            "heat_tau_min": self.heat_tau_min,
+            "released_w": self.released_w,
+        }
+
+
 class WorldError(ValueError):
     """Invalid world action (unknown entity, wrong arguments)."""
 
@@ -90,6 +129,8 @@ class World:
         self.neighbors: list[tuple[str, str, float]] = []
         self.pending: list[dict[str, Any]] = []  # scheduled reverts, persisted
         self.occupancy_force: dict[str, tuple[int, float | None]] = {}
+        # Electrical loads of metered devices, per room and load name (power.set)
+        self.power_load: dict[str, PowerLoad] = {}
         self.moisture_events: list[tuple[str, float, float]] = []  # (room, until, kg/s)
         self.marks: list[tuple[float, str]] = []
         anchor = scenario.weather.get("anchor_temperature")
@@ -172,6 +213,12 @@ class World:
                 del self.occupancy_force[room]
             else:
                 occupants[room] = count
+        for key, load in list(self.power_load.items()):
+            if load.until is not None and now >= load.until:
+                load.watts, load.until = 0.0, None
+            load.step(dt)
+            if load.watts == 0.0 and load.released_w < 0.5:
+                del self.power_load[key]
         for cover in self.covers.values():
             if cover.step(dt):
                 changed.add(cover.entity_id)
@@ -220,6 +267,11 @@ class World:
             solar = self._solar_w(area, out)
             g.conv_w += solar * 0.3 + occupants[area] * SENSIBLE_W * 0.6
             g.rad_w += solar * 0.7 + occupants[area] * SENSIBLE_W * 0.4
+            # Metered devices (PC, server): mostly warm air from fans and housings; only the
+            # share that stays in the room, released with the load's lag (an oven)
+            load = self.power_heat_w(area)
+            g.conv_w += load * 0.8
+            g.rad_w += load * 0.2
             g.moisture_kg_s += occupants[area] * MOISTURE_KG_S
             for room, until, rate in self.moisture_events:
                 if room == area and now < until:
@@ -251,6 +303,14 @@ class World:
                     changed.add(s.entity_id)
         self.occupants = occupants
         return changed
+
+    def power_w(self, area: str | None, name: str | None = None) -> float:
+        """Electrical load of the metered devices in *area* now (W): one load, or all of them."""
+        return sum(load.watts for load in self.power_load.values() if load.room == area and name in (None, load.name))
+
+    def power_heat_w(self, area: str | None) -> float:
+        """Heat the room's metered devices release into it now (W)."""
+        return sum(load.released_w for load in self.power_load.values() if load.room == area)
 
     def _solar_w(self, area: str, out: Outdoor) -> float:
         total = 0.0
@@ -313,6 +373,8 @@ class World:
             true = self.zones[sensor.spec.room].t_air
         elif kind == "humidity":
             true = self.zones[sensor.spec.room].rh
+        elif kind == "power":
+            true = self.power_w(sensor.spec.room, sensor.spec.params.get("load"))
         elif kind == "solar":
             true = self._solar_sensor_value(sensor)
         else:
@@ -370,6 +432,7 @@ class World:
         "person.leave",
         "person.arrive",
         "occupancy.set",
+        "power.set",
         "cover.manual",
         "device.manual",
         "entity.unavailable",
@@ -402,6 +465,26 @@ class World:
             if args["room"] not in self.zones:
                 raise WorldError(f"unknown room {args['room']!r}")
             self.occupancy_force[args["room"]] = (int(args["count"]), until)
+            return set()
+        if action == "power.set":
+            if args["room"] not in self.zones:
+                raise WorldError(f"unknown room {args['room']!r}")
+            name = str(args.get("load", POWER_DEFAULT_LOAD))
+            heat = float(args.get("heat", 1.0))
+            heat_tau = float(args.get("heat_tau", 0.0))
+            if not 0.0 <= heat <= 1.0 or heat_tau < 0:
+                raise WorldError("power.set: heat must lie in 0..1 and heat_tau must not be negative")
+            key = f"{args['room']}/{name}"
+            old = self.power_load.get(key)
+            self.power_load[key] = PowerLoad(
+                room=args["room"],
+                name=name,
+                watts=max(0.0, float(args["watts"])),
+                until=until,
+                heat=heat,
+                heat_tau_min=heat_tau,
+                released_w=old.released_w if old else 0.0,
+            )
             return set()
         if action == "cover.manual":
             cover = self.covers.get(eid)
@@ -531,6 +614,8 @@ class World:
                     "rh": round(z.rh, 1),
                     "solar_w": round(self._solar_cache.get(a, 0.0)),
                     "occupants": self.occupants.get(a, 0),
+                    "power_w": round(self.power_w(a)),
+                    "power_heat_w": round(self.power_heat_w(a)),
                     "windows_open": sum(w.open for w in self.windows[a]),
                 }
                 for a, z in self.zones.items()
@@ -589,6 +674,7 @@ class World:
             "people": {p: s.snapshot() for p, s in self.people.items()},
             "pending": self.pending,
             "occupancy_force": {k: list(v) for k, v in self.occupancy_force.items()},
+            "power_load": {k: v.snapshot() for k, v in self.power_load.items()},
             "moisture_events": [list(e) for e in self.moisture_events],
             "weather_overrides": [[o.start, o.end, o.values] for o in self.weather._overrides],
             "forecast_available": self.weather.forecast_available,
@@ -616,6 +702,7 @@ class World:
                 self.window_sensors[e].unavailable_until = ws.get("unavailable_until", 0.0)
         self.pending = data.get("pending", [])
         self.occupancy_force = {k: (v[0], v[1]) for k, v in data.get("occupancy_force", {}).items()}
+        self.power_load = {k: PowerLoad(**v) for k, v in data.get("power_load", {}).items()}
         self.moisture_events = [tuple(e) for e in data.get("moisture_events", [])]  # type: ignore[misc]
         for start, end, values in data.get("weather_overrides", []):
             self.weather.set_override(start, end, values)

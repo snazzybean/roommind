@@ -32,7 +32,7 @@ _ENTITY_RE = re.compile(r"^[a-z_]+\.[a-z0-9_]+$")
 _DEVICE_KEYS = {"entity_id", "profile", "name"}
 _HELPER_DOMAINS = {"schedule", "input_boolean", "input_number", "input_select", "template"}
 DEVICE_MODELS = {"trv", "ac", "heat_pump", "heater", "boiler", "ufh"}
-SENSOR_KINDS = {"temperature", "humidity", "occupancy", "solar"}
+SENSOR_KINDS = {"temperature", "humidity", "occupancy", "power", "solar"}
 # Solar sensor units: scenario spelling -> profile suffix
 SOLAR_UNITS = {"w_m2": "w_m2", "W/m²": "w_m2", "W/m2": "w_m2", "lx": "lx", "pct": "pct", "%": "pct"}
 
@@ -43,6 +43,7 @@ ACTIONS: dict[str, set[str]] = {
     "person.leave": {"person"},
     "person.arrive": {"person"},
     "occupancy.set": {"room", "count"},
+    "power.set": {"room", "watts"},
     "cover.manual": {"entity_id", "position"},
     "device.manual": {"entity_id"},
     "entity.unavailable": {"entity_id"},
@@ -323,7 +324,7 @@ def _device(room: str, ddata: dict[str, Any], where: str) -> DeviceSpec:
 
 
 def _sensor(kind: str, sdata: dict[str, Any] | str, room: str | None, where: str, n_windows: int = 0) -> SensorSpec:
-    """``kind`` is the key in ``sensors:``; ``solar_<suffix>`` allows several solar sensors per room."""
+    """``kind`` is the key in ``sensors:``; ``solar_<suffix>`` / ``power_<load>`` allow several per room."""
     if isinstance(sdata, str):
         sdata = {"entity_id": sdata}
     sdata = dict(sdata or {})
@@ -331,6 +332,10 @@ def _sensor(kind: str, sdata: dict[str, Any] | str, room: str | None, where: str
     base_kind = kind.removeprefix("outdoor_")
     if base_kind.startswith("solar_") and room is not None:
         base_kind = kind = "solar"
+    # power_<load>: several power sensors per room, each measuring its own power.set load
+    if base_kind.startswith("power_") and room is not None:
+        sdata.setdefault("load", base_kind.removeprefix("power_"))
+        base_kind = kind = "power"
     if base_kind not in SENSOR_KINDS or (base_kind == "solar" and room is None):
         raise ScenarioError(f"unknown sensor kind {kind!r} (allowed: {sorted(SENSOR_KINDS)})", where)
     _check_entity_id(eid, "binary_sensor" if base_kind == "occupancy" else "sensor", where)
@@ -400,7 +405,14 @@ _ROOM_ENTITY_FIELDS = (
     "schedule_selector_entity",
     "cover_schedule_selector_entity",
 )
-_ROOM_LIST_FIELDS = ("window_sensors", "occupancy_sensors", "covers", "presence_persons", "valve_protection_exclude")
+_ROOM_LIST_FIELDS = (
+    "window_sensors",
+    "occupancy_sensors",
+    "power_sensors",
+    "covers",
+    "presence_persons",
+    "valve_protection_exclude",
+)
 
 
 def _validate(scn: Scenario) -> None:

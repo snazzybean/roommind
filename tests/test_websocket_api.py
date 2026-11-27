@@ -4277,6 +4277,58 @@ def test_custom_override_stays_within_the_climate_entity_limits(side):
 
 
 @pytest.mark.asyncio
+async def test_analytics_model_reports_device_heat(ws_hass, store, connection):
+    """The panel gets what the active sensors add now and each sensor's learned state."""
+    from custom_components.roommind.managers.power_gain_learner import PowerGainLearner
+
+    await store.async_load()
+    await store.async_save_room("room_a", {"thermostats": ["climate.trv1"], "power_sensors": ["sensor.pc_power"]})
+
+    est = _make_mock_estimator(model_dict={"Q_heat": 3.0})
+    coordinator = _make_analytics_coordinator(
+        history_rows=[], estimator=est, rooms_live={"room_a": {"power_kw": 0.25, "device_heat": 0.5}}
+    )
+    learner = PowerGainLearner()
+    learner.begin_cycle("room_a", ["sensor.pc_power"], {"sensor.pc_power": 0.25}, 0.5)
+    coordinator._power_gains = learner
+    ws_hass.data[DOMAIN]["coordinator"] = coordinator
+    pc = MagicMock(state="250", attributes={"friendly_name": "PC"})
+    ws_hass.states.get = MagicMock(side_effect=lambda eid: pc if eid == "sensor.pc_power" else None)
+
+    msg = {"id": 63, "type": "roommind/analytics/get", "area_id": "room_a"}
+    await _get_analytics(ws_hass, connection, msg)
+
+    model = connection.send_result.call_args[0][1]["model"]
+    assert model["has_power_sensors"] is True
+    assert model["power_now_kw"] == pytest.approx(0.25)
+    assert model["power_gain_now"] == pytest.approx(0.5)
+    [sensor] = model["power_sensors"]
+    assert sensor["entity_id"] == "sensor.pc_power"
+    assert sensor["name"] == "PC"
+    assert sensor["status"] == "learning"
+    assert sensor["power_kw"] == pytest.approx(0.25)
+    assert "Q_power" not in model["model"]
+
+
+@pytest.mark.asyncio
+async def test_save_room_power_sensors_roundtrip_and_own_entity_rejected(ws_hass, store, connection):
+    await store.async_load()
+    msg = {
+        "id": 2,
+        "type": "roommind/rooms/save",
+        "area_id": "office",
+        "thermostats": ["climate.office"],
+        "power_sensors": ["sensor.pc_power"],
+    }
+    await _save_room(ws_hass, connection, msg)
+    assert connection.send_result.call_args[0][1]["room"]["power_sensors"] == ["sensor.pc_power"]
+
+    connection.reset_mock()
+    await _save_room(ws_hass, connection, {**msg, "power_sensors": ["sensor.roommind_office_target_temp"]})
+    connection.send_error.assert_called_once()
+
+
+@pytest.mark.asyncio
 async def test_save_room_room_fan_fields(ws_hass, store, connection):
     """Room fan (#266): fan/switch/input_boolean and heat/cool/both; stored, defaults for new rooms."""
     await store.async_load()

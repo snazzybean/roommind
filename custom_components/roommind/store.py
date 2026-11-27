@@ -107,6 +107,8 @@ class RoomMindStore:
         self._data: dict[str, dict] = {}
         self._settings: dict = {}
         self._thermal_data: dict = {}
+        # Learned heat of the rooms' power sensors (PowerGainLearner); only rooms with sensors
+        self._power_gains: dict = {}
 
     async def async_load(self) -> None:
         """Load room data from the HA store."""
@@ -118,6 +120,7 @@ class RoomMindStore:
 
         self._settings = stored.get("settings", {}) if stored else {}
         self._thermal_data = stored.get("thermal_data", {}) if stored else {}
+        self._power_gains = stored.get("power_gains", {}) if stored else {}
 
         # One-time migrations (combined into single pass + single save)
         device_migrated = 0
@@ -150,9 +153,11 @@ class RoomMindStore:
 
     async def _async_save(self) -> None:
         """Persist current room data to the HA store."""
-        await self._store.async_save(
-            {"rooms": self._data, "settings": self._settings, "thermal_data": self._thermal_data}
-        )
+        data = {"rooms": self._data, "settings": self._settings, "thermal_data": self._thermal_data}
+        # Written only once a room has power sensors: the stored data of everyone else stays as it is
+        if self._power_gains:
+            data["power_gains"] = self._power_gains
+        await self._store.async_save(data)
 
     def get_rooms(self) -> dict[str, dict]:
         """Return a deep copy of all rooms (with migration applied)."""
@@ -189,14 +194,24 @@ class RoomMindStore:
         self._thermal_data = data
         await self._async_save()
 
+    def get_power_gains(self) -> dict:
+        """Return a deep copy of the learned power sensor gains."""
+        return copy.deepcopy(dict(self._power_gains))
+
+    def set_power_gains(self, data: dict) -> None:
+        """Replace the power sensor gains; persisted with the next save (thermal data)."""
+        self._power_gains = data
+
     async def async_clear_thermal_data_room(self, area_id: str) -> None:
-        """Clear thermal learning data for a single room."""
+        """Clear thermal learning data for a single room, with its power sensor gains."""
         self._thermal_data.pop(area_id, None)
+        self._power_gains.pop(area_id, None)
         await self._async_save()
 
     async def async_clear_all_thermal_data(self) -> None:
-        """Clear all thermal learning data."""
+        """Clear all thermal learning data, with the power sensor gains."""
         self._thermal_data = {}
+        self._power_gains = {}
         await self._async_save()
 
     @staticmethod
@@ -259,6 +274,7 @@ class RoomMindStore:
             "preheat_enabled": config.get("preheat_enabled", True),
             "price_shift": config.get("price_shift", 0.0),
             "follow_device_setpoint": config.get("follow_device_setpoint", False),
+            "power_sensors": config.get("power_sensors", []),
             "climate_mode": config.get("climate_mode", "auto"),
             "schedules": config.get("schedules", []),
             "schedule_selector_entity": config.get("schedule_selector_entity", ""),

@@ -111,6 +111,7 @@ const ROOM_FIELDS: [string, RoomFieldSync][] = [
     "occupancy_eco_delay",
     plain("_occupancyEcoDelay", (c) => c?.occupancy_eco_delay ?? DEFAULT_OCCUPANCY_ECO_DELAY),
   ],
+  ["power_sensors", asSet("_selectedPowerSensors", (c) => c?.power_sensors ?? [])],
   ["co2_sensor", plain("_co2Sensor", (c) => c?.co2_sensor ?? "")],
   ["co2_threshold", plain("_co2Threshold", (c) => c?.co2_threshold ?? DEFAULT_CO2_THRESHOLD)],
   ["voc_sensor", plain("_vocSensor", (c) => c?.voc_sensor ?? "")],
@@ -282,6 +283,7 @@ export class RsRoomDetail extends LitElement {
   @state() private _priceShift = 0;
   @state() private _heatSourcePriceAware = false;
   @state() private _occupancyEcoDelay = DEFAULT_OCCUPANCY_ECO_DELAY;
+  @state() private _selectedPowerSensors: Set<string> = new Set();
   @state() private _co2Sensor = "";
   @state() private _co2Threshold = DEFAULT_CO2_THRESHOLD;
   @state() private _vocSensor = "";
@@ -834,6 +836,7 @@ export class RsRoomDetail extends LitElement {
         .occupancySensors=${this._selectedOccupancySensors}
         .occupancyEcoEnabled=${this._occupancyEcoEnabled}
         .occupancyEcoDelay=${this._occupancyEcoDelay}
+        .powerSensors=${this._selectedPowerSensors}
         .co2Sensor=${this._co2Sensor}
         .co2Threshold=${this._co2Threshold}
         .vocSensor=${this._vocSensor}
@@ -1104,6 +1107,7 @@ export class RsRoomDetail extends LitElement {
             .occupancySensors=${this._selectedOccupancySensors}
             .occupancyEcoEnabled=${this._occupancyEcoEnabled}
             .occupancyEcoDelay=${this._occupancyEcoDelay}
+            .powerSensors=${this._selectedPowerSensors}
             .co2Sensor=${this._co2Sensor}
             .co2Threshold=${this._co2Threshold}
             .vocSensor=${this._vocSensor}
@@ -1453,6 +1457,8 @@ export class RsRoomDetail extends LitElement {
       this._occupancyEcoEnabled = value as boolean;
     } else if (key === "occupancy_eco_delay") {
       this._occupancyEcoDelay = value as number;
+    } else if (key === "power_sensors") {
+      this._selectedPowerSensors = new Set(value as string[]);
     } else if (key === "co2_sensor") {
       this._co2Sensor = value as string;
     } else if (key === "co2_threshold") {

@@ -155,6 +155,8 @@ def _csv_to_points(rows: list[dict]) -> list[dict]:
                 "room_temp_max": _safe_float(row.get("room_temp_max", "")),
                 "room_temp_min": _safe_float(row.get("room_temp_min", "")),
                 "co2": _safe_float(row.get("co2", "")),
+                # Heat of the power sensors in use [degC/h]: a model input of the backtest only
+                "device_heat": _safe_float(row.get("device_heat", "")),
                 **{f: _safe_float(row.get(f, "")) for f in MODEL_INPUT_FIELDS},
             }
         )
@@ -332,6 +334,7 @@ async def build_analytics_data(
     # Only the figures need the run starts, bucket extremes and model inputs; 90 days of points would carry them
     for point in history + detail:
         del point["heat_starts"], point["cool_starts"], point["room_temp_max"], point["room_temp_min"]
+        del point["device_heat"]
         for f in MODEL_INPUT_FIELDS:
             del point[f]
 
@@ -396,6 +399,7 @@ async def build_analytics_data(
             # EKF uncertainty: sqrt(P[0][0]) as proxy for sigma_e
             sigma_proxy = math.sqrt(max(est._P[0][0], 0.0))
             has_occupancy_sensors = len(room_config.get("occupancy_sensors", [])) > 0
+            power_now_kw = coordinator.rooms.get(area_id, {}).get("power_kw")
             model_info = {
                 "confidence": est.confidence,
                 "daily_history": [
@@ -422,6 +426,15 @@ async def build_analytics_data(
                 "has_occupancy_sensors": has_occupancy_sensors,
                 "solar_learned": _observed(est, _SOLAR_STATE),
                 "occupancy_learned": _observed(est, _OCCUPANCY_STATE),
+                "has_power_sensors": bool(room_config.get("power_sensors")),
+                "power_now_kw": power_now_kw,
+                # Per sensor: learned gain, whether it is used (active), still learning or of no effect
+                "power_sensors": [
+                    {**info, "name": _entity_name(hass, info["entity_id"])}
+                    for info in coordinator._power_gains.info(area_id)
+                ],
+                # What the metered devices add now, as learned outside the model [degC/h]
+                "power_gain_now": round(coordinator.rooms.get(area_id, {}).get("device_heat") or 0.0, 3),
                 # Q_solar is the gain at full sun (1000 W/m²); these are what it means now and today
                 "solar_gain_now": round(_solar_gain_now(coordinator, area_id, rc.Q_solar), 3),
                 "solar_gain_today_max": round(
@@ -551,6 +564,7 @@ async def build_analytics_data(
                         residual_scale=sim_scale,
                         residual_tau=sim_tau,
                         q_occupancy=sim_q_occupancy,
+                        u_device=coordinator.rooms.get(area_id, {}).get("device_heat") or 0.0,
                         q_rebound=coordinator._rebound_tracker.get_charge(area_id),
                         previous_mode=sim_prev_mode,
                         mode_elapsed_minutes=sim_mode_elapsed,
@@ -599,3 +613,10 @@ def _price_unit(hass: HomeAssistant, settings: dict) -> str:
     entity_id = settings.get("price_entity") or ""
     state = hass.states.get(entity_id) if entity_id else None
     return str(state.attributes.get("unit_of_measurement") or "") if state else ""
+
+
+def _entity_name(hass: HomeAssistant, entity_id: str) -> str:
+    """Friendly name of an entity, its id without one."""
+    state = hass.states.get(entity_id)
+    name = state.attributes.get("friendly_name") if state is not None else None
+    return str(name) if name else entity_id

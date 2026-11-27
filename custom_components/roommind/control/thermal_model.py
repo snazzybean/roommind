@@ -98,6 +98,7 @@ class RCModel:
         q_residual: float = 0.0,
         q_occupancy: float = 0.0,
         q_rebound: float | None = None,
+        u_device: float = 0.0,
     ) -> float:
         """Predict room temperature after *dt_minutes* using the analytical solution.
 
@@ -113,6 +114,8 @@ class RCModel:
                 (residual_heat.mean_rebound). Adds Q_fast * (charge - 1) while cooling
                 and Q_fast * charge otherwise. None: no air/mass term (callers that do
                 not track the charge).
+            u_device: known heat of metered devices [degC/h], learned outside the
+                model (PowerGainLearner); 0 without power sensors.
 
         Returns:
             Predicted room temperature [degC], clamped to [0, 50].
@@ -125,7 +128,7 @@ class RCModel:
         Q_rebound = 0.0
         if q_rebound is not None:
             Q_rebound = self.Q_fast * (q_rebound - self.cooling_drive(Q_active))
-        Q_total = Q_active + self.Q_solar * q_solar + self.Q_occupancy * q_occupancy + Q_residual + Q_rebound
+        Q_total = Q_active + self.Q_solar * q_solar + self.Q_occupancy * q_occupancy + Q_residual + Q_rebound + u_device
         # Equilibrium temperature: T_out + Q/U
         T_eq = T_outdoor + Q_total / self.U
         # Decay constant  (U/C has unit 1/h)
@@ -172,6 +175,7 @@ class RCModel:
         q_solar_series: list[float] | None = None,
         q_residual_series: list[float] | None = None,
         q_occupancy_series: list[float] | None = None,
+        u_device_series: list[float] | None = None,
     ) -> list[float]:
         """Predict a temperature trajectory over multiple time steps.
 
@@ -186,6 +190,7 @@ class RCModel:
             q_solar_series: normalized solar irradiance per step (GHI/1000).
             q_residual_series: residual heat fraction per step (0–1).
             q_occupancy_series: occupancy signal per step (0 or 1).
+            u_device_series: known heat of metered devices per step [degC/h].
 
         Returns:
             List of len(series) + 1 temperatures (including the initial value).
@@ -195,13 +200,15 @@ class RCModel:
         solar = q_solar_series or [0.0] * len(T_outdoor_series)
         residual = q_residual_series or [0.0] * len(T_outdoor_series)
         occupancy = q_occupancy_series or [0.0] * len(T_outdoor_series)
+        device = u_device_series or []
         trajectory = [T_room]
         T = T_room
         for i, (T_out, Q) in enumerate(zip(T_outdoor_series, Q_active_series, strict=False)):
             qs = solar[i] if i < len(solar) else 0.0
             qr = residual[i] if i < len(residual) else 0.0
             qo = occupancy[i] if i < len(occupancy) else 0.0
-            T = self.predict(T, T_out, Q, dt_minutes, q_solar=qs, q_residual=qr, q_occupancy=qo)
+            ud = device[i] if i < len(device) else 0.0
+            T = self.predict(T, T_out, Q, dt_minutes, q_solar=qs, q_residual=qr, q_occupancy=qo, u_device=ud)
             trajectory.append(T)
         return trajectory
 
@@ -652,6 +659,7 @@ class ThermalEKF:
         q_residual: float = 0.0,
         q_occupancy: float = 0.0,
         q_rebound: float | None = None,
+        u_device: float = 0.0,
     ) -> None:
         """Run one full EKF cycle: predict then update with measurement.
 
@@ -666,6 +674,8 @@ class ThermalEKF:
             q_occupancy: occupancy signal (0 = unoccupied, 1 = occupied).
             q_rebound: mean AC rebound charge over the interval (0-1); None
                 leaves beta_f out (no charge tracked).
+            u_device: known heat of metered devices over the interval [degC/h]; a
+                fixed input, not learned here (0 without power sensors).
         """
         if dt_minutes <= 0:
             return
@@ -695,6 +705,7 @@ class ThermalEKF:
             q_residual=q_residual,
             q_occupancy=q_occupancy,
             q_rebound=q_rebound,
+            u_device=u_device,
         )
 
         # --- Update step ---
@@ -849,8 +860,13 @@ class ThermalEKF:
         q_residual: float = 0.0,
         q_occupancy: float = 0.0,
         q_rebound: float | None = None,
+        u_device: float = 0.0,
     ) -> None:
-        """EKF predict: propagate state and covariance forward."""
+        """EKF predict: propagate state and covariance forward.
+
+        *u_device* [degC/h] is a known input (metered devices, learned outside the
+        EKF): it moves the prediction but has no state, so nothing here learns it.
+        """
         T, alpha, beta_h, beta_c, beta_s, beta_o, beta_f = self._x
         u_hvac = self._mode_to_u(mode) * power_fraction
         # Residual heat: during idle, thermal mass continues releasing stored energy
@@ -859,7 +875,7 @@ class ThermalEKF:
         fast = self._fast_regressor(mode, q_rebound)
         u_rebound = beta_f * fast
         # Occupancy heat: always additive (not mode-gated)
-        u = u_hvac + beta_s * q_solar + beta_o * q_occupancy + u_residual + u_rebound
+        u = u_hvac + beta_s * q_solar + beta_o * q_occupancy + u_residual + u_rebound + u_device
 
         # State prediction (analytical or linearized)
         T_new = self._state_transition(T, alpha, u, T_outdoor, dt_h)
@@ -1236,6 +1252,7 @@ class RoomModelManager:
         q_residual: float = 0.0,
         q_occupancy: float = 0.0,
         q_rebound: float | None = None,
+        u_device: float = 0.0,
     ) -> None:
         """Feed an observed transition to the room's estimator."""
         est = self.get_estimator(area_id)
@@ -1250,6 +1267,7 @@ class RoomModelManager:
             q_residual=q_residual,
             q_occupancy=q_occupancy,
             q_rebound=q_rebound,
+            u_device=u_device,
         )
 
     def predict(

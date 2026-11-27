@@ -328,6 +328,10 @@ RADIATOR_SHORT_RUN_AFTERGLOW_K = 0.5
 AC_REBOUND_TAU_MINUTES = 10.0
 AC_REBOUND_CUTOFF = 0.01  # below this the rebound charge is treated as zero
 
+# Power sensors (device heat): the MPC lets the measured power decay with this time
+# constant over its plan; a device may switch off at any time, nothing says when.
+POWER_GAIN_DECAY_H: float = 1.0
+
 # Blind/cover control
 COVER_SOLAR_MIN: float = 0.15
 DEFAULT_COVERS_OUTDOOR_MIN_TEMP: float = 10.0  # °C outdoor below which the sun is not shaded (None = this)

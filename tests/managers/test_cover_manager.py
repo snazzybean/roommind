@@ -59,6 +59,7 @@ async def test_room_config_has_cover_defaults():
     store._data = {}
     store._settings = {}
     store._thermal_data = {}
+    store._power_gains = {}
     store._store.async_save = AsyncMock()
 
     await store.async_save_room("test_area", {})

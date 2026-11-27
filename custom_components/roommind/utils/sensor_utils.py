@@ -73,3 +73,92 @@ def read_sensor_value(
             state.state,
         )
         return None
+
+
+# Power sensor units to kW; a sensor without a unit is read as W (HA's default for power)
+_POWER_UNIT_TO_KW = {"W": 0.001, "kW": 1.0, "MW": 1000.0, None: 0.001}
+_power_warned: set[str] = set()
+
+
+def usable_power_sensors(
+    hass: HomeAssistant,
+    entity_ids: list[str],
+    area_id: str,
+    *,
+    exclude_device_ids: set[str] | frozenset[str] = frozenset(),
+) -> list[str]:
+    """The room's power sensors without those on its own climate devices.
+
+    A sensor on a device in *exclude_device_ids* is left out with a warning once: the
+    heat of the room's own heaters is already learned as heating power.
+    """
+    if not exclude_device_ids:
+        return list(entity_ids)
+    from homeassistant.helpers import entity_registry as er
+
+    registry = er.async_get(hass)
+    usable: list[str] = []
+    for entity_id in entity_ids:
+        entry = registry.async_get(entity_id)
+        if entry is not None and entry.device_id in exclude_device_ids:
+            if entity_id not in _power_warned:
+                _power_warned.add(entity_id)
+                _LOGGER.warning(
+                    "Room '%s': power sensor '%s' belongs to one of the room's climate devices, "
+                    "its heat is already learned as heating power; ignored",
+                    area_id,
+                    entity_id,
+                )
+            continue
+        usable.append(entity_id)
+    return usable
+
+
+def read_power_readings(hass: HomeAssistant, entity_ids: list[str], area_id: str) -> dict[str, float]:
+    """Reading of each power sensor in kW; sensors without a usable reading are left out.
+
+    Negative readings (a meter that also counts feed-in) count as 0.
+    """
+    readings: dict[str, float] = {}
+    for entity_id in entity_ids:
+        value = read_sensor_value(hass, entity_id, area_id, "power")
+        if value is None:
+            continue
+        state = hass.states.get(entity_id)
+        unit = state.attributes.get("unit_of_measurement") if state is not None else None
+        factor = _POWER_UNIT_TO_KW.get(unit)
+        if factor is None:
+            if entity_id not in _power_warned:
+                _power_warned.add(entity_id)
+                _LOGGER.warning(
+                    "Room '%s': power sensor '%s' has unit '%s', expected W or kW", area_id, entity_id, unit
+                )
+            continue
+        readings[entity_id] = max(0.0, value) * factor
+    return readings
+
+
+def read_power_kw(
+    hass: HomeAssistant,
+    entity_ids: list[str],
+    area_id: str,
+    *,
+    exclude_device_ids: set[str] | frozenset[str] = frozenset(),
+) -> float | None:
+    """Sum of the room's usable power sensors in kW (for display), None when none has a reading."""
+    usable = usable_power_sensors(hass, entity_ids, area_id, exclude_device_ids=exclude_device_ids)
+    readings = read_power_readings(hass, usable, area_id)
+    return sum(readings.values()) if readings else None
+
+
+def room_device_ids(hass: HomeAssistant, devices: list[dict]) -> set[str]:
+    """HA device ids of the room's climate devices."""
+    from homeassistant.helpers import entity_registry as er
+
+    registry = er.async_get(hass)
+    ids: set[str] = set()
+    for device in devices:
+        entry = registry.async_get(device.get("entity_id", ""))
+        if entry is not None and entry.device_id:
+            ids.add(entry.device_id)
+    return ids

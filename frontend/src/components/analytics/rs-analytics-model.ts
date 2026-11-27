@@ -55,6 +55,8 @@ interface Tile {
   tone?: "heat" | "cool";
   value: string | null;
   detail?: string;
+  /** Line shown under the value (detail only shows in the info tooltip). */
+  sub?: string;
   /** Info text key when it is not analytics.info.<id>. */
   info?: TranslationKey;
 }
@@ -266,7 +268,8 @@ export class RsAnalyticsModel extends LitElement {
     const unit = tempUnit(this.hass);
     const oneDegree = toCelsiusDelta(1, this.hass);
     const loss = model.U * (now.room - now.outdoor);
-    const sun = m.solar_learned ? (m.solar_gain_now ?? 0) : 0;
+    // Sun and the metered devices running now (power sensors) both warm the room
+    const sun = (m.solar_learned ? (m.solar_gain_now ?? 0) : 0) + (m.power_gain_now ?? 0);
     const minutes = (net: number) =>
       net > 0.05
         ? localize("analytics.now_minutes", l, { time: formatMinutes((60 * oneDegree) / net, l) })
@@ -464,6 +467,44 @@ export class RsAnalyticsModel extends LitElement {
         value: m.occupancy_learned ? rate(model.Q_occupancy) : null,
       });
     }
+    if (model && m?.has_power_sensors) {
+      const sensors = m.power_sensors ?? [];
+      const used = sensors.some((s) => s.status === "active");
+      const power =
+        m.power_now_kw != null
+          ? `${formatNumber(Math.round(m.power_now_kw * 1000), this.hass)} W`
+          : null;
+      tiles.push({
+        id: "power_gain",
+        icon: "mdi:flash",
+        // What the used sensors add now; pending while all still learn
+        value: used
+          ? rate(m.power_gain_now ?? 0)
+          : sensors.some((s) => s.status === "learning")
+            ? null
+            : localize("analytics.power_none_used", l),
+        sub:
+          power == null
+            ? undefined
+            : used
+              ? localize("analytics.power_gain_sub", l, {
+                  power,
+                  gain: rate(m.power_gain_now ?? 0),
+                })
+              : localize("analytics.power_now", l, { power }),
+        detail: sensors
+          .map((s) =>
+            localize(`analytics.power_sensor_${s.status}`, l, {
+              name: s.name,
+              gain: `${delta(s.gain, 1)} ${unit}/h·kW`,
+              improvement: formatNumber(Math.round(s.improvement * 100), this.hass),
+              windows: s.windows,
+              needed: s.windows_needed,
+            }),
+          )
+          .join(" · "),
+      });
+    }
     const bt = m?.backtest;
     if (bt) {
       tiles.push(this._deviationTile("deviation_idle", "mdi:bullseye-arrow", bt.idle));
@@ -513,6 +554,7 @@ export class RsAnalyticsModel extends LitElement {
       .tone=${t.tone ?? "default"}
       .label=${localize(`analytics.${t.id}` as TranslationKey, l)}
       .value=${t.value ?? PENDING}
+      .sub=${t.sub ?? ""}
       ?pending=${t.value == null}
       .info=${localize(t.info ?? (`analytics.info.${t.id}` as TranslationKey), l, {
         threshold: this._delta(MPC_MAX_PREDICTION_STD),

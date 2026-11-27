@@ -47,6 +47,7 @@ DETAIL_FIELDS = [
     # What the model learned from (analytics backtest): signed delivered power share
     # (+ heating, - cooling), sun behind the covers, residual heat share, occupancy
     *MODEL_INPUT_FIELDS,
+    "device_heat",
 ]
 START_FIELDS = {MODE_HEATING: "heat_starts", MODE_COOLING: "cool_starts"}
 DETAIL_MAX_AGE = 48 * 3600  # 48 hours
@@ -141,6 +142,7 @@ class HistoryStore:
                     "co2": data.get("co2", ""),
                     **{field: data.get(field, "") for field in MODEL_INPUT_FIELDS},
                     **{key: int(mode == run and previous != run) for run, key in START_FIELDS.items()},
+                    "device_heat": data.get("device_heat", ""),
                 }
             )
 
@@ -283,6 +285,7 @@ class HistoryStore:
                 "price",
                 "price_shift",
                 "co2",
+                "device_heat",
                 *MODEL_INPUT_FIELDS,
             ):
                 vals = [v for r in bucket if (v := self._float(r.get(field, ""))) is not None]

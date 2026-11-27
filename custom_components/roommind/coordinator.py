@@ -112,6 +112,7 @@ from .managers.humidity_manager import (
     humidity_regulated,
 )
 from .managers.mold_manager import MoldManager, room_mold_settings
+from .managers.power_gain_learner import PowerGainLearner
 from .managers.price_manager import PriceManager
 from .managers.recent_temps import RECENT_WINDOW_S, RecentTemps
 from .managers.residual_heat_tracker import (
@@ -151,7 +152,7 @@ from .utils.schedule_utils import (
     resolve_schedule_index,
     set_band_sides,
 )
-from .utils.sensor_utils import read_sensor_value
+from .utils.sensor_utils import read_power_readings, read_sensor_value, room_device_ids, usable_power_sensors
 from .utils.temp_utils import celsius_delta_to_ha, celsius_to_ha_temp, ha_temp_to_celsius, ha_temp_unit_str
 
 _LOGGER = logging.getLogger(__name__)
@@ -350,6 +351,8 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         self._afterglow_reading = AfterglowReading()
         # Learns each room's residual scale from the afterglow after every run
         self._residual_learner = ResidualHeatLearner()
+        # Heat of the devices on the rooms' power sensors, learned per sensor outside the model
+        self._power_gains = PowerGainLearner()
         # AC rebound charge (air pulled below the building mass while cooling)
         self._rebound_tracker = AcReboundTracker()
         # Inputs the model learned from this cycle, recorded for the analytics backtest
@@ -499,6 +502,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 self._model_manager = RoomModelManager.from_dict(thermal_data)
                 self._ekf_training._model_manager = self._model_manager
                 self._cover_orchestrator._model_manager = self._model_manager
+            self._power_gains = PowerGainLearner.from_dict(store.get_power_gains())
             self._valve_manager.load_actuation_data(settings.get("valve_last_actuation", {}))
             self._coil_dry_manager.load_state(settings.get("coil_dry_state", {}))
             self._ac_dry.load_state(settings.get("ac_dry_state", {}))
@@ -615,6 +619,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                             "price_shift": (rs.get("price_shift_heat") or -(rs.get("price_shift_cool") or 0.0)) or "",
                             "co2": rs.get("co2"),
                             **self._model_inputs.get(area_id, {}),
+                            "device_heat": rs.get("device_heat"),
                         },
                     )
                 except Exception:  # noqa: BLE001
@@ -653,6 +658,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                                     if rs.get("solar_input") is None
                                     else rs["solar_input"]
                                 ),
+                                u_device=rs.get("device_heat") or 0.0,
                                 q_rebound=mean_rebound(
                                     self._rebound_tracker.get_charge(area_id), model.cooling_drive(Q), 3.0
                                 ),
@@ -670,6 +676,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         if self._thermal_save_count >= THERMAL_SAVE_CYCLES:
             self._thermal_save_count = 0
             self._note_confidence_days(room_states)
+            store.set_power_gains(self._power_gains.to_dict())
             await store.async_save_thermal_data(self._model_manager.to_dict())
 
         # Rotate history periodically
@@ -1084,6 +1091,8 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 "active_cover_schedule_index": -1,
                 "q_occupancy": 0.0,
                 "q_residual": 0.0,
+                "power_kw": None,
+                "device_heat": None,
                 "active_heat_sources": None,
                 "compressor_protection_active": False,
                 "compressor_protection_reason": None,
@@ -1279,6 +1288,21 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 break
             # unavailable/unknown/off → skip (conservative: no occupancy heat)
 
+        # Devices on the room's power sensors: readings per sensor (kW); none without sensors
+        power_sensors = room.get("power_sensors") or []
+        if power_sensors:
+            power_sensors = usable_power_sensors(
+                self.hass,
+                power_sensors,
+                area_id,
+                exclude_device_ids=room_device_ids(self.hass, room.get("devices", [])),
+            )
+        power_readings = read_power_readings(self.hass, power_sensors, area_id) if power_sensors else {}
+        power_kw = sum(power_readings.values()) if power_readings else None
+        # Their learned heat [degC/h] is a known input to the model, not part of it; only
+        # sensors that measurably improve the prediction count (PowerGainLearner)
+        u_device = self._power_gains.begin_cycle(area_id, power_sensors, power_readings, UPDATE_INTERVAL / 60.0)
+
         # Determine and apply mode with MPC controller
         controller = MPCController(
             self.hass,
@@ -1305,6 +1329,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             heat_run=heat_run,
             shading_factor=shading_factor,
             q_occupancy=q_occupancy,
+            u_device=u_device,
             q_rebound=q_rebound,
             previous_heat_sources=self._heat_source_states.get(area_id, "none"),
             head_offsets=self._head_offsets,
@@ -1595,6 +1620,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             run_power=self._residual_tracker.last_run_power(area_id),
             q_solar=self._current_q_solar * shading_factor if room_solar is None else room_solar.q_effective,
             q_occupancy=q_occupancy,
+            u_device=u_device,
             # Only an undisturbed afterglow of RoomMind's own run, measured by the room sensor
             disturbed=(
                 window_open
@@ -1837,6 +1863,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             shading_factor=shading_factor,
             room_solar=room_solar,
             q_occupancy=q_occupancy,
+            u_device=u_device,
             q_rebound=q_rebound,
             has_external_sensor=has_external_sensor,
             heat_source_plan=heat_source_plan,
@@ -1897,6 +1924,8 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 if mode == MODE_HEATING
                 else q_residual
             ),
+            power_kw=power_kw,
+            device_heat=u_device if power_sensors else None,
             cover_eids=cover_eids,
             cover_result=cover_result,
             mpc_active=mpc_active,
@@ -1980,6 +2009,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         heat_source_plan: Any | None,
         room_solar: RoomSolar | None = None,
         q_rebound: float | None = None,
+        u_device: float = 0.0,
         climate_active: bool,
         coil_dry_skip_training: bool = False,
         supply_withheld: bool = False,
@@ -2142,12 +2172,31 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 dt_minutes=UPDATE_INTERVAL / 60.0,
                 q_occupancy=q_occupancy,
                 q_rebound=q_rebound,
+                u_device=u_device,
             )
             self._note_model_inputs(
                 area_id, ekf_mode, ekf_pf, shading_factor, q_residual_training, q_occupancy, room_solar
             )
+            q_solar_seen = (
+                self._current_q_solar * (shading_factor if shading_factor is not None else 0.0)
+                if room_solar is None
+                else room_solar.q_effective
+            )
+            self._power_gains.observe(
+                area_id,
+                model=self._model_manager.get_model(area_id),
+                mode=ekf_mode,
+                disturbed=window_open or raw_open,
+                current_temp=current_temp_raw,
+                T_outdoor=self.outdoor_temp_effective,
+                dt_minutes=UPDATE_INTERVAL / 60.0,
+                q_solar=q_solar_seen,
+                q_occupancy=q_occupancy,
+                q_residual=q_residual_training,
+            )
         else:
             self._model_inputs.pop(area_id, None)
+            self._power_gains.interrupt(area_id)
             # A held unit or a coil dry run keeps the old resume (learn the change across the
             # pause): in the sim it offsets the air relaxing after a heating run, a resync
             # gave beta_s 3.2 -> 5.0 in compressor-hold-mixed-room.
@@ -2255,6 +2304,8 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         q_occupancy: float,
         cover_eids: list[str],
         q_residual: float = 0.0,
+        power_kw: float | None = None,
+        device_heat: float | None = None,
         cover_result: CoverResult,
         mpc_active: bool,
         compressor_protection_reason: str | None = None,
@@ -2367,6 +2418,14 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             "shading_factor": shading_factor,
             "q_occupancy": q_occupancy,
             "q_residual": q_residual,
+            "power_kw": round(power_kw, 3) if power_kw is not None else None,
+            "device_heat": round(device_heat, 3) if device_heat is not None else None,
+            # Per power sensor: learning / active / no_effect (None without power sensors)
+            "power_sensor_status": (
+                {i["entity_id"]: i["status"] for i in self._power_gains.info(area_id)}
+                if device_heat is not None
+                else None
+            ),
             "n_observations": self._model_manager.get_n_observations(area_id),
             "blind_position": (self._cover_orchestrator.get_current_position(area_id) if cover_eids else None),
             "cover_auto_paused": (self._cover_orchestrator.is_user_override_active(area_id) if cover_eids else False),
@@ -3372,6 +3431,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         """Remove a deleted room's entities, run state, model and history, then refresh."""
         self._forget_room(area_id)
         self._model_manager.remove_room(area_id)
+        self._power_gains.remove_room(area_id)
         if self._history_store:
             await self.hass.async_add_executor_job(self._history_store.remove_room, area_id)
         await self.async_request_refresh()
@@ -3584,6 +3644,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         self._ekf_training.last_temps.pop(area_id, None)
         self._residual_tracker.clear_room(area_id)
         self._residual_learner.remove_room(area_id)
+        self._power_gains.reset(area_id)
         self._afterglow_reading.remove_room(area_id)
 
     def reset_thermal_all(self) -> list[str]:
@@ -3595,6 +3656,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         self._ekf_training.last_temps.clear()
         self._residual_tracker.clear_all()
         self._residual_learner.clear_all()
+        self._power_gains = PowerGainLearner()
         self._afterglow_reading = AfterglowReading()
         return room_ids
 

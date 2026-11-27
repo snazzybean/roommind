@@ -1,0 +1,146 @@
+name: room-power-gains
+description: >
+  Two identical home offices, each with a 400 W PC on weekdays 09-17, a fridge (80 W all
+  the time) and a dishwasher (2 kW for 90 min every evening, only 5 % of it stays in the
+  room as heat). Buero meters all three with power sensors assigned in RoomMind,
+  Arbeitszimmer runs the same devices unmetered. RoomMind learns per sensor: the PC
+  measurably improves the prediction and is used, the fridge never leaves its usual load
+  and the dishwasher's power does not show up in the room, so both stay "no effect".
+  The benefit shows against the unmetered twin: a smaller prediction error and less
+  overshoot while the PC runs, and the constant fridge does not hold up the heating rate.
+tags: [ekf, mpc, power]
+start: 2026-01-12T00:00
+duration: 21d
+location: {latitude: 52.5, longitude: 13.4, time_zone: Europe/Berlin}
+weather: {profile: temperate}
+house:
+  building: bestand_teilsaniert
+  outdoor: {sensors: {temperature: sensor.aussen_temp}}
+  rooms:
+    buero:
+      floor_area_m2: 14
+      initial: {temperature: 19.0}
+      devices: [{entity_id: climate.bu_trv, profile: generic_trv}]
+      sensors:
+        temperature: {entity_id: sensor.bu_temp}
+        power_pc: {entity_id: sensor.bu_pc_power}
+        power_fridge: {entity_id: sensor.bu_fridge_power}
+        power_dishwasher: {entity_id: sensor.bu_dishwasher_power}
+    arbeitszimmer:
+      floor_area_m2: 14
+      initial: {temperature: 19.0}
+      devices: [{entity_id: climate.az_trv, profile: generic_trv}]
+      sensors:
+        temperature: {entity_id: sensor.az_temp}
+helpers:
+  schedule:
+    plan_buero: {weekdays: ["08:00-18:00"], weekend: []}
+roommind:
+  settings:
+    outdoor_temp_sensor: sensor.aussen_temp
+  rooms:
+    buero:
+      devices: [{entity_id: climate.bu_trv, type: trv, heating_system_type: radiator}]
+      temperature_sensor: sensor.bu_temp
+      power_sensors: [sensor.bu_pc_power, sensor.bu_fridge_power, sensor.bu_dishwasher_power]
+      climate_mode: heat_only
+      schedules: [{entity_id: schedule.plan_buero}]
+      comfort_temp: 21.0
+      eco_temp: 18.0
+    arbeitszimmer:
+      devices: [{entity_id: climate.az_trv, type: trv, heating_system_type: radiator}]
+      temperature_sensor: sensor.az_temp
+      climate_mode: heat_only
+      schedules: [{entity_id: schedule.plan_buero}]
+      comfort_temp: 21.0
+      eco_temp: 18.0
+timeline:
+  - {at: "+0d00h", do: power.set, room: buero, load: fridge, watts: 80}
+  - {at: "+0d00h", do: power.set, room: arbeitszimmer, load: fridge, watts: 80}
+  - {at: "+0d09h", do: power.set, room: buero, load: pc, watts: 400, for: 8h}
+  - {at: "+0d19h", do: power.set, room: buero, load: dishwasher, watts: 2000, heat: 0.05, for: 90m}
+  - {at: "+0d09h", do: power.set, room: arbeitszimmer, load: pc, watts: 400, for: 8h}
+  - {at: "+0d19h", do: power.set, room: arbeitszimmer, load: dishwasher, watts: 2000, heat: 0.05, for: 90m}
+  - {at: "+1d09h", do: power.set, room: buero, load: pc, watts: 400, for: 8h}
+  - {at: "+1d19h", do: power.set, room: buero, load: dishwasher, watts: 2000, heat: 0.05, for: 90m}
+  - {at: "+1d09h", do: power.set, room: arbeitszimmer, load: pc, watts: 400, for: 8h}
+  - {at: "+1d19h", do: power.set, room: arbeitszimmer, load: dishwasher, watts: 2000, heat: 0.05, for: 90m}
+  - {at: "+2d09h", do: power.set, room: buero, load: pc, watts: 400, for: 8h}
+  - {at: "+2d19h", do: power.set, room: buero, load: dishwasher, watts: 2000, heat: 0.05, for: 90m}
+  - {at: "+2d09h", do: power.set, room: arbeitszimmer, load: pc, watts: 400, for: 8h}
+  - {at: "+2d19h", do: power.set, room: arbeitszimmer, load: dishwasher, watts: 2000, heat: 0.05, for: 90m}
+  - {at: "+3d09h", do: power.set, room: buero, load: pc, watts: 400, for: 8h}
+  - {at: "+3d19h", do: power.set, room: buero, load: dishwasher, watts: 2000, heat: 0.05, for: 90m}
+  - {at: "+3d09h", do: power.set, room: arbeitszimmer, load: pc, watts: 400, for: 8h}
+  - {at: "+3d19h", do: power.set, room: arbeitszimmer, load: dishwasher, watts: 2000, heat: 0.05, for: 90m}
+  - {at: "+4d09h", do: power.set, room: buero, load: pc, watts: 400, for: 8h}
+  - {at: "+4d19h", do: power.set, room: buero, load: dishwasher, watts: 2000, heat: 0.05, for: 90m}
+  - {at: "+4d09h", do: power.set, room: arbeitszimmer, load: pc, watts: 400, for: 8h}
+  - {at: "+4d19h", do: power.set, room: arbeitszimmer, load: dishwasher, watts: 2000, heat: 0.05, for: 90m}
+  - {at: "+5d19h", do: power.set, room: buero, load: dishwasher, watts: 2000, heat: 0.05, for: 90m}
+  - {at: "+5d19h", do: power.set, room: arbeitszimmer, load: dishwasher, watts: 2000, heat: 0.05, for: 90m}
+  - {at: "+6d19h", do: power.set, room: buero, load: dishwasher, watts: 2000, heat: 0.05, for: 90m}
+  - {at: "+6d19h", do: power.set, room: arbeitszimmer, load: dishwasher, watts: 2000, heat: 0.05, for: 90m}
+  - {at: "+7d09h", do: power.set, room: buero, load: pc, watts: 400, for: 8h}
+  - {at: "+7d19h", do: power.set, room: buero, load: dishwasher, watts: 2000, heat: 0.05, for: 90m}
+  - {at: "+7d09h", do: power.set, room: arbeitszimmer, load: pc, watts: 400, for: 8h}
+  - {at: "+7d19h", do: power.set, room: arbeitszimmer, load: dishwasher, watts: 2000, heat: 0.05, for: 90m}
+  - {at: "+8d09h", do: power.set, room: buero, load: pc, watts: 400, for: 8h}
+  - {at: "+8d19h", do: power.set, room: buero, load: dishwasher, watts: 2000, heat: 0.05, for: 90m}
+  - {at: "+8d09h", do: power.set, room: arbeitszimmer, load: pc, watts: 400, for: 8h}
+  - {at: "+8d19h", do: power.set, room: arbeitszimmer, load: dishwasher, watts: 2000, heat: 0.05, for: 90m}
+  - {at: "+9d09h", do: power.set, room: buero, load: pc, watts: 400, for: 8h}
+  - {at: "+9d19h", do: power.set, room: buero, load: dishwasher, watts: 2000, heat: 0.05, for: 90m}
+  - {at: "+9d09h", do: power.set, room: arbeitszimmer, load: pc, watts: 400, for: 8h}
+  - {at: "+9d19h", do: power.set, room: arbeitszimmer, load: dishwasher, watts: 2000, heat: 0.05, for: 90m}
+  - {at: "+10d09h", do: power.set, room: buero, load: pc, watts: 400, for: 8h}
+  - {at: "+10d19h", do: power.set, room: buero, load: dishwasher, watts: 2000, heat: 0.05, for: 90m}
+  - {at: "+10d09h", do: power.set, room: arbeitszimmer, load: pc, watts: 400, for: 8h}
+  - {at: "+10d19h", do: power.set, room: arbeitszimmer, load: dishwasher, watts: 2000, heat: 0.05, for: 90m}
+  - {at: "+11d09h", do: power.set, room: buero, load: pc, watts: 400, for: 8h}
+  - {at: "+11d19h", do: power.set, room: buero, load: dishwasher, watts: 2000, heat: 0.05, for: 90m}
+  - {at: "+11d09h", do: power.set, room: arbeitszimmer, load: pc, watts: 400, for: 8h}
+  - {at: "+11d19h", do: power.set, room: arbeitszimmer, load: dishwasher, watts: 2000, heat: 0.05, for: 90m}
+  - {at: "+12d19h", do: power.set, room: buero, load: dishwasher, watts: 2000, heat: 0.05, for: 90m}
+  - {at: "+12d19h", do: power.set, room: arbeitszimmer, load: dishwasher, watts: 2000, heat: 0.05, for: 90m}
+  - {at: "+13d19h", do: power.set, room: buero, load: dishwasher, watts: 2000, heat: 0.05, for: 90m}
+  - {at: "+13d19h", do: power.set, room: arbeitszimmer, load: dishwasher, watts: 2000, heat: 0.05, for: 90m}
+  - {at: "+14d09h", do: power.set, room: buero, load: pc, watts: 400, for: 8h}
+  - {at: "+14d19h", do: power.set, room: buero, load: dishwasher, watts: 2000, heat: 0.05, for: 90m}
+  - {at: "+14d09h", do: power.set, room: arbeitszimmer, load: pc, watts: 400, for: 8h}
+  - {at: "+14d19h", do: power.set, room: arbeitszimmer, load: dishwasher, watts: 2000, heat: 0.05, for: 90m}
+  - {at: "+15d09h", do: power.set, room: buero, load: pc, watts: 400, for: 8h}
+  - {at: "+15d19h", do: power.set, room: buero, load: dishwasher, watts: 2000, heat: 0.05, for: 90m}
+  - {at: "+15d09h", do: power.set, room: arbeitszimmer, load: pc, watts: 400, for: 8h}
+  - {at: "+15d19h", do: power.set, room: arbeitszimmer, load: dishwasher, watts: 2000, heat: 0.05, for: 90m}
+  - {at: "+16d09h", do: power.set, room: buero, load: pc, watts: 400, for: 8h}
+  - {at: "+16d19h", do: power.set, room: buero, load: dishwasher, watts: 2000, heat: 0.05, for: 90m}
+  - {at: "+16d09h", do: power.set, room: arbeitszimmer, load: pc, watts: 400, for: 8h}
+  - {at: "+16d19h", do: power.set, room: arbeitszimmer, load: dishwasher, watts: 2000, heat: 0.05, for: 90m}
+  - {at: "+17d09h", do: power.set, room: buero, load: pc, watts: 400, for: 8h}
+  - {at: "+17d19h", do: power.set, room: buero, load: dishwasher, watts: 2000, heat: 0.05, for: 90m}
+  - {at: "+17d09h", do: power.set, room: arbeitszimmer, load: pc, watts: 400, for: 8h}
+  - {at: "+17d19h", do: power.set, room: arbeitszimmer, load: dishwasher, watts: 2000, heat: 0.05, for: 90m}
+  - {at: "+18d09h", do: power.set, room: buero, load: pc, watts: 400, for: 8h}
+  - {at: "+18d19h", do: power.set, room: buero, load: dishwasher, watts: 2000, heat: 0.05, for: 90m}
+  - {at: "+18d09h", do: power.set, room: arbeitszimmer, load: pc, watts: 400, for: 8h}
+  - {at: "+18d19h", do: power.set, room: arbeitszimmer, load: dishwasher, watts: 2000, heat: 0.05, for: 90m}
+  - {at: "+19d19h", do: power.set, room: buero, load: dishwasher, watts: 2000, heat: 0.05, for: 90m}
+  - {at: "+19d19h", do: power.set, room: arbeitszimmer, load: dishwasher, watts: 2000, heat: 0.05, for: 90m}
+  - {at: "+20d19h", do: power.set, room: buero, load: dishwasher, watts: 2000, heat: 0.05, for: 90m}
+  - {at: "+20d19h", do: power.set, room: arbeitszimmer, load: dishwasher, watts: 2000, heat: 0.05, for: 90m}
+
+  # RoomMind's own backtest of each room at the end: its one-hour prediction error
+  - {at: "+20d23h50m", do: roommind.ws, type: roommind/analytics/get, area_id: buero}
+  - {at: "+20d23h50m", do: roommind.ws, type: roommind/analytics/get, area_id: arbeitszimmer}
+expect:
+  - {metric: model.power_bu_pc_power_active, room: buero, min: 1, label: the PC improves the prediction and is used}
+  - {metric: model.power_bu_pc_power_improvement, room: buero, min: 0.2, label: the PC removes a fifth of the prediction error or more (28 %)}
+  - {metric: model.power_bu_pc_power_ratio, room: buero, min: 0.6, max: 1.4, label: PC heat learned near the truth}
+  - {metric: model.power_bu_fridge_power_no_effect, room: buero, min: 1, label: the constant fridge shows no effect}
+  - {metric: model.power_bu_fridge_power_windows, room: buero, max: 0, label: the constant fridge never moves the learner}
+  - {metric: model.power_bu_dishwasher_power_active, room: buero, max: 0, label: the dishwasher's power is not used}
+  # The twins differ a little without any sensor too (backtest ratio 0.81 with no power sensor in Buero)
+  - {metric: model.backtest_idle_mae, room: buero, vs_room: arbeitszimmer, max: 0.75, label: smaller backtest error than the unmetered twin}
+  - {metric: room.overshoot_kh, room: buero, vs_room: arbeitszimmer, max: 1.0, label: no more overshoot than the unmetered twin}
+  - {invariant: target_never_empty}

@@ -13,6 +13,7 @@ from homeassistant.core import HomeAssistant
 from .const import DEFAULT_CONTROL_MODE, DOMAIN, HEATING_SYSTEM_RADIATOR, VERSION
 from .control.mpc_controller import _active_targets, _last_commands, _now, _sent_at
 from .control.residual_heat import residual_tau
+from .managers.power_gain_learner import PowerGainLearner
 from .utils.history_store import DETAIL_FIELDS
 
 # v2 adds what a simulation needs to rebuild a setup (device capabilities, referenced
@@ -26,7 +27,7 @@ _ROOM_ENTITY_KEYS = (
     "cover_schedule_selector_entity",
 )
 # Exports end up in public issues: no person entities, no timing of occupancy.
-_ROOM_ENTITY_LIST_KEYS = ("window_sensors", "occupancy_sensors", "covers")
+_ROOM_ENTITY_LIST_KEYS = ("window_sensors", "occupancy_sensors", "power_sensors", "covers")
 _PRIVATE_DEVICE_CLASSES = ("occupancy", "presence", "motion")
 HISTORY_48H_FIELDS = [f for f in DETAIL_FIELDS if f != "occupancy"]
 
@@ -352,6 +353,9 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, config_entry: 
             if area_id in mgr._estimators:
                 room_diag["model"] = _build_model_info(mgr._estimators[area_id])
                 room_diag["model_state"] = mgr._estimators[area_id].to_dict()
+            gains = getattr(coordinator, "_power_gains", None)
+            if isinstance(gains, PowerGainLearner) and gains.info(area_id):
+                room_diag["power_sensors"] = gains.info(area_id)
             cache = getattr(coordinator, "_schedule_blocks_cache", None) or {}
             blocks = {
                 s["entity_id"]: _plain(cache[s["entity_id"]])
