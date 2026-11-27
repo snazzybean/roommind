@@ -29,9 +29,11 @@ from ..const import (
     OVERRIDE_DURATION_MINUTES,
     OVERRIDE_DURATION_PERMANENT,
     OVERRIDE_ECO,
+    PRESENCE_OVERRIDE_PAUSE,
     SCHEDULE_UNREADABLE_HOLD_HOURS,
     TargetTemps,
     is_override_active,
+    presence_override_mode,
 )
 from .price_utils import PriceSignal, apply_price_shift
 
@@ -645,7 +647,7 @@ def make_target_resolver(
     vacation_temp = settings.get("vacation_temp")
     presence_away_action = settings.get("presence_away_action", "eco")
     schedule_off_action = settings.get("schedule_off_action", "eco")
-    presence_clears_override = bool(settings.get("presence_clears_override", False))
+    presence_clears_override = presence_override_mode(settings) == PRESENCE_OVERRIDE_PAUSE
     climate_mode = room.get("climate_mode", "auto")
 
     converter: Callable[[float], float] | None = None

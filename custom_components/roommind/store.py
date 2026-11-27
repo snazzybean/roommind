@@ -360,7 +360,10 @@ class RoomMindStore:
             raise KeyError(f"Room '{area_id}' not found")
 
         # Prevent overriding the area_id
-        changes.pop("area_id", None)
+        changes = {k: v for k, v in changes.items() if k != "area_id"}
+        if ("override_heat" in changes or "override_cool" in changes) and "override_home_seen" not in changes:
+            # A new or cleared override starts unarmed for presence_ends_override
+            changes["override_home_seen"] = False
 
         self._data[area_id].update(changes)
         await self._async_save()

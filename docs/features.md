@@ -50,7 +50,7 @@ Per room, optional (in the schedule settings). A temperature set on the TRV dial
 
 ### Presence
 
-Link `person.*`, `device_tracker.*`, `binary_sensor.*`, or `input_boolean.*` entities globally or per room. When all assigned persons are away, a room goes to its eco temperature, switches its devices off, or uses its own away temperature, as set under presence. The away temperature is set per room next to comfort and eco and follows eco until you set it. It never asks for more heating or cooling than the schedule does at that moment: leaving during an 18 °C night with an away temperature of 19 °C keeps 18 °C. Rooms can opt out of presence detection to always follow their schedule.
+Link `person.*`, `device_tracker.*`, `binary_sensor.*`, or `input_boolean.*` entities globally or per room. When all assigned persons are away, a room goes to its eco temperature, switches its devices off, or uses its own away temperature, as set under presence. The away temperature is set per room next to comfort and eco and follows eco until you set it. It never asks for more heating or cooling than the schedule does at that moment: leaving during an 18 °C night with an away temperature of 19 °C keeps 18 °C. Rooms can opt out of presence detection to always follow their schedule. What happens to a temporary temperature when everyone leaves is a global choice: it keeps applying (default), it pauses while nobody is home, or it ends once the house has been empty for 10 minutes. "End" only ends a temperature that was set while someone was home or that saw someone come home, so one set from away to pre-heat survives; coming home never ends it. An unknown or unavailable tracker counts as home.
 
 ### Eco when the room is empty
 

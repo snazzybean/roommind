@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import time
 
+import pytest
+
 from custom_components.roommind.const import (
     build_override_live,
     is_override_active,
     is_override_suppressed,
+    presence_override_mode,
 )
 
 
@@ -63,6 +66,26 @@ class TestIsOverrideSuppressed:
 
     def test_suppressed_when_all_conditions_met(self):
         assert is_override_suppressed({}, {"presence_clears_override": True}, True) is True
+
+
+class TestPresenceOverrideMode:
+    """keep / pause / end from presence_clears_override and presence_ends_override."""
+
+    @pytest.mark.parametrize(
+        ("settings", "mode"),
+        [
+            ({}, "keep"),
+            ({"presence_clears_override": True}, "pause"),
+            ({"presence_ends_override": True}, "end"),
+            ({"presence_clears_override": True, "presence_ends_override": True}, "end"),
+        ],
+    )
+    def test_mode(self, settings, mode):
+        assert presence_override_mode(settings) == mode
+
+    def test_end_does_not_pause(self):
+        settings = {"presence_clears_override": True, "presence_ends_override": True}
+        assert is_override_suppressed({}, settings, True) is False
 
 
 class TestBuildOverrideLive:

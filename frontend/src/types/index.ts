@@ -303,6 +303,7 @@ export interface GlobalSettings {
   presence_persons?: string[];
   presence_away_action?: PresenceAwayAction;
   presence_clears_override?: boolean;
+  presence_ends_override?: boolean;
   schedule_off_action?: "eco" | "off";
   valve_protection_enabled?: boolean;
   valve_protection_interval_days?: number;
