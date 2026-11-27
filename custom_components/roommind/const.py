@@ -34,6 +34,8 @@ MAX_OVERRIDE_DURATION_MINUTES = 1440
 # Grace period after the override entity is switched on before the seeded
 # override is evaluated; the caller's real targets normally arrive within it (#447).
 OVERRIDE_TURN_ON_REFRESH_DELAY_S = 3.0
+# "End" in presence_ends_override: the house must stay empty this long, a GPS flap does not end it
+PRESENCE_OVERRIDE_END_DELAY_S = 600
 # A hold "until the schedule changes" while the schedule cannot be read ends after this
 # (h, same as the dashboard card's fallback without a schedule) instead of never
 SCHEDULE_UNREADABLE_HOLD_HOURS = 6
@@ -453,13 +455,31 @@ def is_override_active(room: dict) -> bool:
     return override_until is None or time.time() < override_until
 
 
+PRESENCE_OVERRIDE_KEEP = "keep"
+PRESENCE_OVERRIDE_PAUSE = "pause"
+PRESENCE_OVERRIDE_END = "end"
+
+
+def presence_override_mode(settings: dict) -> str:
+    """What an override does when everyone leaves: keep (default), pause or end.
+
+    ``presence_clears_override`` (pause) stays as it was stored before, ``presence_ends_override``
+    only adds "end" and wins when both are set.
+    """
+    if settings.get("presence_ends_override", False):
+        return PRESENCE_OVERRIDE_END
+    if settings.get("presence_clears_override", False):
+        return PRESENCE_OVERRIDE_PAUSE
+    return PRESENCE_OVERRIDE_KEEP
+
+
 def is_override_suppressed(room: dict, settings: dict, presence_away: bool) -> bool:
     """Return True when an active override should be ignored due to presence."""
     if not presence_away:
         return False
     if room.get("ignore_presence", False):
         return False
-    return bool(settings.get("presence_clears_override", False))
+    return presence_override_mode(settings) == PRESENCE_OVERRIDE_PAUSE
 
 
 def build_override_live(room: dict, suppressed: bool = False) -> dict:

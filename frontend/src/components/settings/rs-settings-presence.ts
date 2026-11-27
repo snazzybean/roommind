@@ -8,7 +8,7 @@ import type { HomeAssistant, PresenceAwayAction } from "../../types";
 import { localize } from "../../utils/localize";
 import "../shared/rs-segmented";
 import "../shared/rs-icon-button";
-import "../shared/rs-info-icon";
+import "../shared/rs-field";
 
 @customElement("rs-settings-presence")
 export class RsSettingsPresence extends RsSettingsBase {
@@ -17,6 +17,18 @@ export class RsSettingsPresence extends RsSettingsBase {
   @property({ type: Array }) public presencePersons: string[] = [];
   @property({ type: String }) public presenceAwayAction: PresenceAwayAction = "eco";
   @property({ type: Boolean }) public presenceClearsOverride = false;
+  @property({ type: Boolean }) public presenceEndsOverride = false;
+
+  private get _overrideMode(): "keep" | "pause" | "end" {
+    if (this.presenceEndsOverride) return "end";
+    return this.presenceClearsOverride ? "pause" : "keep";
+  }
+
+  private _setOverrideMode(mode: string) {
+    if (!mode || mode === this._overrideMode) return;
+    this._fire("presenceClearsOverride", mode === "pause");
+    this._fire("presenceEndsOverride", mode === "end");
+  }
 
   render() {
     const l = this.hass.language;
@@ -113,19 +125,35 @@ export class RsSettingsPresence extends RsSettingsBase {
                 ></rs-segmented>
               </div>
               <div class="settings-section">
-                <rs-list-row
-                  switch
-                  wrap
-                  .heading=${localize("presence.clears_override_label", l)}
-                  .checked=${this.presenceClearsOverride}
-                  @toggle-changed=${(e: CustomEvent<boolean>) =>
-                    this._fire("presenceClearsOverride", e.detail)}
+                <rs-field
+                  .label=${localize("presence.override_label", l)}
+                  .info=${localize("presence.override_hint", l)}
                 >
-                  <rs-info-icon
-                    slot="end"
-                    .text=${localize("presence.clears_override_hint", l)}
-                  ></rs-info-icon>
-                </rs-list-row>
+                  <rs-segmented
+                    wrap
+                    .label=${localize("presence.override_label", l)}
+                    .options=${[
+                      {
+                        value: "keep",
+                        label: localize("presence.override_keep", l),
+                        icon: "mdi:thermometer-check",
+                      },
+                      {
+                        value: "pause",
+                        label: localize("presence.override_pause", l),
+                        icon: "mdi:pause",
+                      },
+                      {
+                        value: "end",
+                        label: localize("presence.override_end", l),
+                        icon: "mdi:stop",
+                      },
+                    ]}
+                    .value=${this._overrideMode}
+                    @value-changed=${(e: CustomEvent<{ value: string }>) =>
+                      this._setOverrideMode(e.detail.value)}
+                  ></rs-segmented>
+                </rs-field>
               </div>
             `
           : nothing

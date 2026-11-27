@@ -94,6 +94,7 @@ async def test_list_rooms_empty(ws_hass, store, connection):
             "presence_persons": [],
             "presence_away_action": "eco",
             "presence_clears_override": False,
+            "presence_ends_override": False,
             "schedule_off_action": "eco",
             "anyone_home": True,
             "valve_protection_enabled": False,
@@ -1220,6 +1221,21 @@ async def test_save_settings(ws_hass, store, connection):
     connection.send_result.assert_called_once()
     result = connection.send_result.call_args[0][1]
     assert result["settings"]["outdoor_temp_sensor"] == "sensor.outdoor"
+
+
+@pytest.mark.asyncio
+async def test_save_settings_presence_ends_override(ws_hass, store, connection):
+    """"End" is its own key, the pause flag stays as stored for older versions."""
+    await store.async_load()
+    msg = {
+        "id": 12,
+        "type": "roommind/settings/save",
+        "presence_clears_override": False,
+        "presence_ends_override": True,
+    }
+    await _save_settings(ws_hass, connection, msg)
+    assert store.get_settings()["presence_ends_override"] is True
+    assert store.get_settings()["presence_clears_override"] is False
 
 
 @pytest.mark.asyncio

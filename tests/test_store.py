@@ -386,6 +386,22 @@ async def test_save_room_syncs_eco_heat_to_eco_temp_on_update(store):
 
 
 @pytest.mark.asyncio
+async def test_update_room_override_change_disarms_presence_end(store):
+    """A new or cleared override starts unarmed, only the coordinator arms it."""
+    await store.async_load()
+    await store.async_save_room("wohnzimmer", {})
+    await store.async_update_room("wohnzimmer", {"override_home_seen": True})
+    room = await store.async_update_room("wohnzimmer", {"override_heat": 23.0, "override_cool": None})
+    assert room["override_home_seen"] is False
+    await store.async_update_room("wohnzimmer", {"override_home_seen": True})
+    room = await store.async_update_room("wohnzimmer", {"comfort_heat": 22.0})
+    assert room["override_home_seen"] is True
+    changes = {"area_id": "x", "override_heat": None}
+    await store.async_update_room("wohnzimmer", changes)
+    assert changes == {"area_id": "x", "override_heat": None}
+
+
+@pytest.mark.asyncio
 async def test_update_room_missing_raises_key_error(store):
     """async_update_room on a non-existent room should raise KeyError."""
     await store.async_load()

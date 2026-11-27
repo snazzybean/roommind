@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from custom_components.roommind.utils.presence_utils import is_presence_away
+from custom_components.roommind.utils.presence_utils import is_presence_away, presence_state
 
 
 def _make_hass(**kwargs) -> MagicMock:
@@ -320,3 +320,33 @@ def test_unavailable_entity_still_wins_over_a_deleted_one(monkeypatch):
     settings = {"presence_enabled": True, "presence_persons": ["person.kevin"]}
     room = {"presence_persons": ["device_tracker.gone", "person.kevin"]}
     assert is_presence_away(hass, room, settings) is False
+
+
+@pytest.mark.parametrize(
+    ("states", "expected"),
+    [
+        ({"person.anna": "home", "person.ben": "unavailable"}, "home"),
+        ({"person.anna": "unavailable", "person.ben": "home"}, "home"),
+        ({"person.anna": "not_home", "person.ben": "unknown"}, "unknown"),
+        ({"person.anna": "not_home", "person.ben": "not_home"}, "away"),
+    ],
+)
+def test_presence_state_tells_home_away_and_unknown(states, expected):
+    """A tracker outage is unknown, not home: it must not arm presence_ends_override."""
+    hass = _make_hass()
+    hass.states.get = MagicMock(side_effect=lambda eid: _make_state(eid, states[eid]))
+    settings = {"presence_enabled": True, "presence_persons": list(states)}
+    assert presence_state(hass, {}, settings) == expected
+
+
+def test_presence_state_unknown_without_presence_detection():
+    hass = _make_hass()
+    assert presence_state(hass, {}, {"presence_enabled": False, "presence_persons": ["person.anna"]}) == "unknown"
+    assert presence_state(hass, {}, {"presence_enabled": True, "presence_persons": []}) == "unknown"
+
+
+def test_presence_state_unknown_while_an_entity_has_no_state_yet(monkeypatch):
+    hass = _make_hass()
+    hass.is_running = False
+    hass.states.get = MagicMock(return_value=None)
+    assert presence_state(hass, {}, {"presence_enabled": True, "presence_persons": ["person.anna"]}) == "unknown"
