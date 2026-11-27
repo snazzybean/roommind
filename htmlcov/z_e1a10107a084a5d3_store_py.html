@@ -54,8 +54,8 @@
             </div>
         </aside>
         <h2>
-            <span class="text">184 statements &nbsp;</span>
-            <button type="button" class="run button_toggle_run" value="run" data-shortcut="r" title="Toggle lines run">184<span class="text"> run</span></button>
+            <span class="text">186 statements &nbsp;</span>
+            <button type="button" class="run button_toggle_run" value="run" data-shortcut="r" title="Toggle lines run">186<span class="text"> run</span></button>
             <button type="button" class="mis show_mis button_toggle_mis" value="mis" data-shortcut="m" title="Toggle lines missing">0<span class="text"> missing</span></button>
             <button type="button" class="exc show_exc button_toggle_exc" value="exc" data-shortcut="x" title="Toggle lines excluded">0<span class="text"> excluded</span></button>
         </h2>
@@ -65,7 +65,7 @@
             <a id="nextFileLink" class="nav" href="z_e1a10107a084a5d3_switch_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.17.5">coverage.py v7.17.5</a>,
-            created at 2026-11-27 08:32 +0000
+            created at 2026-11-27 12:20 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -442,19 +442,22 @@
     <p class="run"><span class="n"><a id="t360" href="#t360">360</a></span><span class="t">            <span class="key">raise</span> <span class="nam">KeyError</span><span class="op">(</span><span class="fst">f&quot;</span><span class="fst">Room &#x27;</span><span class="op">{</span><span class="nam">area_id</span><span class="op">}</span><span class="fst">&#x27; not found</span><span class="fst">&quot;</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t361" href="#t361">361</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t362" href="#t362">362</a></span><span class="t">        <span class="com"># Prevent overriding the area_id</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t363" href="#t363">363</a></span><span class="t">        <span class="nam">changes</span><span class="op">.</span><span class="nam">pop</span><span class="op">(</span><span class="str">&quot;area_id&quot;</span><span class="op">,</span> <span class="key">None</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t364" href="#t364">364</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t365" href="#t365">365</a></span><span class="t">        <span class="nam">self</span><span class="op">.</span><span class="nam">_data</span><span class="op">[</span><span class="nam">area_id</span><span class="op">]</span><span class="op">.</span><span class="nam">update</span><span class="op">(</span><span class="nam">changes</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t366" href="#t366">366</a></span><span class="t">        <span class="key">await</span> <span class="nam">self</span><span class="op">.</span><span class="nam">_async_save</span><span class="op">(</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t367" href="#t367">367</a></span><span class="t">        <span class="key">return</span> <span class="nam">self</span><span class="op">.</span><span class="nam">_data</span><span class="op">[</span><span class="nam">area_id</span><span class="op">]</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t368" href="#t368">368</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t369" href="#t369">369</a></span><span class="t">    <span class="key">async</span> <span class="key">def</span> <span class="nam">async_delete_room</span><span class="op">(</span><span class="nam">self</span><span class="op">,</span> <span class="nam">area_id</span><span class="op">:</span> <span class="nam">str</span><span class="op">)</span> <span class="op">-&gt;</span> <span class="key">None</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t370" href="#t370">370</a></span><span class="t">        <span class="str">&quot;&quot;&quot;Delete a room. Raises KeyError if not found.&quot;&quot;&quot;</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t371" href="#t371">371</a></span><span class="t">        <span class="key">if</span> <span class="nam">area_id</span> <span class="key">not</span> <span class="key">in</span> <span class="nam">self</span><span class="op">.</span><span class="nam">_data</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t372" href="#t372">372</a></span><span class="t">            <span class="key">raise</span> <span class="nam">KeyError</span><span class="op">(</span><span class="fst">f&quot;</span><span class="fst">Room &#x27;</span><span class="op">{</span><span class="nam">area_id</span><span class="op">}</span><span class="fst">&#x27; not found</span><span class="fst">&quot;</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t373" href="#t373">373</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t374" href="#t374">374</a></span><span class="t">        <span class="key">del</span> <span class="nam">self</span><span class="op">.</span><span class="nam">_data</span><span class="op">[</span><span class="nam">area_id</span><span class="op">]</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t375" href="#t375">375</a></span><span class="t">        <span class="key">await</span> <span class="nam">self</span><span class="op">.</span><span class="nam">_async_save</span><span class="op">(</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t363" href="#t363">363</a></span><span class="t">        <span class="nam">changes</span> <span class="op">=</span> <span class="op">{</span><span class="nam">k</span><span class="op">:</span> <span class="nam">v</span> <span class="key">for</span> <span class="nam">k</span><span class="op">,</span> <span class="nam">v</span> <span class="key">in</span> <span class="nam">changes</span><span class="op">.</span><span class="nam">items</span><span class="op">(</span><span class="op">)</span> <span class="key">if</span> <span class="nam">k</span> <span class="op">!=</span> <span class="str">&quot;area_id&quot;</span><span class="op">}</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t364" href="#t364">364</a></span><span class="t">        <span class="key">if</span> <span class="op">(</span><span class="str">&quot;override_heat&quot;</span> <span class="key">in</span> <span class="nam">changes</span> <span class="key">or</span> <span class="str">&quot;override_cool&quot;</span> <span class="key">in</span> <span class="nam">changes</span><span class="op">)</span> <span class="key">and</span> <span class="str">&quot;override_home_seen&quot;</span> <span class="key">not</span> <span class="key">in</span> <span class="nam">changes</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t365" href="#t365">365</a></span><span class="t">            <span class="com"># A new or cleared override starts unarmed for presence_ends_override</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t366" href="#t366">366</a></span><span class="t">            <span class="nam">changes</span><span class="op">[</span><span class="str">&quot;override_home_seen&quot;</span><span class="op">]</span> <span class="op">=</span> <span class="key">False</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t367" href="#t367">367</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t368" href="#t368">368</a></span><span class="t">        <span class="nam">self</span><span class="op">.</span><span class="nam">_data</span><span class="op">[</span><span class="nam">area_id</span><span class="op">]</span><span class="op">.</span><span class="nam">update</span><span class="op">(</span><span class="nam">changes</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t369" href="#t369">369</a></span><span class="t">        <span class="key">await</span> <span class="nam">self</span><span class="op">.</span><span class="nam">_async_save</span><span class="op">(</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t370" href="#t370">370</a></span><span class="t">        <span class="key">return</span> <span class="nam">self</span><span class="op">.</span><span class="nam">_data</span><span class="op">[</span><span class="nam">area_id</span><span class="op">]</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t371" href="#t371">371</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t372" href="#t372">372</a></span><span class="t">    <span class="key">async</span> <span class="key">def</span> <span class="nam">async_delete_room</span><span class="op">(</span><span class="nam">self</span><span class="op">,</span> <span class="nam">area_id</span><span class="op">:</span> <span class="nam">str</span><span class="op">)</span> <span class="op">-&gt;</span> <span class="key">None</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t373" href="#t373">373</a></span><span class="t">        <span class="str">&quot;&quot;&quot;Delete a room. Raises KeyError if not found.&quot;&quot;&quot;</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t374" href="#t374">374</a></span><span class="t">        <span class="key">if</span> <span class="nam">area_id</span> <span class="key">not</span> <span class="key">in</span> <span class="nam">self</span><span class="op">.</span><span class="nam">_data</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t375" href="#t375">375</a></span><span class="t">            <span class="key">raise</span> <span class="nam">KeyError</span><span class="op">(</span><span class="fst">f&quot;</span><span class="fst">Room &#x27;</span><span class="op">{</span><span class="nam">area_id</span><span class="op">}</span><span class="fst">&#x27; not found</span><span class="fst">&quot;</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t376" href="#t376">376</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t377" href="#t377">377</a></span><span class="t">        <span class="key">del</span> <span class="nam">self</span><span class="op">.</span><span class="nam">_data</span><span class="op">[</span><span class="nam">area_id</span><span class="op">]</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t378" href="#t378">378</a></span><span class="t">        <span class="key">await</span> <span class="nam">self</span><span class="op">.</span><span class="nam">_async_save</span><span class="op">(</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
 </main>
 <footer>
     <div class="content">
@@ -464,7 +467,7 @@
             <a class="nav" href="z_e1a10107a084a5d3_switch_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.17.5">coverage.py v7.17.5</a>,
-            created at 2026-11-27 08:32 +0000
+            created at 2026-11-27 12:20 +0000
         </p>
     </div>
 </footer>
