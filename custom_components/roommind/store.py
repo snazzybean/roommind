@@ -19,8 +19,10 @@ from .const import (
     DEFAULT_HEAT_SOURCE_OUTDOOR_THRESHOLD,
     DEFAULT_HEAT_SOURCE_PRIMARY_DELTA,
     DEFAULT_OCCUPANCY_ECO_DELAY_MINUTES,
+    DEFAULT_OVERRIDE_DURATION_MINUTES,
     DEFAULT_ROOM_FAN_MODE,
     DOMAIN,
+    OVERRIDE_DURATION_SCHEDULE,
 )
 from .utils.device_utils import (
     devices_to_legacy,
@@ -331,6 +333,8 @@ class RoomMindStore:
             "room_fan_entity": config.get("room_fan_entity", ""),
             "room_fan_mode": config.get("room_fan_mode", DEFAULT_ROOM_FAN_MODE),
             "ac_dry_enabled": config.get("ac_dry_enabled", True),
+            "override_duration_mode": config.get("override_duration_mode", OVERRIDE_DURATION_SCHEDULE),
+            "override_duration_minutes": config.get("override_duration_minutes", DEFAULT_OVERRIDE_DURATION_MINUTES),
         }
         _single_temps_to_cool_side(room, config, room["climate_mode"])
         # Directional device sync for new rooms (truthiness check, not just presence)
@@ -372,7 +376,10 @@ class RoomMindStore:
             raise KeyError(f"Room '{area_id}' not found")
 
         # Prevent overriding the area_id
-        changes.pop("area_id", None)
+        changes = {k: v for k, v in changes.items() if k != "area_id"}
+        if ("override_heat" in changes or "override_cool" in changes) and "override_home_seen" not in changes:
+            # A new or cleared override starts unarmed for presence_ends_override
+            changes["override_home_seen"] = False
 
         self._data[area_id].update(changes)
         await self._async_save()

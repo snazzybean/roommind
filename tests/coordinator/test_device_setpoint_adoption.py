@@ -311,11 +311,34 @@ async def test_fahrenheit_value_and_schedule_end(hass, mock_config_entry):
     await _cycle(coordinator, clock)
     _devices(hass, **{TRV: ("heat", {"temperature": 74.0, "target_temp_step": 1})})
     until = time.time() + 3600
-    with patch("custom_components.roommind.coordinator.override_hold_until", return_value=until):
+    with patch("custom_components.roommind.utils.schedule_utils.override_hold_until", return_value=until):
         await _cycle(coordinator, clock)
     _, override = store.async_update_room.await_args.args
     assert override["override_heat"] == 23.3
     assert override["override_until"] == until
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("duration", "minutes"),
+    [
+        ({"override_duration_mode": "minutes", "override_duration_minutes": 45}, 45),
+        ({"override_duration_mode": "permanent"}, None),
+    ],
+)
+async def test_the_room_override_duration_also_applies_to_the_dial(hass, mock_config_entry, duration, minutes):
+    coordinator, store, clock = _setup(hass, mock_config_entry, {**FOLLOW_ROOM, **duration})
+    _devices(hass, **{TRV: ("heat", {"temperature": 21.0})})
+    await _cycle(coordinator, clock)
+    _devices(hass, **{TRV: ("heat", {"temperature": 23.0})})
+    before = time.time()
+    await _cycle(coordinator, clock)
+    _, override = store.async_update_room.await_args.args
+    assert override["override_heat"] == 23.0
+    if minutes is None:
+        assert override["override_until"] is None
+    else:
+        assert before + minutes * 60 <= override["override_until"] <= time.time() + minutes * 60
 
 
 @pytest.mark.asyncio

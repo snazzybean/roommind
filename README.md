@@ -177,16 +177,16 @@ An Extended Kalman Filter watches the room temperature and learns each room's he
 
 ### Room climate entity
 
-`climate.roommind_{area_id}` shows and controls a room the way a thermostat card, an automation or a voice assistant expects. Changing its temperature sets an override until the next schedule change, like a thermostat's temporary hold.
+`climate.roommind_{area_id}` shows and controls a room the way a thermostat card, an automation or a voice assistant expects. Changing its temperature sets an override for the room's override duration, by default until the next schedule change, like a thermostat's temporary hold.
 
 <details>
 <summary>What each climate feature does in RoomMind</summary>
 
 | Climate feature | In RoomMind |
 |---|---|
-| Target temperature (range in Auto mode) | The targets currently in force. Changing it sets an override that holds until the next change of the active schedule, like a thermostat's temporary hold. Without a schedule it holds until you pick the preset `none`; if the schedule helper cannot be read at that moment (unavailable, deleted), it holds for 6 hours. Sending the value already in force changes nothing. A single temperature in Auto mode (e.g. from a voice assistant) sets the heating side and keeps the cooling side at least at comfort cooling. |
-| Presets Comfort / Eco | Comfort or eco override, also until the next schedule change |
-| Preset Manual | Shown while a custom temperature is held (set here, in the panel or on the old override entity); picking it holds the targets in force until the next schedule change |
+| Target temperature (range in Auto mode) | The targets currently in force. Changing it sets an override that holds for the room's override duration (see below). Sending the value already in force changes nothing. A single temperature in Auto mode (e.g. from a voice assistant) sets the heating side and keeps the cooling side at least at comfort cooling. |
+| Presets Comfort / Eco | Comfort or eco override, also for the room's override duration |
+| Preset Manual | Shown while a custom temperature is held (set here, in the panel or on the old override entity); picking it holds the targets in force for the room's override duration |
 | Preset Schedule (`none`) | Ends the override and returns to the schedule |
 | HVAC mode `heat` / `cool` / `heat_cool` | Climate mode Heat only / Cool only / Auto, and turns control on. `climate.turn_on` turns control on and keeps the climate mode. In Heat only, an AC in a room with thermostats stays off unless Smart source selection is on. |
 | HVAC mode `off` | Switches the room's devices off and stops controlling them |
@@ -195,11 +195,42 @@ An Extended Kalman Filter watches the room temperature and learns each room's he
 
 Attributes: `override_until`, `window_open`, `presence_away`, `occupancy_vacant`, `vacation`. An open window shows as `idle` with `window_open: true`.
 
+How long a target or preset set here holds is chosen per room on the room page under Schedule → Manual changes:
+
+- **Until the next schedule change** (default): like a thermostat's temporary hold. Without a schedule it holds until you pick the preset `none`; if the schedule helper cannot be read at that moment (unavailable, deleted), it holds for 6 hours.
+- **For a fixed time**: 5 to 1440 minutes.
+- **Until changed back**: until you pick the preset `none` or end the override on the room page.
+
+The same duration applies to a temperature taken over from the device (Take over changes made on the device). The quick choices on the room page keep their own end.
+
 The entity is placed in the room's area once when it is created, so it shows up on area cards and Assist finds it by the area ("set the temperature in the living room to 22"). An area you change or remove later is kept. For voice control, hide the room's own thermostats and ACs from Assist (Settings → Voice assistants → Expose), otherwise Assist finds several climate entities in the room and cannot pick one.
 
 Like every override, one set here also lifts the outdoor temperature limits for heating and cooling while it lasts.
 
 A wall display or a thermostat RoomMind does not control can be linked with an automation: its setpoint → `climate.set_temperature` on the room entity, and the room entity's target → the display, so the display always shows what applies.
+
+#### Action `roommind.set_override`
+
+Sets an override on `climate.roommind_{area_id}` with an end the automation chooses:
+
+| Field | Meaning |
+|---|---|
+| `preset` | `comfort` or `eco`: the room's comfort or eco targets |
+| `temperature`, `target_temp_low`, `target_temp_high` | Targets like `climate.set_temperature` (in the HA unit system). Not together with `preset`. |
+| `duration` | Ends after this time, e.g. `"01:30:00"` or `{minutes: 90}` |
+| `until` | Ends at this date and time |
+| `until_next_change` | `true`: ends at the active schedule's next change. Without a schedule it holds until changed; a schedule that cannot be read ends it after 6 hours. |
+
+Only one of `duration`, `until` and `until_next_change`. Without any of them the override ends like one set on the entity (the room's override duration). Without `preset` and temperatures the targets in force are held, so a call with only an end extends or shortens a running override and keeps its preset.
+
+```yaml
+action: roommind.set_override
+target:
+  entity_id: climate.roommind_living_room
+data:
+  temperature: 22.5
+  until_next_change: true
+```
 
 </details>
 

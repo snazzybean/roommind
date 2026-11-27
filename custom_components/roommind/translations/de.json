@@ -24,7 +24,7 @@
     },
     "deprecated_entities": {
       "title": "RoomMind-Entitäten ersetzen",
-      "description": "Jeder Raum hat jetzt eine Klima-Entität (`climate.roommind_` plus Raum-ID), die den Raum anzeigt und steuert: Zieltemperatur, Komfort/Eco-Presets, Modus und was RoomMind gerade tut. Die alten Entitäten pro Raum funktionieren vorerst weiter, werden aber in einer künftigen Version entfernt. Diese werden noch direkt in Automationen oder Skripten verwendet:\n\n{entities}\n\nWas stattdessen:\n- Sensor Zieltemperatur → Zieltemperatur der Klima-Entität\n- Sensor Modus → deren `hvac_action`\n- Override-Entität → `climate.set_temperature` oder ein Preset der Klima-Entität (gilt bis zum nächsten Zeitplanwechsel, Preset Zeitplan (`none`) kehrt zum Zeitplan zurück)\n\nDieser Hinweis verschwindet, sobald nichts mehr darauf zugreift (geprüft beim Start von Home Assistant)."
+      "description": "Jeder Raum hat jetzt eine Klima-Entität (`climate.roommind_` plus Raum-ID), die den Raum anzeigt und steuert: Zieltemperatur, Komfort/Eco-Presets, Modus und was RoomMind gerade tut. Die alten Entitäten pro Raum funktionieren vorerst weiter, werden aber in einer künftigen Version entfernt. Diese werden noch direkt in Automationen oder Skripten verwendet:\n\n{entities}\n\nWas stattdessen:\n- Sensor Zieltemperatur → Zieltemperatur der Klima-Entität\n- Sensor Modus → deren `hvac_action`\n- Override-Entität → `climate.set_temperature` oder ein Preset der Klima-Entität (gilt so lange, wie beim Raum unter Manuelle Änderungen eingestellt, standardmäßig bis zum nächsten Zeitplanwechsel, Preset Zeitplan (`none`) kehrt zum Zeitplan zurück)\n\nDieser Hinweis verschwindet, sobald nichts mehr darauf zugreift (geprüft beim Start von Home Assistant)."
     }
   },
   "entity": {
@@ -43,6 +43,50 @@
     "binary_sensor": {
       "air_quality": {
         "name": "{room} Luftqualität schlecht"
+      }
+    }
+  },
+  "services": {
+    "set_override": {
+      "name": "Override setzen",
+      "description": "Hält eine Temperatur oder ein Preset in einem RoomMind-Raum mit einem frei gewählten Ende. Ohne Ziele wird das gerade geltende Band gehalten, so lässt sich ein laufender Override auch verlängern oder verkürzen.",
+      "fields": {
+        "preset": {
+          "name": "Preset",
+          "description": "Komfort- oder Eco-Ziele des Raums. Leer lassen, um Temperaturen zu setzen oder das Geltende zu halten."
+        },
+        "temperature": {
+          "name": "Temperatur",
+          "description": "Ziel bei Nur Heizen oder Nur Kühlen. In Auto setzt sie die Heizseite."
+        },
+        "target_temp_low": {
+          "name": "Heizen bis",
+          "description": "Heizziel des Bands (Auto)."
+        },
+        "target_temp_high": {
+          "name": "Kühlen ab",
+          "description": "Kühlziel des Bands (Auto)."
+        },
+        "duration": {
+          "name": "Dauer",
+          "description": "Wie lange der Override gilt."
+        },
+        "until": {
+          "name": "Bis",
+          "description": "Wann der Override endet."
+        },
+        "until_next_change": {
+          "name": "Bis zum nächsten Zeitplanwechsel",
+          "description": "Gilt bis zum nächsten Wechsel des aktiven Zeitplans. Ohne Zeitplan gilt er, bis er geändert wird; ein Zeitplan, der sich nicht lesen lässt, beendet ihn nach 6 Stunden."
+        }
+      }
+    }
+  },
+  "selector": {
+    "override_preset": {
+      "options": {
+        "comfort": "Komfort",
+        "eco": "Eco"
       }
     }
   }

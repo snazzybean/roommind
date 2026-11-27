@@ -3,6 +3,7 @@
  */
 
 export type ClimateMode = "auto" | "heat_only" | "cool_only";
+export type OverrideDurationMode = "schedule" | "minutes" | "permanent";
 
 export type RoomMode = "idle" | "heating" | "cooling";
 
@@ -288,6 +289,8 @@ export interface RoomConfig {
   /** Orchestration: expensive electricity prefers the primary source, cheap the AC. */
   heat_source_price_aware?: boolean;
   climate_control_enabled?: boolean;
+  override_duration_mode?: OverrideDurationMode;
+  override_duration_minutes?: number;
   live?: RoomLiveData;
 }
 
@@ -323,6 +326,7 @@ export interface GlobalSettings {
   presence_persons?: string[];
   presence_away_action?: PresenceAwayAction;
   presence_clears_override?: boolean;
+  presence_ends_override?: boolean;
   schedule_off_action?: "eco" | "off";
   valve_protection_enabled?: boolean;
   valve_protection_interval_days?: number;

@@ -21,7 +21,9 @@ from ..const import (
     DEFAULT_OUTDOOR_HEATING_MAX,
     HEATING_SYSTEM_RADIATOR,
     MODE_IDLE,
+    PRESENCE_OVERRIDE_PAUSE,
     is_override_active,
+    presence_override_mode,
 )
 from ..control.mpc_controller import (
     DEFAULT_OUTDOOR_TEMP_FALLBACK,
@@ -228,7 +230,7 @@ async def _compute_target_forecast(
             block_temp_converter=converter,
             presence_away_action=settings.get("presence_away_action", "eco"),
             schedule_off_action=settings.get("schedule_off_action", "eco"),
-            presence_clears_override=bool(settings.get("presence_clears_override", False)),
+            presence_clears_override=presence_override_mode(settings) == PRESENCE_OVERRIDE_PAUSE,
             room_vacant=room_vacant,
             away_heat=room.get("away_heat"),
             away_cool=room.get("away_cool"),

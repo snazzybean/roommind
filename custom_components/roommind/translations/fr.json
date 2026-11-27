@@ -24,7 +24,7 @@
     },
     "deprecated_entities": {
       "title": "Entités RoomMind à remplacer",
-      "description": "Chaque pièce a maintenant une entité climat (`climate.roommind_` suivi de l’ID de la pièce) qui affiche et pilote la pièce : température cible, préréglages confort/éco, mode et ce que fait RoomMind en ce moment. Les anciennes entités par pièce fonctionnent encore, mais seront supprimées dans une prochaine version. Elles sont encore utilisées directement par des automatisations ou des scripts :\n\n{entities}\n\nÀ utiliser à la place :\n- capteur de température cible → température cible de l’entité climat\n- capteur de mode → son `hvac_action`\n- entité de dérogation → `climate.set_temperature` ou un préréglage de l’entité climat (valable jusqu’au prochain changement de planification, le préréglage Planification (`none`) revient à la planification)\n\nCet avis disparaît dès que plus rien ne les utilise (vérifié au démarrage de Home Assistant)."
+      "description": "Chaque pièce a maintenant une entité climat (`climate.roommind_` suivi de l’ID de la pièce) qui affiche et pilote la pièce : température cible, préréglages confort/éco, mode et ce que fait RoomMind en ce moment. Les anciennes entités par pièce fonctionnent encore, mais seront supprimées dans une prochaine version. Elles sont encore utilisées directement par des automatisations ou des scripts :\n\n{entities}\n\nÀ utiliser à la place :\n- capteur de température cible → température cible de l’entité climat\n- capteur de mode → son `hvac_action`\n- entité de dérogation → `climate.set_temperature` ou un préréglage de l’entité climat (valable selon le réglage Modifications manuelles de la pièce, par défaut jusqu’au prochain changement de planification, le préréglage Planification (`none`) revient à la planification)\n\nCet avis disparaît dès que plus rien ne les utilise (vérifié au démarrage de Home Assistant)."
     }
   },
   "entity": {
@@ -43,6 +43,50 @@
     "binary_sensor": {
       "air_quality": {
         "name": "{room} qualité de l’air mauvaise"
+      }
+    }
+  },
+  "services": {
+    "set_override": {
+      "name": "Définir une dérogation",
+      "description": "Maintient une température ou un préréglage dans une pièce RoomMind avec une fin choisie. Sans consigne, la plage en vigueur est maintenue, ce qui permet aussi de prolonger ou raccourcir une dérogation en cours.",
+      "fields": {
+        "preset": {
+          "name": "Préréglage",
+          "description": "Consignes confort ou éco de la pièce. Laisser vide pour définir des températures ou maintenir celles en vigueur."
+        },
+        "temperature": {
+          "name": "Température",
+          "description": "Consigne en Chauffage seul ou Refroidissement seul. En Auto, elle définit le côté chauffage."
+        },
+        "target_temp_low": {
+          "name": "Chauffer jusqu'à",
+          "description": "Consigne de chauffage de la plage (Auto)."
+        },
+        "target_temp_high": {
+          "name": "Refroidir au-dessus de",
+          "description": "Consigne de refroidissement de la plage (Auto)."
+        },
+        "duration": {
+          "name": "Durée",
+          "description": "Durée de la dérogation."
+        },
+        "until": {
+          "name": "Jusqu'à",
+          "description": "Fin de la dérogation."
+        },
+        "until_next_change": {
+          "name": "Jusqu'au prochain changement du planning",
+          "description": "Maintenir jusqu'au prochain changement du planning actif. Sans planning, maintenir jusqu'à modification ; un planning illisible la termine après 6 heures."
+        }
+      }
+    }
+  },
+  "selector": {
+    "override_preset": {
+      "options": {
+        "comfort": "Confort",
+        "eco": "Éco"
       }
     }
   }

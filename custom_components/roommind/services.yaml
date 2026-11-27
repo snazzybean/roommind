@@ -1,0 +1,44 @@
+set_override:
+  target:
+    entity:
+      integration: roommind
+      domain: climate
+  fields:
+    preset:
+      selector:
+        select:
+          translation_key: override_preset
+          options:
+            - comfort
+            - eco
+    temperature:
+      selector:
+        number:
+          min: 0
+          max: 250
+          step: 0.1
+          mode: box
+    target_temp_low:
+      selector:
+        number:
+          min: 0
+          max: 250
+          step: 0.1
+          mode: box
+    target_temp_high:
+      selector:
+        number:
+          min: 0
+          max: 250
+          step: 0.1
+          mode: box
+    duration:
+      example: "01:30:00"
+      selector:
+        duration:
+    until:
+      selector:
+        datetime:
+    until_next_change:
+      selector:
+        boolean:

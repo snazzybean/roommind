@@ -24,7 +24,7 @@
     },
     "deprecated_entities": {
       "title": "Entidades de RoomMind que hay que sustituir",
-      "description": "Ahora cada habitación tiene una única entidad de climatización (`climate.roommind_` más el ID de la habitación) que muestra y controla la habitación: temperatura objetivo, preajustes confort/eco, modo y lo que RoomMind está haciendo en este momento. Las antiguas entidades por habitación siguen funcionando por ahora, pero se eliminarán en una versión futura. Estas siguen referenciadas directamente en automatizaciones o scripts:\n\n{entities}\n\nQué usar en su lugar:\n- sensor de temperatura objetivo → la temperatura objetivo de la entidad de climatización\n- sensor de modo → su `hvac_action`\n- entidad de temperatura temporal → `climate.set_temperature` o un preajuste de la entidad de climatización (se mantiene hasta el siguiente cambio del horario; el preajuste Horario (`none`) vuelve al horario)\n\nEste aviso desaparece cuando ya nada las usa (se comprueba al iniciar Home Assistant)."
+      "description": "Ahora cada habitación tiene una única entidad de climatización (`climate.roommind_` más el ID de la habitación) que muestra y controla la habitación: temperatura objetivo, preajustes confort/eco, modo y lo que RoomMind está haciendo en este momento. Las antiguas entidades por habitación siguen funcionando por ahora, pero se eliminarán en una versión futura. Estas siguen referenciadas directamente en automatizaciones o scripts:\n\n{entities}\n\nQué usar en su lugar:\n- sensor de temperatura objetivo → la temperatura objetivo de la entidad de climatización\n- sensor de modo → su `hvac_action`\n- entidad de temperatura temporal → `climate.set_temperature` o un preajuste de la entidad de climatización (se mantiene según lo ajustado en Cambios manuales de la habitación, por defecto hasta el siguiente cambio del horario; el preajuste Horario (`none`) vuelve al horario)\n\nEste aviso desaparece cuando ya nada las usa (se comprueba al iniciar Home Assistant)."
     }
   },
   "entity": {
@@ -43,6 +43,50 @@
     "binary_sensor": {
       "air_quality": {
         "name": "{room} con mala calidad del aire"
+      }
+    }
+  },
+  "services": {
+    "set_override": {
+      "name": "Fijar temperatura temporal",
+      "description": "Mantiene una temperatura o un preset en una habitación de RoomMind con un final elegido. Sin objetivos se mantiene la banda vigente, así una llamada solo con un final alarga o acorta una temperatura temporal en curso.",
+      "fields": {
+        "preset": {
+          "name": "Preset",
+          "description": "Objetivos de confort o eco de la habitación. Déjalo vacío para fijar temperaturas o mantener lo vigente."
+        },
+        "temperature": {
+          "name": "Temperatura",
+          "description": "Objetivo en solo calefacción o solo refrigeración. En auto fija el lado de calefacción."
+        },
+        "target_temp_low": {
+          "name": "Calentar hasta",
+          "description": "Objetivo de calefacción de la banda (auto)."
+        },
+        "target_temp_high": {
+          "name": "Enfriar desde",
+          "description": "Objetivo de refrigeración de la banda (auto)."
+        },
+        "duration": {
+          "name": "Duración",
+          "description": "Cuánto tiempo dura la temperatura temporal."
+        },
+        "until": {
+          "name": "Hasta",
+          "description": "Cuándo termina la temperatura temporal."
+        },
+        "until_next_change": {
+          "name": "Hasta el próximo cambio del horario",
+          "description": "Se mantiene hasta el próximo cambio del horario activo. Sin horario se mantiene hasta que se cambie; un horario que no se puede leer la termina tras 6 horas."
+        }
+      }
+    }
+  },
+  "selector": {
+    "override_preset": {
+      "options": {
+        "comfort": "Confort",
+        "eco": "Eco"
       }
     }
   }

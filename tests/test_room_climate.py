@@ -283,6 +283,29 @@ async def test_set_temperature_holds_until_next_schedule_change(setup):
 
 
 @pytest.mark.asyncio
+async def test_set_temperature_holds_for_room_minutes(setup):
+    make, _, store, _ = setup
+    entity = make(_room(override_duration_mode="minutes", override_duration_minutes=30))
+    before = time.time()
+    await entity.async_set_temperature(**{ATTR_TARGET_TEMP_LOW: 22.0, ATTR_TARGET_TEMP_HIGH: 25.0})
+    until = _written(store)["override_until"]
+    assert before + 1800 <= until <= time.time() + 1800
+
+
+@pytest.mark.asyncio
+async def test_preset_permanent_room_holds_until_changed(setup):
+    make, _, store, _ = setup
+    entity = make(_room(override_duration_mode="permanent"))
+    await entity.async_set_preset_mode("eco")
+    assert _written(store) == {
+        "override_heat": 17.0,
+        "override_cool": 27.0,
+        "override_until": None,
+        "override_type": "eco",
+    }
+
+
+@pytest.mark.asyncio
 async def test_set_temperature_without_schedule_holds_until_changed(setup):
     make, _, store, _ = setup
     entity = make(_room(schedules=[]))
@@ -516,6 +539,7 @@ async def test_mode_change_to_auto_completes_the_held_band(setup):
         "climate_mode": "auto",
         "override_heat": 15.5,
         "override_cool": 24.0,
+        "override_home_seen": False,
     }
 
 
@@ -676,3 +700,207 @@ async def test_celsius_echo_tolerance_is_half_a_step(setup, want, kept):
 def test_room_entity_is_enabled_for_new_rooms(setup):
     make, *_ = setup
     assert make(_room()).entity_registry_enabled_default is True
+
+
+# --- roommind.set_override (action for automations) ---
+
+
+@pytest.mark.asyncio
+async def test_set_override_preset_for_duration(setup):
+    make, coordinator, store, _ = setup
+    before = time.time()
+    await make().async_set_override_with_end({"preset": "eco", "duration": timedelta(minutes=90)})
+    written = _written(store)
+    assert written["override_heat"] == 17.0
+    assert written["override_cool"] == 27.0
+    assert written["override_type"] == "eco"
+    assert before + 5400 <= written["override_until"] <= time.time() + 5400
+    coordinator.async_request_refresh.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_set_override_temperatures_until_time(setup):
+    make, _, store, _ = setup
+    until = datetime.now(UTC) + timedelta(hours=5)
+    await make().async_set_override_with_end({ATTR_TARGET_TEMP_LOW: 22.0, ATTR_TARGET_TEMP_HIGH: 25.0, "until": until})
+    written = _written(store)
+    assert (written["override_heat"], written["override_cool"], written["override_type"]) == (22.0, 25.0, "custom")
+    assert written["override_until"] == until.timestamp()
+
+
+@pytest.mark.asyncio
+async def test_set_override_until_next_change(setup):
+    make, _, store, _ = setup
+    await make(_room(override_duration_mode="permanent")).async_set_override_with_end(
+        {ATTR_TEMPERATURE: 23.0, "until_next_change": True}
+    )
+    written = _written(store)
+    assert written["override_until"] == NEXT_EVENT.timestamp()
+    assert (written["override_heat"], written["override_cool"]) == (23.0, 24.0)  # auto widens
+
+
+@pytest.mark.asyncio
+async def test_set_override_without_end_uses_room_default(setup):
+    make, _, store, _ = setup
+    await make().async_set_override_with_end({"preset": "comfort"})
+    written = _written(store)
+    assert written["override_until"] == NEXT_EVENT.timestamp()
+    assert written["override_type"] == "boost"
+
+
+@pytest.mark.asyncio
+async def test_set_override_without_end_follows_room_override_duration(setup):
+    make, _, store, _ = setup
+    await make(_room(override_duration_mode="permanent")).async_set_override_with_end({"preset": "comfort"})
+    assert _written(store)["override_until"] is None
+
+
+@pytest.mark.asyncio
+async def test_set_override_without_targets_extends_running_override(setup):
+    make, _, store, _ = setup
+    room = _room(override_heat=22.5, override_cool=25.0, override_type="boost", override_until=time.time() + 60)
+    await make(room).async_set_override_with_end({"duration": timedelta(hours=2)})
+    written = _written(store)
+    assert (written["override_heat"], written["override_cool"], written["override_type"]) == (22.5, 25.0, "boost")
+    assert written["override_until"] > time.time() + 7000
+
+
+@pytest.mark.asyncio
+async def test_set_override_without_targets_holds_band_in_force(setup):
+    make, _, store, _ = setup
+    await make().async_set_override_with_end({"until_next_change": True})
+    written = _written(store)
+    assert (written["override_heat"], written["override_cool"], written["override_type"]) == (21.0, 24.0, "custom")
+
+
+@pytest.mark.asyncio
+async def test_set_override_converts_fahrenheit(setup):
+    make, coordinator, store, _ = setup
+    coordinator.hass.config.units.temperature_unit = UnitOfTemperature.FAHRENHEIT
+    await make(_room(climate_mode="heat_only")).async_set_override_with_end({ATTR_TEMPERATURE: 71.6})
+    assert _written(store)["override_heat"] == pytest.approx(22.0)
+    assert _written(store)["override_cool"] is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "data",
+    [
+        {"preset": "eco", ATTR_TEMPERATURE: 20.0},
+        {"preset": "eco", "until": datetime.now(UTC) - timedelta(minutes=1)},
+        {"preset": "eco", "duration": timedelta(0)},
+        {ATTR_TARGET_TEMP_LOW: 25.0, ATTR_TARGET_TEMP_HIGH: 22.0},
+    ],
+)
+async def test_set_override_rejects_invalid_calls(setup, data):
+    make, _, store, _ = setup
+    with pytest.raises(ServiceValidationError):
+        await make().async_set_override_with_end(data)
+    store.async_update_room.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_set_override_rejects_outdoor_room(setup):
+    make, _, store, _ = setup
+    with pytest.raises(ServiceValidationError):
+        await make(_room(is_outdoor=True)).async_set_override_with_end({"preset": "eco"})
+
+
+def test_set_override_schema_allows_one_end_only():
+    import voluptuous as vol
+
+    from custom_components.roommind.climate import SET_OVERRIDE_SCHEMA
+
+    schema = vol.Schema(SET_OVERRIDE_SCHEMA)
+    assert schema({"preset": "eco", "duration": "01:30:00"})["duration"] == timedelta(minutes=90)
+    with pytest.raises(vol.Invalid):
+        schema({"duration": "01:00:00", "until": "2026-12-01 07:00"})
+    # The action UI may send the switch as false next to a duration
+    assert schema({"duration": "01:00:00", "until_next_change": False})["until_next_change"] is False
+
+
+@pytest.mark.asyncio
+async def test_set_override_until_next_change_with_another_end_is_rejected(setup):
+    make, _, store, _ = setup
+    with pytest.raises(ServiceValidationError):
+        await make().async_set_override_with_end({"duration": timedelta(hours=1), "until_next_change": True})
+    store.async_update_room.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_set_override_duration_with_until_next_change_false(setup):
+    make, _, store, _ = setup
+    before = time.time()
+    await make().async_set_override_with_end(
+        {"preset": "eco", "duration": timedelta(hours=1), "until_next_change": False}
+    )
+    assert _written(store)["override_until"] >= before + 3600
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("value", [72.0, 4.0, float("nan")])
+async def test_set_override_rejects_temperatures_out_of_range(setup, value):
+    make, _, store, _ = setup
+    with pytest.raises(ServiceValidationError):
+        await make(_room(climate_mode="heat_only")).async_set_override_with_end({ATTR_TEMPERATURE: value})
+    store.async_update_room.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_set_override_naive_until_is_local_time(setup):
+    from homeassistant.util import dt as dt_util
+
+    make, _, store, _ = setup
+    local = (datetime.now(dt_util.get_default_time_zone()) + timedelta(hours=3)).replace(microsecond=0)
+    await make().async_set_override_with_end({"preset": "eco", "until": local.replace(tzinfo=None)})
+    assert _written(store)["override_until"] == local.timestamp()
+
+
+@pytest.mark.asyncio
+async def test_set_override_without_targets_needs_a_target_in_force(setup):
+    make, _, store, _ = setup
+    entity = make(_room(climate_mode="heat_only"), _live(heat_target=None, cool_target=None, force_off=True))
+    with patch.object(RoomMindRoomClimate, "_band", return_value=(None, None)):
+        with pytest.raises(ServiceValidationError):
+            await entity.async_set_override_with_end({"duration": timedelta(hours=1)})
+    store.async_update_room.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_extending_keeps_presence_end_armed(setup):
+    """Only the end changes: an override armed for presence_ends_override stays armed."""
+    make, _, store, _ = setup
+    room = _room(
+        override_heat=22.5,
+        override_cool=25.0,
+        override_type="boost",
+        override_until=time.time() + 60,
+        override_home_seen=True,
+    )
+    await make(room).async_set_override_with_end({"duration": timedelta(hours=2)})
+    assert _written(store)["override_home_seen"] is True
+    await make(room).async_set_override_with_end({"preset": "eco"})
+    assert "override_home_seen" not in _written(store)
+
+
+@pytest.mark.asyncio
+async def test_mode_change_keeps_presence_end_armed(setup):
+    make, _, store, _ = setup
+    room = _room(override_heat=22.0, override_cool=25.0, override_until=time.time() + 600, override_home_seen=True)
+    await make(room).async_set_hvac_mode(HVACMode.HEAT)
+    assert _written(store)["override_home_seen"] is True
+
+
+@pytest.mark.asyncio
+async def test_handler_routes_to_the_room_entity_only(setup):
+    from custom_components.roommind.climate import _async_handle_set_override
+
+    make, _, store, _ = setup
+    call = MagicMock()
+    call.data = {"preset": "eco", "duration": timedelta(hours=1)}
+    await _async_handle_set_override(make(), call)
+    assert _written(store)["override_type"] == "eco"
+    other = MagicMock()
+    other.entity_id = "climate.roommind_living_room_override"
+    with pytest.raises(ServiceValidationError):
+        await _async_handle_set_override(other, call)

@@ -20,13 +20,20 @@ from ..const import (
     DEFAULT_COMFORT_HEAT,
     DEFAULT_ECO_COOL,
     DEFAULT_ECO_HEAT,
+    DEFAULT_OVERRIDE_DURATION_MINUTES,
+    MAX_OVERRIDE_DURATION_MINUTES,
     MAX_TARGET_TEMP,
+    MIN_OVERRIDE_DURATION_MINUTES,
     MIN_TARGET_TEMP,
     OVERRIDE_BOOST,
+    OVERRIDE_DURATION_MINUTES,
+    OVERRIDE_DURATION_PERMANENT,
     OVERRIDE_ECO,
+    PRESENCE_OVERRIDE_PAUSE,
     SCHEDULE_UNREADABLE_HOLD_HOURS,
     TargetTemps,
     is_override_active,
+    presence_override_mode,
 )
 from .price_utils import PriceSignal, apply_price_shift
 
@@ -498,6 +505,25 @@ def override_hold_until(hass: HomeAssistant, room: dict, now: float | None = Non
     return now + SCHEDULE_UNREADABLE_HOLD_HOURS * 3600
 
 
+def override_until_for_room(hass: HomeAssistant, room: dict, now: float | None = None) -> float | None:
+    """Return when a manual target set now ends under the room's override duration, None = until changed.
+
+    Default is the active schedule's next change, like a thermostat's temporary hold
+    (``override_hold_until``: a schedule that cannot be read ends it after a few hours).
+    """
+    mode = room.get("override_duration_mode")
+    if mode == OVERRIDE_DURATION_PERMANENT:
+        return None
+    if mode == OVERRIDE_DURATION_MINUTES:
+        try:
+            minutes = int(room.get("override_duration_minutes", DEFAULT_OVERRIDE_DURATION_MINUTES))
+        except (TypeError, ValueError):
+            minutes = DEFAULT_OVERRIDE_DURATION_MINUTES
+        minutes = max(MIN_OVERRIDE_DURATION_MINUTES, min(MAX_OVERRIDE_DURATION_MINUTES, minutes))
+        return (time.time() if now is None else now) + minutes * 60
+    return override_hold_until(hass, room, now)
+
+
 async def read_schedule_blocks(
     hass: HomeAssistant,
     schedule_entity_id: str,
@@ -621,7 +647,7 @@ def make_target_resolver(
     vacation_temp = settings.get("vacation_temp")
     presence_away_action = settings.get("presence_away_action", "eco")
     schedule_off_action = settings.get("schedule_off_action", "eco")
-    presence_clears_override = bool(settings.get("presence_clears_override", False))
+    presence_clears_override = presence_override_mode(settings) == PRESENCE_OVERRIDE_PAUSE
     climate_mode = room.get("climate_mode", "auto")
 
     converter: Callable[[float], float] | None = None

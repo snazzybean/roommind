@@ -94,6 +94,7 @@ async def test_list_rooms_empty(ws_hass, store, connection):
             "presence_persons": [],
             "presence_away_action": "eco",
             "presence_clears_override": False,
+            "presence_ends_override": False,
             "schedule_off_action": "eco",
             "anyone_home": True,
             "valve_protection_enabled": False,
@@ -1223,6 +1224,21 @@ async def test_save_settings(ws_hass, store, connection):
 
 
 @pytest.mark.asyncio
+async def test_save_settings_presence_ends_override(ws_hass, store, connection):
+    """ "End" is its own key, the pause flag stays as stored for older versions."""
+    await store.async_load()
+    msg = {
+        "id": 12,
+        "type": "roommind/settings/save",
+        "presence_clears_override": False,
+        "presence_ends_override": True,
+    }
+    await _save_settings(ws_hass, connection, msg)
+    assert store.get_settings()["presence_ends_override"] is True
+    assert store.get_settings()["presence_clears_override"] is False
+
+
+@pytest.mark.asyncio
 async def test_save_settings_keeps_the_floor_order(ws_hass, store, connection):
     """The floor order set in the dashboard's edit mode is stored and listed with the rooms (#541)."""
     await store.async_load()
@@ -1997,6 +2013,40 @@ def test_register_websocket_commands(hass):
     with patch("custom_components.roommind.websocket_api.websocket_api.async_register_command") as mock_reg:
         async_register_websocket_commands(hass)
         assert mock_reg.call_count == 13
+
+
+@pytest.mark.asyncio
+async def test_save_room_override_duration_roundtrip(ws_hass, store, connection):
+    """The room's override duration is saved with the room."""
+    await store.async_load()
+    msg = {
+        "id": 2,
+        "type": "roommind/rooms/save",
+        "area_id": "kitchen",
+        "thermostats": ["climate.kitchen"],
+        "override_duration_mode": "minutes",
+        "override_duration_minutes": 45,
+    }
+    await _save_room(ws_hass, connection, msg)
+    room = connection.send_result.call_args[0][1]["room"]
+    assert room["override_duration_mode"] == "minutes"
+    assert room["override_duration_minutes"] == 45
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        {"override_duration_mode": "forever"},
+        {"override_duration_minutes": 4},
+        {"override_duration_minutes": 1441},
+    ],
+)
+def test_save_room_override_duration_invalid_rejected(field):
+    import voluptuous as vol
+
+    schema = websocket_save_room._ws_schema
+    with pytest.raises(vol.Invalid):
+        schema({"id": 1, "type": "roommind/rooms/save", "area_id": "kitchen", **field})
 
 
 # ---------------------------------------------------------------------------

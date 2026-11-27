@@ -13,23 +13,30 @@ if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
 
 
-def is_presence_away(hass: HomeAssistant, room: dict, settings: dict) -> bool:
-    """Return True if presence detection says all relevant persons are away.
+PRESENCE_HOME = "home"
+PRESENCE_AWAY = "away"
+PRESENCE_UNKNOWN = "unknown"
 
-    Per-room persons take precedence over global persons.
-    Fail-safe: unavailable/unknown entities are treated as "home".
-    Entities that no longer exist are skipped (see _is_entity_gone).
+
+def presence_state(hass: HomeAssistant, room: dict, settings: dict) -> str:
+    """Return whether the room's relevant persons are home, all away, or unknown.
+
+    Per-room persons take precedence over global persons. Unavailable/unknown
+    entities make it unknown unless someone is home; entities that no longer
+    exist are skipped (see _is_entity_gone). Unknown also without presence
+    detection or persons.
     """
     if not settings.get("presence_enabled", False):
-        return False
+        return PRESENCE_UNKNOWN
     global_persons = settings.get("presence_persons", [])
     if not global_persons:
-        return False
+        return PRESENCE_UNKNOWN
 
     room_persons = room.get("presence_persons", [])
     persons = room_persons if room_persons else global_persons
 
     evaluated = 0
+    unknown = False
     for pid in persons:
         state = hass.states.get(pid)
         if state is None:
@@ -39,13 +46,25 @@ def is_presence_away(hass: HomeAssistant, room: dict, settings: dict) -> bool:
             # room to "home". Skip it and let the remaining entities decide.
             if _is_entity_gone(hass, pid):
                 continue
-            return False  # fail-safe: entity exists but has no state yet
+            unknown = True  # entity exists but has no state yet
+            continue
         if state.state in ("unavailable", "unknown"):
-            return False  # fail-safe: treat as home
+            unknown = True
+            continue
         evaluated += 1
         if _is_entity_home(state):
-            return False
-    return evaluated > 0
+            return PRESENCE_HOME
+    if unknown or evaluated == 0:
+        return PRESENCE_UNKNOWN
+    return PRESENCE_AWAY
+
+
+def is_presence_away(hass: HomeAssistant, room: dict, settings: dict) -> bool:
+    """Return True if presence detection says all relevant persons are away.
+
+    Fail-safe: unavailable/unknown entities are treated as "home".
+    """
+    return presence_state(hass, room, settings) == PRESENCE_AWAY
 
 
 def _is_entity_gone(hass: HomeAssistant, entity_id: str) -> bool:

@@ -1,0 +1,81 @@
+name: presence-ends-override
+description: >
+  "Temporary temperature when everyone leaves: end" (presence_ends_override, PR #523). An
+  override set at home ends once the house has been empty for 10 minutes; a short absence
+  (GPS flap) does not end it; one set from away survives the empty house and the arrival;
+  a restart keeps a running override. The bedroom ignores presence and keeps its override.
+refs: [523]
+tags: [trv, presence, override]
+start: 2026-01-12T00:00
+duration: 2d
+location: {latitude: 52.5, longitude: 13.4, time_zone: Europe/Berlin}
+weather: {profile: temperate}
+house:
+  building: bestand_teilsaniert
+  outdoor: {sensors: {temperature: sensor.aussen_temp}}
+  rooms:
+    wohnzimmer:
+      floor_area_m2: 22
+      initial: {temperature: 19.0}
+      devices: [{entity_id: climate.wz_trv, profile: generic_trv}]
+      sensors: {temperature: {entity_id: sensor.wz_temp}}
+    schlafzimmer:
+      floor_area_m2: 14
+      initial: {temperature: 18.0}
+      devices: [{entity_id: climate.sz_trv, profile: generic_trv}]
+      sensors: {temperature: {entity_id: sensor.sz_temp}}
+people:
+  - {id: anna, profile: home_office, rooms: {living: wohnzimmer}}   # weekdays at home all day
+helpers:
+  schedule:
+    plan_wohnen: {daily: ["06:00-22:00"]}
+roommind:
+  settings:
+    outdoor_temp_sensor: sensor.aussen_temp
+    presence_enabled: true
+    presence_persons: [person.anna]
+    presence_ends_override: true
+  rooms:
+    wohnzimmer:
+      devices: [{entity_id: climate.wz_trv, type: trv, heating_system_type: radiator}]
+      temperature_sensor: sensor.wz_temp
+      climate_mode: heat_only
+      schedules: [{entity_id: schedule.plan_wohnen}]
+      comfort_temp: 20.0
+      eco_temp: 17.0
+    schlafzimmer:
+      devices: [{entity_id: climate.sz_trv, type: trv, heating_system_type: radiator}]
+      temperature_sensor: sensor.sz_temp
+      climate_mode: heat_only
+      schedules: [{entity_id: schedule.plan_wohnen}]
+      comfort_temp: 19.0
+      eco_temp: 16.0
+      ignore_presence: true
+timeline:
+  # set at home, everyone leaves at 09:00 for 3 h
+  - {at: "+0d08h", do: roommind.ws, type: roommind/override/set, area_id: wohnzimmer, override_type: custom, heat: 23.0, until_schedule_change: true}
+  - {at: "+0d08h", do: roommind.ws, type: roommind/override/set, area_id: schlafzimmer, override_type: custom, heat: 22.0, until_schedule_change: true}
+  - {at: "+0d09h", do: person.leave, person: anna, for: 3h}
+  # set at home, a 4-minute flap
+  - {at: "+0d13h", do: roommind.ws, type: roommind/override/set, area_id: wohnzimmer, override_type: custom, heat: 22.5, until_schedule_change: true}
+  - {at: "+0d13h30m", do: person.leave, person: anna, for: 4m}
+  # a restart keeps a running override
+  - {at: "+1d08h", do: roommind.ws, type: roommind/override/set, area_id: wohnzimmer, override_type: custom, heat: 21.5, until_schedule_change: true}
+  - {at: "+1d09h", do: ha.restart}
+  - {at: "+1d10h", do: person.leave, person: anna, for: 1h}
+  # set from away (pre-heating), back home at 19:00
+  - {at: "+1d15h", do: person.leave, person: anna, for: 4h}
+  - {at: "+1d15h30m", do: roommind.ws, type: roommind/override/set, area_id: wohnzimmer, override_type: custom, heat: 22.0, until_schedule_change: true}
+expect:
+  - {invariant: no_rejected_commands}
+  - {invariant: target_never_empty}
+  - {check: "room.wohnzimmer.override_active == true and room.wohnzimmer.presence_away == true", at: "+0d09h07m", label: still held during the first minutes away}
+  - {check: "room.wohnzimmer.override_active == false and room.wohnzimmer.heat_target == 17.0", at: "+0d09h15m", label: empty house ends it}
+  - {check: "room.wohnzimmer.override_active == false", at: "+0d12h05m", label: coming home does not bring it back}
+  - {check: "room.schlafzimmer.override_active == true and room.schlafzimmer.heat_target == 22.0", at: "+0d09h30m", label: room ignoring presence keeps it}
+  - {check: "room.wohnzimmer.override_active == true and room.wohnzimmer.heat_target == 22.5", at: "+0d13h50m", label: a short flap does not end it}
+  - {check: "room.wohnzimmer.override_active == false", at: "+0d22h05m", label: schedule change still ends it}
+  - {check: "room.wohnzimmer.override_active == true and room.wohnzimmer.heat_target == 21.5", at: "+1d09h05m", label: restart keeps it}
+  - {check: "room.wohnzimmer.override_active == false", at: "+1d10h15m", label: leaving after the restart ends it}
+  - {check: "room.wohnzimmer.override_active == true and room.wohnzimmer.presence_away == true", at: "+1d16h30m", label: set from away survives the empty house}
+  - {check: "room.wohnzimmer.override_active == true and room.wohnzimmer.presence_away == false and room.wohnzimmer.heat_target == 22.0", at: "+1d19h15m", label: arriving does not end it}

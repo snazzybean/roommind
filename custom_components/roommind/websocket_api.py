@@ -31,6 +31,7 @@ from .const import (
     MAX_HUMIDITY_MIN,
     MAX_MASTER_DELAY_S,
     MAX_MASTER_TEMPERATURE,
+    MAX_OVERRIDE_DURATION_MINUTES,
     MAX_PRICE_SHIFT_K,
     MAX_TARGET_TEMP,
     MIN_CO2_THRESHOLD,
@@ -38,8 +39,10 @@ from .const import (
     MIN_HUMIDITY_MIN,
     MIN_MASTER_TEMPERATURE,
     MIN_OCCUPANCY_ECO_DELAY_MINUTES,
+    MIN_OVERRIDE_DURATION_MINUTES,
     MIN_TARGET_TEMP,
     OVERRIDE_CUSTOM,
+    OVERRIDE_DURATION_MODES,
     OVERRIDE_TYPES,
     ROOM_FAN_MODES,
     VENTILATION_DOMAINS,
@@ -198,6 +201,8 @@ _ROOM_SAVE_FIELDS = (
     "room_fan_entity",
     "room_fan_mode",
     "ac_dry_enabled",
+    "override_duration_mode",
+    "override_duration_minutes",
 )
 
 # Same limits as the room climate entity; also turns away nan/inf
@@ -237,6 +242,7 @@ _SETTINGS_SAVE_FIELDS = (
     "presence_persons",
     "presence_away_action",
     "presence_clears_override",
+    "presence_ends_override",
     "schedule_off_action",
     "valve_protection_enabled",
     "valve_protection_interval_days",
@@ -498,6 +504,7 @@ async def websocket_list_rooms(
             "presence_persons": settings.get("presence_persons", []),
             "presence_away_action": settings.get("presence_away_action", "eco"),
             "presence_clears_override": settings.get("presence_clears_override", False),
+            "presence_ends_override": settings.get("presence_ends_override", False),
             "schedule_off_action": settings.get("schedule_off_action", "eco"),
             "anyone_home": _compute_anyone_home(hass, settings),
             "valve_protection_enabled": settings.get("valve_protection_enabled", False),
@@ -641,6 +648,10 @@ async def websocket_list_rooms(
         ),
         vol.Optional("room_fan_mode"): vol.In(ROOM_FAN_MODES),
         vol.Optional("ac_dry_enabled"): bool,
+        vol.Optional("override_duration_mode"): vol.In(OVERRIDE_DURATION_MODES),
+        vol.Optional("override_duration_minutes"): vol.All(
+            vol.Coerce(int), vol.Range(min=MIN_OVERRIDE_DURATION_MINUTES, max=MAX_OVERRIDE_DURATION_MINUTES)
+        ),
     }
 )
 @websocket_api.async_response
@@ -988,6 +999,7 @@ async def websocket_get_settings(
         vol.Optional("presence_persons"): [str],
         vol.Optional("presence_away_action"): vol.In(["eco", "off", "away"]),
         vol.Optional("presence_clears_override"): bool,
+        vol.Optional("presence_ends_override"): bool,
         vol.Optional("schedule_off_action"): vol.In(["eco", "off"]),
         vol.Optional("valve_protection_enabled"): bool,
         vol.Optional("valve_protection_interval_days"): vol.All(vol.Coerce(int), vol.Range(min=1, max=90)),
