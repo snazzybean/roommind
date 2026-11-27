@@ -65,7 +65,7 @@
             <a id="nextFileLink" class="nav" href="z_747bfac8990f5e8b_sensor_utils_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.17.5">coverage.py v7.17.5</a>,
-            created at 2026-11-27 14:29 +0000
+            created at 2026-11-27 20:29 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -129,7 +129,7 @@
     <p class="pln"><span class="n"><a id="t47" href="#t47">47</a></span><span class="t"><span class="str">    Caller must check ``schedule_blocks is None`` before calling.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t48" href="#t48">48</a></span><span class="t"><span class="str">    &quot;&quot;&quot;</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t49" href="#t49">49</a></span><span class="t">    <span class="nam">dt</span> <span class="op">=</span> <span class="nam">dt_util</span><span class="op">.</span><span class="nam">as_local</span><span class="op">(</span><span class="nam">datetime</span><span class="op">.</span><span class="nam">fromtimestamp</span><span class="op">(</span><span class="nam">ts</span><span class="op">,</span> <span class="nam">tz</span><span class="op">=</span><span class="nam">UTC</span><span class="op">)</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t50" href="#t50">50</a></span><span class="t">    <span class="nam">day_name</span> <span class="op">=</span> <span class="nam">dt</span><span class="op">.</span><span class="nam">strftime</span><span class="op">(</span><span class="str">&quot;%A&quot;</span><span class="op">)</span><span class="op">.</span><span class="nam">lower</span><span class="op">(</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t50" href="#t50">50</a></span><span class="t">    <span class="nam">day_name</span> <span class="op">=</span> <span class="nam">_WEEKDAYS</span><span class="op">[</span><span class="nam">dt</span><span class="op">.</span><span class="nam">weekday</span><span class="op">(</span><span class="op">)</span><span class="op">]</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t51" href="#t51">51</a></span><span class="t">    <span class="nam">current_time</span> <span class="op">=</span> <span class="nam">dt</span><span class="op">.</span><span class="nam">time</span><span class="op">(</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t52" href="#t52">52</a></span><span class="t">    <span class="nam">day_blocks</span> <span class="op">=</span> <span class="nam">schedule_blocks</span><span class="op">.</span><span class="nam">get</span><span class="op">(</span><span class="nam">day_name</span><span class="op">,</span> <span class="op">[</span><span class="op">]</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t53" href="#t53">53</a></span><span class="t">    <span class="key">for</span> <span class="nam">block</span> <span class="key">in</span> <span class="nam">day_blocks</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
@@ -784,7 +784,7 @@
             <a class="nav" href="z_747bfac8990f5e8b_sensor_utils_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.17.5">coverage.py v7.17.5</a>,
-            created at 2026-11-27 14:29 +0000
+            created at 2026-11-27 20:29 +0000
         </p>
     </div>
 </footer>
