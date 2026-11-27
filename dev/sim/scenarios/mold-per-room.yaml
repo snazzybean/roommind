@@ -1,0 +1,24 @@
+name: mold-per-room
+description: >
+  Per-room mold settings on top of the global ones (PR #524). Same house as
+  mold-prevention-unheated-room, global prevention intensity light. The damp hallway has
+  mold protection switched off: no risk, no prevention. The bathroom uses its own intensity
+  strong: prevention raises its target by 3 K instead of the global 1 K.
+refs: [524]
+tags: [mold, humidity]
+extends: mold-prevention-unheated-room
+roommind:
+  settings:
+    mold_prevention_intensity: light
+  rooms:
+    bad:
+      mold_prevention_intensity: strong
+    flur:
+      mold_enabled: false
+expect:
+  - {check: "room.flur.mold_risk_level == 'ok'", at: "+0d08h30m", label: hallway with mold protection off reports no risk}
+  - {metric: room.mold_prevention_h, room: flur, max: 0, label: no prevention in the hallway}
+  - {metric: room.mold_prevention_h, room: bad, min: 0.5, label: the bathroom still gets prevention}
+  # prevention runs about +0d07h..+0d11h; global light would raise by 1
+  - {check: "room.bad.mold_prevention_delta == 3", at: "+0d09h", label: the bathroom uses its own intensity strong}
+  - {invariant: target_never_empty}
