@@ -322,12 +322,7 @@ export class RsScheduleSettings extends RsScheduleBase {
         wrap
         icon="mdi:gesture-tap"
         .heading=${localize("schedule.follow_device_setpoint_label", l)}
-        .secondary=${localize(
-          this.schedules.length
-            ? "detail.schedule.follow_sub"
-            : "detail.schedule.follow_sub_no_schedule",
-          l,
-        )}
+        .secondary=${this._followSubText(l)}
         .checked=${this.followDeviceSetpoint}
         @toggle-changed=${(e: CustomEvent<boolean>) =>
           this._fireValue("follow-device-setpoint-changed", e.detail)}
@@ -412,6 +407,20 @@ export class RsScheduleSettings extends RsScheduleBase {
     if (!when.length) return localize("detail.schedule.eco_sub_manual", l);
     const list = new Intl.ListFormat(l, { type: "disjunction" }).format(when);
     return localize("detail.schedule.eco_sub", l, { when: list });
+  }
+
+  private _followSubText(l: string): string {
+    if (this.overrideDurationMode === "minutes") {
+      return localize("detail.schedule.follow_sub_minutes", l, {
+        time: formatMinutes(this.overrideDurationMinutes, l),
+      });
+    }
+    return localize(
+      this.overrideDurationMode === "permanent" || this.schedules.length === 0
+        ? "detail.schedule.follow_sub_no_schedule"
+        : "detail.schedule.follow_sub",
+      l,
+    );
   }
 
   private _manualDurationText(l: string): string {

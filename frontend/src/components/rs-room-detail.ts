@@ -1002,7 +1002,11 @@ export class RsRoomDetail extends LitElement {
         >
           <rs-field
             .label=${localize("schedule.manual_duration_label", lang)}
-            .hint=${localize("schedule.manual_hint", lang)}
+            .hint=${
+              this._overrideDurationMode === "schedule" && this._schedules.length === 0
+                ? `${localize("schedule.manual_hint", lang)} ${localize("schedule.manual_no_schedule", lang)}`
+                : localize("schedule.manual_hint", lang)
+            }
           >
             <rs-segmented
               wrap
