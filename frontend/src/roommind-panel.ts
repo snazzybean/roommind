@@ -562,7 +562,7 @@ export class RoomMindPanel extends LitElement {
             .vacationUntil=${this._vacationUntil}
             .moldDetectionEnabled=${this._moldDetectionEnabled}
             .moldPreventionEnabled=${this._moldPreventionEnabled}
-            .moldPreventionIntensity=${this._moldPreventionIntensity}
+            .moldPreventionIntensityGlobal=${this._moldPreventionIntensity}
             @room-updated=${this._onRoomUpdated}
             @room-deleted=${this._onRoomDeleted}
             @open-analytics=${this._onGoToAnalytics}

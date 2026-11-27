@@ -561,7 +561,7 @@
   "mold.room_enabled": "Protección antimoho en esta habitación",
   "mold.room_enabled_hint": "Desactivada: sin avisos de moho ni prevención en esta habitación, p. ej. un trastero o un garaje.",
   "mold.room_intensity": "Intensidad de la prevención en esta habitación",
-  "mold.room_intensity_global": "Como el ajuste global ({intensity})",
+  "mold.room_intensity_global": "Como el ajuste global: {intensity}",
   "mold.room_off_view": "Protección antimoho desactivada en esta habitación",
   "mold.room_intensity_view": "Prevención de moho: {intensity}",
   "card.mold_warning": "Riesgo de moho",
