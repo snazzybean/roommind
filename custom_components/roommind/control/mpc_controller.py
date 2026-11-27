@@ -74,7 +74,7 @@ from ..utils.device_utils import (
 )
 from ..utils.temp_utils import celsius_delta_to_ha, celsius_to_ha_temp
 from .direct_valve import async_release_valve, async_set_valve, clear_valve_cache
-from .mpc_optimizer import MPCOptimizer, MPCPlan, preheat_max_blocks, slow_start_penalty
+from .mpc_optimizer import MPCOptimizer, MPCPlan, preheat_lead_blocks, preheat_max_blocks, slow_start_penalty
 from .residual_heat import get_min_run_blocks, heat_min_run_blocks, mean_rebound
 from .thermal_model import RoomModelManager
 
@@ -1544,6 +1544,7 @@ class MPCController:
         has_external_sensor: bool = True,
         target_resolver: Callable[[float], TargetTemps | float] | None = None,
         schedule_target_resolver: Callable[[float], TargetTemps] | None = None,
+        preheat_lead: Callable[[float], float | None] | None = None,
         q_solar: float = 0.0,
         room_solar: RoomSolar | None = None,
         latitude: float = 0.0,
@@ -1586,6 +1587,8 @@ class MPCController:
         self._target_resolver = target_resolver
         # Targets without the electricity price shift (only for rooms following the price)
         self._schedule_target_resolver = schedule_target_resolver
+        # Pre-heat lead (s) a schedule block's ``preheat`` allows at a time; None: the room's switch alone
+        self._preheat_lead = preheat_lead
         self.last_plan: MPCPlan | None = None
         self._peak_temps_unoccupied: list[float] | None = None
         self.q_solar = q_solar
@@ -1644,8 +1647,10 @@ class MPCController:
         cw = s.get("comfort_weight", 70)
         self._w_comfort = max(1.0, cw / 10.0)
         self._w_energy = max(1.0, (100 - cw) / 10.0)
+        # With schedule blocks setting ``preheat`` the room's switch comes in per block
+        # through the lead (a block may pre-heat in a room switched off), the slider stays.
         self._preheat_max_blocks = preheat_max_blocks(
-            cw, PLAN_DT_MINUTES, enabled=room_config.get("preheat_enabled", True)
+            cw, PLAN_DT_MINUTES, enabled=preheat_lead is not None or room_config.get("preheat_enabled", True)
         )
         self._approach_rate = min(1.0, APPROACH_RATE_MIN + (1.0 - APPROACH_RATE_MIN) * cw / DEFAULT_COMFORT_WEIGHT)
         self._valve_modulating = is_valve_modulating(
@@ -1902,9 +1907,15 @@ class MPCController:
         schedule_heat_series: list[float] | None = None
         schedule_cool_series: list[float] | None = None
         now = time.time()
+        lead_blocks: list[int | None] | None = None
         if self._target_resolver is not None:
             dt_seconds = PLAN_DT_MINUTES * 60
             raw_targets = [self._target_resolver(now + i * dt_seconds) for i in range(horizon_blocks)]
+            if self._preheat_lead is not None:
+                lead_blocks = [
+                    preheat_lead_blocks(self._preheat_lead(now + i * dt_seconds), PLAN_DT_MINUTES)
+                    for i in range(horizon_blocks)
+                ]
             # Extract separate heat and cool series from TargetTemps
             if raw_targets and isinstance(raw_targets[0], TargetTemps):
                 pairs = cast(list[TargetTemps], raw_targets)
@@ -1967,6 +1978,7 @@ class MPCController:
                 preheat_max_blocks=self._preheat_max_blocks,
                 residual_scale=self._residual_scale,
                 residual_tau=self._residual_tau,
+                preheat_lead_blocks=lead_blocks,
             )
 
             plan = optimizer.optimize(

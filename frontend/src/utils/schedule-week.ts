@@ -387,6 +387,47 @@ export function roundToStep(value: number, step: number): number {
   return Number(rounded.toFixed(2));
 }
 
+// ─── Pre-heating per block ───────────────────────────────────────────
+
+/** Block data key that switches or limits pre-heating before the block (backend `PREHEAT_BLOCK_KEY`). */
+export const PREHEAT_KEY = "preheat";
+export const DEFAULT_PREHEAT_MINUTES = 60;
+export const MAX_PREHEAT_MINUTES = 720;
+
+/** "room": no key, the room's switch applies; a number limits the lead to that many minutes. */
+export type BlockPreheat = "room" | "on" | "off" | number;
+
+const PREHEAT_TRUE = ["true", "on", "yes"];
+const PREHEAT_FALSE = ["false", "off", "no"];
+
+/** How the block sets pre-heating, read like the backend's `parse_block_preheat`. */
+export function blockPreheat(block: ScheduleBlock): BlockPreheat {
+  const raw = block.data?.[PREHEAT_KEY];
+  if (raw === undefined || raw === null) return "room";
+  if (typeof raw === "boolean") return raw ? "on" : "off";
+  if (typeof raw === "string") {
+    const word = raw.trim().toLowerCase();
+    if (PREHEAT_TRUE.includes(word)) return "on";
+    if (PREHEAT_FALSE.includes(word)) return "off";
+  }
+  const minutes = num(raw);
+  if (minutes === undefined) return "room";
+  return minutes <= 0 ? "off" : minutes;
+}
+
+/** Block data with a new pre-heat setting; "room" removes the key, other keys stay. */
+export function withPreheat(
+  data: BlockData | undefined,
+  preheat: BlockPreheat,
+): BlockData | undefined {
+  const next: BlockData = { ...(data ?? {}) };
+  if (preheat === "room") delete next[PREHEAT_KEY];
+  else if (preheat === "on") next[PREHEAT_KEY] = true;
+  else if (preheat === "off") next[PREHEAT_KEY] = false;
+  else next[PREHEAT_KEY] = Math.max(1, Math.min(MAX_PREHEAT_MINUTES, Math.round(preheat)));
+  return Object.keys(next).length > 0 ? next : undefined;
+}
+
 // ─── Cover position ──────────────────────────────────────────────────
 
 /** HA cover position: 0 = closed, 100 = open. */

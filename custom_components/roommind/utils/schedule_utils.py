@@ -6,7 +6,7 @@ import logging
 import time
 from collections.abc import Callable
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -411,6 +411,64 @@ def _schedule_targets_at_time(
     if schedule_off_action == "off":
         return TargetTemps(heat=None, cool=None)
     return TargetTemps(heat=eco_heat, cool=eco_cool)
+
+
+# Block data key that sets pre-heating for a block: true/false, or the longest lead in
+# minutes. Absent: the room's switch (preheat_enabled).
+PREHEAT_BLOCK_KEY = "preheat"
+_UNSET: Any = object()
+_TRUE_WORDS = ("true", "on", "yes")
+_FALSE_WORDS = ("false", "off", "no")
+
+
+def parse_block_preheat(raw: Any) -> Any:
+    """Lead a block's ``preheat`` value allows, in seconds: None unlimited, 0 none, _UNSET when absent or unusable."""
+    if raw is None:
+        return _UNSET
+    if isinstance(raw, bool):
+        return None if raw else 0.0
+    if isinstance(raw, str):
+        word = raw.strip().lower()
+        if word in _TRUE_WORDS:
+            return None
+        if word in _FALSE_WORDS:
+            return 0.0
+    try:
+        minutes = float(raw)
+    except (TypeError, ValueError):
+        return _UNSET
+    if minutes != minutes:  # NaN
+        return _UNSET
+    return max(0.0, minutes) * 60.0
+
+
+def _schedule_sets_preheat(schedule_blocks: dict) -> bool:
+    for day_blocks in schedule_blocks.values():
+        for block in day_blocks or []:
+            data = block.get("data") if isinstance(block, dict) else None
+            if isinstance(data, dict) and parse_block_preheat(data.get(PREHEAT_BLOCK_KEY)) is not _UNSET:
+                return True
+    return False
+
+
+def make_preheat_lead_resolver(schedule_blocks: dict | None, room: dict) -> Callable[[float], float | None] | None:
+    """How far ahead (seconds) the heat target in force at a time may be pre-heated for.
+
+    None from the resolver: as far as the planner looks; 0: no pre-heat (only the
+    short lookahead before the block, like the room's switch turned off). A schedule
+    block's ``preheat`` overrides the room's ``preheat_enabled`` for that block.
+    Returns None when no block sets ``preheat``: the room's switch alone applies.
+    """
+    if not schedule_blocks or not _schedule_sets_preheat(schedule_blocks):
+        return None
+    room_lead: float | None = None if room.get("preheat_enabled", True) else 0.0
+
+    def lead(ts: float) -> float | None:
+        data = find_active_block(schedule_blocks, ts)
+        parsed = parse_block_preheat(data.get(PREHEAT_BLOCK_KEY)) if data is not None else _UNSET
+        return room_lead if parsed is _UNSET else cast(float | None, parsed)
+
+    return lead
 
 
 def resolve_schedule_index(

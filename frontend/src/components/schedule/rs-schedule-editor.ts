@@ -35,7 +35,9 @@ import {
   hasPositions,
   withPosition,
   withPositions,
+  withPreheat,
   withTemps,
+  type BlockPreheat,
   type ScheduleBlock,
   type Week,
 } from "../../utils/schedule-week";
@@ -1262,6 +1264,7 @@ export class RsScheduleEditor extends LitElement {
       .cover=${this._cover}
       .gateOnly=${this._cover && users.length > 0 && users.every((u) => u.coverMode === "gate")}
       @block-position=${this._onFormPosition}
+      @block-preheat=${this._onFormPreheat}
       @block-times=${this._onFormTimes}
       @block-split=${this._onFormSplit}
       @block-temps=${this._onFormTemps}
@@ -1458,6 +1461,21 @@ export class RsScheduleEditor extends LitElement {
       end: block.end,
       data: withPosition(block.data, e.detail.position),
     };
+    this._change(
+      this._week.map((day, d) =>
+        d === open.day ? day.map((b, i) => (i === open.index ? nextBlock : b)) : day,
+      ),
+    );
+  }
+
+  private _onFormPreheat(e: CustomEvent<{ preheat: BlockPreheat }>) {
+    const open = this._open;
+    if (!open) return;
+    const block = this._week[open.day][open.index];
+    if (!block) return;
+    const data = withPreheat(block.data, e.detail.preheat);
+    const nextBlock: ScheduleBlock = { start: block.start, end: block.end };
+    if (data) nextBlock.data = data;
     this._change(
       this._week.map((day, d) =>
         d === open.day ? day.map((b, i) => (i === open.index ? nextBlock : b)) : day,

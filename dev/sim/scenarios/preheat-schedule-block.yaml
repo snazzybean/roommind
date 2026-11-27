@@ -1,0 +1,76 @@
+name: preheat-schedule-block
+description: >
+  Pre-heating per schedule block with preheat in the block data. Three identical rooms on
+  the same evening block (comfort 21 from 16:30, eco 18 before): Wohnzimmer pre-heats as
+  usual, Kueche has the room switch off but its block says preheat: true, Buero's block
+  allows only 45 minutes of lead (preheat: 45). Radiators get reserve (design_factor 2.5),
+  otherwise all three heat from long before the block anyway.
+tags: [mpc, schedule, preheat]
+start: 2026-01-12T00:00
+duration: 5d
+location: {latitude: 52.5, longitude: 13.4, time_zone: Europe/Berlin}
+weather: {profile: temperate}
+house:
+  building: bestand_teilsaniert
+  outdoor: {sensors: {temperature: sensor.aussen_temp}}
+  rooms:
+    wohnzimmer:
+      floor_area_m2: 18
+      initial: {temperature: 19.0}
+      devices: [{entity_id: climate.wz_trv, profile: generic_trv, design_factor: 2.5}]
+      sensors: {temperature: {entity_id: sensor.wz_temp}}
+    kueche:
+      floor_area_m2: 18
+      initial: {temperature: 19.0}
+      devices: [{entity_id: climate.ku_trv, profile: generic_trv, design_factor: 2.5}]
+      sensors: {temperature: {entity_id: sensor.ku_temp}}
+    buero:
+      floor_area_m2: 18
+      initial: {temperature: 19.0}
+      devices: [{entity_id: climate.bu_trv, profile: generic_trv, design_factor: 2.5}]
+      sensors: {temperature: {entity_id: sensor.bu_temp}}
+helpers:
+  schedule:
+    plan_abend: {weekdays: ["16:30-22:30"], weekend: ["16:30-22:30"]}
+    plan_abend_an:
+      weekdays: [{from: "16:30", to: "22:30", data: {preheat: true}}]
+      weekend: [{from: "16:30", to: "22:30", data: {preheat: true}}]
+    plan_abend_kurz:
+      weekdays: [{from: "16:30", to: "22:30", data: {preheat: 45}}]
+      weekend: [{from: "16:30", to: "22:30", data: {preheat: 45}}]
+roommind:
+  settings:
+    outdoor_temp_sensor: sensor.aussen_temp
+  rooms:
+    wohnzimmer:
+      devices: [{entity_id: climate.wz_trv, type: trv, heating_system_type: radiator}]
+      temperature_sensor: sensor.wz_temp
+      climate_mode: heat_only
+      schedules: [{entity_id: schedule.plan_abend}]
+      comfort_temp: 21.0
+      eco_temp: 18.0
+    kueche:
+      devices: [{entity_id: climate.ku_trv, type: trv, heating_system_type: radiator}]
+      temperature_sensor: sensor.ku_temp
+      climate_mode: heat_only
+      schedules: [{entity_id: schedule.plan_abend_an}]
+      comfort_temp: 21.0
+      eco_temp: 18.0
+      preheat_enabled: false
+    buero:
+      devices: [{entity_id: climate.bu_trv, type: trv, heating_system_type: radiator}]
+      temperature_sensor: sensor.bu_temp
+      climate_mode: heat_only
+      schedules: [{entity_id: schedule.plan_abend_kurz}]
+      comfort_temp: 21.0
+      eco_temp: 18.0
+expect:
+  - {check: "room.wohnzimmer.current_temp >= 19.0", at: "+1d16h30m", label: pre-heated to the block (day 2)}
+  - {check: "room.kueche.current_temp >= 19.0", at: "+1d16h30m", label: the block pre-heats although the room switch is off (day 2)}
+  - {check: "room.buero.mode == 'idle'", at: "+1d15h30m", label: block lead of 45 minutes not started yet (day 2)}
+  - {check: "room.buero.mode == 'heating'", at: "+1d16h00m", label: block lead of 45 minutes running (day 2)}
+  - {check: "room.wohnzimmer.current_temp >= 19.0", at: "+3d16h30m", label: pre-heated to the block (day 4)}
+  - {check: "room.kueche.current_temp >= 19.0", at: "+3d16h30m", label: the block pre-heats although the room switch is off (day 4)}
+  - {check: "room.buero.mode == 'idle'", at: "+3d15h30m", label: block lead of 45 minutes not started yet (day 4)}
+  - {check: "room.buero.mode == 'heating'", at: "+3d16h00m", label: block lead of 45 minutes running (day 4)}
+  - {invariant: target_never_empty}
