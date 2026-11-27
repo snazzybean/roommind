@@ -4,6 +4,7 @@ description: >
   until_next_change the override ends at the next schedule change, presence does
   not touch it (presence_ends_override left at its default); with a duration it
   ends after that time.
+refs: [523]
 tags: [entities, override, schedule, presence]
 start: 2026-01-12T00:00
 duration: 2d

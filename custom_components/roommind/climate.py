@@ -92,7 +92,8 @@ SET_OVERRIDE_SCHEMA: dict[Any, Any] = {
     vol.Optional(ATTR_TARGET_TEMP_HIGH): vol.Coerce(float),
     vol.Exclusive(ATTR_DURATION, "override_end"): cv.positive_time_period,
     vol.Exclusive(ATTR_UNTIL, "override_end"): cv.datetime,
-    vol.Exclusive(ATTR_UNTIL_NEXT_CHANGE, "override_end"): cv.boolean,
+    # Not exclusive: the action UI may send it as false next to a duration or a time
+    vol.Optional(ATTR_UNTIL_NEXT_CHANGE): cv.boolean,
 }
 
 
@@ -645,6 +646,8 @@ class RoomMindRoomClimate(CoordinatorEntity, ClimateEntity):
     def _override_end_from_call(self, data: dict[str, Any]) -> dict | None:
         """Turn the end of a set_override call into store fields, None = the room's default end."""
         if data.get(ATTR_UNTIL_NEXT_CHANGE):
+            if data.get(ATTR_DURATION) is not None or data.get(ATTR_UNTIL) is not None:
+                raise ServiceValidationError("set only one of duration, until and until_next_change")
             return {"override_until": override_hold_until(self.coordinator.hass, self._room())}
         duration: timedelta | None = data.get(ATTR_DURATION)
         if duration is not None:
@@ -683,6 +686,11 @@ class RoomMindRoomClimate(CoordinatorEntity, ClimateEntity):
         }
         if preset is not None and temps:
             raise ServiceValidationError("set either a preset or temperatures, not both")
+        for value in temps.values():
+            if not MIN_TARGET_TEMP <= value <= MAX_TARGET_TEMP:
+                raise ServiceValidationError(
+                    f"temperatures must lie between {MIN_TARGET_TEMP} and {MAX_TARGET_TEMP} °C, got {value:.1f} °C"
+                )
         end = self._override_end_from_call(data)
         heat: float | None
         cool: float | None
@@ -702,6 +710,12 @@ class RoomMindRoomClimate(CoordinatorEntity, ClimateEntity):
             if heat is None and cool is None:
                 raise ServiceValidationError(f"{self.entity_id} has no target in force to hold")
             override_type = (room.get("override_type") if self._override_in_force() else None) or OVERRIDE_CUSTOM
+            if self._override_in_force():
+                # Only the end changes: presence_ends_override stays armed as it was
+                end = {
+                    **(end or {"override_until": override_until_for_room(self.coordinator.hass, room)}),
+                    "override_home_seen": room.get("override_home_seen", False),
+                }
         heat, cool = mask_override_band(heat, cool, self._climate_mode())
         if heat is not None and cool is not None and cool < heat:
             raise ServiceValidationError("the cooling target must be at least the heating target")
@@ -726,6 +740,7 @@ class RoomMindRoomClimate(CoordinatorEntity, ClimateEntity):
                 if climate_mode == CLIMATE_MODE_AUTO:
                     heat, cool = _fill_auto_band(heat, cool, room)
                 changes["override_heat"], changes["override_cool"] = mask_override_band(heat, cool, climate_mode)
+                changes["override_home_seen"] = room.get("override_home_seen", False)
         await self._store().async_update_room(self._area_id, changes)
         self.async_write_ha_state()
         await self.coordinator.async_request_refresh()
