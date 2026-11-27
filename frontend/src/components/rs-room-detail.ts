@@ -268,7 +268,7 @@ export class RsRoomDetail extends LitElement {
   @property({ attribute: false }) public vacationUntil: number | null = null;
   @property({ type: Boolean }) public moldDetectionEnabled = false;
   @property({ type: Boolean }) public moldPreventionEnabled = false;
-  @property({ type: String }) public moldPreventionIntensity = "medium";
+  @property({ type: String }) public moldPreventionIntensityGlobal = "medium";
 
   @state() private _devices: DeviceConfig[] = [];
   @state() private _selectedTempSensor = "";
@@ -851,7 +851,7 @@ export class RsRoomDetail extends LitElement {
         .acDryChoice=${this._acDryChoice()}
         .moldDetectionEnabled=${this.moldDetectionEnabled}
         .moldPreventionEnabled=${this.moldPreventionEnabled}
-        .moldPreventionIntensityGlobal=${this.moldPreventionIntensity}
+        .moldPreventionIntensityGlobal=${this.moldPreventionIntensityGlobal}
         .moldEnabled=${this._moldEnabled}
         .moldPreventionIntensity=${this._moldPreventionIntensity}
         .live=${this.config?.live}
@@ -1121,7 +1121,7 @@ export class RsRoomDetail extends LitElement {
             .acDryChoice=${this._acDryChoice()}
             .moldDetectionEnabled=${this.moldDetectionEnabled}
             .moldPreventionEnabled=${this.moldPreventionEnabled}
-            .moldPreventionIntensityGlobal=${this.moldPreventionIntensity}
+            .moldPreventionIntensityGlobal=${this.moldPreventionIntensityGlobal}
             .moldEnabled=${this._moldEnabled}
             .moldPreventionIntensity=${this._moldPreventionIntensity}
             .live=${this.config?.live}

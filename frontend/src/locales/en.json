@@ -561,7 +561,7 @@
   "mold.room_enabled": "Mold protection in this room",
   "mold.room_enabled_hint": "Off: no mold warnings and no prevention for this room, e.g. a storage room or garage.",
   "mold.room_intensity": "Prevention intensity in this room",
-  "mold.room_intensity_global": "Same as global ({intensity})",
+  "mold.room_intensity_global": "Same as global: {intensity}",
   "mold.room_off_view": "Mold protection off in this room",
   "mold.room_intensity_view": "Mold prevention: {intensity}",
   "card.mold_warning": "Mold risk",

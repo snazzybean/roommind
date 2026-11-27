@@ -550,3 +550,25 @@ class TestMoldPerRoom:
         assert data["rooms"]["living_room_abc12345"]["mold_prevention_active"] is False
         assert {c.args[2] for c in dismiss.call_args_list} == {"risk", "prevention"}
         assert "living_room_abc12345" not in coordinator._mold_manager._risk_since
+
+    @pytest.mark.asyncio
+    async def test_switching_mold_off_globally_ends_running_prevention(self, hass, mock_config_entry):
+        store = self._setup(hass, SAMPLE_ROOM)
+        coordinator = _create_coordinator(hass, mock_config_entry)
+        data = await coordinator._async_update_data()
+        assert data["rooms"]["living_room_abc12345"]["mold_prevention_active"] is True
+
+        store.get_settings.return_value = {
+            **self._SETTINGS,
+            "mold_detection_enabled": False,
+            "mold_prevention_enabled": False,
+        }
+        with patch("custom_components.roommind.managers.mold_manager.dismiss_mold_notification") as dismiss:
+            data = await coordinator._async_update_data()
+            await coordinator._async_update_data()
+
+        assert data["rooms"]["living_room_abc12345"]["mold_prevention_active"] is False
+        assert data["rooms"]["living_room_abc12345"]["target_temp"] == 21.0
+        # once per kind, not again on the next cycle
+        assert sorted(c.args[2] for c in dismiss.call_args_list) == ["prevention", "risk"]
+        assert "living_room_abc12345" not in coordinator._mold_manager._risk_since
