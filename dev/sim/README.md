@@ -55,8 +55,8 @@ never in the repository.
 
 `run --until` shorter than the scenario drops the timeline actions after the new end and the
 expectations that need the whole run (metrics, checks without `at` or after the end); invariants
-and earlier checks stay. The run says what it skipped and carries `partial` in its `meta.json`, so
-it is a quick look, not the scenario's verdict.
+and earlier checks stay. The run says what it skipped, carries `partial` in its `meta.json` and
+`summary.json` and reports no XPASS, so it is a quick look, not the scenario's verdict.
 
 `--roommind-src` takes a path to another checkout or any git ref; refs are exported
 once into `$ROOMMIND_SIM_HOME/src/`. Called through a symlink from inside a git

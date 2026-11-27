@@ -68,3 +68,11 @@ def test_until_cuts_the_scenario_and_says_what_it_skipped():
     loaded = load_scenario_dict(cli._scenario_json(scn))
     assert [t.args["label"] for t in loaded.timeline] == ["early", "inside"]
     assert loaded.expect == scn.expect
+
+
+def test_a_partial_run_reports_no_unexpected_pass():
+    from roommind_sim.analysis.evaluate import unexpected_passes
+
+    results = [{"label": "known", "passed": True, "known": "candidate"}, {"label": "plain", "passed": True}]
+    assert unexpected_passes(results) == ["known"]
+    assert unexpected_passes(results, partial=True) == []
