@@ -53,6 +53,11 @@ never in the repository.
 | `sim venv add\|list\|prune <ha-version>` | Additional HA versions, e.g. betas: `sim up --ha 2026.11.0b0`. HA before 2026.10 reads the port only from YAML, so the sim writes `http:` into `configuration.yaml` for those (from 2026.10 the port lives in `.storage/http`, YAML `http:` would trigger HA's migration restart); such releases also build their event loop through the asyncio policy, so the virtual clock hooks the policy's loop factory there (`clock.install(policy_loops=True)`) |
 | `sim prune [--keep 20]` | Delete old runs and screenshots (never running or < 6 h old ones) |
 
+`run --until` shorter than the scenario drops the timeline actions after the new end and the
+expectations that need the whole run (metrics, checks without `at` or after the end); invariants
+and earlier checks stay. The run says what it skipped and carries `partial` in its `meta.json`, so
+it is a quick look, not the scenario's verdict.
+
 `--roommind-src` takes a path to another checkout or any git ref; refs are exported
 once into `$ROOMMIND_SIM_HOME/src/`. Called through a symlink from inside a git
 worktree, `bin/sim` switches to that worktree's own copy, so parallel worktrees always

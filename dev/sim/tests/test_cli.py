@@ -36,3 +36,35 @@ def test_ui_hover_action_takes_a_position():
     page = MagicMock()
     _run_ui_action(page, "hover:ha-chart-base@200,120")
     page.locator.return_value.first.hover.assert_called_once_with(position={"x": 200.0, "y": 120.0})
+
+
+def test_until_cuts_the_scenario_and_says_what_it_skipped():
+    from helpers import scenario
+
+    from roommind_sim.scenario import load_scenario_dict
+
+    data = scenario(
+        {"wohnzimmer": {"floor_area_m2": 20}},
+        timeline=[
+            {"at": "+1d", "do": "mark", "label": "inside"},
+            {"at": "+3d", "do": "mark", "label": "after"},
+            {"at": "+12h", "do": "mark", "label": "early"},
+        ],
+        expect=[
+            {"invariant": "target_never_empty"},
+            {"check": "outdoor < 30", "at": "+1d"},
+            {"check": "outdoor < 30", "at": "+5d"},
+            {"check": "outdoor < 30"},
+            {"metric": "room.in_band_pct", "room": "wohnzimmer", "min": 50},
+        ],
+    )
+    scn = load_scenario_dict(data)
+    partial = cli._cut_to(scn, 2 * 86400)
+    assert partial == {"of_s": 10 * 86400, "skipped_actions": 1, "skipped_expectations": 3}
+    assert scn.duration == 2 * 86400
+    assert [t.args["label"] for t in scn.timeline] == ["early", "inside"]
+    assert scn.expect == [{"invariant": "target_never_empty"}, {"check": "outdoor < 30", "at": "+1d"}]
+    # What HA loads from scenario.json is the cut scenario
+    loaded = load_scenario_dict(cli._scenario_json(scn))
+    assert [t.args["label"] for t in loaded.timeline] == ["early", "inside"]
+    assert loaded.expect == scn.expect

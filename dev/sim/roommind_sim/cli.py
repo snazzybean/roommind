@@ -18,8 +18,8 @@ from . import instance as inst_mod
 from .haconfig import write_ha_config
 from .instance import Instance
 from .paths import DEFAULT_HA_VERSION, REPO_ROOT, SIM_ROOT, roommind_src, simhome_src, source_info, venv_python
-from .scenario import Scenario, ScenarioError, load_scenario
-from .scenario.timespec import format_offset, parse_duration
+from .scenario import Scenario, ScenarioError, load_scenario, load_scenario_dict
+from .scenario.timespec import format_offset, parse_at, parse_duration
 
 READY_TIMEOUT_S = 180
 
@@ -63,6 +63,36 @@ def _scenario_json(scn: Scenario) -> dict[str, Any]:
         weather["csv"] = str((scn.source_path.parent / weather["csv"]).resolve())
         data["weather"] = weather
     return data
+
+
+def _cut_to(scn: Scenario, duration: float) -> dict[str, Any]:
+    """Shorten *scn* for ``run --until``: actions after the end go, so do the expectations that need the whole run.
+
+    Invariants stay, checks stay when their ``at`` lies inside the shorter run; metrics and checks at the
+    end were set for the full length. Returns what was cut, for the run's meta.
+    """
+    full = scn.duration
+    tz = scn.location.time_zone
+    kept = {item.index for item in scn.timeline if item.at <= duration}
+    skipped_actions = len(scn.timeline) - len(kept)
+    scn.timeline = [item for item in scn.timeline if item.index in kept]
+    scn.raw["timeline"] = [item for i, item in enumerate(scn.raw.get("timeline") or []) if i in kept]
+
+    def keep(exp: dict[str, Any]) -> bool:
+        if "invariant" in exp:
+            return True
+        return "check" in exp and "at" in exp and parse_at(exp["at"], scn.start, tz) <= duration
+
+    skipped_expectations = sum(not keep(e) for e in scn.expect)
+    scn.expect = [e for e in scn.expect if keep(e)]
+    scn.raw["expect"] = [e for e in scn.raw.get("expect") or [] if keep(e)]
+    scn.duration = duration
+    load_scenario_dict(_scenario_json(scn))  # the shortened scenario must still load in HA
+    return {
+        "of_s": full,
+        "skipped_actions": skipped_actions,
+        "skipped_expectations": skipped_expectations,
+    }
 
 
 def _prepare(
@@ -181,8 +211,12 @@ def _kv(pairs: list[str]) -> dict[str, Any]:
 
 def cmd_run(args: argparse.Namespace) -> int:
     scn = load_scenario(args.scenario, _overrides(args.set))
+    partial: dict[str, Any] | None = None
     if args.until:
-        scn.duration = parse_duration(args.until)
+        until = parse_duration(args.until)
+        if until < scn.duration:
+            partial = _cut_to(scn, until)
+        scn.duration = until
     _check_frontend() if args.ui else None
     inst = Instance.run(scn.name)
     port = inst_mod.allocate_port(inst.name, batch=True)
@@ -201,6 +235,14 @@ def cmd_run(args: argparse.Namespace) -> int:
     py = _python(args.ha)
     max_real = parse_duration(args.max_real)
     print(f"run {inst.dir.name}: {scn.name}, {format_offset(scn.duration)} simulated", flush=True)
+    if partial:
+        inst.write_meta(partial=partial)
+        print(
+            f"  partial run, scenario is {format_offset(partial['of_s'])}: skipped "
+            f"{partial['skipped_actions']} timeline action(s) and {partial['skipped_expectations']} "
+            "expectation(s), the result is not the scenario's",
+            flush=True,
+        )
     print(f"  RoomMind {src.get('git', '?')} ({src['path']})", flush=True)
     t0 = time.time()
     with (inst.logs_dir / "boot.log").open("ab") as log:
