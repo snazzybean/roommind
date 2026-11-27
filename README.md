@@ -8,7 +8,7 @@
 | custom\_components/roommind/binary\_sensor.py                      |       78 |        0 |    100% |           |
 | custom\_components/roommind/climate.py                             |      400 |        0 |    100% |           |
 | custom\_components/roommind/config\_flow.py                        |       11 |       11 |      0% |      3-23 |
-| custom\_components/roommind/const.py                               |      241 |        0 |    100% |           |
+| custom\_components/roommind/const.py                               |      248 |        0 |    100% |           |
 | custom\_components/roommind/control/\_\_init\_\_.py                |        0 |        0 |    100% |           |
 | custom\_components/roommind/control/analytics\_simulator.py        |      243 |        2 |     99% |   86, 119 |
 | custom\_components/roommind/control/direct\_valve.py               |      115 |        0 |    100% |           |
@@ -57,11 +57,11 @@
 | custom\_components/roommind/utils/notification\_utils.py           |       76 |        0 |    100% |           |
 | custom\_components/roommind/utils/presence\_utils.py               |       49 |        0 |    100% |           |
 | custom\_components/roommind/utils/price\_utils.py                  |      201 |        2 |     99% |   90, 176 |
-| custom\_components/roommind/utils/schedule\_utils.py               |      296 |        3 |     99% |   466-468 |
+| custom\_components/roommind/utils/schedule\_utils.py               |      308 |        3 |     99% |   471-473 |
 | custom\_components/roommind/utils/sensor\_utils.py                 |       29 |        1 |     97% |        25 |
 | custom\_components/roommind/utils/temp\_utils.py                   |       26 |        0 |    100% |           |
-| custom\_components/roommind/websocket\_api.py                      |      411 |        3 |     99% |820, 1077-1082 |
-| **TOTAL**                                                          | **11603** |  **215** | **98%** |           |
+| custom\_components/roommind/websocket\_api.py                      |      411 |        3 |     99% |829, 1086-1091 |
+| **TOTAL**                                                          | **11622** |  **215** | **98%** |           |
 
 
 ## Setup coverage badge

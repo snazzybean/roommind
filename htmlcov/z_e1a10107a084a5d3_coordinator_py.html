@@ -64,8 +64,8 @@
             <a id="indexLink" class="nav" href="index.html">&Hat; index</a> &nbsp; &nbsp;
             <a id="nextFileLink" class="nav" href="z_e1a10107a084a5d3_deprecation_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
-            <a class="nav" href="https://coverage.readthedocs.io/en/7.17.3">coverage.py v7.17.3</a>,
-            created at 2026-11-22 06:54 +0000
+            <a class="nav" href="https://coverage.readthedocs.io/en/7.17.5">coverage.py v7.17.5</a>,
+            created at 2026-11-27 08:32 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -224,7 +224,7 @@
     <p class="run run2"><span class="n"><a id="t142" href="#t142">142</a></span><span class="t">    <span class="nam">away_target_temps</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t143" href="#t143">143</a></span><span class="t">    <span class="nam">band_in_force</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t144" href="#t144">144</a></span><span class="t">    <span class="nam">cap_to_eco</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t145" href="#t145">145</a></span><span class="t">    <span class="nam">override_hold_until</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t145" href="#t145">145</a></span><span class="t">    <span class="nam">override_until_for_room</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t146" href="#t146">146</a></span><span class="t">    <span class="nam">price_shifted</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t147" href="#t147">147</a></span><span class="t">    <span class="nam">resolve_schedule_index</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t148" href="#t148">148</a></span><span class="t">    <span class="nam">set_band_sides</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
@@ -1035,11 +1035,11 @@
     <p class="run"><span class="n"><a id="t953" href="#t953">953</a></span><span class="t">        <span class="nam">override</span> <span class="op">=</span> <span class="op">{</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t954" href="#t954">954</a></span><span class="t">            <span class="str">&quot;override_heat&quot;</span><span class="op">:</span> <span class="nam">band</span><span class="op">[</span><span class="num">0</span><span class="op">]</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t955" href="#t955">955</a></span><span class="t">            <span class="str">&quot;override_cool&quot;</span><span class="op">:</span> <span class="nam">band</span><span class="op">[</span><span class="num">1</span><span class="op">]</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t956" href="#t956">956</a></span><span class="t">            <span class="str">&quot;override_until&quot;</span><span class="op">:</span> <span class="nam">override_hold_until</span><span class="op">(</span><span class="nam">self</span><span class="op">.</span><span class="nam">hass</span><span class="op">,</span> <span class="nam">room</span><span class="op">)</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t956" href="#t956">956</a></span><span class="t">            <span class="str">&quot;override_until&quot;</span><span class="op">:</span> <span class="nam">override_until_for_room</span><span class="op">(</span><span class="nam">self</span><span class="op">.</span><span class="nam">hass</span><span class="op">,</span> <span class="nam">room</span><span class="op">)</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t957" href="#t957">957</a></span><span class="t">            <span class="str">&quot;override_type&quot;</span><span class="op">:</span> <span class="nam">OVERRIDE_CUSTOM</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t958" href="#t958">958</a></span><span class="t">        <span class="op">}</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t959" href="#t959">959</a></span><span class="t">        <span class="nam">_LOGGER</span><span class="op">.</span><span class="nam">info</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t960" href="#t960">960</a></span><span class="t">            <span class="str">&quot;Room &#x27;%s&#x27;: setpoint changed on %s, holding %s/%s until the schedule changes&quot;</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t960" href="#t960">960</a></span><span class="t">            <span class="str">&quot;Room &#x27;%s&#x27;: setpoint changed on %s, holding %s/%s for the room&#x27;s override duration&quot;</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t961" href="#t961">961</a></span><span class="t">            <span class="nam">area_id</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t962" href="#t962">962</a></span><span class="t">            <span class="str">&quot;, &quot;</span><span class="op">.</span><span class="nam">join</span><span class="op">(</span><span class="nam">sorted</span><span class="op">(</span><span class="nam">set</span><span class="op">(</span><span class="nam">changed_on</span><span class="op">)</span><span class="op">)</span><span class="op">)</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t963" href="#t963">963</a></span><span class="t">            <span class="nam">band</span><span class="op">[</span><span class="num">0</span><span class="op">]</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
@@ -4390,8 +4390,8 @@
             <a class="nav" href="index.html">&Hat; index</a> &nbsp; &nbsp;
             <a class="nav" href="z_e1a10107a084a5d3_deprecation_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
-            <a class="nav" href="https://coverage.readthedocs.io/en/7.17.3">coverage.py v7.17.3</a>,
-            created at 2026-11-22 06:54 +0000
+            <a class="nav" href="https://coverage.readthedocs.io/en/7.17.5">coverage.py v7.17.5</a>,
+            created at 2026-11-27 08:32 +0000
         </p>
     </div>
 </footer>
