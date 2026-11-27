@@ -17,7 +17,7 @@ from homeassistant.components.climate import (
 from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature
 from homeassistant.exceptions import ServiceValidationError
 
-from custom_components.roommind.climate import RoomMindRoomClimate
+from custom_components.roommind.climate import RoomMindRoomClimate, _RoomPerWrite
 from custom_components.roommind.const import DOMAIN, SCHEDULE_UNREADABLE_HOLD_HOURS
 
 TRV = {"entity_id": "climate.trv", "type": "trv"}
@@ -904,3 +904,42 @@ async def test_handler_routes_to_the_room_entity_only(setup):
     other.entity_id = "climate.roommind_living_room_override"
     with pytest.raises(ServiceValidationError):
         await _async_handle_set_override(other, call)
+
+
+def test_a_state_write_copies_the_room_once(setup):
+    make, _, store, _ = setup
+    entity = make()
+    store.get_room.reset_mock()
+    seen = []
+
+    def write(self):
+        seen.append((self.hvac_mode, self.hvac_modes, self.target_temperature_low, self.preset_mode))
+
+    # The fixture stubs the entity's own write; call the real one with HA's part replaced
+    with patch("homeassistant.helpers.entity.Entity.async_write_ha_state", write):
+        _RoomPerWrite.async_write_ha_state(entity)
+
+    assert store.get_room.call_count == 1
+    assert seen == [
+        (HVACMode.HEAT_COOL, [HVACMode.OFF, HVACMode.HEAT, HVACMode.COOL, HVACMode.HEAT_COOL], 21.0, "none")
+    ]
+    # Outside a write every read sees the store as it is now
+    store.get_room.return_value = _room(climate_mode="cool_only")
+    assert entity.hvac_mode == HVACMode.COOL
+
+
+def test_a_failed_state_write_drops_the_room_copy(setup):
+    make, _, store, _ = setup
+    entity = make()
+
+    def write(self):
+        raise RuntimeError("write failed")
+
+    with (
+        patch("homeassistant.helpers.entity.Entity.async_write_ha_state", write),
+        pytest.raises(RuntimeError),
+    ):
+        _RoomPerWrite.async_write_ha_state(entity)
+
+    store.get_room.return_value = _room(climate_mode="heat_only")
+    assert entity.hvac_mode == HVACMode.HEAT

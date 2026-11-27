@@ -47,7 +47,7 @@ def find_active_block(schedule_blocks: dict, ts: float) -> dict[str, Any] | None
     Caller must check ``schedule_blocks is None`` before calling.
     """
     dt = dt_util.as_local(datetime.fromtimestamp(ts, tz=UTC))
-    day_name = dt.strftime("%A").lower()
+    day_name = _WEEKDAYS[dt.weekday()]
     current_time = dt.time()
     day_blocks = schedule_blocks.get(day_name, [])
     for block in day_blocks:

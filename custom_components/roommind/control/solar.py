@@ -13,11 +13,14 @@ from __future__ import annotations
 import math
 import time
 from datetime import UTC
+from functools import lru_cache
 
 # Solar constant (W/m²) — TSI at 1 AU
 _SOLAR_CONSTANT: float = 1361.0
 
 
+# Every room plans over the same block times in a cycle; the sun stands the same for all of them
+@lru_cache(maxsize=1024)
 def _solar_position(latitude: float, longitude: float, timestamp: float) -> tuple[float, float]:
     """Return (elevation_deg, azimuth_deg) for a given location and time.
 

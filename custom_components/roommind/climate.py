@@ -183,7 +183,29 @@ def _fill_auto_band(heat: float | None, cool: float | None, room: dict) -> tuple
     return heat, cool
 
 
-class RoomMindOverrideClimate(CoordinatorEntity, ClimateEntity):
+class _RoomPerWrite:
+    """One room copy per state write: the properties read the room a dozen times, each a deep copy."""
+
+    _room_snapshot: dict | None = None
+    _in_write = False
+    _load_room: Callable[[], dict | None]  # the subclass's read from the store
+
+    @callback
+    def async_write_ha_state(self) -> None:
+        self._room_snapshot = self._load_room()
+        self._in_write = True
+        try:
+            super().async_write_ha_state()  # type: ignore[misc]
+        finally:
+            self._in_write = False
+            self._room_snapshot = None
+
+    def _stored_room(self) -> dict | None:
+        """The room as the store has it now; during a state write the copy taken for it."""
+        return self._room_snapshot if self._in_write else self._load_room()
+
+
+class RoomMindOverrideClimate(_RoomPerWrite, CoordinatorEntity, ClimateEntity):
     """Climate entity for room override control."""
 
     _attr_has_entity_name = True
@@ -224,10 +246,13 @@ class RoomMindOverrideClimate(CoordinatorEntity, ClimateEntity):
         self.coordinator.clear_override_seed(self._area_id)
         await self.coordinator.async_request_refresh()
 
-    def _room(self) -> dict | None:
+    def _load_room(self) -> dict | None:
         store = self.coordinator.hass.data[DOMAIN]["store"]
         room: dict | None = store.get_room(self._area_id)
         return room
+
+    def _room(self) -> dict | None:
+        return self._stored_room()
 
     def _climate_mode(self) -> str:
         room = self._room()
@@ -379,7 +404,7 @@ class RoomMindOverrideClimate(CoordinatorEntity, ClimateEntity):
         await self._request_refresh()
 
 
-class RoomMindRoomClimate(CoordinatorEntity, ClimateEntity):
+class RoomMindRoomClimate(_RoomPerWrite, CoordinatorEntity, ClimateEntity):
     """The room as one thermostat: mode, presets, target band and what RoomMind is doing (#238).
 
     Changing the target or picking a preset sets an override that holds for the room's
@@ -414,9 +439,12 @@ class RoomMindRoomClimate(CoordinatorEntity, ClimateEntity):
     def _store(self) -> Any:
         return self.coordinator.hass.data[DOMAIN]["store"]
 
-    def _room(self) -> dict:
+    def _load_room(self) -> dict | None:
         room: dict | None = self._store().get_room(self._area_id)
-        return room or {}
+        return room
+
+    def _room(self) -> dict:
+        return self._stored_room() or {}
 
     def _live(self) -> dict:
         live: dict = ((self.coordinator.data or {}).get("rooms") or {}).get(self._area_id) or {}
