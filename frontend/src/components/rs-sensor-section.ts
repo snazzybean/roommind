@@ -4,8 +4,9 @@ import type { HomeAssistant, HassArea, RoomFanMode, RoomLiveData } from "../type
 import { getEntitiesForArea } from "../utils/room-state";
 import { localize, type TranslationKey } from "../utils/localize";
 import { openEntityInfo } from "../utils/events";
-import { tempUnit, toDisplayDelta } from "../utils/temperature";
+import { tempUnit } from "../utils/temperature";
 import { formatMinutes, formatNumber, formatPercent } from "../utils/format";
+import { MOLD_INTENSITIES, moldIntensityLabel } from "../utils/mold";
 import { tokens } from "../styles/tokens";
 import { inputStyles } from "../styles/input-styles";
 import { formStyles } from "../styles/form-styles";
@@ -29,9 +30,6 @@ import "./shared/rs-icon-button";
 import "./shared/rs-info-icon";
 import "./shared/rs-list-row";
 import "./shared/rs-segmented";
-
-const MOLD_INTENSITIES = ["light", "medium", "strong"] as const;
-const MOLD_INTENSITY_DELTAS: Record<string, number> = { light: 1, medium: 2, strong: 3 };
 
 type SensorKind =
   | "temp"
@@ -1024,15 +1022,7 @@ export class RsSensorSection extends LitElement {
   }
 
   private _intensityLabel(intensity: string, l: string): string {
-    return localize(`mold.intensity_${intensity}` as "mold.intensity_medium", l, {
-      delta: formatNumber(
-        toDisplayDelta(MOLD_INTENSITY_DELTAS[intensity] ?? 2, this.hass),
-        this.hass,
-        0,
-        1,
-      ),
-      unit: tempUnit(this.hass),
-    });
+    return moldIntensityLabel(intensity, this.hass, l);
   }
 
   /** Short note on the humidity row when the room differs from the global mold settings. */
