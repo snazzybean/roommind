@@ -40,6 +40,5 @@ set_override:
       selector:
         datetime:
     until_next_change:
-      default: false
       selector:
         boolean:

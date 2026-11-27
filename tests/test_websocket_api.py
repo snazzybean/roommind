@@ -1225,7 +1225,7 @@ async def test_save_settings(ws_hass, store, connection):
 
 @pytest.mark.asyncio
 async def test_save_settings_presence_ends_override(ws_hass, store, connection):
-    """"End" is its own key, the pause flag stays as stored for older versions."""
+    """ "End" is its own key, the pause flag stays as stored for older versions."""
     await store.async_load()
     msg = {
         "id": 12,

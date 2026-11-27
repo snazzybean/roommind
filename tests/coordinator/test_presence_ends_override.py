@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -31,15 +32,30 @@ def setup(hass, mock_config_entry):
     store = _make_store_mock({AREA: _override_room()})
     store.async_update_room = AsyncMock()
     hass.data = {"roommind": {"store": store}}
-    hass.async_create_task = MagicMock(side_effect=lambda coro: coro.close())
+    tasks: list = []
+    hass.async_create_task = MagicMock(side_effect=tasks.append)
     coordinator = _create_coordinator(hass, mock_config_entry)
 
     def run(room, settings, *home, now=None):
+        """One cycle for *room* as the store holds it, background writes run right after."""
+        store.get_room.return_value = room
         hass.states.get = MagicMock(side_effect=_presence_states_get(*home))
         with patch("custom_components.roommind.coordinator.time.time", return_value=now or 1_000_000.0):
-            return coordinator._end_override_when_everyone_left(room, settings)
+            result = coordinator._end_override_when_everyone_left(room, settings)
+        while tasks:
+            _drain(tasks.pop(0))
+        return result
 
     return coordinator, store, run
+
+
+def _drain(coro):
+    """Run a background write on its own loop; asyncio.run would unset the test's current loop."""
+    loop = asyncio.new_event_loop()
+    try:
+        loop.run_until_complete(coro)
+    finally:
+        loop.close()
 
 
 def _writes(store):
@@ -144,18 +160,35 @@ def test_no_override_drops_the_wait(setup):
     assert AREA not in coordinator._override_away_since
 
 
-def test_restart_counts_from_the_first_cycle_and_ends_an_armed_override(setup, hass, mock_config_entry):
+def test_restart_counts_from_the_first_cycle_and_ends_an_armed_override(setup):
     """Leaving while HA was off: the persisted flag arms it, the wait starts with the new coordinator."""
-    _, store, _ = setup
-    fresh = _create_coordinator(hass, mock_config_entry)
+    coordinator, store, run = setup
+    coordinator._override_away_since.clear()
     room = _override_room(override_home_seen=True)
-    hass.states.get = MagicMock(side_effect=_presence_states_get())
-    with patch("custom_components.roommind.coordinator.time.time", return_value=2_000_000.0):
-        assert fresh._end_override_when_everyone_left(room, END)["override_heat"] == 25.0
-    with patch(
-        "custom_components.roommind.coordinator.time.time", return_value=2_000_000.0 + PRESENCE_OVERRIDE_END_DELAY_S
-    ):
-        assert fresh._end_override_when_everyone_left(room, END)["override_heat"] is None
+    assert run(room, END, now=2_000_000.0)["override_heat"] == 25.0
+    assert run(room, END, now=2_000_000.0 + PRESENCE_OVERRIDE_END_DELAY_S)["override_heat"] is None
+    assert len(_writes(store)) == 1
+
+
+def test_an_override_set_meanwhile_is_not_cleared(setup):
+    """The cycle read the old override; one set from away before the clear runs stays."""
+    coordinator, store, _ = setup
+    held = _override_room(override_home_seen=True)
+    coordinator._override_away_since[AREA] = 1_000_000.0 - PRESENCE_OVERRIDE_END_DELAY_S
+    store.get_room.return_value = _override_room(override_heat=22.0, override_home_seen=False)
+    coordinator.hass.states.get = MagicMock(side_effect=_presence_states_get())
+    tasks: list = []
+    coordinator.hass.async_create_task = MagicMock(side_effect=tasks.append)
+    with patch("custom_components.roommind.coordinator.time.time", return_value=1_000_000.0):
+        assert coordinator._end_override_when_everyone_left(held, END)["override_heat"] is None
+    _drain(tasks.pop())
+    assert _writes(store) == []
+    store.get_room.return_value = None
+    with patch("custom_components.roommind.coordinator.time.time", return_value=1_000_000.0):
+        coordinator._override_away_since[AREA] = 0.0
+        coordinator._end_override_when_everyone_left(held, END)
+    _drain(tasks.pop())
+    assert _writes(store) == []
 
 
 @pytest.mark.asyncio

@@ -156,6 +156,8 @@ from .utils.temp_utils import celsius_delta_to_ha, celsius_to_ha_temp, ha_temp_t
 
 _LOGGER = logging.getLogger(__name__)
 
+_OVERRIDE_CLEARED = {"override_heat": None, "override_cool": None, "override_until": None, "override_type": None}
+
 
 def _get_area_name(hass: HomeAssistant, area_id: str) -> str:
     """Get human-readable area name from area registry."""
@@ -942,9 +944,16 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             return room
         del self._override_away_since[area_id]
         _LOGGER.info("Room '%s': everyone left, the temporary temperature ends", area_id)
-        cleared = {"override_heat": None, "override_cool": None, "override_until": None, "override_type": None}
-        self.hass.async_create_task(self.hass.data[DOMAIN]["store"].async_update_room(area_id, dict(cleared)))
-        return {**room, **cleared, "override_home_seen": False}
+        self.hass.async_create_task(self._async_end_override_if_unchanged(area_id, room))
+        return {**room, **_OVERRIDE_CLEARED, "override_home_seen": False}
+
+    async def _async_end_override_if_unchanged(self, area_id: str, held: dict) -> None:
+        """Clear the override that ended, unless one was set or changed since the cycle read the room."""
+        store = self.hass.data[DOMAIN]["store"]
+        current = store.get_room(area_id)
+        if current is None or any(current.get(k) != held.get(k) for k in _OVERRIDE_CLEARED):
+            return
+        await store.async_update_room(area_id, dict(_OVERRIDE_CLEARED))
 
     async def _async_adopt_device_setpoints(self, room: dict, settings: dict) -> dict:
         """Take a setpoint changed on a device over as the room target until the schedule changes next (#259).
