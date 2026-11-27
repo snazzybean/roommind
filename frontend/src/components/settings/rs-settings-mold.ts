@@ -6,8 +6,7 @@ import { customElement, property } from "lit/decorators.js";
 import { RsSettingsBase } from "./rs-settings-base";
 import type { HomeAssistant } from "../../types";
 import { localize } from "../../utils/localize";
-import { tempUnit, toDisplayDelta } from "../../utils/temperature";
-import { formatNumber } from "../../utils/format";
+import { MOLD_INTENSITIES, moldIntensityLabel } from "../../utils/mold";
 import "../shared/rs-segmented";
 import "../shared/rs-info-icon";
 import "../shared/rs-field";
@@ -95,12 +94,9 @@ export class RsSettingsMold extends RsSettingsBase {
                     <rs-segmented
                       wrap
                       .label=${localize("mold.intensity", l)}
-                      .options=${(["light", "medium", "strong"] as const).map((v, i) => ({
+                      .options=${MOLD_INTENSITIES.map((v) => ({
                         value: v,
-                        label: localize(`mold.intensity_${v}`, l, {
-                          delta: formatNumber(toDisplayDelta(i + 1, this.hass), this.hass, 0, 1),
-                          unit: tempUnit(this.hass),
-                        }),
+                        label: moldIntensityLabel(v, this.hass, l),
                       }))}
                       .value=${this.moldPreventionIntensity}
                       @value-changed=${(e: CustomEvent<{ value: string }>) => {
