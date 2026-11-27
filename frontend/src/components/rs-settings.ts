@@ -23,7 +23,8 @@ import { fireSaveStatus } from "../utils/events";
 import { VACATION_SENTINEL } from "../utils/constants";
 import { formatMinutes, formatNumber, formatPercent } from "../utils/format";
 import { learningRoomIds } from "../utils/learning";
-import { formatTempLocale, tempUnit, toDisplayDelta } from "../utils/temperature";
+import { moldDeltaText } from "../utils/mold";
+import { formatTempLocale, tempUnit } from "../utils/temperature";
 import { describePriceStatus } from "../utils/price-status";
 import { fanModeLabel, type FanModeOption } from "../utils/device-utils";
 import { tokens, alertStyles } from "../styles/tokens";
@@ -736,10 +737,9 @@ export class RsSettings extends LitElement {
           );
         }
         if (this._moldPreventionEnabled) {
-          const k = { light: 1, medium: 2, strong: 3 }[this._moldPreventionIntensity] ?? 2;
           parts.push(
             localize("settings.summary.mold_prevent", l, {
-              delta: `${formatNumber(toDisplayDelta(k, this.hass), this.hass, 0, 1)}\u00a0${tempUnit(this.hass)}`,
+              delta: `${moldDeltaText(this._moldPreventionIntensity, this.hass)}\u00a0${tempUnit(this.hass)}`,
             }),
           );
         }

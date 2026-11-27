@@ -1,0 +1,33 @@
+name: mold-per-room
+description: >
+  Per-room mold settings on top of the global ones (PR #524). Same house as
+  mold-prevention-unheated-room, global prevention intensity light. The damp hallway has
+  mold protection switched off: no risk, no prevention. The bathroom uses its own intensity
+  strong: prevention raises its target by 3 K instead of the global 1 K. Switching mold
+  protection off while prevention runs, first for the bathroom, later globally, ends the
+  prevention at once (main kept the prevention state and its notification).
+refs: [524]
+tags: [mold, humidity]
+extends: mold-prevention-unheated-room
+roommind:
+  settings:
+    mold_prevention_intensity: light
+  rooms:
+    bad:
+      mold_prevention_intensity: strong
+    flur:
+      mold_enabled: false
+timeline+:
+  - {at: "+0d08h01m", do: roommind.ws, type: roommind/rooms/save, area_id: bad, mold_enabled: false}
+  - {at: "+0d12h01m", do: roommind.ws, type: roommind/rooms/save, area_id: bad, mold_enabled: true}
+  - {at: "+1d08h01m", do: roommind.ws, type: roommind/settings/save, mold_detection_enabled: false, mold_prevention_enabled: false}
+expect:
+  - {check: "room.flur.mold_risk_level == 'ok'", at: "+0d08h30m", label: hallway with mold protection off reports no risk}
+  - {metric: room.mold_prevention_h, room: flur, max: 0, label: no prevention in the hallway}
+  - {metric: room.mold_prevention_h, room: bad, min: 0.5, label: the bathroom still gets prevention}
+  # prevention runs about +0d07h..+0d11h and +1d07h..+1d10h; global light would raise by 1
+  - {check: "room.bad.mold_prevention_delta == 3", at: "+0d07h45m", label: the bathroom uses its own intensity strong}
+  - {check: "room.bad.mold_prevention_active == false and room.bad.target_temp == 21", at: "+0d08h05m", label: switching the bathroom off ends its prevention}
+  - {check: "room.bad.mold_prevention_active == true", at: "+1d07h55m", label: prevention back after switching the bathroom on again}
+  - {check: "room.bad.mold_prevention_active == false and room.bad.target_temp == 21", at: "+1d08h05m", label: switching mold off globally ends the prevention}
+  - {invariant: target_never_empty}

@@ -87,6 +87,9 @@ export class RoomMindPanel extends LitElement {
   @state() private _coilDryMinutes = 20;
   @state() private _coilDryMode = "fan_only";
   @state() private _coilDryFanMode = "low";
+  @state() private _moldDetectionEnabled = false;
+  @state() private _moldPreventionEnabled = false;
+  @state() private _moldPreventionIntensity = "medium";
   @state() private _anyoneHome = true;
   @state() private _presencePersons: string[] = [];
   @state() private _presenceAwayAction: PresenceAwayAction = "eco";
@@ -557,6 +560,9 @@ export class RoomMindPanel extends LitElement {
             .outdoorTemp=${this._outdoorTemp}
             .vacationActive=${this._vacationActive}
             .vacationUntil=${this._vacationUntil}
+            .moldDetectionEnabled=${this._moldDetectionEnabled}
+            .moldPreventionEnabled=${this._moldPreventionEnabled}
+            .moldPreventionIntensityGlobal=${this._moldPreventionIntensity}
             @room-updated=${this._onRoomUpdated}
             @room-deleted=${this._onRoomDeleted}
             @open-analytics=${this._onGoToAnalytics}
@@ -707,6 +713,9 @@ export class RoomMindPanel extends LitElement {
         coil_dry_mode: string;
         coil_dry_fan_mode: string;
         server_time?: number;
+        mold_detection_enabled: boolean;
+        mold_prevention_enabled: boolean;
+        mold_prevention_intensity: string;
       }>({
         type: "roommind/rooms/list",
       });
@@ -737,6 +746,9 @@ export class RoomMindPanel extends LitElement {
       this._coilDryMinutes = result.coil_dry_minutes ?? 20;
       this._coilDryMode = result.coil_dry_mode ?? "fan_only";
       this._coilDryFanMode = result.coil_dry_fan_mode ?? "low";
+      this._moldDetectionEnabled = result.mold_detection_enabled ?? false;
+      this._moldPreventionEnabled = result.mold_prevention_enabled ?? false;
+      this._moldPreventionIntensity = result.mold_prevention_intensity ?? "medium";
       this._anyoneHome = result.anyone_home ?? true;
       this._presencePersons = result.presence_persons ?? [];
       this._presenceAwayAction = result.presence_away_action ?? "eco";

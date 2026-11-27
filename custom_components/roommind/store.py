@@ -335,6 +335,8 @@ class RoomMindStore:
             "ac_dry_enabled": config.get("ac_dry_enabled", True),
             "override_duration_mode": config.get("override_duration_mode", OVERRIDE_DURATION_SCHEDULE),
             "override_duration_minutes": config.get("override_duration_minutes", DEFAULT_OVERRIDE_DURATION_MINUTES),
+            "mold_enabled": config.get("mold_enabled", True),
+            "mold_prevention_intensity": config.get("mold_prevention_intensity", ""),
         }
         _single_temps_to_cool_side(room, config, room["climate_mode"])
         # Directional device sync for new rooms (truthiness check, not just presence)

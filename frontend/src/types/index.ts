@@ -291,6 +291,8 @@ export interface RoomConfig {
   climate_control_enabled?: boolean;
   override_duration_mode?: OverrideDurationMode;
   override_duration_minutes?: number;
+  mold_enabled?: boolean;
+  mold_prevention_intensity?: "" | "light" | "medium" | "strong";
   live?: RoomLiveData;
 }
 

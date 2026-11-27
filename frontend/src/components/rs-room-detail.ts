@@ -126,6 +126,11 @@ const ROOM_FIELDS: [string, RoomFieldSync][] = [
   ["room_fan_mode", plain("_roomFanMode", (c) => c?.room_fan_mode ?? "both")],
   ["ac_dry_enabled", plain("_acDryEnabled", (c) => c?.ac_dry_enabled ?? true)],
   ["preheat_enabled", plain("_preheatEnabled", (c) => c?.preheat_enabled ?? true)],
+  ["mold_enabled", plain("_moldEnabled", (c) => c?.mold_enabled ?? true)],
+  [
+    "mold_prevention_intensity",
+    plain("_moldPreventionIntensity", (c) => c?.mold_prevention_intensity ?? ""),
+  ],
   [
     "override_duration_mode",
     plain("_overrideDurationMode", (c) => c?.override_duration_mode ?? "schedule"),
@@ -262,6 +267,9 @@ export class RsRoomDetail extends LitElement {
   @property({ attribute: false }) public outdoorTemp: number | null = null;
   @property({ type: Boolean }) public vacationActive = false;
   @property({ attribute: false }) public vacationUntil: number | null = null;
+  @property({ type: Boolean }) public moldDetectionEnabled = false;
+  @property({ type: Boolean }) public moldPreventionEnabled = false;
+  @property({ type: String }) public moldPreventionIntensityGlobal = "medium";
 
   @state() private _devices: DeviceConfig[] = [];
   @state() private _selectedTempSensor = "";
@@ -289,6 +297,8 @@ export class RsRoomDetail extends LitElement {
   @state() private _roomFanEntity = "";
   @state() private _roomFanMode: RoomFanMode = "both";
   @state() private _acDryEnabled = true;
+  @state() private _moldEnabled = true;
+  @state() private _moldPreventionIntensity = "";
   @state() private _selectedWindowSensors: Set<string> = new Set();
   @state() private _windowOpenDelay = 0;
   @state() private _windowCloseDelay = 0;
@@ -842,6 +852,11 @@ export class RsRoomDetail extends LitElement {
         .roomFanChoice=${this._roomFanChoice()}
         .acDryEnabled=${this._acDryEnabled}
         .acDryChoice=${this._acDryChoice()}
+        .moldDetectionEnabled=${this.moldDetectionEnabled}
+        .moldPreventionEnabled=${this.moldPreventionEnabled}
+        .moldPreventionIntensityGlobal=${this.moldPreventionIntensityGlobal}
+        .moldEnabled=${this._moldEnabled}
+        .moldPreventionIntensity=${this._moldPreventionIntensity}
         .live=${this.config?.live}
         .windowSensors=${this._selectedWindowSensors}
         .windowOpenDelay=${this._windowOpenDelay}
@@ -1108,6 +1123,11 @@ export class RsRoomDetail extends LitElement {
             .roomFanChoice=${this._roomFanChoice()}
             .acDryEnabled=${this._acDryEnabled}
             .acDryChoice=${this._acDryChoice()}
+            .moldDetectionEnabled=${this.moldDetectionEnabled}
+            .moldPreventionEnabled=${this.moldPreventionEnabled}
+            .moldPreventionIntensityGlobal=${this.moldPreventionIntensityGlobal}
+            .moldEnabled=${this._moldEnabled}
+            .moldPreventionIntensity=${this._moldPreventionIntensity}
             .live=${this.config?.live}
             .windowSensors=${this._selectedWindowSensors}
             .windowOpenDelay=${this._windowOpenDelay}
@@ -1471,6 +1491,10 @@ export class RsRoomDetail extends LitElement {
       this._windowOpenDelay = value as number;
     } else if (key === "window_close_delay") {
       this._windowCloseDelay = value as number;
+    } else if (key === "mold_enabled") {
+      this._moldEnabled = value as boolean;
+    } else if (key === "mold_prevention_intensity") {
+      this._moldPreventionIntensity = value as string;
     }
     this._autoSave();
   }
