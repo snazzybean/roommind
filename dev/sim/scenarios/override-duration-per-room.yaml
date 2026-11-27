@@ -1,0 +1,97 @@
+name: override-duration-per-room
+description: >
+  How long a temperature set by hand holds, per room (#520). A room set to a fixed time ends
+  the hold after that time, for the room climate entity and for a value taken over from the
+  TRV dial. A room set to "until changed back" keeps it across schedule changes until the
+  preset none. A room left at the default still ends it at the next schedule change.
+refs: [520, 259, 238]
+tags: [override, entities, schedule]
+start: 2026-01-12T00:00
+duration: 2d
+location: {latitude: 52.5, longitude: 13.4, time_zone: Europe/Berlin}
+weather: {profile: temperate}
+house:
+  building: bestand_teilsaniert
+  outdoor: {sensors: {temperature: sensor.aussen_temp}}
+  rooms:
+    wohnzimmer:
+      floor_area_m2: 22
+      initial: {temperature: 19.0}
+      devices: [{entity_id: climate.wz_trv, profile: generic_trv}]
+      sensors: {temperature: {entity_id: sensor.wz_temp}}
+    kinderzimmer:
+      floor_area_m2: 12
+      initial: {temperature: 19.0}
+      devices: [{entity_id: climate.kz_trv, profile: generic_trv}]
+    schlafzimmer:
+      floor_area_m2: 14
+      initial: {temperature: 18.0}
+      devices: [{entity_id: climate.sz_trv, profile: generic_trv}]
+      sensors: {temperature: {entity_id: sensor.sz_temp}}
+    buero:
+      floor_area_m2: 12
+      initial: {temperature: 19.0}
+      devices: [{entity_id: climate.buero_trv, profile: generic_trv}]
+      sensors: {temperature: {entity_id: sensor.buero_temp}}
+helpers:
+  schedule:
+    plan_wohnen: {weekdays: ["06:00-08:00", "16:30-22:30"], weekend: ["07:30-23:00"]}
+roommind:
+  settings:
+    outdoor_temp_sensor: sensor.aussen_temp
+  rooms:
+    # fixed time on the room climate entity
+    wohnzimmer:
+      devices: [{entity_id: climate.wz_trv, type: trv, heating_system_type: radiator}]
+      temperature_sensor: sensor.wz_temp
+      climate_mode: heat_only
+      schedules: [{entity_id: schedule.plan_wohnen}]
+      comfort_temp: 21.0
+      eco_temp: 18.0
+      override_duration_mode: minutes
+      override_duration_minutes: 90
+    # fixed time for a value turned in on the TRV
+    kinderzimmer:
+      devices: [{entity_id: climate.kz_trv, type: trv, heating_system_type: radiator}]
+      climate_mode: heat_only
+      schedules: [{entity_id: schedule.plan_wohnen}]
+      comfort_temp: 21.0
+      eco_temp: 18.0
+      follow_device_setpoint: true
+      override_duration_mode: minutes
+      override_duration_minutes: 60
+    # until changed back
+    schlafzimmer:
+      devices: [{entity_id: climate.sz_trv, type: trv, heating_system_type: radiator}]
+      temperature_sensor: sensor.sz_temp
+      climate_mode: heat_only
+      schedules: [{entity_id: schedule.plan_wohnen}]
+      comfort_temp: 20.0
+      eco_temp: 17.0
+      override_duration_mode: permanent
+    # default: until the next schedule change
+    buero:
+      devices: [{entity_id: climate.buero_trv, type: trv, heating_system_type: radiator}]
+      temperature_sensor: sensor.buero_temp
+      climate_mode: heat_only
+      schedules: [{entity_id: schedule.plan_wohnen}]
+      comfort_temp: 21.0
+      eco_temp: 18.0
+timeline:
+  - {at: "+0d10h", do: ha.service, service: climate.set_temperature, data: {entity_id: climate.roommind_wohnzimmer, temperature: 22.5}}
+  - {at: "+0d10h", do: device.manual, entity_id: climate.kz_trv, temperature: 22.5}
+  - {at: "+0d10h", do: ha.service, service: climate.set_temperature, data: {entity_id: climate.roommind_schlafzimmer, temperature: 19.5}}
+  - {at: "+0d10h", do: ha.service, service: climate.set_temperature, data: {entity_id: climate.roommind_buero, temperature: 22.5}}
+  - {at: "+1d12h", do: ha.service, service: climate.set_preset_mode, data: {entity_id: climate.roommind_schlafzimmer, preset_mode: none}}
+expect:
+  - {invariant: no_rejected_commands}
+  - {check: "room.wohnzimmer.override_active == true and room.wohnzimmer.heat_target == 22.5", at: "+0d10h05m", label: room entity hold starts}
+  - {check: "room.wohnzimmer.override_active == true", at: "+0d11h25m", label: room entity hold lasts its 90 minutes}
+  - {check: "room.wohnzimmer.override_active == false and room.wohnzimmer.heat_target == 18.0", at: "+0d11h35m", label: room entity hold ends after 90 minutes}
+  - {check: "room.kinderzimmer.override_active == true and room.kinderzimmer.heat_target == 22.5", at: "+0d10h05m", label: dial value becomes the target}
+  - {check: "room.kinderzimmer.override_active == false and room.kinderzimmer.heat_target == 18.0", at: "+0d11h05m", label: dial hold ends after 60 minutes}
+  - {check: "room.schlafzimmer.override_active == true and room.schlafzimmer.heat_target == 19.5", at: "+0d16h35m", label: until changed back survives the schedule change}
+  - {check: "room.schlafzimmer.override_active == true and room.schlafzimmer.heat_target == 19.5", at: "+1d06h05m", label: until changed back survives the next morning}
+  - {check: "room.schlafzimmer.override_active == false and room.schlafzimmer.heat_target == 17.0", at: "+1d12h05m", label: preset none ends it}
+  - {check: "room.buero.override_active == true", at: "+0d16h25m", label: default holds until the schedule change}
+  - {check: "room.buero.override_active == false and room.buero.heat_target == 21.0", at: "+0d16h35m", label: default ends at the schedule change}
