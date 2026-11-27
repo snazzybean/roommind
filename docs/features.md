@@ -46,7 +46,7 @@ Boost, eco, or custom temperature with configurable duration and instant UI feed
 
 ### Changes made on the device
 
-Per room, optional (in the schedule settings). A temperature set on the TRV dial or the AC remote becomes the room target until the next schedule change, instead of being replaced by RoomMind. Needs devices that report their setpoint to Home Assistant; leave it off for devices that run their own schedule or are changed by automations, since RoomMind cannot tell those changes from a hand on the dial.
+Per room, optional (in the schedule settings). A temperature set on the TRV dial or the AC remote becomes the room target for the room's override duration (by default until the next schedule change), instead of being replaced by RoomMind. Needs devices that report their setpoint to Home Assistant; leave it off for devices that run their own schedule or are changed by automations, since RoomMind cannot tell those changes from a hand on the dial.
 
 ### Presence
 

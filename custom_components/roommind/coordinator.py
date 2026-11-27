@@ -142,7 +142,7 @@ from .utils.schedule_utils import (
     away_target_temps,
     band_in_force,
     cap_to_eco,
-    override_hold_until,
+    override_until_for_room,
     price_shifted,
     resolve_schedule_index,
     set_band_sides,
@@ -953,11 +953,11 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         override = {
             "override_heat": band[0],
             "override_cool": band[1],
-            "override_until": override_hold_until(self.hass, room),
+            "override_until": override_until_for_room(self.hass, room),
             "override_type": OVERRIDE_CUSTOM,
         }
         _LOGGER.info(
-            "Room '%s': setpoint changed on %s, holding %s/%s until the schedule changes",
+            "Room '%s': setpoint changed on %s, holding %s/%s for the room's override duration",
             area_id,
             ", ".join(sorted(set(changed_on))),
             band[0],
