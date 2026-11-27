@@ -499,7 +499,7 @@ class World:
                 raise WorldError(f"unknown room parameter {path!r}")
             setattr(zone.params, key, float(value))
         elif head == "weather":
-            self.weather.p[rest] = value
+            self.weather.set_param(rest, value)
         else:
             raise WorldError(f"unknown parameter path {path!r}")
 

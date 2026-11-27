@@ -175,3 +175,19 @@ def test_forecast_error_grows_with_lead_time_and_leaves_the_weather_alone():
     assert 0.5 < rms_day2 < 3.0
     assert max(abs(e) for e in cloud_err) > 5
     assert all(0 <= a["cloud_coverage"] <= 100 for a in fc)
+
+
+def test_repeated_forecasts_match_a_fresh_model_and_follow_overrides():
+    now = 1_768_176_000.0
+    cached = _weather()
+    for minutes in range(0, 120, 7):  # RoomMind asks every cycle, the entries repeat
+        t = now + minutes * 60
+        assert cached.forecast(t, hours=48) == _weather().forecast(t, hours=48)
+    cached.set_override(now, None, {"temperature_delta": -8})
+    fresh = _weather()
+    fresh.set_override(now, None, {"temperature_delta": -8})
+    assert cached.forecast(now + 60, hours=48) == fresh.forecast(now + 60, hours=48)
+    cached.set_param("noise_c", 4.0)
+    fresh = _weather(noise_c=4.0)
+    fresh.set_override(now, None, {"temperature_delta": -8})
+    assert cached.forecast(now + 60, hours=48) == fresh.forecast(now + 60, hours=48)

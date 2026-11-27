@@ -10,7 +10,7 @@ import csv
 import math
 import random
 from bisect import bisect_left
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -85,6 +85,9 @@ class WeatherModel:
         fc_rng = random.Random(f"forecast:{seed}")  # own stream: the weather itself stays unchanged
         self._fc_phases = [fc_rng.uniform(0, 2 * math.pi) for _ in range(8)]
         self._replay = _CsvReplay(Path(self.p["csv"]), self.p.get("columns") or {}) if self.p.get("csv") else None
+        # RoomMind reads the forecast every cycle and the hourly entries stay the same for an
+        # hour: the weather at each entry and its error noise depend on the entry time alone
+        self._fc_cache: dict[float, tuple[Outdoor, float, float]] = {}
 
     # --- public ----------------------------------------------------------------------
 
@@ -101,6 +104,11 @@ class WeatherModel:
 
     def set_override(self, start: float, end: float | None, values: dict[str, float]) -> None:
         self._overrides.append(_Override(start, end, values))
+        self._fc_cache.clear()
+
+    def set_param(self, key: str, value: Any) -> None:
+        self.p[key] = value
+        self._fc_cache.clear()
 
     def forecast(self, epoch: float, kind: str = "hourly", hours: int = 48) -> list[dict[str, Any]]:
         """Forecast entries in HA's weather.get_forecasts shape (metric)."""
@@ -141,21 +149,26 @@ class WeatherModel:
     # --- internals ---------------------------------------------------------------------
 
     def _fc(self, ts: float, now: float) -> Outdoor:
-        o = self.at(ts)
+        cached = self._fc_cache.get(ts)
+        if cached is None:
+            if len(self._fc_cache) >= 1024:
+                self._fc_cache.clear()
+            hours = ts / 3600
+            cached = self._fc_cache[ts] = (
+                self.at(ts),
+                _smooth_noise(hours, _FORECAST_ERROR_PERIODS_H, self._fc_phases[:4]),
+                _smooth_noise(hours, _FORECAST_ERROR_PERIODS_H, self._fc_phases[4:]),
+            )
+        base, temp_noise, cloud_noise = cached
+        o = replace(base)
         e = self.forecast_error
         if e:
             lead_h = max(0.0, (ts - now) / 3600)
             ramp = min(1.0, lead_h / e["ramp_h"]) if e["ramp_h"] > 0 else 1.0
-            hours = ts / 3600
             temp_sd = ramp * (e["temp_c"] + e["temp_c_per_day"] * lead_h / 24)
             cloud_sd = ramp * (e["cloud_pct"] + e["cloud_pct_per_day"] * lead_h / 24)
-            o.temp_c += temp_sd * _smooth_noise(hours, _FORECAST_ERROR_PERIODS_H, self._fc_phases[:4])
-            o.cloud_pct = max(
-                0.0,
-                min(
-                    100.0, o.cloud_pct + cloud_sd * _smooth_noise(hours, _FORECAST_ERROR_PERIODS_H, self._fc_phases[4:])
-                ),
-            )
+            o.temp_c += temp_sd * temp_noise
+            o.cloud_pct = max(0.0, min(100.0, o.cloud_pct + cloud_sd * cloud_noise))
         return o
 
     def _base(self, epoch: float) -> tuple[float, float, float, float]:
