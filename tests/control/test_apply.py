@@ -1327,6 +1327,39 @@ async def test_call_skips_redundant_temperature():
 
 
 @pytest.mark.asyncio
+async def test_call_times_out_on_unresponsive_device(monkeypatch):
+    """A service call that never returns fails after the timeout instead of hanging (#567)."""
+    import asyncio
+
+    from custom_components.roommind.control import mpc_controller
+
+    monkeypatch.setattr(mpc_controller, "SERVICE_CALL_TIMEOUT_S", 0.01)
+    hass = build_hass()
+    hass.states.get = MagicMock(return_value=None)
+
+    async def never_returns(*_args, **_kwargs):
+        await asyncio.Event().wait()
+
+    hass.services.async_call = AsyncMock(side_effect=never_returns)
+
+    room = make_room()
+    ctrl = MPCController(
+        hass,
+        room,
+        model_manager=RoomModelManager(),
+        outdoor_temp=5.0,
+        settings={},
+        has_external_sensor=True,
+    )
+    result = await asyncio.wait_for(
+        ctrl._call("set_temperature", {"entity_id": "climate.unreachable_trv", "temperature": 21.0}),
+        timeout=5,
+    )
+    assert result == mpc_controller._CALL_FAILED
+    hass.services.async_call.assert_called_once()
+
+
+@pytest.mark.asyncio
 async def test_call_skips_redundant_hvac_mode():
     """Redundant set_hvac_mode is skipped."""
     hass = build_hass()

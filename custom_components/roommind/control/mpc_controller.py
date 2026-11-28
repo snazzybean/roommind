@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import math
 import time
@@ -135,7 +136,10 @@ _reports_stop: set[str] = set()
 _CALL_SENT = "sent"  # a command went to the device
 _CALL_CONFIRMED = "confirmed"  # nothing sent: the device state or the sent-command cache already holds the value
 _CALL_SKIPPED = "skipped"  # nothing sent: deadband, unsupported mode or handled elsewhere
-_CALL_FAILED = "failed"  # the service call raised
+_CALL_FAILED = "failed"  # the service call raised or timed out
+# A device that never answers (a Shelly BLU TRV while its gateway reconnects, #567)
+# must not hold up the other rooms, or Home Assistant startup on the first refresh
+SERVICE_CALL_TIMEOUT_S = 30
 _COOLING_SIDE_STATES = ("cool", "dry")
 # states that cool only on devices which offer "cool" (a TRV in them is a heating device)
 _COOLING_CAPABLE_STATES = ("heat_cool", "auto")
@@ -3615,13 +3619,14 @@ class MPCController:
             or (previous is not None and previous.get("service") == "set_hvac_mode")
         )
         try:
-            await self.hass.services.async_call(
-                "climate",
-                service,
-                data,
-                blocking=True,
-                context=make_roommind_context(),
-            )
+            async with asyncio.timeout(SERVICE_CALL_TIMEOUT_S):
+                await self.hass.services.async_call(
+                    "climate",
+                    service,
+                    data,
+                    blocking=True,
+                    context=make_roommind_context(),
+                )
             if eid:
                 _remember_command(eid, service, data)
                 if self._idle_targets is not None:
