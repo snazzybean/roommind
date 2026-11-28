@@ -371,10 +371,16 @@ def test_learner_finds_the_real_rooms_stored_heat():
 
 
 def test_real_room_stops_early_on_its_learned_scale():
-    """With the learned scale a run stops ~0.8 K short and the stored heat carries it to the target."""
+    """With the learned scale a run stops ~0.8 K short and the stored heat carries it to the target.
+
+    The stored heat is capped at the heating rate, so it carries the room this far only with the
+    slow decay such rooms learn (30-60 min), not with the profile's 10 min.
+    """
 
     def plan(scale: float):
-        opt = MPCOptimizer(REAL_ROOM, can_cool=False, heating_system_type="radiator", residual_scale=scale)
+        opt = MPCOptimizer(
+            REAL_ROOM, can_cool=False, heating_system_type="radiator", residual_scale=scale, residual_tau=30.0
+        )
         return opt.optimize(
             T_room=19.2,
             T_outdoor_series=[8.0] * 24,
@@ -400,19 +406,25 @@ BEDROOM = RCModel(C=1.0, U=0.005, Q_heat=1.935, Q_cool=4.0)
 SHORT_BLOCK = [18.5] * 2 + [20.0] * 2 + [12.0] * 20
 
 
-def _deadline(scale: float, **kwargs) -> int:
+def _deadline(scale: float, T_room: float = 19.3, **kwargs) -> int:
     opt = MPCOptimizer(BEDROOM, can_cool=False, heating_system_type="radiator", residual_scale=scale)
     return opt._preheat_deadline(
-        0, 19.3, [6.4] * 24, SHORT_BLOCK, 5.0, q_solar=[], q_occupancy=[], continuing=True, **kwargs
+        0, T_room, [6.4] * 24, SHORT_BLOCK, 5.0, q_solar=[], q_occupancy=[], continuing=True, **kwargs
     )
 
 
 def test_deadline_lets_stored_heat_carry_the_room_to_the_block():
-    """A run whose stored heat reaches the coming target is not forced on (it overshot by ~1 K)."""
-    assert _deadline(15.0) == 2  # blind to the afterglow: forced on
-    assert _deadline(15.0, glow=(30.0, 1.0)) == 0
+    """A run whose stored heat reaches the coming target is not forced on (it overshot by ~1 K).
+
+    0.4 K short with the block 10 min away: the stored heat is capped at the heating rate, so
+    it cannot cover more than heating on would (the 0.7 K of the real morning it cannot).
+    """
+    assert _deadline(15.0, T_room=19.6) == 2  # blind to the afterglow: forced on
+    assert _deadline(15.0, T_room=19.6, glow=(30.0, 1.0)) == 0
     # Little stored heat does not carry the room: still forced on
-    assert _deadline(1.0, glow=(30.0, 1.0)) == 2
+    assert _deadline(1.0, T_room=19.6, glow=(30.0, 1.0)) == 2
+    # Faster than heating on it cannot be: 0.7 K short stays forced on
+    assert _deadline(15.0, glow=(30.0, 1.0)) == 2
 
 
 def test_deadline_uses_the_rooms_residual_without_a_run():
@@ -422,7 +434,7 @@ def test_deadline_uses_the_rooms_residual_without_a_run():
 
 
 def test_preheat_stops_earlier_with_large_stored_heat():
-    """The morning that overshot by 0.9 K: with the learned heat the plan stops sooner and peaks lower."""
+    """The morning that overshot by 0.9 K: with the learned heat the plan stops sooner and stays below it."""
 
     def plan(scale: float):
         opt = MPCOptimizer(BEDROOM, can_cool=False, heating_system_type="radiator", residual_scale=scale)
@@ -439,5 +451,5 @@ def test_preheat_stops_earlier_with_large_stored_heat():
 
     learned = plan(15.0)
     heated = learned.actions[:10].count(MODE_HEATING)
-    assert heated <= 2
+    assert heated < plan(1.0).actions[:10].count(MODE_HEATING)
     assert max(learned.temperatures[:13]) < 20.8

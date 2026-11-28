@@ -3505,7 +3505,7 @@ async def test_analytics_solar_gain_now_uses_the_sun_sensor(ws_hass, store, conn
 @pytest.mark.parametrize(
     ("system", "learned", "ac_heats", "expected"),
     [
-        ("radiator", True, False, {"afterglow_k": 0.95, "afterglow_minutes": 23, "afterglow_learned": True}),
+        ("radiator", True, False, {"afterglow_k": 0.74, "afterglow_minutes": 23, "afterglow_learned": True}),
         ("", False, False, None),
         # a heat-capable AC: the room never learns its afterglow, no "not measured yet" for good
         ("radiator", False, True, None),
