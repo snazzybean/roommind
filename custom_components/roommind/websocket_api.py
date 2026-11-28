@@ -234,6 +234,7 @@ _SETTINGS_SAVE_FIELDS = (
     "weather_entity",
     "outdoor_unavailable_notify",
     "climate_control_active",
+    "learning_enabled",
     "learning_disabled_rooms",
     "hidden_rooms",
     "vacation_temp",
@@ -390,6 +391,7 @@ async def websocket_list_rooms(
     outdoor_available = coordinator is not None and coordinator.outdoor_temp_effective is not None
     settings = store.get_settings()
     learning_disabled = set(settings.get("learning_disabled_rooms", []))
+    learning_enabled = settings.get("learning_enabled", True)
     boost_anchors = settings.get("boost_applied_at", {})
 
     # Build response: config + live state per room
@@ -400,8 +402,11 @@ async def websocket_list_rooms(
         room_data = dict(room_config)
         live = live_states.get(area_id, {})
         # Managed Mode rooms train too (on the device reading), only outdoor areas never do.
-        if not outdoor_available and area_id not in learning_disabled and not room_config.get("is_outdoor", False):
-            learning_paused_reason: str | None = "outdoor_unavailable"
+        learning_paused_reason: str | None
+        if not learning_enabled:
+            learning_paused_reason = "global_disabled"
+        elif not outdoor_available and area_id not in learning_disabled and not room_config.get("is_outdoor", False):
+            learning_paused_reason = "outdoor_unavailable"
         else:
             learning_paused_reason = None
 
@@ -459,6 +464,13 @@ async def websocket_list_rooms(
             "compressor_protection_reason": live.get("compressor_protection_reason"),
             "uniform_group_mode": live.get("uniform_group_mode"),
             "compressor_protection_until": live.get("compressor_protection_until"),
+            "shared_system_id": live.get("shared_system_id"),
+            "shared_system_schedule_active": live.get("shared_system_schedule_active"),
+            "shared_system_demand_blocked": live.get("shared_system_demand_blocked", False),
+            "shared_system_block_reason": live.get("shared_system_block_reason", ""),
+            "shared_system_zone_action": live.get("shared_system_zone_action"),
+            "shared_system_master_action": live.get("shared_system_master_action"),
+            "shared_system_master_setpoint": live.get("shared_system_master_setpoint"),
             "coil_dry_active": live.get("coil_dry_active", False),
             "coil_dry_phase": live.get("coil_dry_phase"),
             "coil_dry_until": live.get("coil_dry_until"),
@@ -499,6 +511,7 @@ async def websocket_list_rooms(
             "ha_floor_order": ha_floor_order(hass),
             "control_mode": settings.get("control_mode", DEFAULT_CONTROL_MODE),
             "climate_control_active": settings.get("climate_control_active", True),
+            "learning_enabled": settings.get("learning_enabled", True),
             "presence_enabled": settings.get("presence_enabled", False),
             "price_entity": settings.get("price_entity", ""),
             "price_status": coordinator.price_status() if coordinator else None,
@@ -995,6 +1008,7 @@ async def websocket_get_settings(
         vol.Optional("weather_entity"): str,
         vol.Optional("outdoor_unavailable_notify"): bool,
         vol.Optional("climate_control_active"): bool,
+        vol.Optional("learning_enabled"): bool,
         vol.Optional("learning_disabled_rooms"): [str],
         vol.Optional("hidden_rooms"): [str],
         vol.Optional("prediction_enabled"): bool,
@@ -1052,6 +1066,21 @@ async def websocket_get_settings(
                     vol.Coerce(int), vol.Range(min=1, max=30)
                 ),
                 vol.Optional("master_entity", default=""): str,
+                vol.Optional("master_schedule_entity", default=""): str,
+                vol.Optional("master_control_mode", default="hvac_mode"): vol.In(
+                    ["hvac_mode", "target_temperature", "monitor"]
+                ),
+                vol.Optional("master_comfort_temperature", default=19.0): vol.All(
+                    vol.Coerce(float), vol.Range(min=0, max=30)
+                ),
+                vol.Optional("master_eco_temperature", default=5.0): vol.All(
+                    vol.Coerce(float), vol.Range(min=0, max=30)
+                ),
+                # Kept for settings saved by older RoomMind versions.
+                vol.Optional("master_idle_temperature", default=5.0): vol.All(
+                    vol.Coerce(float), vol.Range(min=0, max=30)
+                ),
+                vol.Optional("master_demand_offset", default=0.0): vol.All(vol.Coerce(float), vol.Range(min=0, max=10)),
                 vol.Optional("conflict_resolution", default=DEFAULT_CONFLICT_RESOLUTION): vol.In(CONFLICT_RESOLUTIONS),
                 vol.Optional("action_script", default=""): str,
                 vol.Optional("enforce_uniform_mode", default=False): bool,
@@ -1122,6 +1151,21 @@ async def websocket_save_settings(
         all_masters: list[str] = []
         for g in groups:
             master = g.get("master_entity", "")
+            master_schedule = g.get("master_schedule_entity", "")
+            if master_schedule and not master_schedule.startswith("schedule."):
+                connection.send_error(
+                    msg["id"],
+                    "invalid_master_schedule_entity",
+                    f"Master schedule entity '{master_schedule}' must be a schedule entity",
+                )
+                return
+            if master_schedule and g.get("master_control_mode", "hvac_mode") == "monitor":
+                connection.send_error(
+                    msg["id"],
+                    "invalid_master_schedule_mode",
+                    "Monitor-only masters cannot use a master schedule; the external boiler or controller manages its own schedule",
+                )
+                return
             if master:
                 domain, _, object_id = master.partition(".")
                 # RoomMind's own entities (e.g. its climate control switch) would switch RoomMind itself

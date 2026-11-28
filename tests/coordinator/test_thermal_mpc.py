@@ -149,6 +149,32 @@ class TestCoordinatorMPCIntegration:
         assert coordinator._ekf_training.last_temps["learning_room"] == 18.5
 
     @pytest.mark.asyncio
+    async def test_global_learning_switch_pauses_model_updates(self, hass, mock_config_entry):
+        """Global learning pause leaves room control running without updating models."""
+        room = {
+            **SAMPLE_ROOM,
+            "area_id": "paused_learning_room",
+        }
+        store = _make_store_mock({"paused_learning_room": room})
+        store.get_settings.return_value = {"learning_enabled": False}
+        hass.data = {"roommind": {"store": store}}
+        hass.states.get = MagicMock(side_effect=make_mock_states_get(temp="18.5", humidity="50.0"))
+        hass.services.async_call = AsyncMock()
+
+        coordinator = _create_coordinator(hass, mock_config_entry)
+        coordinator._ekf_training.last_temps["paused_learning_room"] = 18.0
+        with (
+            patch.object(coordinator._ekf_training, "process") as process,
+            patch.object(coordinator._residual_learner, "step", return_value=None) as residual_step,
+        ):
+            data = await coordinator._async_update_data()
+
+        assert data["rooms"]["paused_learning_room"]["mode"] == "heating"
+        process.assert_not_called()
+        residual_step.assert_called_once()
+        assert residual_step.call_args.kwargs["disturbed"] is True
+
+    @pytest.mark.asyncio
     async def test_coordinator_mpc_idle_at_target(self, hass, mock_config_entry):
         """Full chain: MPC should produce idle when room is at target temperature."""
         room = {

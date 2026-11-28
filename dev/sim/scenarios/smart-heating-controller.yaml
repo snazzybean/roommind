@@ -1,0 +1,97 @@
+name: smart-heating-controller
+description: >
+  Playable smart heating controller for Wiser/Hive-style systems. The controller is a normal
+  climate entity: heat remains the day-to-day mode, Comfort schedule blocks use the comfort
+  target, gaps use the eco target, and off is a manual Away state. Room TRVs keep their own targets.
+tags: [trv, boiler, schedule, interactive]
+start: now
+duration: 7d
+location: {latitude: 51.5, longitude: -0.1, time_zone: Europe/London}
+weather: {profile: temperate}
+house:
+  building: bestand_teilsaniert
+  outdoor: {sensors: {temperature: sensor.outdoor_temperature, humidity: sensor.outdoor_humidity}}
+  rooms:
+    living_room:
+      name: Living room
+      floor_area_m2: 28
+      exterior_wall_m2: 16
+      initial: {temperature: 19.0}
+      neighbors: {kitchen: open_door}
+      devices:
+        - {entity_id: climate.living_room_trv, profile: generic_trv}
+        - {entity_id: climate.wiser_central_heating, profile: generic_boiler, initial_mode: heat}
+      sensors:
+        temperature: {entity_id: sensor.living_room_temperature}
+    kitchen:
+      name: Kitchen
+      floor_area_m2: 14
+      exterior_wall_m2: 8
+      initial: {temperature: 18.5}
+      neighbors: {living_room: open_door}
+      devices:
+        - {entity_id: climate.kitchen_trv, profile: generic_trv}
+      sensors:
+        temperature: {entity_id: sensor.kitchen_temperature}
+    bedroom:
+      name: Bedroom
+      floor_area_m2: 16
+      exterior_wall_m2: 11
+      initial: {temperature: 18.0}
+      devices:
+        - {entity_id: climate.bedroom_trv, profile: generic_trv}
+      sensors:
+        temperature: {entity_id: sensor.bedroom_temperature}
+helpers:
+  schedule:
+    master_heating:
+      weekdays:
+        - "06:30-09:00"
+        - "11:00-13:00"
+        - "16:00-22:00"
+      weekend:
+        - "07:30-10:00"
+        - "12:00-14:00"
+        - "17:00-22:00"
+    room_comfort:
+      daily: ["00:00-23:59@21"]
+roommind:
+  settings:
+    outdoor_temp_sensor: sensor.outdoor_temperature
+    outdoor_humidity_sensor: sensor.outdoor_humidity
+    weather_entity: weather.simhome
+    control_mode: mpc
+    compressor_groups:
+      - id: central_heating
+        name: Central heating
+        members: [climate.living_room_trv, climate.kitchen_trv, climate.bedroom_trv]
+        master_entity: climate.wiser_central_heating
+        master_schedule_entity: schedule.master_heating
+        master_control_mode: target_temperature
+        master_comfort_temperature: 19
+        master_eco_temperature: 15
+        master_demand_offset: 0
+        min_run_minutes: 5
+        min_off_minutes: 5
+  rooms:
+    living_room:
+      devices: [{entity_id: climate.living_room_trv, type: trv, heating_system_type: radiator}]
+      temperature_sensor: sensor.living_room_temperature
+      climate_mode: heat_only
+      schedules: [{entity_id: schedule.room_comfort}]
+      comfort_temp: 21
+      eco_temp: 18
+    kitchen:
+      devices: [{entity_id: climate.kitchen_trv, type: trv, heating_system_type: radiator}]
+      temperature_sensor: sensor.kitchen_temperature
+      climate_mode: heat_only
+      schedules: [{entity_id: schedule.room_comfort}]
+      comfort_temp: 21
+      eco_temp: 18
+    bedroom:
+      devices: [{entity_id: climate.bedroom_trv, type: trv, heating_system_type: radiator}]
+      temperature_sensor: sensor.bedroom_temperature
+      climate_mode: heat_only
+      schedules: [{entity_id: schedule.room_comfort}]
+      comfort_temp: 21
+      eco_temp: 18

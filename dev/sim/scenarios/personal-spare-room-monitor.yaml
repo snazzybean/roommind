@@ -1,0 +1,82 @@
+name: personal-spare-room-monitor
+description: >
+  Personal playback scenario for the spare-room radiator and the externally managed
+  Wiser central-heating controller. The room calls for heat while the monitored boiler
+  is off, then the boiler schedule opens and reports its real heating action.
+tags: [personal, spare-room, wiser, boiler, monitor, interactive]
+start: 2026-11-24T12:00
+duration: 2d
+location: {latitude: 51.5, longitude: -0.1, time_zone: Europe/London}
+weather: {profile: temperate}
+house:
+  building: bestand_teilsaniert
+  outdoor: {sensors: {temperature: sensor.outdoor_temperature}}
+  rooms:
+    spare_room:
+      name: Spare room
+      floor_area_m2: 12
+      exterior_wall_m2: 9
+      initial: {temperature: 15.5, humidity: 51.5}
+      devices:
+        - {entity_id: climate.spare_room_trv, profile: generic_trv}
+        - {entity_id: climate.wiser_room_heating, profile: wiser_boiler, initial_mode: off}
+      sensors:
+        temperature: {entity_id: sensor.spare_room_temperature}
+helpers:
+  schedule:
+    spare_room_heat:
+      daily:
+        - "12:00-14:00@18"
+        - "14:00-16:00@16"
+        - "16:00-18:00@18"
+        - "18:00-23:59@16"
+roommind:
+  settings:
+    outdoor_temp_sensor: sensor.outdoor_temperature
+    weather_entity: weather.simhome
+    control_mode: mpc
+    compressor_groups:
+      - id: wiser_central_heating
+        name: Wiser central heating
+        members: [climate.spare_room_trv]
+        master_entity: climate.wiser_room_heating
+        master_control_mode: monitor
+        min_run_minutes: 5
+        min_off_minutes: 5
+  rooms:
+    spare_room:
+      devices: [{entity_id: climate.spare_room_trv, type: trv, heating_system_type: radiator}]
+      temperature_sensor: sensor.spare_room_temperature
+      climate_mode: heat_only
+      schedules: [{entity_id: schedule.spare_room_heat}]
+      comfort_temp: 18
+      eco_temp: 16
+timeline:
+  # These changes represent the external Wiser/TPI controller, not RoomMind commands.
+  - {at: "+0d01h", do: device.manual, entity_id: climate.wiser_room_heating, hvac_mode: auto}
+  - {at: "+0d01h30m", do: sim.param, path: device.climate.wiser_room_heating.tpi_idle, value: true}
+  - {at: "+0d01h50m", do: sim.param, path: device.climate.wiser_room_heating.tpi_idle, value: false}
+  - {at: "+0d02h20m", do: sim.param, path: device.climate.wiser_room_heating.tpi_idle, value: true}
+  - {at: "+0d02h40m", do: sim.param, path: device.climate.wiser_room_heating.tpi_idle, value: false}
+  - {at: "+0d03h", do: device.manual, entity_id: climate.wiser_room_heating, hvac_mode: off}
+  - {at: "+0d05h", do: device.manual, entity_id: climate.wiser_room_heating, hvac_mode: auto}
+  - {at: "+0d07h", do: device.manual, entity_id: climate.wiser_room_heating, hvac_mode: off}
+  - {at: "+1d01h", do: device.manual, entity_id: climate.wiser_room_heating, hvac_mode: auto}
+  - {at: "+1d03h", do: device.manual, entity_id: climate.wiser_room_heating, hvac_mode: off}
+  - {at: "+1d05h", do: device.manual, entity_id: climate.wiser_room_heating, hvac_mode: auto}
+  - {at: "+1d07h", do: device.manual, entity_id: climate.wiser_room_heating, hvac_mode: off}
+expect:
+  - {check: "room.spare_room.mode == 'heating'", at: "+0d00h30m", label: zone calls while boiler is off}
+  - {check: "dev('climate.wiser_room_heating').active == false", at: "+0d00h30m", label: external boiler gate is closed}
+  - {check: "dev('climate.wiser_room_heating').active == true", at: "+0d02h", label: external boiler reports heating}
+  - {
+      check: "dev('climate.wiser_room_heating').mode == 'auto' and dev('climate.wiser_room_heating').active == false",
+      at: "+0d01h40m",
+      label: Wiser TPI is idle during a zone call,
+    }
+  - {check: "room.spare_room.heat_target == 16", at: "+0d03h30m", label: spare-room schedule is at eco}
+  - {check: "room.spare_room.heat_target == 18", at: "+0d05h30m", label: spare-room schedule is at comfort}
+  - {check: "dev('climate.wiser_room_heating').active == true", at: "+0d05h30m", label: both calls are active}
+  - {metric: room.temp_min, room: spare_room, max: 15.5, label: room cools while heat is unavailable}
+  - {metric: room.temp_max, room: spare_room, min: 17.5, label: room warms when both calls are active}
+  - {metric: device.commands_per_hour, entity_id: climate.wiser_room_heating, max: 0, label: RoomMind does not command the monitored boiler}

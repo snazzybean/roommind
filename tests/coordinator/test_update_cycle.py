@@ -440,7 +440,7 @@ class TestCoverageGaps:
 
         # Room should still be processed
         assert "living_room_abc12345" in data["rooms"]
-        # But no prediction should have been stored
+        # No prediction should have been stored for the disabled room.
         assert "living_room_abc12345" not in coordinator._pending_predictions
 
     @pytest.mark.asyncio

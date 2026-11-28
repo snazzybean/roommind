@@ -24,6 +24,9 @@ const COLUMNS = [
   "price",
   "price_level",
   "price_shift",
+  "shared_system_zone_action",
+  "shared_system_master_action",
+  "shared_system_master_setpoint",
 ] as const;
 
 /** A CSV field: empty for null, quoted when it holds a comma, quote or line break. */

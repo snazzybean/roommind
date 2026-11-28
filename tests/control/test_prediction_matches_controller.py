@@ -114,6 +114,7 @@ def _prediction(
     elapsed_minutes: float | None = None,
     acs_can_heat: bool = False,
     outdoor_known: bool = True,
+    heat_available: bool = True,
 ) -> list[float]:
     # Long enough that the controller's horizon never runs past the forecast
     n = STEPS + 400
@@ -130,6 +131,7 @@ def _prediction(
         previous_mode=previous_mode,
         mode_elapsed_minutes=elapsed_minutes,
         outdoor_known=outdoor_known,
+        heat_available=heat_available,
     )[:STEPS]
 
 
@@ -284,3 +286,21 @@ def test_valve_room_holds_where_a_setpoint_room_switches():
     setpoint = _prediction(TRV, setpoint_room, **common)
     valve = _prediction(TRV, valve_room, **common)
     assert max(valve) - min(valve) < max(setpoint) - min(setpoint)
+
+
+def test_prediction_does_not_add_heat_when_monitored_boiler_is_idle():
+    """A zone call must not become delivered heat while the boiler is idle."""
+    room = make_room(climate_mode="heat_only")
+    predicted = _prediction(
+        TRV,
+        room,
+        T0=16.0,
+        targets=TargetTemps(heat=21.0, cool=24.0),
+        outdoor=5.0,
+        previous_mode=MODE_HEATING,
+        elapsed_minutes=2.0,
+        heat_available=False,
+    )
+
+    assert predicted[0] < 16.0
+    assert max(predicted) < 16.0

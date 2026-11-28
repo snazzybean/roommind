@@ -69,6 +69,11 @@ class TestCoverageGaps:
         entry_climate_control.unique_id = f"{DOMAIN}_climate_control"
         entry_climate_control.entity_id = "switch.roommind_climate_control"
 
+        entry_learning = MagicMock()
+        entry_learning.platform = DOMAIN
+        entry_learning.unique_id = f"{DOMAIN}_learning"
+        entry_learning.entity_id = "switch.roommind_learning"
+
         mock_registry.entities.values.return_value = [
             entry_valid_temp,
             entry_valid_mode,
@@ -78,6 +83,7 @@ class TestCoverageGaps:
             entry_other,
             entry_vacation,
             entry_climate_control,
+            entry_learning,
         ]
 
         with patch(
@@ -86,7 +92,7 @@ class TestCoverageGaps:
         ):
             coordinator.cleanup_orphaned_entities()
 
-        # Only the orphaned entity should be removed (vacation is global, not orphaned)
+        # Only the orphaned entity should be removed (global switches are not orphaned)
         mock_registry.async_remove.assert_called_once_with("sensor.roommind_deleted_room_target_temp")
 
     def test_cleanup_orphaned_entities_removes_cover_entities_without_covers(self, hass, mock_config_entry):

@@ -605,12 +605,12 @@ class Boiler(SimDevice):
         p = self.spec.params
         if self.t_water is None:
             self.t_water = env.zone.t_air
-        on = self.hvac_mode == "heat" and self.available
+        on = self.hvac_mode in ("auto", "heat") and self.available
         target = curve_supply_c(p, env.outdoor.temp_c, 60.0) if on else env.zone.t_air
         warmup = float(p.get("warmup_s", 120))
         self.t_water += (target - self.t_water) * min(1.0, dt / max(warmup, dt))
         self.sensor_c = round(self.t_water, 1)
-        self.active = on and self.load_w > 50
+        self.active = on and not p.get("tpi_idle", False) and self.load_w > 50
         self.hvac_action = "heating" if self.active else ("off" if not on else "idle")
         self._account(dt, 0.0, self.load_w / float(p.get("efficiency", 0.92)) if self.active else 0.0)
         return {}

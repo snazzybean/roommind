@@ -3,7 +3,7 @@
  */
 import { LitElement, html, css, nothing, type PropertyValues } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
-import type { HomeAssistant, AnalyticsData } from "../../types";
+import type { HomeAssistant, AnalyticsData, AnalyticsDataPoint } from "../../types";
 import { localize } from "../../utils/localize";
 import { tokens } from "../../styles/tokens";
 import "../shared/rs-list-card";
@@ -24,6 +24,7 @@ import {
 import { humidityVisualMap, type HumidityColors } from "../../utils/humidity";
 import { tempUnit, toDisplayDelta } from "../../utils/temperature";
 import { formatNumber } from "../../utils/format";
+import { timeSpans } from "../../utils/analytics-spans";
 
 // Series drawn for another legend entry: hiding that entry hides them too
 const LEGEND_OWNER: Record<string, string> = {
@@ -195,7 +196,7 @@ export class RsAnalyticsChart extends LitElement {
     const plotted =
       mainAxis.min != null && mainAxis.max != null
         ? placeEventStrips(displaySeries, mainAxis.min, mainAxis.max)
-        : displaySeries.filter((s) => s.id !== "heating_events" && s.id !== "cooling_events");
+        : displaySeries.filter((s) => !(s.id as string).endsWith("_events"));
     const visualMaps: Array<Record<string, unknown>> = [];
     const humidity = displaySeries.find((s) => s.id === "humidity");
     if (humidity) {
@@ -254,6 +255,7 @@ export class RsAnalyticsChart extends LitElement {
                       </div>`,
                   )}
                 </div>
+                ${this._renderBoilerCallTimeline(points)}
                 ${this._renderSeriesLegend(allSeries)}
                 <div class="zoom-hint">
                   ${localize(this._touch ? "analytics.zoom_hint_touch" : "analytics.zoom_hint", l)}
@@ -296,6 +298,58 @@ export class RsAnalyticsChart extends LitElement {
             </button>
           `;
         })}
+      </div>
+    `;
+  }
+
+  private _renderBoilerCallTimeline(points: AnalyticsDataPoint[]) {
+    const sharedPoints = points.filter(
+      (p) => p.shared_system_zone_action != null || p.shared_system_master_action != null,
+    );
+    if (sharedPoints.length === 0 || this.isOutdoor) return nothing;
+    const groupName =
+      sharedPoints.find((p) => p.shared_system_name)?.shared_system_name ||
+      localize("analytics.shared_system", this.language);
+    const groupLabel = localize("analytics.group_calling_heat", this.language, { name: groupName });
+    const start = this.rangeStart;
+    const length = Math.max(this.rangeEnd - start, 1);
+    const pct = (ms: number) => Math.min(Math.max(((ms - start) / length) * 100, 0), 100);
+    const tracks = [
+      {
+        label: localize("analytics.zone_calling_heat", this.language),
+        colour: "var(--rs-warn)",
+        spans: timeSpans(sharedPoints, (p) => p.shared_system_zone_action === "heating"),
+      },
+      {
+        label: groupLabel,
+        colour: "var(--rs-heat)",
+        spans: timeSpans(sharedPoints, (p) => p.shared_system_master_action === "heating"),
+      },
+    ];
+
+    return html`
+      <div
+        class="analytics-timeline boiler-call-timeline"
+        aria-label=${localize("analytics.shared_system_heat_demand", this.language)}
+      >
+        ${tracks.map(
+          ({ label, colour, spans }) => html`
+            <div class="boiler-call-row">
+              <span class="boiler-call-label">${label}</span>
+              <div class="analytics-timeline-track">
+                ${spans
+                  .filter(([a, b]) => b > start && a < this.rangeEnd)
+                  .map(
+                    ([a, b]) =>
+                      html`<i
+                        title=${label}
+                        style="left: ${pct(a)}%; width: ${pct(b) - pct(a)}%; background: ${colour}"
+                      ></i>`,
+                  )}
+              </div>
+            </div>
+          `,
+        )}
       </div>
     `;
   }
@@ -411,6 +465,38 @@ export class RsAnalyticsChart extends LitElement {
         padding: 0 16px 12px;
         font-size: 12px;
         text-align: center;
+        color: var(--secondary-text-color);
+      }
+
+      .analytics-timeline {
+        margin: 8px 16px 0;
+        font-size: 12px;
+      }
+
+      .analytics-timeline-track {
+        position: relative;
+        height: 10px;
+        border-radius: 5px;
+        background: var(--rs-fill);
+        overflow: hidden;
+      }
+
+      .analytics-timeline-track i {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        min-width: 2px;
+      }
+
+      .boiler-call-row {
+        display: grid;
+        grid-template-columns: minmax(110px, 0.3fr) 1fr;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 4px;
+      }
+
+      .boiler-call-label {
         color: var(--secondary-text-color);
       }
 

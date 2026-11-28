@@ -200,6 +200,12 @@ def _build_compressor_state(coordinator: Any) -> dict[str, Any]:
             "active_members": sorted(state.active_members),
             "min_run_s": group_cfg.min_run_seconds if group_cfg else None,
             "min_off_s": group_cfg.min_off_seconds if group_cfg else None,
+            "master_schedule_entity": group_cfg.master_schedule_entity if group_cfg else "",
+            "master_control_mode": group_cfg.master_control_mode if group_cfg else "hvac_mode",
+            "master_comfort_temperature": group_cfg.master_comfort_temperature if group_cfg else None,
+            "master_eco_temperature": group_cfg.master_eco_temperature if group_cfg else None,
+            "master_demand_offset": group_cfg.master_demand_offset if group_cfg else None,
+            "master_schedule_blocked": state.master_schedule_blocked,
         }
         if state.compressor_on_since:
             entry["on_for_s"] = round(now - state.compressor_on_since)

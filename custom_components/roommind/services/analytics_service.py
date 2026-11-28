@@ -20,6 +20,7 @@ from ..const import (
     DEFAULT_OUTDOOR_COOLING_MIN,
     DEFAULT_OUTDOOR_HEATING_MAX,
     HEATING_SYSTEM_RADIATOR,
+    MODE_HEATING,
     MODE_IDLE,
     PRESENCE_OVERRIDE_PAUSE,
     is_override_active,
@@ -82,6 +83,40 @@ def _afterglow_figures(room_config: dict, est: Any, q_heat: float, acs_can_heat:
     }
 
 
+def _prediction_heat_available(coordinator: Any, area_id: str) -> bool:
+    """Return whether the forecast may add heat from the room's shared system."""
+    live = coordinator.rooms.get(area_id, {})
+    if live.get("shared_system_demand_blocked"):
+        return False
+
+    group_id = live.get("shared_system_id")
+    master_action = live.get("shared_system_master_action")
+    if not group_id or master_action is None:
+        return True
+
+    manager = getattr(coordinator, "_compressor_manager", None)
+    if manager is None or not hasattr(manager, "get_groups"):
+        return True
+    group = manager.get_groups().get(group_id)
+    if group is None or group.master_control_mode != "monitor":
+        return True
+    return master_action == MODE_HEATING
+
+
+def _shared_system_name(coordinator: Any, group_id: str | None) -> str | None:
+    """Return a shared-system display name, with a readable ID fallback."""
+    if not group_id:
+        return None
+    manager = getattr(coordinator, "_compressor_manager", None)
+    groups = manager.get_groups() if manager is not None and hasattr(manager, "get_groups") else {}
+    group = groups.get(group_id) if isinstance(groups, dict) else None
+    name = getattr(group, "name", "") if group is not None else ""
+    if name:
+        return str(name)
+    fallback = group_id.replace("_", " ").replace("-", " ")
+    return fallback[:1].upper() + fallback[1:]
+
+
 # EKF states of the solar and occupancy gains (thermal_model.ThermalEKF)
 _SOLAR_STATE = 4
 _OCCUPANCY_STATE = 5
@@ -128,6 +163,7 @@ def _csv_to_points(rows: list[dict]) -> list[dict]:
         ts = _safe_float(row.get("timestamp", ""))
         if ts is None:
             continue
+        schedule_active = row.get("shared_system_schedule_active", "")
         result.append(
             {
                 "ts": ts,
@@ -150,6 +186,16 @@ def _csv_to_points(rows: list[dict]) -> list[dict]:
                 "price": _safe_float(row.get("price", "")),
                 "price_level": row.get("price_level", ""),
                 "price_shift": _safe_float(row.get("price_shift", "")),
+                "shared_system_id": row.get("shared_system_id", ""),
+                "shared_system_schedule_active": (
+                    None if schedule_active in ("", None) else schedule_active in ("True", "true", "1")
+                ),
+                "shared_system_demand_blocked": row.get("shared_system_demand_blocked", "") in ("True", "true", "1"),
+                "shared_system_block_reason": row.get("shared_system_block_reason", ""),
+                "shared_system_zone_action": row.get("shared_system_zone_action", "") or None,
+                "shared_system_master_action": row.get("shared_system_master_action", "") or None,
+                "shared_system_master_setpoint": _safe_float(row.get("shared_system_master_setpoint", "")),
+                "learning_pause_reason": row.get("learning_pause_reason", ""),
                 "heat_starts": _safe_int(row.get("heat_starts", "")),
                 "cool_starts": _safe_int(row.get("cool_starts", "")),
                 "room_temp_max": _safe_float(row.get("room_temp_max", "")),
@@ -329,6 +375,11 @@ async def build_analytics_data(
     else:
         for point in history + detail:
             point["predicted_temp"] = None
+    if coordinator:
+        for point in history + detail:
+            point["shared_system_name"] = _shared_system_name(
+                coordinator, point.get("shared_system_id") or None
+            )
     # Only the figures need the run starts, bucket extremes and model inputs; 90 days of points would carry them
     for point in history + detail:
         del point["heat_starts"], point["cool_starts"], point["room_temp_max"], point["room_temp_min"]
@@ -560,12 +611,18 @@ async def build_analytics_data(
                             coordinator.outdoor_temp_effective is not None
                             or bool(coordinator._weather_manager._outdoor_forecast)
                         ),
+                        heat_available=_prediction_heat_available(coordinator, area_id),
                     ),
                 )
 
     # Merge into unified forecast points on shared 5-min grid
     forecast: list[dict] = []
     grid = 300  # 5 minutes
+    shared_system_name = (
+        _shared_system_name(coordinator, coordinator.rooms.get(area_id, {}).get("shared_system_id"))
+        if coordinator
+        else None
+    )
     for i, tf in enumerate(target_forecast):
         snapped = round(tf["ts"] / grid) * grid
         forecast.append(
@@ -578,6 +635,7 @@ async def build_analytics_data(
                 "cool_target": tf["cool_target"],
                 "mode": "forecast",
                 "predicted_temp": pred_temps[i] if i < len(pred_temps) else None,
+                "shared_system_name": shared_system_name,
                 "window_open": False,
                 "device_setpoint": None,
             }
