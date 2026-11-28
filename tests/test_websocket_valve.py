@@ -8,6 +8,7 @@ import pytest
 import voluptuous as vol
 
 from custom_components.roommind.const import DOMAIN
+from custom_components.roommind.control import direct_valve
 from custom_components.roommind.websocket_api import (
     _number_entity_or_empty,
     _validate_device_valve,
@@ -186,3 +187,90 @@ async def test_clearing_an_idle_opening_valve_hands_it_back_closed(ws_hass, stor
     await _save(ws_hass, connection, [_device()], msg_id=2)
 
     assert _number_calls(ws_hass) == [(OPEN, 100.0), (CLOSE, 0.0)]
+
+
+# --- single valve position entity (#537) ------------------------------------------------
+
+PI = "number.trv_pi_heating_demand"
+
+
+def _single(**extra):
+    return _device(valve_opening_entity=PI, valve_closing_mode="single", **extra)
+
+
+def _pi(hass, value="30"):
+    s = MagicMock()
+    s.state = value
+    s.attributes = {"min": 0, "max": 100, "step": 1}
+    hass.states.get = MagicMock(side_effect={PI: s}.get)
+
+
+def test_validate_device_valve_single():
+    assert _validate_device_valve(_single())
+    # A closing entity left over from another mode is stored and ignored
+    assert _validate_device_valve(_single(valve_closing_entity=CLOSE))
+    with pytest.raises(vol.Invalid):
+        _validate_device_valve({"entity_id": "climate.ac", "type": "ac", "valve_opening_entity": PI})
+
+
+@pytest.mark.asyncio
+async def test_single_mode_is_stored(ws_hass, store, connection):
+    await store.async_load()
+
+    await _save(ws_hass, connection, [_single()])
+
+    [device] = store.get_room("living")["devices"]
+    assert device["valve_opening_entity"] == PI
+    assert device["valve_closing_mode"] == "single"
+
+
+@pytest.mark.asyncio
+async def test_clearing_a_held_single_valve_closes_it(ws_hass, store, connection):
+    await store.async_load()
+    await _save(ws_hass, connection, [_single()])
+    _pi(ws_hass)
+    direct_valve._valve_sent["climate.trv"] = direct_valve._Held(0.0, 30, None, PI, "")
+    ws_hass.services.async_call.reset_mock()
+
+    await _save(ws_hass, connection, [_device()], msg_id=2)
+
+    assert _number_calls(ws_hass) == [(PI, 0.0)]
+
+
+@pytest.mark.asyncio
+async def test_clearing_a_single_valve_checked_after_the_start_writes_nothing(ws_hass, store, connection):
+    await store.async_load()
+    await _save(ws_hass, connection, [_single()])
+    _pi(ws_hass, "45")
+    direct_valve._checked["climate.trv"] = False
+    ws_hass.services.async_call.reset_mock()
+
+    await _save(ws_hass, connection, [_device()], msg_id=2)
+
+    assert _number_calls(ws_hass) == []
+
+
+@pytest.mark.asyncio
+async def test_switching_a_held_pair_to_single_releases_the_pair(ws_hass, store, connection):
+    await store.async_load()
+    await _save(ws_hass, connection, [_device(valve_opening_entity=OPEN, valve_closing_entity=CLOSE)])
+    _pinned(ws_hass)
+    direct_valve._valve_sent["climate.trv"] = direct_valve._Held(0.0, 30, None, OPEN, CLOSE)
+    ws_hass.services.async_call.reset_mock()
+
+    await _save(ws_hass, connection, [_device(valve_opening_entity=OPEN, valve_closing_mode="single")], msg_id=2)
+
+    assert _number_calls(ws_hass) == [(OPEN, 100.0), (CLOSE, 100.0)]
+
+
+@pytest.mark.asyncio
+async def test_thermostat_off_option_is_stored_only_when_set(ws_hass, store, connection):
+    await store.async_load()
+
+    await _save(ws_hass, connection, [_single(valve_thermostat_off=True)])
+    [device] = store.get_room("living")["devices"]
+    assert device["valve_thermostat_off"] is True
+
+    await _save(ws_hass, connection, [_single()], msg_id=2)
+    [device] = store.get_room("living")["devices"]
+    assert "valve_thermostat_off" not in device

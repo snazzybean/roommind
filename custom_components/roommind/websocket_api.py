@@ -111,7 +111,11 @@ def _number_entity_or_empty(value: object) -> str:
 
 
 def _validate_device_valve(device: dict) -> dict:
-    """Direct valve control (#413) is for TRVs; it takes effect once both degree entities are set."""
+    """Direct valve control (#413) is for TRVs.
+
+    It takes effect once both degree entities are set, or the opening entity alone with
+    ``valve_closing_mode`` ``single`` (#537).
+    """
     opening, closing = device.get("valve_opening_entity"), device.get("valve_closing_entity")
     if (opening or closing) and device.get("type") != "trv":
         raise vol.Invalid("direct valve control is only supported for TRVs (type='trv')")
@@ -559,6 +563,8 @@ async def websocket_list_rooms(
                     vol.Optional("valve_closing_entity"): _number_entity_or_empty,
                     # No default: devices without it keep their stored form (#482)
                     vol.Optional("valve_closing_mode"): vol.In(VALVE_CLOSING_MODES),
+                    # The TRV stays off while its valve is held (#537); no default, as above
+                    vol.Optional("valve_thermostat_off"): bool,
                 },
                 _validate_device_idle_action,
                 _validate_device_coil_dry,

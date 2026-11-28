@@ -7,6 +7,14 @@ their maximum is the device default, a normal TRV.
 
 The SONOFF TRV-ZBT names the second value the opening while idle (#482): X and X pin the
 valve, 100 and 0 hand it back as a normal TRV.
+
+TRVs like the Bosch BTH-RA have one entity, the valve position itself (``pi_heating_demand``,
+#537), passed here with an empty closing entity. A written position holds only for a while
+(BTH-RA: 15 minutes) before the TRV's own controller moves the valve again, so RoomMind
+sends a held position again every ``VALVE_SINGLE_RESEND_SECONDS``. There is no device
+default to hand back: a release closes the valve and the TRV takes over by itself. A written
+position survives a restart of Home Assistant and the TRV being switched off, so a valve
+found open after a start is closed once.
 """
 
 from __future__ import annotations
@@ -18,7 +26,7 @@ from typing import NamedTuple
 
 from homeassistant.core import HomeAssistant
 
-from ..const import VALVE_DEADBAND_PCT, VALVE_DWELL_SECONDS, make_roommind_context
+from ..const import VALVE_DEADBAND_PCT, VALVE_DWELL_SECONDS, VALVE_SINGLE_RESEND_SECONDS, make_roommind_context
 from ..utils.device_utils import ValveEntities
 from ..utils.temp_utils import celsius_to_ha_temp
 
@@ -32,6 +40,7 @@ class _Held(NamedTuple):
     opening_eid: str
     closing_eid: str
     idle_opening: bool = False
+    thermostat_off: bool = False  # the TRV stays off while its valve is held (#537)
 
     @property
     def valve(self) -> ValveEntities:
@@ -42,6 +51,9 @@ class _Held(NamedTuple):
 _valve_sent: dict[str, _Held] = {}
 # climate entity -> closing mode its degrees were checked in since the start without RoomMind holding them
 _checked: dict[str, bool] = {}
+# climate entities with a single valve position entity (#537) that got a write no release has
+# followed yet. A failed write is not remembered as held, but may have reached the device.
+_single_written: set[str] = set()
 # set on unload: a cycle still running must not pin a valve again
 _stopped = False
 
@@ -61,6 +73,7 @@ def clear_valve_cache() -> None:
     global _stopped  # noqa: PLW0603
     _valve_sent.clear()
     _checked.clear()
+    _single_written.clear()
     _stopped = False
 
 
@@ -137,6 +150,7 @@ async def async_set_valve(
     target: float | None = None,
     urgent: bool = False,
     idle_opening: bool = False,
+    thermostat_off: bool = False,
 ) -> None:
     """Hold the valve at ``opening_pct`` (0-100).
 
@@ -145,31 +159,50 @@ async def async_set_valve(
     ``VALVE_DEADBAND_PCT`` never go out. Every move costs motor noise and battery, while
     the radiator takes minutes to follow anyway; a 0.2 K sensor step alone moves the
     demand by 20 %. ``idle_opening``: the second entity is the opening while idle (#482).
+
+    Without ``closing_eid`` the TRV has a single valve position entity (#537). Its own
+    controller takes the valve back some time after a write, so a held position goes out
+    again after ``VALVE_SINGLE_RESEND_SECONDS``, also unchanged.
+
+    ``thermostat_off``: the caller keeps the TRV switched off while the valve is held
+    (#537); a hand-back then switches it on again.
     """
     if _stopped:
         return
+    single = not closing_eid
     pct = int(round(min(100.0, max(0.0, opening_pct))))
     held = _valve_sent.get(climate_eid)
+    resend = False
     if held is not None and held.valve == (opening_eid, closing_eid, idle_opening):
         target_moved = target is not None and (held.target is None or abs(target - held.target) > 0.05)
-        if abs(pct - held.pct) < VALVE_DEADBAND_PCT or (
-            not urgent and not target_moved and _now() - held.at < VALVE_DWELL_SECONDS
-        ):
-            if target_moved:
-                # The position stays, the target it is held for does not (hand_back sends it)
-                _valve_sent[climate_eid] = held._replace(target=target)
+        resend = single and _now() - held.at >= VALVE_SINGLE_RESEND_SECONDS
+        if abs(pct - held.pct) < VALVE_DEADBAND_PCT:
+            if not resend:
+                if target_moved:
+                    # The position stays, the target it is held for does not (hand_back sends it)
+                    _valve_sent[climate_eid] = held._replace(target=target)
+                return
+            # Below the deadband the valve keeps its position: the resend must not move the motor
+            pct = held.pct
+        elif not urgent and not target_moved and _now() - held.at < VALVE_DWELL_SECONDS:
             return
     # Whatever reaches the device from here on has to be released again
     _checked.pop(climate_eid, None)
-    results = [
-        await _async_set_number(hass, opening_eid, pct, area_id),
-        await _async_set_number(hass, closing_eid, pct if idle_opening else 100 - pct, area_id),
-    ]
+    if single:
+        # Always sent, also when the state already shows the value: only a write keeps the TRV's
+        # own controller off the valve, and the state may be the TRV's own position (restart)
+        _single_written.add(climate_eid)
+        results = [await _async_set_number(hass, opening_eid, pct, area_id, force=True)]
+    else:
+        results = [
+            await _async_set_number(hass, opening_eid, pct, area_id),
+            await _async_set_number(hass, closing_eid, pct if idle_opening else 100 - pct, area_id),
+        ]
     if None in results:
         # Try again next cycle; a half-applied position is not remembered as held
         _valve_sent.pop(climate_eid, None)
         return
-    _valve_sent[climate_eid] = _Held(_now(), pct, target, opening_eid, closing_eid, idle_opening)
+    _valve_sent[climate_eid] = _Held(_now(), pct, target, opening_eid, closing_eid, idle_opening, thermostat_off)
 
 
 async def async_release_valve(
@@ -185,6 +218,9 @@ async def async_release_valve(
     """Hand the valve back to the TRV: both degrees to their maximum, the device default.
 
     With ``idle_opening`` (#482) the second entity goes to 0 instead: closed while idle.
+    A TRV with a single valve position entity (no ``closing_eid``, #537) has no default to
+    go back to: its valve is closed, and its own controller moves it again by itself. The
+    check once after the start closes a position left from before a restart.
 
     A valve RoomMind holds is always sent (its state may still show the old degrees or
     lag behind the last send) and stays on record until the entities answered. One it
@@ -192,27 +228,40 @@ async def async_release_valve(
     degrees set by hand while RoomMind does not control the TRV stay. ``hand_back``
     (RoomMind lets go for good: climate control off, room removed, unload) also sets the
     TRV to the room target it was pinned for; its proportional setpoint would otherwise
-    heat the room flat out once the valve is free.
+    heat the room flat out once the valve is free. A TRV that was kept off while its valve
+    was held (#537) is switched to ``heat`` with that target: off, it would not heat at all.
     """
     held = _valve_sent.get(climate_eid)
     # Checked in the other closing mode does not count: its hand-back would open a TRV-ZBT while idle
     if held is None and _checked.get(climate_eid) == idle_opening:
         return
     force = held is not None
-    results = [
-        await _async_set_number(hass, opening_eid, 100, area_id, force=force),
-        await _async_set_number(hass, closing_eid, 0 if idle_opening else 100, area_id, force=force),
-    ]
+    if not closing_eid:
+        # A valve RoomMind wrote is always closed. One it did not write is checked once after the
+        # start, like the degrees above: a position written before a restart stays on the device
+        # until the TRV's timeout, also while the TRV is off, and nothing else would close it.
+        written = held is not None or climate_eid in _single_written
+        results = [await _async_set_number(hass, opening_eid, 0, area_id, force=written)]
+    else:
+        results = [
+            await _async_set_number(hass, opening_eid, 100, area_id, force=force),
+            await _async_set_number(hass, closing_eid, 0 if idle_opening else 100, area_id, force=force),
+        ]
     if None in results:
         return
     _valve_sent.pop(climate_eid, None)
+    _single_written.discard(climate_eid)
     _checked[climate_eid] = idle_opening
     if hand_back and held is not None and held.target is not None:
         try:
             await hass.services.async_call(
                 "climate",
                 "set_temperature",
-                {"entity_id": climate_eid, "temperature": celsius_to_ha_temp(hass, held.target)},
+                {
+                    "entity_id": climate_eid,
+                    "temperature": celsius_to_ha_temp(hass, held.target),
+                    **({"hvac_mode": "heat"} if held.thermostat_off else {}),
+                },
                 blocking=True,
                 context=make_roommind_context(),
             )
@@ -245,8 +294,18 @@ async def async_release_all_valves(hass: HomeAssistant, configured: dict[str, Va
     """Unload: stop pinning and hand every configured or still held valve back."""
     global _stopped  # noqa: PLW0603
     _stopped = True
-    valves = {eid: held.valve for eid, held in _valve_sent.items()} | configured
-    for climate_eid, valve in valves.items():
+    # A held valve goes back through the entities it was written to. The config wins only when
+    # it names the same entities (a changed closing mode alone, #482); other entities in the
+    # config are released as well.
+    valves: list[tuple[str, ValveEntities]] = []
+    for climate_eid, held in _valve_sent.items():
+        current = configured.get(climate_eid)
+        valves.append((climate_eid, current if current is not None and current[:2] == held.valve[:2] else held.valve))
+    for climate_eid, valve in configured.items():
+        sent = _valve_sent.get(climate_eid)
+        if sent is None or sent.valve[:2] != valve[:2]:
+            valves.append((climate_eid, valve))
+    for climate_eid, valve in valves:
         try:
             await async_release_valve(
                 hass,

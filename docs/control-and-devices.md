@@ -117,7 +117,7 @@ To use it, open the TRV in the room's device list and switch on `Direct valve co
 
 The SONOFF TRV-ZBT (gen2) names its two values differently in Zigbee2MQTT: `heating_valve_position` and `idle_valve_position`. Its second value is not a closing degree but the valve opening while the TRV does not heat. Pick `heating_valve_position` as the opening degree and `idle_valve_position` as the second value, then set `Second value is` to `Opening while idle`. Left at `Closing degree`, the valve stays open whenever the room needs no heat.
 
-How it behaves:
+How it behaves (TRVs with one valve position entity differ in how a position is held and handed back, see [below](#trvs-with-a-single-valve-position-entity)):
 
 - While heating, RoomMind sets the opening degree to the heating power and the closing degree to `100 - opening` (with `Opening while idle`: both to the heating power), so the valve stays at that position whatever the TRV's own controller decides. The TRV keeps getting its proportional setpoint as before. The setpoint mode does not apply to these TRVs.
 - In a room that heats only through TRVs with direct valve control (no heat-capable AC that heats along, no underfloor heating), a running room keeps heating at the target with the power that holds it there, instead of stopping and restarting below it. The opening is the share of full heating power the learned room model needs to hold the target (losses minus sun and occupancy), plus 100 % per 1 °C below the target; above the target it drops until the valve closes. A new run still starts only below the start hysteresis, and pre-heating ahead of a schedule block works as for other TRVs. The heating power shown in the room is the opening RoomMind computes; the valve follows it within the limits below.
@@ -127,6 +127,26 @@ How it behaves:
 - The valve is also handed back this way when you switch it off (or clear the fields), remove the TRV or the room, switch climate control off, reload or remove the integration, or the room has no external sensor (`Managed` mode). When RoomMind lets go of a heating TRV this way, the TRV also gets the room target as its setpoint, so it works like a normal thermostat again instead of heating on RoomMind's raised setpoint. Degrees you change by hand afterwards stay as you set them until the next restart or reload; to set them yourself for good, switch direct valve control off. While RoomMind controls the valve, a limit you set on the degrees yourself (for example for hydraulic balancing) is overwritten: RoomMind uses the full range.
 - In such a room the valve closes at the latest 0.5 °C above the target. In mixed rooms the valve follows the heating power of the normal on/off rules.
 - During the first days, while the room model learns, RoomMind controls the room with simple on/off rules and the valve opens fully when heating.
+
+### TRVs with a single valve position entity
+
+Some TRVs have one `number` entity that is the valve position itself and no second value, for example the Bosch Radiator Thermostat II (BTH-RA) in Zigbee2MQTT (`pi_heating_demand`). Set `Second value is` to `Not present` and pick that entity as the valve position.
+
+These TRVs differ from the ones above in two ways:
+
+- A written position holds only for a while: a BTH-RA moves the valve by its own controller again 15 minutes after the last write. RoomMind therefore sends the position it holds again every 10 minutes, also when it has not changed. That is one write per TRV every 10 minutes while the room heats; the motor does not move for it.
+- There is no device default to hand back. When the room stops heating or RoomMind lets go of the valve (switched off, room removed, climate control off, reload), it sets the position to 0 % (closed) and leaves the rest to the TRV: its own controller moves the valve again after its timeout, on a BTH-RA within 15 minutes. A written position also survives the TRV being switched off and a restart of Home Assistant, so once after a start RoomMind closes a valve it finds open while the room is not heating. After that a valve RoomMind has not written is left alone.
+
+Use this mode only for TRVs that take the valve back by themselves. One that keeps a written position for good would stay closed after RoomMind lets go, until you set the position yourself.
+
+### TRVs that take a valve position only while switched off
+
+Some TRVs refuse a valve position while their climate entity is in `heat` and take it only while it is off, for example the Shelly TRV BLE through ZHA (`number.<name>_valve_position`). For these, set up direct valve control as above and switch on `Thermostat stays off`.
+
+- While the room heats, RoomMind switches the TRV off and sets the valve position; the TRV gets no setpoint. While the room does not heat, the valve is set to 0 % and the TRV stays off.
+- `When idle` does not apply: a low setpoint would switch the TRV to `heat`, where it refuses the closing position. The setting is hidden for these TRVs.
+- When RoomMind lets go of a valve it holds (direct valve control switched off, room removed, climate control off, reload), it closes the valve and switches the TRV to `heat` with the room target, so it works as a normal thermostat again.
+- Without an external room sensor (`Managed` mode) the option has no effect: the TRV is switched to `heat` and regulates by its own setpoint.
 
 A valve does not deliver heat in proportion to its opening: many radiators give most of their output at a small opening. RoomMind learns the room's response at the openings it actually uses.
 

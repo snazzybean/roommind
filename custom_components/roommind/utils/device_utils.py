@@ -30,10 +30,12 @@ DEFAULT_IDLE_SETBACK_OFFSET = 2.0
 
 # What the second valve entity of a TRV with direct valve control means (#482): a closing
 # degree (SONOFF TRVZB, closed position = 100 - value) or the opening while the TRV does
-# not heat (SONOFF TRV-ZBT). Missing = closing degree.
+# not heat (SONOFF TRV-ZBT). Missing = closing degree. ``single``: the TRV has one valve
+# position entity and no second one (Bosch BTH-RA ``pi_heating_demand``, #537).
 VALVE_CLOSING_DEGREE = "closing_degree"
 VALVE_IDLE_OPENING = "idle_opening"
-VALVE_CLOSING_MODES = (VALVE_CLOSING_DEGREE, VALVE_IDLE_OPENING)
+VALVE_SINGLE = "single"
+VALVE_CLOSING_MODES = (VALVE_CLOSING_DEGREE, VALVE_IDLE_OPENING, VALVE_SINGLE)
 
 SETPOINT_MODE_PROPORTIONAL = "proportional"
 SETPOINT_MODE_DIRECT = "direct"
@@ -276,6 +278,9 @@ def get_idle_action(devices: list[dict], entity_id: str) -> tuple[str, str]:
     dev = get_device_by_eid(devices, entity_id)
     if dev is None:
         return (IDLE_ACTION_OFF, DEFAULT_IDLE_FAN_MODE)
+    if valve_keeps_thermostat_off(dev):
+        # Off is the only state this TRV takes a valve position in, also the closing one
+        return (IDLE_ACTION_OFF, dev.get("idle_fan_mode", DEFAULT_IDLE_FAN_MODE))
     return (
         dev.get("idle_action", IDLE_ACTION_OFF),
         dev.get("idle_fan_mode", DEFAULT_IDLE_FAN_MODE),
@@ -295,10 +300,15 @@ def get_direct_setpoint_eids(devices: list[dict]) -> set[str]:
 
 def _is_direct(device: dict) -> bool:
     """Direct setpoint mode; a TRV with direct valve control (#413) always gets the boost."""
-    return device.get("setpoint_mode") == SETPOINT_MODE_DIRECT and not (
+    return device.get("setpoint_mode") == SETPOINT_MODE_DIRECT and not has_direct_valve(device)
+
+
+def has_direct_valve(device: dict) -> bool:
+    """True for a TRV with direct valve control: both degree entities, or one in ``single`` mode (#537)."""
+    return bool(
         device.get("type") == DEVICE_TYPE_TRV
         and device.get("valve_opening_entity")
-        and device.get("valve_closing_entity")
+        and (device.get("valve_closing_entity") or device.get("valve_closing_mode") == VALVE_SINGLE)
     )
 
 
@@ -322,11 +332,25 @@ def get_setpoint_offsets(devices: list[dict]) -> dict[str, float]:
     return {eid: off for eid, off in offsets.items() if off}
 
 
+def valve_keeps_thermostat_off(device: dict) -> bool:
+    """True for a TRV whose valve RoomMind holds while the TRV itself stays switched off (#537).
+
+    Some TRVs take a valve position only while their climate entity is off, e.g. the
+    Shelly TRV BLE: in ``heat`` the write is refused.
+    """
+    return has_direct_valve(device) and bool(device.get("valve_thermostat_off"))
+
+
+def get_valve_off_eids(devices: list[dict]) -> set[str]:
+    """Entity IDs of the TRVs that stay off while RoomMind holds their valve (#537)."""
+    return {d["entity_id"] for d in devices if d.get("entity_id") and valve_keeps_thermostat_off(d)}
+
+
 class ValveEntities(NamedTuple):
     """Number entities of a TRV with direct valve control (#413)."""
 
     opening: str
-    closing: str
+    closing: str  # "" in ``single`` mode: the TRV has no second entity (#537)
     idle_opening: bool = False  # ``closing`` is the opening while idle, not a closing degree (#482)
 
 
@@ -334,15 +358,20 @@ def get_valve_entities(devices: list[dict]) -> dict[str, ValveEntities]:
     """Return {climate_entity_id: ValveEntities} for TRVs with direct valve control (#413).
 
     Both entities are needed: the second one sets where the valve sits while the TRV's own
-    controller does not heat, so only both together pin the valve at X %.
+    controller does not heat, so only both together pin the valve at X %. In ``single``
+    mode (#537) the one entity is the valve position itself; a second entity is ignored.
     """
     result: dict[str, ValveEntities] = {}
     for d in devices:
         eid = d.get("entity_id")
-        opening = d.get("valve_opening_entity") or None
-        closing = d.get("valve_closing_entity") or None
-        if eid and opening and closing and d.get("type") == DEVICE_TYPE_TRV:
-            result[eid] = ValveEntities(opening, closing, d.get("valve_closing_mode") == VALVE_IDLE_OPENING)
+        if not eid or not has_direct_valve(d):
+            continue
+        if d.get("valve_closing_mode") == VALVE_SINGLE:
+            result[eid] = ValveEntities(d["valve_opening_entity"], "")
+        else:
+            result[eid] = ValveEntities(
+                d["valve_opening_entity"], d["valve_closing_entity"], d.get("valve_closing_mode") == VALVE_IDLE_OPENING
+            )
     return result
 
 

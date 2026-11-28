@@ -198,6 +198,9 @@ BOOST_CAP_FALLBACK_STEP = 0.5  # Distance kept below a device's max_temp for pro
 # Direct valve control (#413): TRVs whose valve opening RoomMind sets through number entities
 VALVE_DWELL_SECONDS = 600  # Minimum time a valve position stays before a small correction moves the motor again
 VALVE_DEADBAND_PCT = 5  # Smaller position changes are not sent
+# A TRV with a single valve position entity takes the valve back some time after a write (Bosch
+# BTH-RA: 15 min), so a held position is sent again before that (#537)
+VALVE_SINGLE_RESEND_SECONDS = 600
 VALVE_OVERSHOOT_STOP_K = 0.5  # A modulating valve closes this far above the target whatever the model says
 VALVE_PROPORTIONAL_BAND_K = 1.0  # A modulating valve opens 100 % further per this many K below the target
 # AC sensor offset (device reading - room sensor while the compressor runs), see HeadOffsetTracker

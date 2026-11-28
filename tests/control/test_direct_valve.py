@@ -6,13 +6,21 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from custom_components.roommind.const import VALVE_DWELL_SECONDS, TargetTemps
+from custom_components.roommind.const import VALVE_DWELL_SECONDS, VALVE_SINGLE_RESEND_SECONDS, TargetTemps
 from custom_components.roommind.control import direct_valve
 from custom_components.roommind.control.direct_valve import async_release_valve, async_set_valve
 from custom_components.roommind.control.mpc_controller import MODE_COOLING, MODE_HEATING, MODE_IDLE, MPCController
 from custom_components.roommind.control.thermal_model import RoomModelManager
 from custom_components.roommind.managers.heat_source_orchestrator import DeviceCommand, HeatSourcePlan
-from custom_components.roommind.utils.device_utils import ValveEntities
+from custom_components.roommind.utils.device_utils import (
+    ValveEntities,
+    get_direct_setpoint_eids,
+    get_idle_action,
+    get_valve_entities,
+    get_valve_off_eids,
+    has_direct_valve,
+    valve_keeps_thermostat_off,
+)
 
 from .conftest import build_hass, make_room
 
@@ -747,3 +755,494 @@ async def test_the_held_target_follows_a_change_the_position_does_not_need():
     await async_release_valve(hass, TRV, OPEN, CLOSE, area_id="a", hand_back=True)
 
     assert [c["temperature"] for c in _climate_calls(hass, "set_temperature")] == [17.0]
+
+
+# --- single valve position entity (#537) ------------------------------------------------
+
+PI = "number.trv_pi_heating_demand"
+
+
+def _single_room(**overrides):
+    room = _valve_room(closing=False, **overrides)
+    for d in room["devices"]:
+        if d["type"] == "trv":
+            d["valve_opening_entity"] = PI
+            d["valve_closing_mode"] = "single"
+    return room
+
+
+@pytest.mark.asyncio
+async def test_single_entity_gets_the_opening_only():
+    hass = _hass({PI: _number(0)})
+
+    await async_set_valve(hass, TRV, PI, "", 30.4, area_id="a")
+
+    assert _number_calls(hass) == [(PI, 30.0)]
+    assert direct_valve.held_opening(TRV) == 0.3
+
+
+@pytest.mark.asyncio
+async def test_single_entity_position_is_sent_again_before_the_trv_takes_over():
+    """A Bosch BTH-RA moves the valve itself 15 minutes after a write: the position goes out again, unchanged."""
+    states = {PI: _number(0)}
+    hass = _hass(states)
+    with patch.object(direct_valve, "_now", return_value=1000.0):
+        await async_set_valve(hass, TRV, PI, "", 30, area_id="a", target=21.0)
+    states[PI] = _number(30)
+    hass.services.async_call.reset_mock()
+
+    with patch.object(direct_valve, "_now", return_value=1000.0 + VALVE_SINGLE_RESEND_SECONDS - 1):
+        await async_set_valve(hass, TRV, PI, "", 30, area_id="a", target=21.0)
+    assert _number_calls(hass) == []
+
+    with patch.object(direct_valve, "_now", return_value=1000.0 + VALVE_SINGLE_RESEND_SECONDS):
+        await async_set_valve(hass, TRV, PI, "", 30, area_id="a", target=21.0)
+    # Sent although the state still shows 30
+    assert _number_calls(hass) == [(PI, 30.0)]
+
+    hass.services.async_call.reset_mock()
+    with patch.object(direct_valve, "_now", return_value=1000.0 + VALVE_SINGLE_RESEND_SECONDS + 30):
+        await async_set_valve(hass, TRV, PI, "", 30, area_id="a", target=21.0)
+    assert _number_calls(hass) == []
+
+
+@pytest.mark.asyncio
+async def test_single_entity_resend_keeps_the_position_within_the_deadband():
+    """The resend holds the valve where it is: a demand 3 % off does not move the motor."""
+    states = {PI: _number(0)}
+    hass = _hass(states)
+    with patch.object(direct_valve, "_now", return_value=1000.0):
+        await async_set_valve(hass, TRV, PI, "", 30, area_id="a", target=21.0)
+    states[PI] = _number(30)
+    hass.services.async_call.reset_mock()
+
+    with patch.object(direct_valve, "_now", return_value=1000.0 + VALVE_SINGLE_RESEND_SECONDS):
+        await async_set_valve(hass, TRV, PI, "", 33, area_id="a", target=21.0)
+
+    assert _number_calls(hass) == [(PI, 30.0)]
+    assert direct_valve.held_opening(TRV) == 0.3
+
+
+@pytest.mark.asyncio
+async def test_two_entity_valve_is_not_sent_again():
+    states = {OPEN: _number(), CLOSE: _number()}
+    hass = _hass(states)
+    with patch.object(direct_valve, "_now", return_value=1000.0):
+        await async_set_valve(hass, TRV, OPEN, CLOSE, 30, area_id="a", target=21.0)
+    states[OPEN], states[CLOSE] = _number(30), _number(70)
+    hass.services.async_call.reset_mock()
+
+    with patch.object(direct_valve, "_now", return_value=1000.0 + 10 * VALVE_SINGLE_RESEND_SECONDS):
+        await async_set_valve(hass, TRV, OPEN, CLOSE, 30, area_id="a", target=21.0)
+
+    assert _number_calls(hass) == []
+
+
+@pytest.mark.asyncio
+async def test_single_entity_release_closes_the_valve():
+    """100 % is no device default here, it is a fully open valve."""
+    hass = _hass({PI: _number(30)})
+    direct_valve._valve_sent[TRV] = direct_valve._Held(0.0, 30, None, PI, "")
+
+    await async_release_valve(hass, TRV, PI, "", area_id="a")
+
+    assert _number_calls(hass) == [(PI, 0.0)]
+    assert direct_valve.held_opening(TRV) is None
+
+
+@pytest.mark.asyncio
+async def test_single_entity_left_open_before_a_restart_is_closed_once():
+    """A written position survives a restart and the TRV being off: the first release closes it."""
+    states = {PI: _number(30)}
+    hass = _hass(states)
+
+    await async_release_valve(hass, TRV, PI, "", area_id="a")
+    assert _number_calls(hass) == [(PI, 0.0)]
+
+    # Checked once: what the TRV does with its valve afterwards is its own
+    states[PI] = _number(45)
+    hass.services.async_call.reset_mock()
+    await async_release_valve(hass, TRV, PI, "", area_id="a")
+    assert _number_calls(hass) == []
+
+
+@pytest.mark.asyncio
+async def test_single_entity_found_closed_after_a_start_is_not_written():
+    hass = _hass({PI: _number(0)})
+
+    await async_release_valve(hass, TRV, PI, "", area_id="a")
+
+    assert _number_calls(hass) == []
+
+
+@pytest.mark.asyncio
+async def test_single_entity_check_after_a_start_waits_for_the_entity():
+    states = {PI: _number(state="unavailable")}
+    hass = _hass(states)
+
+    await async_release_valve(hass, TRV, PI, "", area_id="a")
+    assert _number_calls(hass) == []
+
+    states[PI] = _number(30)
+    await async_release_valve(hass, TRV, PI, "", area_id="a")
+    assert _number_calls(hass) == [(PI, 0.0)]
+
+
+@pytest.mark.asyncio
+async def test_single_entity_hand_back_sets_the_room_target():
+    hass = _hass({PI: _number(30), TRV: _trv()})
+    direct_valve._valve_sent[TRV] = direct_valve._Held(0.0, 30, 21.0, PI, "")
+
+    await async_release_valve(hass, TRV, PI, "", area_id="a", hand_back=True)
+
+    assert _number_calls(hass) == [(PI, 0.0)]
+    assert [c["temperature"] for c in _climate_calls(hass, "set_temperature")] == [21.0]
+
+
+@pytest.mark.asyncio
+async def test_single_entity_trv_heats_through_the_valve():
+    hass = _hass({TRV: _trv("off"), PI: _number(0)})
+    ctrl = _controller(hass, _single_room())
+
+    await ctrl.async_apply(
+        MODE_HEATING,
+        TargetTemps(heat=21.0, cool=24.0),
+        power_fraction=0.35,
+        current_temp=20.6,
+        heating_boost_target=30.0,
+    )
+
+    assert _number_calls(hass) == [(PI, 35.0)]
+    assert [c["hvac_mode"] for c in _climate_calls(hass, "set_hvac_mode")] == ["heat"]
+
+
+@pytest.mark.asyncio
+async def test_single_entity_trv_idle_closes_the_valve():
+    hass = _hass({TRV: _trv(), PI: _number(35)})
+    direct_valve._valve_sent[TRV] = direct_valve._Held(0.0, 35, 21.0, PI, "")
+    ctrl = _controller(hass, _single_room())
+
+    await ctrl.async_apply(MODE_IDLE, TargetTemps(heat=21.0, cool=24.0), power_fraction=0.0, current_temp=21.3)
+
+    assert _number_calls(hass) == [(PI, 0.0)]
+    assert [c["hvac_mode"] for c in _climate_calls(hass, "set_hvac_mode")] == ["off"]
+
+
+def test_single_mode_needs_the_opening_entity_only():
+    trv = {"entity_id": TRV, "type": "trv", "valve_opening_entity": PI, "valve_closing_mode": "single"}
+
+    assert get_valve_entities([trv]) == {TRV: ValveEntities(PI, "")}
+    # A second entity left over from another mode is ignored
+    assert get_valve_entities([{**trv, "valve_closing_entity": CLOSE}]) == {TRV: ValveEntities(PI, "")}
+    assert get_valve_entities([{**trv, "valve_closing_mode": "closing_degree"}]) == {}
+    assert get_valve_entities([{**trv, "type": "ac"}]) == {}
+
+
+@pytest.mark.asyncio
+async def test_single_entity_is_written_even_if_the_state_shows_the_value():
+    """After a restart the state may be the TRV's own position: only a write starts the hold."""
+    hass = _hass({PI: _number(30)})
+
+    await async_set_valve(hass, TRV, PI, "", 30, area_id="a")
+
+    assert _number_calls(hass) == [(PI, 30.0)]
+    assert direct_valve.held_opening(TRV) == 0.3
+
+
+@pytest.mark.asyncio
+async def test_single_entity_is_sent_again_after_a_failed_write():
+    """A failed write drops the hold; the next cycle writes although the state shows the value."""
+    states = {PI: _number(0)}
+    hass = _hass(states)
+    with patch.object(direct_valve, "_now", return_value=1000.0):
+        await async_set_valve(hass, TRV, PI, "", 30, area_id="a", target=21.0)
+    states[PI] = _number(state="unavailable")
+    with patch.object(direct_valve, "_now", return_value=1000.0 + VALVE_SINGLE_RESEND_SECONDS):
+        await async_set_valve(hass, TRV, PI, "", 30, area_id="a", target=21.0)
+    assert direct_valve.held_opening(TRV) is None
+    states[PI] = _number(30)
+    hass.services.async_call.reset_mock()
+
+    with patch.object(direct_valve, "_now", return_value=1000.0 + VALVE_SINGLE_RESEND_SECONDS + 30):
+        await async_set_valve(hass, TRV, PI, "", 30, area_id="a", target=21.0)
+
+    assert _number_calls(hass) == [(PI, 30.0)]
+
+
+@pytest.mark.asyncio
+async def test_single_entity_is_closed_after_a_failed_write():
+    """The hold is forgotten after a failed write, the valve still sits where it was put."""
+    states = {PI: _number(0)}
+    hass = _hass(states)
+    await async_set_valve(hass, TRV, PI, "", 30, area_id="a", target=21.0)
+    states[PI] = _number(state="unavailable")
+    await async_set_valve(hass, TRV, PI, "", 60, area_id="a", target=22.0)
+    assert direct_valve.held_opening(TRV) is None
+    states[PI] = _number(30)
+    hass.services.async_call.reset_mock()
+
+    await async_release_valve(hass, TRV, PI, "", area_id="a")
+    assert _number_calls(hass) == [(PI, 0.0)]
+
+    # Released once: the valve is the TRV's own again
+    states[PI] = _number(45)
+    hass.services.async_call.reset_mock()
+    await async_release_valve(hass, TRV, PI, "", area_id="a")
+    assert _number_calls(hass) == []
+
+
+@pytest.mark.asyncio
+async def test_single_entity_release_is_retried_while_the_entity_is_unavailable():
+    states = {PI: _number(state="unavailable")}
+    hass = _hass(states)
+    direct_valve._valve_sent[TRV] = direct_valve._Held(0.0, 30, None, PI, "")
+
+    await async_release_valve(hass, TRV, PI, "", area_id="a")
+    assert direct_valve.held_opening(TRV) == 0.3
+
+    states[PI] = _number(30)
+    await async_release_valve(hass, TRV, PI, "", area_id="a")
+    assert _number_calls(hass) == [(PI, 0.0)]
+    assert direct_valve.held_opening(TRV) is None
+
+
+@pytest.mark.asyncio
+async def test_single_entity_orphan_is_closed():
+    hass = _hass({PI: _number(30)})
+    direct_valve._valve_sent[TRV] = direct_valve._Held(0.0, 30, 21.0, PI, "")
+
+    await direct_valve.async_release_orphaned_valves(hass, {})
+
+    assert _number_calls(hass) == [(PI, 0.0)]
+    assert direct_valve.held_opening(TRV) is None
+
+
+@pytest.mark.asyncio
+async def test_unload_closes_a_held_single_entity_and_leaves_checked_ones_alone():
+    hass = _hass({PI: _number(30), "number.other_pi": _number(45)})
+    direct_valve._valve_sent[TRV] = direct_valve._Held(0.0, 30, None, PI, "")
+    direct_valve._checked["climate.other"] = False  # checked after the start, the TRV's own since
+
+    await direct_valve.async_release_all_valves(
+        hass, {TRV: ValveEntities(PI, ""), "climate.other": ValveEntities("number.other_pi", "")}
+    )
+
+    assert _number_calls(hass) == [(PI, 0.0)]
+
+
+@pytest.mark.asyncio
+async def test_unload_releases_a_held_pair_through_its_own_entities():
+    """Config already says single on the same opening entity: the pair that was written goes back."""
+    hass = _hass({OPEN: _number(30), CLOSE: _number(70)})
+    direct_valve._valve_sent[TRV] = direct_valve._Held(0.0, 30, None, OPEN, CLOSE)
+
+    await direct_valve.async_release_all_valves(hass, {TRV: ValveEntities(OPEN, "")})
+
+    assert _number_calls(hass) == [(OPEN, 100.0), (CLOSE, 100.0)]
+
+
+@pytest.mark.asyncio
+async def test_single_entity_trv_in_managed_mode_is_checked_once():
+    """Without the room sensor the TRV regulates by itself; only the check after a start writes."""
+    states = {TRV: _trv(), PI: _number(45)}
+    hass = _hass(states)
+    ctrl = _controller(hass, _single_room(), has_external_sensor=False)
+
+    await ctrl.async_apply(MODE_HEATING, TargetTemps(heat=21.0, cool=24.0), power_fraction=1.0, current_temp=20.0)
+    assert _number_calls(hass) == [(PI, 0.0)]
+
+    states[PI] = _number(45)
+    hass.services.async_call.reset_mock()
+    await ctrl.async_apply(MODE_HEATING, TargetTemps(heat=21.0, cool=24.0), power_fraction=1.0, current_temp=20.0)
+    assert _number_calls(hass) == []
+
+
+def test_single_valve_trv_ignores_the_direct_setpoint_mode():
+    trv = {"entity_id": TRV, "type": "trv", "setpoint_mode": "direct"}
+    single = {**trv, "valve_opening_entity": PI, "valve_closing_mode": "single"}
+
+    assert get_direct_setpoint_eids([trv]) == {TRV}
+    assert get_direct_setpoint_eids([single]) == set()
+    assert has_direct_valve(single)
+    assert not has_direct_valve(trv)
+    assert not has_direct_valve({**single, "valve_opening_entity": ""})
+
+
+# --- TRV that takes a valve position only while switched off (#537) -----------------------
+
+VP = "number.trv_valve_position"
+
+
+def _off_room(**overrides):
+    room = _valve_room(closing=False, **overrides)
+    for d in room["devices"]:
+        if d["type"] == "trv":
+            d["valve_opening_entity"] = VP
+            d["valve_closing_mode"] = "single"
+            d["valve_thermostat_off"] = True
+    return room
+
+
+def _hvac_modes(hass):
+    return [c["hvac_mode"] for c in _climate_calls(hass, "set_hvac_mode")]
+
+
+@pytest.mark.asyncio
+async def test_valve_only_trv_is_switched_off_before_the_valve_is_written():
+    """In heat the TRV refuses the position: off first, then the valve, and no setpoint."""
+    hass = _hass({TRV: _trv("heat"), VP: _number(0)})
+    ctrl = _controller(hass, _off_room())
+
+    await ctrl.async_apply(
+        MODE_HEATING,
+        TargetTemps(heat=21.0, cool=24.0),
+        power_fraction=0.35,
+        current_temp=20.6,
+        heating_boost_target=30.0,
+    )
+
+    calls = [(c[0][0], c[0][1]) for c in hass.services.async_call.call_args_list]
+    assert calls.index(("climate", "set_hvac_mode")) < calls.index(("number", "set_value"))
+    assert _hvac_modes(hass) == ["off"]
+    assert _number_calls(hass) == [(VP, 35.0)]
+    # Switching off lowers the setpoint to the minimum first; no heating setpoint follows
+    assert [c["temperature"] for c in _climate_calls(hass, "set_temperature")] == [5.0]
+    assert direct_valve._valve_sent[TRV].thermostat_off
+
+
+@pytest.mark.asyncio
+async def test_valve_only_trv_that_is_off_gets_the_valve_only():
+    hass = _hass({TRV: _trv("off"), VP: _number(0)})
+    ctrl = _controller(hass, _off_room())
+
+    await ctrl.async_apply(
+        MODE_HEATING,
+        TargetTemps(heat=21.0, cool=24.0),
+        power_fraction=0.35,
+        current_temp=20.6,
+        heating_boost_target=30.0,
+    )
+
+    assert "heat" not in _hvac_modes(hass)
+    assert _number_calls(hass) == [(VP, 35.0)]
+    assert _climate_calls(hass, "set_temperature") == []
+
+
+@pytest.mark.asyncio
+async def test_valve_only_trv_idle_closes_the_valve_and_stays_off():
+    hass = _hass({TRV: _trv("off"), VP: _number(35)})
+    direct_valve._valve_sent[TRV] = direct_valve._Held(0.0, 35, 21.0, VP, "", False, True)
+    ctrl = _controller(hass, _off_room())
+
+    await ctrl.async_apply(MODE_IDLE, TargetTemps(heat=21.0, cool=24.0), power_fraction=0.0, current_temp=21.3)
+
+    assert _number_calls(hass) == [(VP, 0.0)]
+    assert "heat" not in _hvac_modes(hass)
+    assert _climate_calls(hass, "set_temperature") == []
+
+
+@pytest.mark.asyncio
+async def test_valve_only_trv_ignores_a_low_setpoint_idle_action():
+    """A low setpoint would switch the TRV to heat, where it refuses the closing position."""
+    room = _off_room()
+    room["devices"][0]["idle_action"] = "low"
+    hass = _hass({TRV: _trv("heat"), VP: _number(35)})
+    direct_valve._valve_sent[TRV] = direct_valve._Held(0.0, 35, 21.0, VP, "", False, True)
+    ctrl = _controller(hass, room)
+
+    await ctrl.async_apply(MODE_IDLE, TargetTemps(heat=21.0, cool=24.0), power_fraction=0.0, current_temp=21.3)
+
+    assert _hvac_modes(hass) == ["off"]
+    assert [c["temperature"] for c in _climate_calls(hass, "set_temperature")] == [5.0]
+    assert _number_calls(hass) == [(VP, 0.0)]
+
+
+@pytest.mark.asyncio
+async def test_valve_only_trv_in_managed_mode_is_a_normal_thermostat():
+    """Without the room sensor RoomMind does not hold the valve: the TRV heats by its setpoint."""
+    hass = _hass({TRV: _trv("off"), VP: _number(0)})
+    ctrl = _controller(hass, _off_room(), has_external_sensor=False)
+
+    await ctrl.async_apply(MODE_HEATING, TargetTemps(heat=21.0, cool=24.0), power_fraction=1.0, current_temp=20.0)
+
+    assert _hvac_modes(hass) == ["heat"]
+    assert len(_climate_calls(hass, "set_temperature")) == 1
+    assert _number_calls(hass) == []
+
+
+@pytest.mark.asyncio
+async def test_trv_without_the_option_still_heats_in_heat():
+    hass = _hass({TRV: _trv("off"), PI: _number(0)})
+    ctrl = _controller(hass, _single_room())
+
+    await ctrl.async_apply(
+        MODE_HEATING,
+        TargetTemps(heat=21.0, cool=24.0),
+        power_fraction=0.35,
+        current_temp=20.6,
+        heating_boost_target=30.0,
+    )
+
+    assert _hvac_modes(hass) == ["heat"]
+    assert len(_climate_calls(hass, "set_temperature")) == 1
+    assert not direct_valve._valve_sent[TRV].thermostat_off
+
+
+@pytest.mark.asyncio
+async def test_hand_back_switches_a_valve_only_trv_on_again():
+    """Off, the TRV would not heat at all once RoomMind lets go."""
+    hass = _hass({VP: _number(30), TRV: _trv("off")})
+    direct_valve._valve_sent[TRV] = direct_valve._Held(0.0, 30, 21.0, VP, "", False, True)
+
+    await async_release_valve(hass, TRV, VP, "", area_id="a", hand_back=True)
+
+    assert _number_calls(hass) == [(VP, 0.0)]
+    assert _climate_calls(hass, "set_temperature") == [{"entity_id": TRV, "temperature": 21.0, "hvac_mode": "heat"}]
+
+
+@pytest.mark.asyncio
+async def test_release_without_hand_back_leaves_a_valve_only_trv_off():
+    hass = _hass({VP: _number(30), TRV: _trv("off")})
+    direct_valve._valve_sent[TRV] = direct_valve._Held(0.0, 30, 21.0, VP, "", False, True)
+
+    await async_release_valve(hass, TRV, VP, "", area_id="a")
+
+    assert _number_calls(hass) == [(VP, 0.0)]
+    assert _climate_calls(hass, "set_temperature") == []
+
+
+@pytest.mark.asyncio
+async def test_compressor_hold_of_a_valve_only_trv_keeps_it_off():
+    hass = _hass({TRV: _trv("off"), VP: _number(40)})
+    ctrl = _controller(hass, _off_room())
+    ctrl._compressor_forced_on = {TRV}
+
+    assert await ctrl._async_hold_valve(TRV, TargetTemps(heat=21.0, cool=24.0))
+
+    assert direct_valve._valve_sent[TRV].thermostat_off
+    assert _climate_calls(hass, "set_hvac_mode") == []
+
+
+def test_valve_keeps_thermostat_off_needs_a_valve():
+    trv = {"entity_id": TRV, "type": "trv", "valve_thermostat_off": True}
+    single = {**trv, "valve_opening_entity": VP, "valve_closing_mode": "single"}
+    pair = {**trv, "valve_opening_entity": OPEN, "valve_closing_entity": CLOSE}
+
+    assert not valve_keeps_thermostat_off(trv)
+    assert valve_keeps_thermostat_off(single)
+    assert valve_keeps_thermostat_off(pair)
+    assert not valve_keeps_thermostat_off({**single, "valve_thermostat_off": False})
+    assert get_valve_off_eids([trv, {**single, "entity_id": "climate.b"}]) == {"climate.b"}
+
+
+def test_valve_only_trv_always_idles_off():
+    single = {
+        "entity_id": TRV,
+        "type": "trv",
+        "valve_opening_entity": VP,
+        "valve_closing_mode": "single",
+        "idle_action": "low",
+    }
+
+    assert get_idle_action([single], TRV)[0] == "low"
+    assert get_idle_action([{**single, "valve_thermostat_off": True}], TRV)[0] == "off"
