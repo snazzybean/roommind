@@ -418,6 +418,26 @@ class TestResidualHeatLearning:
         return _create_coordinator(hass, mock_config_entry), room["area_id"]
 
     @pytest.mark.asyncio
+    async def test_radiator_room_learns_alpha_only_while_coasting(self, hass, mock_config_entry):
+        """A radiator room's estimator is flagged to learn alpha only while it coasts."""
+        coordinator, aid = self._radiator_coordinator(hass, mock_config_entry)
+        await coordinator._async_update_data()
+        assert coordinator._model_manager.get_estimator(aid)._alpha_coasting_only is True
+
+    @pytest.mark.asyncio
+    async def test_other_rooms_learn_alpha_from_every_step(self, hass, mock_config_entry):
+        room = {**SAMPLE_ROOM, "heating_system_type": "underfloor"}
+        store = _make_store_mock(rooms={room["area_id"]: room}, settings={"climate_control_active": True})
+        hass.data = {"roommind": {"store": store}}
+        hass.services.async_call = AsyncMock()
+        hass.states.get = make_mock_states_get(
+            temp="18.0", schedule_state="on", schedule_attrs={"current_event": True, "friendly_name": "Heat"}
+        )
+        coordinator = _create_coordinator(hass, mock_config_entry)
+        await coordinator._async_update_data()
+        assert coordinator._model_manager.get_estimator(room["area_id"])._alpha_coasting_only is False
+
+    @pytest.mark.asyncio
     async def test_sample_is_folded_into_the_learned_scale(self, hass, mock_config_entry):
         coordinator, aid = self._radiator_coordinator(hass, mock_config_entry)
         with patch.object(coordinator._residual_learner, "step", return_value=2.5) as step:

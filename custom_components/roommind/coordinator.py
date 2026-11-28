@@ -2125,6 +2125,9 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             and self.outdoor_temp_effective is not None
         ):
             can_heat, can_cool = get_can_heat_cool(room, acs_can_heat=check_acs_can_heat(self.hass, room))
+            self._model_manager.set_alpha_coasting_only(
+                area_id, room.get("heating_system_type", "") == HEATING_SYSTEM_RADIATOR
+            )
             self._ekf_training.process(
                 area_id=area_id,
                 current_temp=current_temp_raw,

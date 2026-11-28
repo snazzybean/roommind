@@ -2225,3 +2225,54 @@ def test_last_update_time_is_kept_and_survives_a_save(monkeypatch):
     del data["last_update_at"]
     assert ThermalEKF.from_dict(data)._last_update_at is None
     assert ThermalEKF.from_dict({**data, "last_update_at": "bad"})._last_update_at is None
+
+
+def _coasting_ekf(enabled: bool) -> ThermalEKF:
+    """A radiator-room EKF that learned alpha = 0.01 from idle nights."""
+    true_model = RCModel(C=1.0, U=0.01, Q_heat=1.0, Q_cool=1.0)
+    ekf = ThermalEKF(T_init=20.0)
+    ekf.set_alpha_coasting_only(enabled)
+    T = 20.0
+    ekf.update(T_measured=T, T_outdoor=5.0, mode="idle", dt_minutes=3.0)
+    for _ in range(400):
+        T = true_model.predict(T, 5.0, 0.0, dt_minutes=3.0)
+        ekf.update(T_measured=T, T_outdoor=5.0, mode="idle", dt_minutes=3.0)
+    return ekf
+
+
+def test_alpha_coasting_only_leaves_alpha_alone_while_heating_or_glowing():
+    """A radiator room learns alpha only while it coasts; heating and afterglow steps keep it and its variance."""
+    ekf = _coasting_ekf(True)
+    alpha, var = ekf._x[1], ekf._P[1][1]
+    beta_h = ekf._x[2]
+    # A heating run whose heat stays in the radiator: the room barely warms
+    for _ in range(20):
+        ekf.update(T_measured=ekf._x[0] - 0.01, T_outdoor=5.0, mode="heating", dt_minutes=3.0)
+    # Afterglow that does not show up as predicted
+    for _ in range(20):
+        ekf.update(T_measured=ekf._x[0] - 0.01, T_outdoor=5.0, mode="idle", dt_minutes=3.0, q_residual=0.5)
+    assert ekf._x[1] == alpha
+    assert ekf._P[1][1] == var
+    assert ekf._x[2] < beta_h  # the shortfall goes to the heating rate instead
+
+    # Coasting again: alpha learns
+    ekf.update(T_measured=ekf._x[0] - 0.05, T_outdoor=5.0, mode="idle", dt_minutes=3.0)
+    assert ekf._x[1] > alpha
+
+
+def test_alpha_learns_from_heating_steps_outside_radiator_rooms():
+    """Without the flag (other systems) the same heating shortfall still raises alpha."""
+    ekf = _coasting_ekf(False)
+    alpha = ekf._x[1]
+    for _ in range(20):
+        ekf.update(T_measured=ekf._x[0] - 0.01, T_outdoor=5.0, mode="heating", dt_minutes=3.0)
+    assert ekf._x[1] > alpha
+
+
+def test_room_model_manager_sets_alpha_coasting_only():
+    """The coordinator flags radiator rooms through the manager."""
+    mgr = RoomModelManager()
+    mgr.set_alpha_coasting_only("bedroom", True)
+    assert mgr.get_estimator("bedroom")._alpha_coasting_only is True
+    mgr.set_alpha_coasting_only("bedroom", False)
+    assert mgr.get_estimator("bedroom")._alpha_coasting_only is False
